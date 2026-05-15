@@ -105,10 +105,8 @@ it mutes controller haptics and speaker output together.
 
 - If the speaker test tone plays through any speaker other than the controller,
   restart the companion app and try the speaker test again.
-- The DualSense onboard microphone is not supported. Testing found that enabling
-  controller speaker output and microphone input at the same time caused
-  microphone stuttering, so microphone forwarding is disabled; the Pico 2 W does
-  not have enough headroom for reliable full-duplex audio in this bridge.
+- The DualSense onboard microphone will be supported in an upcoming update
+  I have found a viable solution with an extremely low packet loss rate (~0.12%)
 - If the controller speaker sounds unnaturally loud, doubled, or distorted,
   reboot the PC, reopen DS5 Bridge, and run the speaker test again.
 - Battery level is not reported accurately while the controller is charging.
