@@ -9,7 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg" alt="License: AGPL-3.0-only"></a>
   <a href="https://github.com/SundayMoments/DS5_Bridge/releases/latest"><img src="https://img.shields.io/github/v/release/SundayMoments/DS5_Bridge?label=release" alt="Latest release"></a>
   <br>
-  <img src="https://img.shields.io/badge/platform-Windows%20companion%20app%20%7C%20Pico%202%20W%20firmware-287cff" alt="Platform: Windows companion app and Raspberry Pi Pico 2 W firmware">
+  <img src="https://img.shields.io/badge/platform-Windows%20companion%20app%20%7C%20Pico%202%20W%20firmware-287cff" alt="Platform: Windows / Linux companion app and Raspberry Pi Pico 2 W firmware">
 </p>
 
 DS5 Bridge lets you use a real Sony DualSense or DualSense Edge controller
@@ -17,12 +17,12 @@ wirelessly through a Raspberry Pi Pico 2 W. The controller pairs to the Pico ove
 Bluetooth, and your PC sees a standard DualSense-compatible USB controller. The
 firmware is intended for PC use.
 
-The public release includes the companion firmware and a Windows-only companion
+The public release includes the companion firmware and a Windows/Linux companion
 app for tuning the controller without reflashing the Pico.
 
 ## Quick Start
 
-1. Download the firmware UF2 and Windows companion installer from
+1. Download the firmware UF2 and Windows or Linux companion installer from
    [Releases](https://github.com/SundayMoments/DS5_Bridge/releases/latest).
 2. With the Pico 2 W unplugged, hold `BOOTSEL`, then connect it to your PC.
 3. Copy the release `.uf2` firmware file to the mounted Pico storage device.
@@ -116,7 +116,7 @@ it mutes controller haptics and speaker output together.
 - Raspberry Pi Pico 2 W.
 - Sony DualSense controller.
 - USB connection from the Pico 2 W to the PC.
-- Windows for the companion app.
+- Windows or Linux for the companion app.
 
 ## For Developers
 
