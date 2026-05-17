@@ -3,6 +3,7 @@ const { rcedit } = require('rcedit');
 const appPackage = require('../package.json');
 
 exports.default = async function afterPack(context) {
+  if (context.packager.platform !== 'win32') return;
   const exePath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
   const appIcon = path.resolve(__dirname, '..', '..', 'assets', 'controllers', 'ds5-bridge_app-icon-tile.ico');
 

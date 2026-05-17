@@ -2,7 +2,7 @@
   "name": "ds5-bridge-companion",
   "version": "0.1.0",
   "private": true,
-  "description": "Windows companion app for the Pico DS5 Bridge companion firmware.",
+  "description": "Companion app for the Pico DS5 Bridge companion firmware.",
   "author": "SundayMoments",
   "productName": "DS5 Bridge",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.main.json && vite build",
     "package:win": "npm run build && node scripts/package-win.mjs",
+    "package:linux": "npm run build && node scripts/package-linux.mjs",
     "installer:win": "npm run build && electron-builder --win nsis --x64",
+    "installer:linux": "npm run build && electron-builder --linux appimage --x64",
     "test": "vitest run src",
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
     "layout:check": "npm run build && node scripts/layout-check.mjs"
@@ -51,6 +53,10 @@
       "node_modules/node-hid/prebuilds/**/*.node"
     ],
     "npmRebuild": false,
+    "linux": {
+      "icon": "../assets/controllers/ds5-bridge_app-icon-tile_512x512.png",
+      "category": "Utility"
+    },
     "win": {
       "icon": "../assets/controllers/ds5-bridge_app-icon-tile.ico",
       "signAndEditExecutable": false,
