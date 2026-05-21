@@ -4,25 +4,32 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag to build and upload assets for
+        required: true
+        type: string
 
 env:
   PICO_SDK_REF: 2.2.0
   TINYUSB_REF: 0.20.0
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
 
 permissions:
   contents: write
 
 jobs:
   firmware:
-    name: Build and upload companion UF2
+    name: Build and upload firmware UF2
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout release ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
           submodules: recursive
 
       - name: Install build dependencies
@@ -42,6 +49,18 @@ jobs:
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
 
+      - name: Read firmware version
+        shell: pwsh
+        run: |
+          $source = Get-Content src/companion.cpp -Raw
+          $major = [regex]::Match($source, 'kFirmwareMajor\s*=\s*(\d+)')
+          $minor = [regex]::Match($source, 'kFirmwareMinor\s*=\s*(\d+)')
+          $patch = [regex]::Match($source, 'kFirmwarePatch\s*=\s*(\d+)')
+          if (-not ($major.Success -and $minor.Success -and $patch.Success)) {
+            throw 'Unable to read firmware version from src/companion.cpp'
+          }
+          "FIRMWARE_VERSION=$($major.Groups[1].Value).$($minor.Groups[1].Value).$($patch.Groups[1].Value)" >> $env:GITHUB_ENV
+
       - name: Build companion firmware
         run: |
           cmake -S . -B build/companion -G Ninja \
@@ -50,23 +69,23 @@ jobs:
             -DENABLE_COMPANION=ON
           cmake --build build/companion --target ds5-bridge
           mkdir -p artifacts
-          cp build/companion/ds5-bridge.uf2 "artifacts/ds5-bridge-companion-${{ github.event.release.tag_name }}.uf2"
+          cp build/companion/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-v${FIRMWARE_VERSION}.uf2"
 
-      - name: Upload UF2 file to release
+      - name: Upload firmware to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" artifacts/*.uf2 --clobber
+          gh release upload "$RELEASE_TAG" artifacts/*.uf2 --clobber
 
-  companion-installer:
-    name: Build and upload Windows companion installer
+  companion:
+    name: Build and upload Windows companion
     runs-on: windows-latest
 
     steps:
       - name: Checkout release ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
           submodules: recursive
 
       - name: Set up Node.js
@@ -76,17 +95,121 @@ jobs:
           cache: npm
           cache-dependency-path: companion/package-lock.json
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
       - name: Install companion dependencies
         working-directory: companion
         run: npm ci
+
+      - name: Build portable companion package
+        working-directory: companion
+        run: npm run package:win
 
       - name: Build Windows companion installer
         working-directory: companion
         run: npm run installer:win
 
-      - name: Upload Windows companion installer to release
+      - name: Stage companion release assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
+          $artifactDir = Join-Path $PWD 'artifacts'
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+
+          $installer = Get-ChildItem companion/artifacts/installer/DS5-Bridge-Companion-Setup-*.exe |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw 'Missing companion installer.'
+          }
+
+          $portable = Get-ChildItem companion/artifacts -Directory |
+            Where-Object { $_.Name -like 'DS5 Bridge-win32-x64-*' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $portable) {
+            throw 'Missing portable companion package.'
+          }
+
+          $installerName = "DS5-Bridge-Companion-Setup-v$version.exe"
+          $portableName = "DS5-Bridge-Companion-Portable-v$version-win32-x64.zip"
+
+          Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path $artifactDir $installerName) -Force
+          Compress-Archive -LiteralPath $portable.FullName -DestinationPath (Join-Path $artifactDir $portableName) -Force
+
+      - name: Upload companion assets to release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $installer = Get-ChildItem companion/artifacts/installer/DS5-Bridge-Companion-Setup-*.exe | Select-Object -First 1
-          gh release upload "${{ github.event.release.tag_name }}" $installer.FullName --clobber
+          $assets = Get-ChildItem artifacts -File | ForEach-Object { $_.FullName }
+          gh release upload $env:RELEASE_TAG @assets --clobber
+
+  metadata:
+    name: Upload release metadata
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          submodules: recursive
+
+      - name: Stage release metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $companionVersion = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
+          $source = Get-Content src/companion.cpp -Raw
+          $major = [regex]::Match($source, 'kFirmwareMajor\s*=\s*(\d+)')
+          $minor = [regex]::Match($source, 'kFirmwareMinor\s*=\s*(\d+)')
+          $patch = [regex]::Match($source, 'kFirmwarePatch\s*=\s*(\d+)')
+          if (-not ($major.Success -and $minor.Success -and $patch.Success)) {
+            throw 'Unable to read firmware version from src/companion.cpp'
+          }
+          $firmwareVersion = "$($major.Groups[1].Value).$($minor.Groups[1].Value).$($patch.Groups[1].Value)"
+          $commit = (git rev-parse HEAD).Trim()
+          $dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain | Out-String).Trim())
+          $artifactDir = Join-Path $PWD 'artifacts'
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+
+          Copy-Item -LiteralPath LICENSE -Destination (Join-Path $artifactDir 'LICENSE.txt') -Force
+          Copy-Item -LiteralPath NOTICE -Destination (Join-Path $artifactDir 'NOTICE.txt') -Force
+
+          @(
+            'DS5 Bridge source code:',
+            'https://github.com/SundayMoments/DS5_Bridge',
+            '',
+            "This binary release corresponds to commit: $commit",
+            "Working tree dirty at build time: $(if ($dirty) { 'yes' } else { 'no' })",
+            '',
+            'License:',
+            'GNU Affero General Public License v3.0 only',
+            'See LICENSE and NOTICE.'
+          ) | Set-Content -LiteralPath (Join-Path $artifactDir 'SOURCE.txt') -Encoding UTF8
+
+          $manifest = [ordered]@{
+            createdAt = (Get-Date).ToUniversalTime().ToString('o')
+            firmwareVersion = $firmwareVersion
+            companionVersion = $companionVersion
+            artifacts = @(
+              "DS5-Bridge-Firmware-v$firmwareVersion.uf2",
+              "DS5-Bridge-Companion-Setup-v$companionVersion.exe",
+              "DS5-Bridge-Companion-Portable-v$companionVersion-win32-x64.zip"
+            )
+            sourceUrl = 'https://github.com/SundayMoments/DS5_Bridge'
+            sourceCommit = $commit
+            dirty = $dirty
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $artifactDir 'manifest.json') -Encoding UTF8
+
+      - name: Upload metadata to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" artifacts/LICENSE.txt artifacts/NOTICE.txt artifacts/SOURCE.txt artifacts/manifest.json --clobber
