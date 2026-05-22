@@ -218,12 +218,14 @@ describe('companion protocol', () => {
   it('builds a button remap command payload', () => {
     const payload = buildButtonRemapPayload({
       ...DEFAULT_BUTTON_REMAP_PROFILE.mappings,
-      cross: 'circle'
+      cross: 'circle',
+      lb: 'square'
     });
     const report = buildCommandReport(COMMAND_ID.SET_BUTTON_REMAP, 7, 0, payload);
-    expect(payload).toHaveLength(16);
+    expect(payload).toHaveLength(20);
     expect(report[7]).toBe(COMMAND_ID.SET_BUTTON_REMAP);
     expect(report[11 + 13]).toBe(12);
+    expect(report[11 + 16]).toBe(14);
   });
 
   it('builds sleep controller command reports', () => {

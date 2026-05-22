@@ -15,7 +15,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 1;
+constexpr uint8_t kProtocolMinor = 2;
 constexpr uint8_t kFirmwareMajor = 1;
 constexpr uint8_t kFirmwareMinor = 0;
 constexpr uint8_t kFirmwarePatch = 1;
@@ -33,6 +33,14 @@ constexpr uint8_t kL3ButtonBit = 0x40;
 constexpr uint8_t kR3ButtonBit = 0x80;
 constexpr uint8_t kHomeButtonBit = 0x01;
 constexpr uint8_t kMuteButtonBit = 0x04;
+constexpr uint8_t kLeftFunctionButtonBit = 0x10;
+constexpr uint8_t kRightFunctionButtonBit = 0x20;
+constexpr uint8_t kLeftBackButtonBit = 0x40;
+constexpr uint8_t kRightBackButtonBit = 0x80;
+constexpr uint8_t kDualSenseEdgeButtonMask = kLeftFunctionButtonBit
+    | kRightFunctionButtonBit
+    | kLeftBackButtonBit
+    | kRightBackButtonBit;
 constexpr uint8_t kDpadMask = 0x0F;
 constexpr uint8_t kDpadUp = 0x00;
 constexpr uint8_t kDpadUpRight = 0x01;
@@ -160,6 +168,10 @@ enum RemapButton : uint8_t {
     RemapCross,
     RemapSquare,
     RemapR3,
+    RemapLb,
+    RemapRb,
+    RemapLfn,
+    RemapRfn,
     RemapButtonCount,
 };
 
@@ -1429,6 +1441,7 @@ void apply_button_remap(uint8_t *report, uint16_t len) {
     bool source_pressed[RemapButtonCount]{};
     uint8_t source_analog[RemapButtonCount]{};
     const uint8_t dpad_direction = report[7] & kDpadMask;
+    const bool has_edge_buttons = len > 9;
 
     source_pressed[RemapL2] = (report[8] & kL2ButtonBit) != 0;
     source_pressed[RemapL1] = (report[8] & kL1ButtonBit) != 0;
@@ -1446,6 +1459,12 @@ void apply_button_remap(uint8_t *report, uint16_t len) {
     source_pressed[RemapCross] = (report[7] & kCrossButtonBit) != 0;
     source_pressed[RemapSquare] = (report[7] & kSquareButtonBit) != 0;
     source_pressed[RemapR3] = (report[8] & kR3ButtonBit) != 0;
+    if (has_edge_buttons) {
+        source_pressed[RemapLb] = (report[9] & kLeftBackButtonBit) != 0;
+        source_pressed[RemapRb] = (report[9] & kRightBackButtonBit) != 0;
+        source_pressed[RemapLfn] = (report[9] & kLeftFunctionButtonBit) != 0;
+        source_pressed[RemapRfn] = (report[9] & kRightFunctionButtonBit) != 0;
+    }
 
     for (uint8_t i = 0; i < RemapButtonCount; i++) {
         source_analog[i] = source_pressed[i] ? 0xFF : 0;
@@ -1486,6 +1505,14 @@ void apply_button_remap(uint8_t *report, uint16_t len) {
     if (target_pressed[RemapOptions]) report[8] |= kOptionsButtonBit;
     if (target_pressed[RemapL3]) report[8] |= kL3ButtonBit;
     if (target_pressed[RemapR3]) report[8] |= kR3ButtonBit;
+
+    if (has_edge_buttons) {
+        report[9] &= static_cast<uint8_t>(~kDualSenseEdgeButtonMask);
+        if (target_pressed[RemapLfn]) report[9] |= kLeftFunctionButtonBit;
+        if (target_pressed[RemapRfn]) report[9] |= kRightFunctionButtonBit;
+        if (target_pressed[RemapLb]) report[9] |= kLeftBackButtonBit;
+        if (target_pressed[RemapRb]) report[9] |= kRightBackButtonBit;
+    }
 }
 
 } // namespace

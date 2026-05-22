@@ -2523,6 +2523,33 @@ button.feature-icon {
   z-index: 120;
 }
 
+.remapping-edge-group {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.remapping-edge-group-top {
+  top: 7%;
+}
+
+.remapping-edge-group-bottom {
+  bottom: 7%;
+}
+
+.remapping-edge-group .remapping-pill {
+  position: static;
+  transform: none;
+  width: 132px;
+  pointer-events: auto;
+}
+
 .remapping-source,
 .remap-glyph-option {
   min-width: 0;
@@ -2563,6 +2590,25 @@ button.feature-icon {
   flex: 0 0 24px;
   object-fit: contain;
   display: block;
+}
+
+.remap-text-glyph {
+  min-width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  padding: 0 4px;
+  color: #eef4ff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.remap-text-glyph-source {
+  min-width: 26px;
 }
 
 .remapping-select .custom-select-button {

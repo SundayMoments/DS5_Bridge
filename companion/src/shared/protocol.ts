@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 1;
+export const PROTOCOL_MINOR = 2;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -154,7 +154,11 @@ export const REMAP_BUTTON_IDS = [
   'circle',
   'cross',
   'square',
-  'r3'
+  'r3',
+  'lb',
+  'rb',
+  'lfn',
+  'rfn'
 ] as const;
 export type RemapButtonId = typeof REMAP_BUTTON_IDS[number];
 export type ButtonRemapMap = Record<RemapButtonId, RemapButtonId>;
@@ -224,7 +228,10 @@ export function remapButtonIdValue(buttonId: RemapButtonId): number {
 }
 
 export function buildButtonRemapPayload(mapping: ButtonRemapMap): number[] {
-  return REMAP_BUTTON_IDS.map((buttonId) => remapButtonIdValue(mapping[buttonId]));
+  return REMAP_BUTTON_IDS.map((buttonId) => {
+    const target = mapping[buttonId];
+    return remapButtonIdValue(isRemapButtonId(target) ? target : buttonId);
+  });
 }
 export const MUTE_KEYBOARD_HOLD_FLAG = 0x80;
 export const MUTE_KEYBOARD_MODIFIER_MASK = 0x0f;
