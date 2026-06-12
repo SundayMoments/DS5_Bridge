@@ -30,6 +30,27 @@ The companion app gives you a clean place to adjust audio, haptics, trigger
 strength, lighting, button remaps, shortcuts, and other controller behavior
 without reflashing the Pico.
 
+* [Quick start](#quick-start)
+* [Features](#features)
+* [Companion app tour](#companion-app-tour)
+  * [Overview](#overview)
+  * [Haptics](#haptics)
+  * [Audio](#audio)
+  * [Triggers](#triggers)
+  * [Lighting](#lighting)
+  * [Button remapping](#button-remapping)
+  * [System](#system)
+  * [Settings](#settings)
+* [Troubleshooting](#troubleshooting)
+* [Common issues](#common-issues)
+* [Requirements](#requirements)
+* [For developers](#for-developers)
+* [Project layout](#project-layout)
+* [Development notes](#development-notes)
+* [License](#license)
+* [References](#references)
+* [Disclaimer](#disclaimer)
+
 ## Quick Start
 
 1. Download the firmware `.uf2` and Windows companion installer from
@@ -125,6 +146,8 @@ sleep disconnect, and the Pico LED.
 
 ## Troubleshooting
 
+- Make sure you have got a **Pico 2 W** (where w stands for wireless/bluetooth capability).
+- When connecting your controller, put it in pairing mode, not just turning it on. (Pairing mode: refers to the controller state where the lightbar is rapidly blinking blue, which means it's actively looking for a Bluetooth connection. To enter pairing mode, hold the `Create` button and the `PS` button on the controller until the lightbar starts blinking blue)
 - Keep Host Encoding enabled if you use the controller speaker or plug
   headphones into the controller. Turning it off can cause stuttering or static.
 - Headphones through the controller headphone jack work best when DS5 Bridge is
@@ -133,11 +156,15 @@ sleep disconnect, and the Pico LED.
   reopen DS5 Bridge, and run the speaker test again.
 - Battery level may be inaccurate while the controller is charging.
 
+## Common issues
+
+See [Common issues](docs/common-issues.md) for solutions to common problems.
+
 ## Requirements
 
 - Raspberry Pi Pico 2 W.
 - Sony DualSense or DualSense Edge controller.
-- USB cable from the Pico 2 W to the PC.
+- USB cable with a micro end from the Pico 2 W to the PC.
 - Windows for the companion app.
 
 ## For Developers
