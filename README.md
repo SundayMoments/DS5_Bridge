@@ -164,7 +164,7 @@ See [Common issues](docs/common-issues.md) for solutions to common problems.
 
 - Raspberry Pi Pico 2 W.
 - Sony DualSense or DualSense Edge controller.
-- USB cable with a micro end from the Pico 2 W to the PC.
+- USB cable with a micro usb end from the Pico 2 W to the PC.
 - Windows for the companion app.
 
 ## For Developers
