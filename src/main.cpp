@@ -16,6 +16,7 @@
 #include "audio.h"
 #include "usb.h"
 #include "host_input.h"
+#include "wake.h"
 #include "controller_report.h"
 #include "dualsense_input_decoder.h"
 #include "dualsense_output.h"
@@ -367,6 +368,8 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
 
     uint8_t controller_report[63];
     memcpy(controller_report, data + 3, sizeof(controller_report));
+    // Wake-on-PS: observe every BT input report so a button press wakes the host.
+    wake_on_bt_input(controller_report, sizeof(controller_report));
     set_headset((controller_report[53] & 1) != 0);
 #ifdef ENABLE_COMPANION
     companion_process_controller_report(controller_report, sizeof(controller_report));
@@ -582,6 +585,7 @@ int main() {
     bt_register_data_callback(on_bt_data);
 
     audio_init();
+    wake_init();
 
     watchdog_enable(1000, true);
 
@@ -591,6 +595,7 @@ int main() {
         tud_task();
         interrupt_loop();
         usb_pm_poll();
+        wake_task();
         audio_loop();
         button_check();
         bt_lightbar_loop();

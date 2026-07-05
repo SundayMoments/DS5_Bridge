@@ -56,6 +56,7 @@ add_executable(ds5-bridge
         src/output_scheduler.cpp
         src/audio.cpp
         src/bt.cpp
+        src/wake.cpp
 )
 
 # Cockos WDLResampler
@@ -135,6 +136,16 @@ if(ENABLE_COMPANION)
     )
     target_compile_definitions(ds5-bridge PRIVATE
             ENABLE_COMPANION
+    )
+endif()
+
+# Wake-on-PS: advertise USB remote-wakeup and tap a key on the HID keyboard
+# interface when a controller button is pressed during S3 sleep. Ported from
+# awalol/DS5Dongle. Requires the keyboard interface (present with ENABLE_COMPANION).
+option(ENABLE_WAKE_HID "Enable wake-on-PS (USB remote wakeup via the keyboard interface)" ON)
+if(ENABLE_WAKE_HID)
+    target_compile_definitions(ds5-bridge PRIVATE
+            ENABLE_WAKE_HID
     )
 endif()
 

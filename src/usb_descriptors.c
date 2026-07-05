@@ -189,7 +189,11 @@ uint8_t descriptor_configuration[] = {
 #endif
     0x01, // bConfigurationValue: 1
     0x00, // iConfiguration: 0
+#ifdef ENABLE_WAKE_HID
+    0xE0, // bmAttributes: SELF-POWERED, REMOTE-WAKEUP (wake-on-PS)
+#else
     0xC0, // bmAttributes: SELF-POWERED, NO REMOTE-WAKEUP
+#endif
     0xFA, // bMaxPower: 500mA (250 * 2mA)
 
     // --- INTERFACE DESCRIPTOR (0.0): Audio Control ---
