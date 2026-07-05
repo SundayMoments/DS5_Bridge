@@ -16,6 +16,7 @@
 #include "pico/bootrom.h"
 #include "pico/time.h"
 #include "usb.h"
+#include "wake.h"
 
 namespace {
 
@@ -121,6 +122,7 @@ enum CommandId : uint8_t {
     CommandResetAdaptiveTriggers = 0x0E,
     CommandSetUsbSuspendDisconnectEnabled = 0x0F,
     CommandSetSleepKeybindEnabled = 0x10,
+    CommandSetWakeEnabled = 0x34,
     CommandSleepController = 0x11,
     CommandSetPollingRateMode = 0x12,
     CommandSetClassicRumbleGain = 0x13,
@@ -2140,6 +2142,16 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 return;
             }
             usb_set_suspend_disconnect_enabled(value == 1);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
+        case CommandSetWakeEnabled:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            wake_set_enabled(value == 1);
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;

@@ -69,6 +69,7 @@ export interface CompanionSettings {
   idleDisconnectTimeoutMinutes: number;
   usbSuspendDisconnectEnabled: boolean;
   sleepKeybindEnabled: boolean;
+  wakeEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;
   hostPersonaMode: HostPersonaMode;

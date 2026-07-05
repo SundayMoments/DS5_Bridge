@@ -12,6 +12,11 @@ void wake_on_bt_input(const uint8_t *report, uint16_t len);
 void wake_on_bt_connect(void);
 void wake_note_suspend(void);
 void wake_note_resume(void);
+// Runtime enable/disable (companion app toggle). When disabled, the firmware
+// still advertises USB remote-wakeup but never acts on button presses to wake
+// the host. Runtime-only; the companion app re-applies it on connect.
+void wake_set_enabled(bool enabled);
+bool wake_is_enabled(void);
 #else
 static inline void wake_init(void) {}
 static inline void wake_task(void) {}
@@ -19,4 +24,6 @@ static inline void wake_on_bt_input(const uint8_t *, uint16_t) {}
 static inline void wake_on_bt_connect(void) {}
 static inline void wake_note_suspend(void) {}
 static inline void wake_note_resume(void) {}
+static inline void wake_set_enabled(bool) {}
+static inline bool wake_is_enabled(void) { return false; }
 #endif

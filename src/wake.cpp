@@ -35,6 +35,7 @@ typedef enum {
 } wake_state_t;
 
 static critical_section_t wake_cs;
+static volatile bool wake_enabled = true;   // runtime toggle (companion app)
 static volatile bool host_suspended = false;
 static volatile bool host_resumed_event = false;
 static wake_state_t state = WAKE_IDLE;
@@ -52,6 +53,7 @@ static void enter_state(wake_state_t s) {
 }
 
 static void request_host_wake(void) {
+    if (!wake_enabled) return;   // disabled via companion app: never wake the host
     bool ok = tud_remote_wakeup();
     // Linux/edge quirk: if we are suspended but TinyUSB refuses, force the DCD
     // wake signal directly.
@@ -69,6 +71,14 @@ static void request_host_wake(void) {
 
 void wake_init(void) {
     critical_section_init(&wake_cs);
+}
+
+void wake_set_enabled(bool enabled) {
+    wake_enabled = enabled;
+}
+
+bool wake_is_enabled(void) {
+    return wake_enabled;
 }
 
 void wake_note_suspend(void) {

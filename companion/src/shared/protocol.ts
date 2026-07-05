@@ -70,6 +70,7 @@ export const COMMAND_ID = {
   RESET_ADAPTIVE_TRIGGERS: 0x0E,
   SET_USB_SUSPEND_DISCONNECT_ENABLED: 0x0F,
   SET_SLEEP_KEYBIND_ENABLED: 0x10,
+  SET_WAKE_ENABLED: 0x34,
   SLEEP_CONTROLLER: 0x11,
   SET_POLLING_RATE_MODE: 0x12,
   SET_CLASSIC_RUMBLE_GAIN: 0x13,
@@ -289,6 +290,7 @@ export interface ControllerProfileSettings {
   muteKeyboardBehavior: MuteKeyboardBehavior;
   muteKeyboardChordStarterEnabled: boolean;
   sleepKeybindEnabled: boolean;
+  wakeEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;
   hostPersonaMode: HostPersonaMode;

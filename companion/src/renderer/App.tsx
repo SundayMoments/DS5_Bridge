@@ -1501,6 +1501,7 @@ function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): Contro
     muteKeyboardBehavior: snapshot.settings.muteKeyboardBehavior,
     muteKeyboardChordStarterEnabled: snapshot.settings.muteKeyboardChordStarterEnabled,
     sleepKeybindEnabled: snapshot.settings.sleepKeybindEnabled,
+    wakeEnabled: snapshot.settings.wakeEnabled,
     speakerVolumeShortcutEnabled: snapshot.settings.speakerVolumeShortcutEnabled,
     pollingRateMode: snapshot.settings.pollingRateMode,
     hostPersonaMode: snapshot.settings.hostPersonaMode,
@@ -9554,6 +9555,24 @@ export function App() {
               </div>
               <div className="bridge-settings-column">
                 <div className="settings-menu-section-label">Power & Controller</div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Wake PC on PS Button</strong>
+                    <span>Press a controller button to wake the PC from sleep (S3). Requires USB wake allowed for the device in Windows.</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapshot.settings.wakeEnabled}
+                    className={`switch ${snapshot.settings.wakeEnabled ? 'on' : ''}`}
+                    disabled={!connected || pendingAction !== null}
+                    onClick={() => void runAction('wake-enabled', () => (
+                      window.bridge.setWakeEnabled(!snapshot.settings.wakeEnabled)
+                    ))}
+                  >
+                    <span />
+                  </button>
+                </div>
                 <div className={`settings-menu-row ${settingsFocusTarget === 'controller-power-saving' ? 'settings-menu-row-highlight' : ''}`}>
                   <div className="settings-menu-copy">
                     <strong>Controller Power Saving</strong>
