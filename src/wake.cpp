@@ -81,6 +81,12 @@ bool wake_is_enabled(void) {
     return wake_enabled;
 }
 
+// C-linkage accessor so the C-compiled usb_descriptors.c can gate the config
+// descriptor's REMOTE_WAKEUP bit (bmAttributes 0xE0 vs 0xC0) on the runtime flag.
+extern "C" bool wake_remote_wakeup_enabled(void) {
+    return wake_enabled;
+}
+
 void wake_note_suspend(void) {
     host_suspended = true;
     host_resumed_event = false;
