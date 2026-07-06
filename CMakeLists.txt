@@ -23,7 +23,17 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif ()
 # ====================================================================================
-set(PICO_BOARD pico2_w CACHE STRING "Board type")
+option(WAVESHARE_RP2350B_PLUS_W_BUILD "Build for Waveshare RP2350B-Plus-W (USB-C, 16MB flash, RM2 wireless)" OFF)
+
+if (WAVESHARE_RP2350B_PLUS_W_BUILD)
+    set(PICO_BOARD waveshare_rp2350b_plus_w CACHE STRING "Board type")
+    # Waveshare board header is not in upstream pico-sdk; ship it here and
+    # tell the SDK to search this directory when resolving PICO_BOARD.
+    list(APPEND PICO_BOARD_HEADER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/boards/headers")
+else ()
+    set(PICO_BOARD pico2_w CACHE STRING "Board type")
+endif ()
+message(STATUS "ds5-bridge board target -- PICO_BOARD=${PICO_BOARD}")
 set(SYS_CLOCK_KHZ_VALUE 150000 CACHE STRING "RP2350 system clock in kHz")
 set(CYW43_PIO_CLOCK_DIV_VALUE 2 CACHE STRING "CYW43 PIO clock divider")
 
