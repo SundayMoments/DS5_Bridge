@@ -34,9 +34,9 @@ jobs:
         working-directory: companion
         run: npm ci
 
-      - name: Build host audio helper
+      - name: Build audio helper
         working-directory: companion
-        run: npm run build:host-audio
+        run: npm run build:audio-helper
 
       - name: Typecheck companion
         working-directory: companion
@@ -48,4 +48,4 @@ jobs:
 
       - name: Build companion
         working-directory: companion
-        run: npm run build
+        run: npm run build:app

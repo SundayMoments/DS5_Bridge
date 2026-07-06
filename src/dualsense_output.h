@@ -26,11 +26,13 @@ constexpr uint8_t kFlag1PowerSaveControlEnable = 0x02;
 constexpr uint8_t kFlag1LightbarControlEnable = 0x04;
 constexpr uint8_t kFlag1ReleaseLeds = 0x08;
 constexpr uint8_t kFlag1PlayerIndicatorControlEnable = 0x10;
+constexpr uint8_t kFlag1HapticLowPassFilterEnable = 0x20;
 constexpr uint8_t kFlag1MotorPowerLevelEnable = 0x40;
 constexpr uint8_t kFlag1AudioControl2Enable = 0x80;
 
 constexpr uint8_t kFlag2LightbarSetupControlEnable = 0x02;
-constexpr uint8_t kFlag2CompatibleVibration2 = 0x04;
+constexpr uint8_t kFlag2EnableImprovedRumbleEmulation = 0x04;
+constexpr uint8_t kFlag2UseRumbleNotHaptics2 = 0x08;
 
 constexpr uint8_t kAudioFlagsOutputPathHeadphones = 0x00;
 constexpr uint8_t kAudioFlagsOutputPathSpeaker = 0x30;
@@ -68,6 +70,8 @@ constexpr uint8_t kPowerSaveControlOffset = 9;
 constexpr uint8_t kTriggerPowerOffset = 36;
 constexpr uint8_t kAudioControl2Offset = 37;
 constexpr uint8_t kValidFlag2Offset = 38;
+constexpr uint8_t kHapticLowPassFilterOffset = 39;
+constexpr uint8_t kLightFadeAnimationOffset = 41;
 constexpr uint8_t kLedBrightnessOffset = 42;
 constexpr uint8_t kPlayerLedsOffset = 43;
 constexpr uint8_t kLightbarRedOffset = 44;

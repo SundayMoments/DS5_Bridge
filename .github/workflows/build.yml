@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - "**"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   PICO_SDK_REF: 2.2.0

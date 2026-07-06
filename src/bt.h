@@ -14,6 +14,12 @@ enum CHANNEL_TYPE {
     CONTROL
 };
 
+enum ControllerType : uint8_t {
+    ControllerTypeUnknown = 0,
+    ControllerTypeDualSense = 1,
+    ControllerTypeDualSenseEdge = 2,
+};
+
 typedef void (*bt_data_callback_t)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len);
 
 int bt_init();
@@ -23,6 +29,7 @@ uint8_t bt_controller_type();
 int8_t bt_get_signal_strength();
 bool bt_has_signal_strength();
 bool bt_disconnect();
+bool bt_power_off_controller();
 bool bt_set_idle_disconnect_timeout_minutes(uint16_t minutes);
 uint16_t bt_idle_disconnect_timeout_minutes();
 void bt_write(uint8_t* data,uint16_t len);
@@ -44,17 +51,21 @@ struct bt_output_debug_stats {
     uint32_t bt_audio_queue_depth_max;
     uint32_t audio_0x36_enqueued_count;
     uint32_t audio_0x36_sent_count;
-    uint32_t critical_starving_audio_count;
 };
 void bt_get_output_debug_stats(bt_output_debug_stats *stats);
 void bt_set_lightbar_color(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness_percent);
+void bt_set_player_led_enabled(bool enabled);
 void bt_set_mute_led(bool enabled);
-void bt_set_microphone_state(uint8_t volume_percent, bool muted);
+void bt_set_microphone_state(uint8_t volume_percent, bool muted, bool control_mute_led, bool mute_led);
+void bt_set_speaker_output_gain(uint8_t gain);
+uint8_t bt_speaker_output_gain();
 void bt_set_speaker_output_enabled(bool enabled, bool headset_plugged = false, bool force = false);
 void bt_rearm_speaker_output_route(bool headset_plugged);
 void bt_refresh_speaker_output();
 void bt_set_classic_rumble_gain(uint16_t gain_percent);
 uint16_t bt_classic_rumble_gain();
+void bt_set_classic_rumble_v1_enabled(bool enabled);
+bool bt_classic_rumble_v1_enabled();
 void bt_set_classic_rumble_output(uint8_t right, uint8_t left);
 void bt_set_adaptive_trigger_effect(uint8_t mode, uint8_t intensity_percent, uint8_t target = 0);
 void bt_set_custom_adaptive_trigger_effect(

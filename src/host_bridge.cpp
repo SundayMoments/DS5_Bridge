@@ -2,6 +2,7 @@
 
 #ifdef ENABLE_COMPANION
 
+#include "audio.h"
 #include "companion.h"
 #include "tusb.h"
 #include "device/usbd_pvt.h"
@@ -16,6 +17,11 @@ static void host_bridge_process_report(uint8_t const *report, uint32_t len) {
     }
 
     const uint8_t report_id = report[0];
+    if (report_id == 0x07) {
+        audio_handle_bridge_audio_report(report, static_cast<uint16_t>(len));
+        return;
+    }
+
     uint8_t const *payload = len > 1 ? report + 1 : report;
     const uint16_t payload_len = static_cast<uint16_t>(len > 1 ? len - 1 : 0);
     if (report_id == COMPANION_REPORT_COMMAND) {

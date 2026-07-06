@@ -49,8 +49,8 @@ vi.mock('node:child_process', () => ({
   spawn: childProcessMock.spawn
 }));
 
-vi.mock('./host-audio-engine', () => ({
-  resolveHostAudioHelperPath: () => 'HostAudioHelper.exe'
+vi.mock('./audio-helper', () => ({
+  resolveAudioHelperPath: () => 'AudioHelper.exe'
 }));
 
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
@@ -93,7 +93,7 @@ describe('WinUsbCompanionTransport', () => {
     const transport = await openTransport();
 
     expect(childProcessMock.spawn).toHaveBeenCalledWith(
-      'HostAudioHelper.exe',
+      'AudioHelper.exe',
       ['--companion-transport'],
       expect.objectContaining({
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -101,6 +101,20 @@ describe('WinUsbCompanionTransport', () => {
       })
     );
     expect(transport.path).toBe('winusb://bridge');
+  });
+
+  it('rejects a controlled helper startup failure without waiting for a crash', async () => {
+    const opening = WinUsbCompanionTransport.open();
+    const process = helperProcess();
+
+    emitJsonLine(process.stdout, {
+      id: 0,
+      ok: false,
+      error: 'IOException: DS5 Bridge WinUSB interface was not found.'
+    });
+
+    await expect(opening).rejects.toThrow('DS5 Bridge WinUSB interface was not found');
+    expect(process.kill).toHaveBeenCalled();
   });
 
   it('routes feature report requests by id and returns the matching helper response', async () => {

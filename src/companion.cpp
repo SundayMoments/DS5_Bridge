@@ -6,10 +6,14 @@
 
 #include "audio.h"
 #include "bt.h"
+#include "controller_output_policy.h"
 #include "controller_output_submit.h"
 #include "dualsense_output.h"
+#include "host_input.h"
+#include "persona/host_persona.h"
 #include "pico/critical_section.h"
 #include "pico/cyw43_arch.h"
+#include "pico/bootrom.h"
 #include "pico/time.h"
 #include "usb.h"
 
@@ -17,10 +21,13 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 5;
+constexpr uint8_t kProtocolMinor = 16;
+constexpr uint8_t kProtocolMinSupportedMinor = 7;
 constexpr uint8_t kFirmwareMajor = 1;
-constexpr uint8_t kFirmwareMinor = 5;
-constexpr uint8_t kFirmwarePatch = 1;
+constexpr uint8_t kFirmwareMinor = 6;
+constexpr uint8_t kFirmwarePatch = 3;
+constexpr uint8_t kAudioReactiveHapticsModeMask = 0x7f;
+constexpr uint8_t kAudioReactiveHapticsSuppressClassicRumbleFlag = 0x80;
 constexpr uint8_t kTriangleButtonBit = 0x80;
 constexpr uint8_t kSquareButtonBit = 0x10;
 constexpr uint8_t kCrossButtonBit = 0x20;
@@ -54,13 +61,18 @@ constexpr uint8_t kDpadLeft = 0x06;
 constexpr uint8_t kDpadUpLeft = 0x07;
 constexpr uint8_t kDpadNeutral = 0x08;
 constexpr uint32_t kShortcutRepeatUs = 180000;
+constexpr uint32_t kHomeChordSuppressUs = 250000;
+constexpr uint32_t kHomeChordFallbackReplayUs = 80000;
 constexpr uint8_t kDefaultMuteKeyboardUsage = 0x68; // F13
 constexpr uint8_t kMuteKeyboardModifierMask = 0x0F;
+constexpr uint8_t kMuteKeyboardChordStarterFlag = 0x10;
 constexpr uint8_t kMuteKeyboardHoldFlag = 0x80;
 constexpr uint32_t kKeyboardPressDurationUs = 40000;
+constexpr uint32_t kMuteKeyboardChordWindowUs = 250000;
 constexpr uint32_t kMuteLedFlashDurationUs = 120000;
 constexpr uint32_t kClassicRumbleTestDurationUs = 650000;
 constexpr uint8_t kClassicRumbleTestAmplitude = 160;
+constexpr uint8_t kDefaultSpeakerOutputGain = 4;
 constexpr uint32_t kAdaptiveTriggerTestDurationUs = 2500000;
 constexpr uint32_t kPersistentTriggerReapplyIntervalUs = 500000;
 constexpr uint32_t kGameTriggerUpdateRecentUs = 2000000;
@@ -113,10 +125,6 @@ enum CommandId : uint8_t {
     CommandSetPollingRateMode = 0x12,
     CommandSetClassicRumbleGain = 0x13,
     CommandTestClassicRumble = 0x14,
-    CommandSetHostAudioEnabled = 0x15,
-    CommandHostAudioHeartbeat = 0x16,
-    CommandStartHostAudio = 0x17,
-    CommandStopHostAudio = 0x18,
     CommandSetDuplexEnabled = 0x19,
     CommandSetMicVolume = 0x1A,
     CommandSetMicMute = 0x1B,
@@ -125,6 +133,13 @@ enum CommandId : uint8_t {
     CommandSetButtonRemap = 0x1E,
     CommandPreviewAdaptiveTriggerEffect = 0x1F,
     CommandApplyAdaptiveTriggerEffect = 0x20,
+    CommandSetHostPersona = 0x21,
+    CommandSetAudioReactiveHaptics = 0x22,
+    CommandSetChordBindings = 0x23,
+    CommandSetPlayerLedEnabled = 0x24,
+    CommandSetClassicRumbleV1 = 0x25,
+    CommandSetSpeakerGain = 0x32,
+    CommandEnterBootloader = 0x33,
 };
 
 enum AckResult : uint8_t {
@@ -142,12 +157,15 @@ enum MuteButtonMode : uint8_t {
     MuteButtonNormal = 0,
     MuteButtonKeyboard = 1,
     MuteButtonQuiet = 2,
+    MuteButtonChord = 3,
 };
 
 enum ShortcutEvent : uint8_t {
     ShortcutEventControllerVolumeDown = 0x01,
     ShortcutEventControllerVolumeUp = 0x02,
     ShortcutEventSleepController = 0x03,
+    ShortcutEventMicMuteOn = 0x04,
+    ShortcutEventMicMuteOff = 0x05,
 };
 
 enum ShortcutSetting : uint8_t {
@@ -187,6 +205,7 @@ enum RemapButton : uint8_t {
     RemapRb,
     RemapLfn,
     RemapRfn,
+    RemapHome,
     RemapButtonCount,
 };
 
@@ -204,6 +223,24 @@ constexpr ShortcutBinding kShortcutBindings[] = {
 };
 constexpr size_t kShortcutBindingCount = sizeof(kShortcutBindings) / sizeof(kShortcutBindings[0]);
 constexpr uint8_t kShortcutEventQueueDepth = 8;
+constexpr uint8_t kDynamicShortcutEventBase = 0x20;
+constexpr uint8_t kDynamicChordBindingMax = 16;
+constexpr uint8_t kChordStarterHome = 1;
+constexpr uint8_t kChordStarterLfn = 2;
+constexpr uint8_t kChordStarterRfn = 3;
+constexpr uint8_t kChordStarterMute = 4;
+
+struct DynamicChordBinding {
+    uint8_t event;
+    uint8_t starter;
+    RemapButton button;
+    bool last_pressed;
+};
+
+struct DynamicChordProcessingResult {
+    bool home_chord_consumed;
+    bool mute_chord_pressed;
+};
 
 critical_section_t companion_report_cs;
 uint8_t last_controller_report[63]{};
@@ -214,6 +251,8 @@ uint8_t lightbar_green = 0xd7;
 uint8_t lightbar_blue = 0x00;
 uint8_t lightbar_brightness = 100;
 bool lightbar_override_enabled = false;
+DynamicChordBinding dynamic_chord_bindings[kDynamicChordBindingMax]{};
+uint8_t dynamic_chord_binding_count = 0;
 uint16_t host_output_report_count = 0;
 uint8_t host_output_report_len = 0;
 uint8_t host_output_report_id = 0;
@@ -278,6 +317,9 @@ bool sleep_keybind_enabled = false;
 bool speaker_volume_shortcut_enabled = false;
 bool shortcut_binding_last_pressed[kShortcutBindingCount]{};
 uint32_t shortcut_binding_last_step_us[kShortcutBindingCount]{};
+bool home_chord_gate_active = false;
+uint32_t home_chord_gate_until_us = 0;
+uint32_t home_chord_replay_until_us = 0;
 uint8_t shortcut_event_queue[kShortcutEventQueueDepth]{};
 uint8_t shortcut_event_head = 0;
 uint8_t shortcut_event_tail = 0;
@@ -285,6 +327,8 @@ uint8_t shortcut_event_count = 0;
 bool mute_keyboard_pending = false;
 bool mute_keyboard_pressed = false;
 uint32_t mute_keyboard_release_at_us = 0;
+bool mute_keyboard_chord_pending = false;
+uint32_t mute_keyboard_chord_until_us = 0;
 bool mute_led_flash_pending = false;
 uint32_t mute_led_flash_until_us = 0;
 bool classic_rumble_test_active = false;
@@ -314,6 +358,7 @@ bool trigger_power_reset_pending = false;
 uint32_t last_game_trigger_update_us = 0;
 uint8_t companion_mic_volume_percent = 100;
 bool companion_mic_muted = false;
+bool companion_mic_enabled = false;
 uint8_t button_remap[RemapButtonCount]{};
 
 struct LastAck {
@@ -606,7 +651,9 @@ bool has_magic(uint8_t const *buffer) {
 }
 
 bool has_supported_version(uint8_t const *buffer) {
-    return buffer[4] == kProtocolMajor && buffer[5] == kProtocolMinor;
+    return buffer[4] == kProtocolMajor
+        && buffer[5] >= kProtocolMinSupportedMinor
+        && buffer[5] <= kProtocolMinor;
 }
 
 void set_led_enabled(bool enabled) {
@@ -639,6 +686,15 @@ void clear_shortcut_events() {
     critical_section_exit(&companion_report_cs);
 }
 
+void set_player_led_enabled(bool enabled) {
+    bt_set_player_led_enabled(enabled);
+}
+
+void clear_dynamic_chord_bindings() {
+    dynamic_chord_binding_count = 0;
+    memset(dynamic_chord_bindings, 0, sizeof(dynamic_chord_bindings));
+}
+
 uint8_t take_shortcut_event() {
     uint8_t event = 0;
     critical_section_enter_blocking(&companion_report_cs);
@@ -651,13 +707,13 @@ uint8_t take_shortcut_event() {
     return event;
 }
 
-void queue_shortcut_event(ShortcutEvent event) {
+void queue_shortcut_event(uint8_t event) {
     critical_section_enter_blocking(&companion_report_cs);
     if (shortcut_event_count == kShortcutEventQueueDepth) {
         shortcut_event_head = static_cast<uint8_t>((shortcut_event_head + 1) % kShortcutEventQueueDepth);
         shortcut_event_count--;
     }
-    shortcut_event_queue[shortcut_event_tail] = static_cast<uint8_t>(event);
+    shortcut_event_queue[shortcut_event_tail] = event;
     shortcut_event_tail = static_cast<uint8_t>((shortcut_event_tail + 1) % kShortcutEventQueueDepth);
     shortcut_event_count++;
     critical_section_exit(&companion_report_cs);
@@ -686,25 +742,48 @@ void restore_defaults() {
     speaker_volume_shortcut_enabled = false;
     std::fill(shortcut_binding_last_pressed, shortcut_binding_last_pressed + kShortcutBindingCount, false);
     std::fill(shortcut_binding_last_step_us, shortcut_binding_last_step_us + kShortcutBindingCount, 0);
+    home_chord_gate_active = false;
+    home_chord_gate_until_us = 0;
+    home_chord_replay_until_us = 0;
+    clear_dynamic_chord_bindings();
     clear_shortcut_events();
     mute_keyboard_pending = false;
     mute_keyboard_pressed = false;
+    mute_keyboard_chord_pending = false;
     mute_led_flash_pending = false;
     audio_set_quiet_mode(false);
-    audio_host_set_duplex_requested(false);
-    audio_host_set_requested(false);
+    audio_set_duplex_requested(true);
+    audio_set_reactive_haptics_config(
+        false,
+        AudioReactiveHapticsMix,
+        100,
+        AudioReactiveHapticsBassBalanced,
+        AudioReactiveHapticsResponseBalanced,
+        AudioReactiveHapticsAttackBalanced,
+        AudioReactiveHapticsReleaseBalanced,
+        false
+    );
     companion_mic_volume_percent = 100;
     companion_mic_muted = false;
+    companion_mic_enabled = true;
+    audio_set_mic_mute_led_passthrough(false);
     audio_set_mic_output_state(companion_mic_volume_percent, companion_mic_muted);
+    bt_set_speaker_output_gain(kDefaultSpeakerOutputGain);
     reset_button_remap();
     bt_set_mute_led(false);
     lightbar_override_enabled = false;
     set_lightbar_color(0x00, 0x00, 0xff, 100);
     set_led_enabled(true);
+    set_player_led_enabled(true);
     set_idle_disconnect_enabled(true);
     bt_set_idle_disconnect_timeout_minutes(15);
     usb_set_suspend_disconnect_enabled(true);
     usb_set_hid_polling_rate_mode(2);
+    if (host_persona_active() != HostPersonaModeDualSense) {
+        host_input_prepare_persona_switch();
+        host_persona_set_active(HostPersonaModeDualSense);
+        usb_request_reconnect();
+    }
 }
 
 uint8_t controller_type() {
@@ -728,14 +807,57 @@ uint8_t firmware_flags() {
     return flags;
 }
 
+uint8_t supported_host_persona_mask() {
+    uint8_t mask = 0;
+    if (host_persona_is_supported(HostPersonaModeDualSense)) {
+        mask |= 1 << HostPersonaModeDualSense;
+    }
+    if (host_persona_is_supported(HostPersonaModeXusb360)) {
+        mask |= 1 << HostPersonaModeXusb360;
+    }
+    if (host_persona_is_supported(HostPersonaModeDs4)) {
+        mask |= 1 << HostPersonaModeDs4;
+    }
+    return mask;
+}
+
 bool valid_mute_button_action(uint16_t mode, uint8_t usage) {
-    if (mode > MuteButtonQuiet) {
+    if (mode > MuteButtonChord) {
         return false;
     }
     if (mode == MuteButtonKeyboard && (usage == 0 || usage > 0x73)) {
         return false;
     }
     return true;
+}
+
+bool mic_mute_led_passthrough_enabled() {
+    return mute_button_mode == MuteButtonNormal && companion_mic_enabled;
+}
+
+bool desired_mute_led_enabled() {
+    return (mic_mute_led_passthrough_enabled() && companion_mic_muted) || audio_quiet_mode_enabled();
+}
+
+void refresh_mute_led_policy() {
+    audio_set_mic_mute_led_passthrough(mic_mute_led_passthrough_enabled());
+    bt_set_mute_led(desired_mute_led_enabled());
+}
+
+void set_companion_mic_muted(bool muted) {
+    companion_mic_muted = muted;
+    audio_set_mic_output_state(companion_mic_volume_percent, companion_mic_muted);
+    refresh_mute_led_policy();
+}
+
+void toggle_companion_mic_mute() {
+    if (!companion_mic_enabled) {
+        refresh_mute_led_policy();
+        return;
+    }
+    set_companion_mic_muted(!companion_mic_muted);
+    queue_shortcut_event(companion_mic_muted ? ShortcutEventMicMuteOn : ShortcutEventMicMuteOff);
+    settings_revision++;
 }
 
 void set_mute_button_action(uint8_t mode, uint8_t usage, uint8_t modifiers) {
@@ -745,18 +867,31 @@ void set_mute_button_action(uint8_t mode, uint8_t usage, uint8_t modifiers) {
     mute_button_last_pressed = false;
     mute_keyboard_pending = false;
     mute_keyboard_pressed = false;
+    mute_keyboard_chord_pending = false;
     mute_led_flash_pending = false;
 
     if (mute_button_mode != MuteButtonQuiet) {
         audio_set_quiet_mode(false);
-        bt_set_mute_led(false);
-    } else {
-        bt_set_mute_led(audio_quiet_mode_enabled());
     }
+    refresh_mute_led_policy();
 }
 
 bool mute_keyboard_hold_enabled() {
     return (mute_keyboard_modifiers & kMuteKeyboardHoldFlag) != 0;
+}
+
+bool mute_keyboard_chord_starter_enabled() {
+    return mute_button_mode == MuteButtonKeyboard
+        && (mute_keyboard_modifiers & kMuteKeyboardChordStarterFlag) != 0;
+}
+
+void begin_mute_keyboard_chord_window(uint32_t now) {
+    mute_keyboard_chord_pending = true;
+    mute_keyboard_chord_until_us = now + kMuteKeyboardChordWindowUs;
+}
+
+void cancel_mute_keyboard_chord_window() {
+    mute_keyboard_chord_pending = false;
 }
 
 void queue_mute_keyboard_press(bool hold) {
@@ -776,13 +911,30 @@ void queue_mute_keyboard_release() {
     mute_keyboard_pressed = true;
     mute_keyboard_release_at_us = time_us_32();
     mute_led_flash_pending = false;
-    bt_set_mute_led(false);
+    refresh_mute_led_policy();
+}
+
+void commit_mute_keyboard_chord_window(bool hold) {
+    if (!mute_keyboard_chord_pending) {
+        return;
+    }
+    mute_keyboard_chord_pending = false;
+    queue_mute_keyboard_press(hold);
+}
+
+void mute_keyboard_chord_window_loop() {
+    if (
+        mute_keyboard_chord_pending
+        && static_cast<int32_t>(time_us_32() - mute_keyboard_chord_until_us) >= 0
+    ) {
+        commit_mute_keyboard_chord_window(mute_button_last_pressed && mute_keyboard_hold_enabled());
+    }
 }
 
 void toggle_quiet_mode() {
     const bool enabled = !audio_quiet_mode_enabled();
     audio_set_quiet_mode(enabled);
-    bt_set_mute_led(enabled);
+    refresh_mute_led_policy();
 }
 
 uint8_t trigger_power_reduction(uint8_t intensity_percent) {
@@ -1033,6 +1185,72 @@ bool valid_button_remap_payload(uint8_t const *payload, uint16_t len) {
     return true;
 }
 
+bool valid_chord_starter(uint8_t starter) {
+    return starter >= kChordStarterHome && starter <= kChordStarterMute;
+}
+
+bool valid_chord_button(uint8_t button) {
+    return button < RemapButtonCount
+        && button != RemapLfn
+        && button != RemapRfn
+        && button != RemapHome;
+}
+
+bool reserved_edge_chord_combo(uint8_t starter, uint8_t button) {
+    if (starter != kChordStarterLfn && starter != kChordStarterRfn) {
+        return false;
+    }
+    return button == RemapTriangle
+        || button == RemapCircle
+        || button == RemapCross
+        || button == RemapSquare;
+}
+
+bool valid_chord_bindings_payload(uint8_t const *payload, uint16_t len, uint16_t count) {
+    if (count > kDynamicChordBindingMax) {
+        return false;
+    }
+    if (count > 0 && payload == nullptr) {
+        return false;
+    }
+    if (len < count * 3) {
+        return false;
+    }
+    for (uint8_t i = 0; i < count; i++) {
+        const uint8_t event = payload[i * 3];
+        const uint8_t starter = payload[i * 3 + 1];
+        const uint8_t button = payload[i * 3 + 2];
+        if (
+            event < kDynamicShortcutEventBase
+            || event >= kDynamicShortcutEventBase + kDynamicChordBindingMax
+            || !valid_chord_starter(starter)
+            || !valid_chord_button(button)
+            || reserved_edge_chord_combo(starter, button)
+        ) {
+            return false;
+        }
+        for (uint8_t previous = 0; previous < i; previous++) {
+            if (payload[previous * 3 + 1] == starter && payload[previous * 3 + 2] == button) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void set_dynamic_chord_bindings(uint8_t const *payload, uint16_t count) {
+    clear_dynamic_chord_bindings();
+    dynamic_chord_binding_count = static_cast<uint8_t>(count);
+    for (uint8_t i = 0; i < dynamic_chord_binding_count; i++) {
+        dynamic_chord_bindings[i] = {
+            payload[i * 3],
+            payload[i * 3 + 1],
+            static_cast<RemapButton>(payload[i * 3 + 2]),
+            false
+        };
+    }
+}
+
 bool schedule_adaptive_trigger_test(uint8_t mode, uint8_t target) {
     if (
         !bt_is_controller_connected()
@@ -1193,11 +1411,7 @@ void submit_classic_rumble_test_output(uint8_t right, uint8_t left) {
     }
 
     uint8_t payload[ds5::output::kCommonPayloadSize]{};
-    payload[ds5::output::kValidFlag0Offset] = static_cast<uint8_t>(
-        ds5::output::kFlag0CompatibleVibration | ds5::output::kFlag0HapticsSelect
-    );
-    payload[ds5::output::kMotorRightOffset] = right;
-    payload[ds5::output::kMotorLeftOffset] = left;
+    controller_output_policy_render_classic_rumble_payload(payload, sizeof(payload), right, left);
     controller_output_submit_usb_payload(payload, sizeof(payload));
 }
 
@@ -1241,12 +1455,11 @@ void mute_keyboard_loop() {
 
     if (mute_led_flash_pending && static_cast<int32_t>(now - mute_led_flash_until_us) >= 0) {
         mute_led_flash_pending = false;
-        if (!audio_quiet_mode_enabled()) {
-            bt_set_mute_led(false);
-        }
+        refresh_mute_led_policy();
     }
 
-    if (!tud_hid_n_ready(KEYBOARD_HID_INSTANCE)) {
+    const uint8_t keyboard_hid_instance = host_persona_keyboard_hid_instance();
+    if (!tud_hid_n_ready(keyboard_hid_instance)) {
         return;
     }
 
@@ -1254,7 +1467,7 @@ void mute_keyboard_loop() {
         uint8_t keyboard_report[8]{};
         keyboard_report[0] = mute_keyboard_modifiers & kMuteKeyboardModifierMask;
         keyboard_report[2] = mute_keyboard_usage;
-        if (tud_hid_n_report(KEYBOARD_HID_INSTANCE, 0, keyboard_report, sizeof(keyboard_report))) {
+        if (tud_hid_n_report(keyboard_hid_instance, 0, keyboard_report, sizeof(keyboard_report))) {
             mute_keyboard_pending = false;
             mute_keyboard_pressed = true;
             mute_keyboard_release_at_us = mute_keyboard_hold_enabled() ? 0 : now + kKeyboardPressDurationUs;
@@ -1268,7 +1481,7 @@ void mute_keyboard_loop() {
         && static_cast<int32_t>(now - mute_keyboard_release_at_us) >= 0
     ) {
         uint8_t keyboard_report[8]{};
-        if (tud_hid_n_report(KEYBOARD_HID_INSTANCE, 0, keyboard_report, sizeof(keyboard_report))) {
+        if (tud_hid_n_report(keyboard_hid_instance, 0, keyboard_report, sizeof(keyboard_report))) {
             mute_keyboard_pressed = false;
         }
     }
@@ -1364,6 +1577,10 @@ uint16_t build_status(uint8_t *buffer, uint16_t reqlen) {
     buffer[44] = static_cast<uint8_t>(bt_get_signal_strength());
     buffer[45] = bt_has_signal_strength() ? 1 : 0;
     buffer[46] = game_trigger_update_recent() ? 1 : 0;
+    buffer[47] = static_cast<uint8_t>(host_persona_active());
+    buffer[48] = supported_host_persona_mask();
+    buffer[50] = companion_mic_muted ? 1 : 0;
+    buffer[56] = bt_speaker_output_gain();
     buffer[58] = lightbar_override_enabled ? 1 : 0;
     buffer[59] = mute_button_mode;
     buffer[60] = mute_keyboard_usage;
@@ -1438,12 +1655,12 @@ uint16_t build_audio_stats(uint8_t *buffer, uint16_t reqlen) {
     write_u32(fields + 40, bt_stats.bt_audio_queue_depth_max);
     write_u32(fields + 44, bt_stats.audio_0x36_enqueued_count);
     write_u32(fields + 48, bt_stats.audio_0x36_sent_count);
-    write_u32(fields + 52, bt_stats.critical_starving_audio_count);
+    write_u32(fields + 52, 0);
     return COMPANION_PAYLOAD_SIZE;
 }
 #endif
 
-uint16_t build_host_audio_status(uint8_t *buffer, uint16_t reqlen) {
+uint16_t build_audio_status(uint8_t *buffer, uint16_t reqlen) {
     if (reqlen < COMPANION_PAYLOAD_SIZE) {
         return 0;
     }
@@ -1451,25 +1668,16 @@ uint16_t build_host_audio_status(uint8_t *buffer, uint16_t reqlen) {
     memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
     write_magic_and_version(buffer);
 
-    audio_host_status status{};
-    audio_get_host_status(&status);
-    buffer[6] = status.mode;
-    buffer[7] = status.fallback_reason;
-    buffer[8] = (status.host_requested ? 0x01 : 0x00)
-        | (status.heartbeat_healthy ? 0x02 : 0x00)
-        | (status.stream_active ? 0x04 : 0x00)
-        | (status.stream_healthy ? 0x08 : 0x00)
-        | (status.duplex_requested ? 0x10 : 0x00)
+    audio_status status{};
+    audio_get_status(&status);
+    buffer[8] = (status.duplex_requested ? 0x10 : 0x00)
         | (status.duplex_active ? 0x20 : 0x00)
         | (status.controller_state_ready ? 0x40 : 0x00)
         | (status.mic_usb_streaming ? 0x80 : 0x00);
     buffer[9] = (status.headset_plugged ? 0x01 : 0x00)
         | (status.headset_audio_route ? 0x02 : 0x00);
-    write_u16(buffer + 10, status.stream_generation);
-    write_u16(buffer + 12, status_age_to_u16(status.heartbeat_age_ms));
-    write_u16(buffer + 14, status_age_to_u16(status.frame_age_ms));
-    write_u32(buffer + 16, status.host_frames_received);
-    write_u32(buffer + 20, status.host_frames_dropped);
+    write_u16(buffer + 12, status_age_to_u16(0xffffffffu));
+    write_u16(buffer + 14, status_age_to_u16(0xffffffffu));
     write_u32(buffer + 24, status.mic_packets_received);
     write_u32(buffer + 28, status.mic_packets_dropped);
     write_u32(buffer + 32, status.mic_decode_success);
@@ -1628,6 +1836,7 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
     }
 
     const uint16_t value = read_u16(buffer + 8);
+    const uint8_t protocol_minor = buffer[5];
     switch (command_id) {
         case CommandSetHapticsGain:
             if (value > kMaxFeedbackGainPercent) {
@@ -1656,6 +1865,16 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 return;
             }
 
+        case CommandSetSpeakerGain:
+            if (value < 1 || value > 7) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            bt_set_speaker_output_gain(static_cast<uint8_t>(value));
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
         case CommandSetMicVolume:
             if (value > 100) {
                 set_ack(command_id, sequence, AckInvalidValue);
@@ -1672,8 +1891,7 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 set_ack(command_id, sequence, AckInvalidValue);
                 return;
             }
-            companion_mic_muted = value == 1;
-            audio_set_mic_output_state(companion_mic_volume_percent, companion_mic_muted);
+            set_companion_mic_muted(value == 1);
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;
@@ -1734,6 +1952,17 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             if (value == 0) {
                 stop_classic_rumble_test();
             }
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
+        case CommandSetClassicRumbleV1:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            bt_set_classic_rumble_v1_enabled(value == 1);
+            stop_classic_rumble_test();
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;
@@ -1876,6 +2105,16 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
 
+        case CommandSetPlayerLedEnabled:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            set_player_led_enabled(value == 1);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
         case CommandSetIdleDisconnectEnabled:
             if (value > 1) {
                 set_ack(command_id, sequence, AckInvalidValue);
@@ -1940,6 +2179,17 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
 
+        case CommandSetChordBindings:
+            if (!valid_chord_bindings_payload(buffer + 10, bufsize - 10, value)) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            set_dynamic_chord_bindings(buffer + 10, value);
+            clear_shortcut_events();
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
         case CommandSetPollingRateMode:
             if (value > 2 || !usb_set_hid_polling_rate_mode(static_cast<uint8_t>(value))) {
                 set_ack(command_id, sequence, AckInvalidValue);
@@ -1948,6 +2198,58 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;
+
+        case CommandSetHostPersona:
+            if (!host_persona_is_supported(static_cast<HostPersonaMode>(value))) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            {
+                const HostPersonaMode next_persona = static_cast<HostPersonaMode>(value);
+                const bool changed = host_persona_active() != next_persona;
+                if (changed) {
+                    host_input_prepare_persona_switch();
+                }
+                if (!host_persona_set_active(next_persona)) {
+                    set_ack(command_id, sequence, AckInvalidValue);
+                    return;
+                }
+                settings_revision++;
+                if (changed) {
+                    usb_request_reconnect();
+                }
+                set_ack(command_id, sequence, AckOk);
+                return;
+            }
+
+        case CommandSetAudioReactiveHaptics:
+            {
+            const bool enabled = value == 1;
+            const uint8_t mode_control = buffer[10];
+            const uint8_t mode = mode_control & kAudioReactiveHapticsModeMask;
+            const bool suppress_classic_rumble = protocol_minor >= 9
+                ? (mode_control & kAudioReactiveHapticsSuppressClassicRumbleFlag) != 0
+                : enabled && mode == AudioReactiveHapticsReplace;
+            if (
+                value > 1
+                || !audio_set_reactive_haptics_config(
+                    enabled,
+                    mode,
+                    read_u16(buffer + 11),
+                    buffer[13],
+                    buffer[14],
+                    protocol_minor >= 8 ? buffer[15] : AudioReactiveHapticsAttackBalanced,
+                    protocol_minor >= 8 ? buffer[16] : AudioReactiveHapticsReleaseBalanced,
+                    suppress_classic_rumble
+                )
+            ) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+            }
 
         case CommandSleepController:
             if (value != 0) {
@@ -1977,49 +2279,18 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
 
-        case CommandSetHostAudioEnabled:
-            if (value > 1) {
-                set_ack(command_id, sequence, AckInvalidValue);
-                return;
-            }
-            audio_host_set_requested(value == 1);
-            settings_revision++;
-            set_ack(command_id, sequence, AckOk);
-            return;
-
-        case CommandHostAudioHeartbeat:
-            if (value != 0) {
-                set_ack(command_id, sequence, AckInvalidValue);
-                return;
-            }
-            audio_host_note_heartbeat();
-            set_ack(command_id, sequence, AckOk);
-            return;
-
-        case CommandStartHostAudio:
-            if (value != 0) {
-                set_ack(command_id, sequence, AckInvalidValue);
-                return;
-            }
-            audio_host_start_stream();
-            set_ack(command_id, sequence, AckOk);
-            return;
-
-        case CommandStopHostAudio:
-            if (value != 0) {
-                set_ack(command_id, sequence, AckInvalidValue);
-                return;
-            }
-            audio_host_stop_stream();
-            set_ack(command_id, sequence, AckOk);
-            return;
-
         case CommandSetDuplexEnabled:
             if (value > 1) {
                 set_ack(command_id, sequence, AckInvalidValue);
                 return;
             }
-            audio_host_set_duplex_requested(value == 1);
+            companion_mic_enabled = value == 1;
+            audio_set_duplex_requested(companion_mic_enabled);
+            if (!companion_mic_enabled) {
+                set_companion_mic_muted(true);
+            } else {
+                refresh_mute_led_policy();
+            }
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;
@@ -2032,6 +2303,15 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             restore_defaults();
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
+            return;
+
+        case CommandEnterBootloader:
+            if (value != 0) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            set_ack(command_id, sequence, AckOk);
+            reset_usb_boot(0, 0);
             return;
 
         default:
@@ -2085,13 +2365,19 @@ void suppress_shortcut_input(const ShortcutBinding &binding, uint8_t *report) {
     }
 }
 
-void process_shortcut_bindings(uint8_t *report) {
+bool time_us_reached(uint32_t now, uint32_t target) {
+    return static_cast<int32_t>(now - target) >= 0;
+}
+
+bool process_shortcut_bindings(uint8_t *report) {
     const uint32_t now = time_us_32();
+    bool consumed = false;
     for (size_t i = 0; i < kShortcutBindingCount; i++) {
         const ShortcutBinding &binding = kShortcutBindings[i];
         const bool pressed = shortcut_setting_enabled(binding.setting) && shortcut_combo_pressed(binding, report);
         if (pressed) {
             suppress_shortcut_input(binding, report);
+            consumed = true;
             const bool should_emit = binding.trigger == ShortcutTriggerPressed
                 ? !shortcut_binding_last_pressed[i]
                 : (!shortcut_binding_last_pressed[i]
@@ -2104,6 +2390,70 @@ void process_shortcut_bindings(uint8_t *report) {
             shortcut_binding_last_step_us[i] = 0;
         }
         shortcut_binding_last_pressed[i] = pressed;
+    }
+    return consumed;
+}
+
+bool home_chord_gate_enabled() {
+    if (sleep_keybind_enabled || speaker_volume_shortcut_enabled) {
+        return true;
+    }
+    for (uint8_t i = 0; i < dynamic_chord_binding_count; i++) {
+        if (dynamic_chord_bindings[i].starter == kChordStarterHome) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void clear_home_chord_gate() {
+    home_chord_gate_active = false;
+    home_chord_gate_until_us = 0;
+    home_chord_replay_until_us = 0;
+}
+
+void apply_home_chord_gate(uint8_t *report, uint16_t len, bool physical_home_pressed, bool home_chord_consumed) {
+    if (report == nullptr || len <= 9) {
+        return;
+    }
+
+    if (home_chord_consumed) {
+        clear_home_chord_gate();
+        report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
+        return;
+    }
+
+    if (!home_chord_gate_enabled()) {
+        clear_home_chord_gate();
+        return;
+    }
+
+    const uint32_t now = time_us_32();
+    if (physical_home_pressed) {
+        home_chord_replay_until_us = 0;
+        if (!home_chord_gate_active) {
+            home_chord_gate_active = true;
+            home_chord_gate_until_us = now + kHomeChordSuppressUs;
+        }
+        if (!time_us_reached(now, home_chord_gate_until_us)) {
+            report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
+            return;
+        }
+        home_chord_gate_active = false;
+        home_chord_gate_until_us = 0;
+        return;
+    }
+
+    if (home_chord_gate_active) {
+        home_chord_gate_active = false;
+        home_chord_gate_until_us = 0;
+        home_chord_replay_until_us = now + kHomeChordFallbackReplayUs;
+    }
+
+    if (home_chord_replay_until_us != 0 && !time_us_reached(now, home_chord_replay_until_us)) {
+        report[9] |= kHomeButtonBit;
+    } else {
+        home_chord_replay_until_us = 0;
     }
 }
 
@@ -2132,6 +2482,218 @@ uint8_t dpad_direction_from_buttons(bool up, bool right, bool down, bool left) {
     if (down && !up) return kDpadDown;
     if (left && !right) return kDpadLeft;
     return kDpadNeutral;
+}
+
+bool remap_button_pressed(uint8_t const *report, uint16_t len, RemapButton button) {
+    if (report == nullptr || len <= 8) {
+        return false;
+    }
+    const uint8_t dpad_direction = report[7] & kDpadMask;
+    switch (button) {
+        case RemapL2:
+            return (report[8] & kL2ButtonBit) != 0 || report[4] > 0;
+        case RemapL1:
+            return (report[8] & kL1ButtonBit) != 0;
+        case RemapCreate:
+            return (report[8] & kCreateButtonBit) != 0;
+        case RemapDpadUp:
+        case RemapDpadLeft:
+        case RemapDpadDown:
+        case RemapDpadRight:
+            return dpad_direction_has(dpad_direction, button);
+        case RemapL3:
+            return (report[8] & kL3ButtonBit) != 0;
+        case RemapR2:
+            return (report[8] & kR2ButtonBit) != 0 || report[5] > 0;
+        case RemapR1:
+            return (report[8] & kR1ButtonBit) != 0;
+        case RemapOptions:
+            return (report[8] & kOptionsButtonBit) != 0;
+        case RemapTriangle:
+            return (report[7] & kTriangleButtonBit) != 0;
+        case RemapCircle:
+            return (report[7] & kCircleButtonBit) != 0;
+        case RemapCross:
+            return (report[7] & kCrossButtonBit) != 0;
+        case RemapSquare:
+            return (report[7] & kSquareButtonBit) != 0;
+        case RemapR3:
+            return (report[8] & kR3ButtonBit) != 0;
+        case RemapLb:
+            return len > 9 && (report[9] & kLeftBackButtonBit) != 0;
+        case RemapRb:
+            return len > 9 && (report[9] & kRightBackButtonBit) != 0;
+        case RemapLfn:
+            return len > 9 && (report[9] & kLeftFunctionButtonBit) != 0;
+        case RemapRfn:
+            return len > 9 && (report[9] & kRightFunctionButtonBit) != 0;
+        case RemapHome:
+            return len > 9 && (report[9] & kHomeButtonBit) != 0;
+        default:
+            return false;
+    }
+}
+
+void suppress_dpad_button(uint8_t *report, RemapButton button) {
+    const uint8_t dpad_direction = report[7] & kDpadMask;
+    bool up = dpad_direction_has(dpad_direction, RemapDpadUp);
+    bool right = dpad_direction_has(dpad_direction, RemapDpadRight);
+    bool down = dpad_direction_has(dpad_direction, RemapDpadDown);
+    bool left = dpad_direction_has(dpad_direction, RemapDpadLeft);
+    if (button == RemapDpadUp) up = false;
+    if (button == RemapDpadRight) right = false;
+    if (button == RemapDpadDown) down = false;
+    if (button == RemapDpadLeft) left = false;
+    report[7] = static_cast<uint8_t>(
+        (report[7] & ~kDpadMask)
+        | dpad_direction_from_buttons(up, right, down, left)
+    );
+}
+
+void suppress_remap_button(uint8_t *report, uint16_t len, RemapButton button) {
+    if (report == nullptr || len <= 8) {
+        return;
+    }
+    switch (button) {
+        case RemapL2:
+            report[4] = 0;
+            report[8] &= static_cast<uint8_t>(~kL2ButtonBit);
+            break;
+        case RemapL1:
+            report[8] &= static_cast<uint8_t>(~kL1ButtonBit);
+            break;
+        case RemapCreate:
+            report[8] &= static_cast<uint8_t>(~kCreateButtonBit);
+            break;
+        case RemapDpadUp:
+        case RemapDpadLeft:
+        case RemapDpadDown:
+        case RemapDpadRight:
+            suppress_dpad_button(report, button);
+            break;
+        case RemapL3:
+            report[8] &= static_cast<uint8_t>(~kL3ButtonBit);
+            break;
+        case RemapR2:
+            report[5] = 0;
+            report[8] &= static_cast<uint8_t>(~kR2ButtonBit);
+            break;
+        case RemapR1:
+            report[8] &= static_cast<uint8_t>(~kR1ButtonBit);
+            break;
+        case RemapOptions:
+            report[8] &= static_cast<uint8_t>(~kOptionsButtonBit);
+            break;
+        case RemapTriangle:
+            report[7] &= static_cast<uint8_t>(~kTriangleButtonBit);
+            break;
+        case RemapCircle:
+            report[7] &= static_cast<uint8_t>(~kCircleButtonBit);
+            break;
+        case RemapCross:
+            report[7] &= static_cast<uint8_t>(~kCrossButtonBit);
+            break;
+        case RemapSquare:
+            report[7] &= static_cast<uint8_t>(~kSquareButtonBit);
+            break;
+        case RemapR3:
+            report[8] &= static_cast<uint8_t>(~kR3ButtonBit);
+            break;
+        case RemapLb:
+            if (len > 9) report[9] &= static_cast<uint8_t>(~kLeftBackButtonBit);
+            break;
+        case RemapRb:
+            if (len > 9) report[9] &= static_cast<uint8_t>(~kRightBackButtonBit);
+            break;
+        case RemapLfn:
+            if (len > 9) report[9] &= static_cast<uint8_t>(~kLeftFunctionButtonBit);
+            break;
+        case RemapRfn:
+            if (len > 9) report[9] &= static_cast<uint8_t>(~kRightFunctionButtonBit);
+            break;
+        case RemapHome:
+            if (len > 9) report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
+            break;
+        default:
+            break;
+    }
+}
+
+bool chord_starter_pressed(uint8_t const *report, uint16_t len, uint8_t starter) {
+    if (report == nullptr || len <= 9) {
+        return false;
+    }
+    switch (starter) {
+        case kChordStarterHome:
+            return (report[9] & kHomeButtonBit) != 0;
+        case kChordStarterLfn:
+            return (report[9] & kLeftFunctionButtonBit) != 0;
+        case kChordStarterRfn:
+            return (report[9] & kRightFunctionButtonBit) != 0;
+        case kChordStarterMute:
+            return (
+                mute_button_mode == MuteButtonChord
+                || (mute_keyboard_chord_starter_enabled() && mute_keyboard_chord_pending)
+            ) && (report[9] & kMuteButtonBit) != 0;
+        default:
+            return false;
+    }
+}
+
+void suppress_chord_starter(uint8_t *report, uint16_t len, uint8_t starter) {
+    if (report == nullptr || len <= 9) {
+        return;
+    }
+    switch (starter) {
+        case kChordStarterHome:
+            report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
+            break;
+        case kChordStarterLfn:
+            report[9] &= static_cast<uint8_t>(~kLeftFunctionButtonBit);
+            break;
+        case kChordStarterRfn:
+            report[9] &= static_cast<uint8_t>(~kRightFunctionButtonBit);
+            break;
+        case kChordStarterMute:
+            report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
+            break;
+        default:
+            break;
+    }
+}
+
+DynamicChordProcessingResult process_dynamic_chord_bindings(uint8_t *report, uint16_t len) {
+    DynamicChordProcessingResult result{};
+    if (report == nullptr || len <= 9 || dynamic_chord_binding_count == 0) {
+        return result;
+    }
+
+    uint8_t source_report[63]{};
+    const uint16_t source_len = std::min<uint16_t>(len, sizeof(source_report));
+    memcpy(source_report, report, source_len);
+
+    for (uint8_t i = 0; i < dynamic_chord_binding_count; i++) {
+        DynamicChordBinding &binding = dynamic_chord_bindings[i];
+        const bool starter_pressed = chord_starter_pressed(source_report, source_len, binding.starter);
+        const bool pressed = starter_pressed
+            && remap_button_pressed(source_report, source_len, binding.button);
+
+        if (pressed) {
+            suppress_remap_button(report, len, binding.button);
+            suppress_chord_starter(report, len, binding.starter);
+            if (binding.starter == kChordStarterHome) {
+                result.home_chord_consumed = true;
+            }
+            if (binding.starter == kChordStarterMute) {
+                result.mute_chord_pressed = true;
+            }
+            if (!binding.last_pressed) {
+                queue_shortcut_event(binding.event);
+            }
+        }
+        binding.last_pressed = pressed;
+    }
+    return result;
 }
 
 void apply_button_remap(uint8_t *report, uint16_t len) {
@@ -2165,6 +2727,7 @@ void apply_button_remap(uint8_t *report, uint16_t len) {
         source_pressed[RemapRb] = (report[9] & kRightBackButtonBit) != 0;
         source_pressed[RemapLfn] = (report[9] & kLeftFunctionButtonBit) != 0;
         source_pressed[RemapRfn] = (report[9] & kRightFunctionButtonBit) != 0;
+        source_pressed[RemapHome] = (report[9] & kHomeButtonBit) != 0;
     }
 
     for (uint8_t i = 0; i < RemapButtonCount; i++) {
@@ -2214,6 +2777,10 @@ void apply_button_remap(uint8_t *report, uint16_t len) {
         if (target_pressed[RemapLb]) report[9] |= kLeftBackButtonBit;
         if (target_pressed[RemapRb]) report[9] |= kRightBackButtonBit;
     }
+    if (len > 9) {
+        report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
+        if (target_pressed[RemapHome]) report[9] |= kHomeButtonBit;
+    }
 }
 
 } // namespace
@@ -2227,6 +2794,7 @@ void companion_init() {
 void companion_loop() {
     audio_test_haptics_loop();
     classic_rumble_test_loop();
+    mute_keyboard_chord_window_loop();
     mute_keyboard_loop();
     adaptive_trigger_test_loop();
     apply_persistent_trigger_effect();
@@ -2240,27 +2808,43 @@ void companion_process_controller_report(uint8_t *report, uint16_t len) {
     const bool home_pressed = (report[9] & kHomeButtonBit) != 0;
     const uint8_t dpad_direction = report[7] & kDpadMask;
     const bool dpad_pressed = dpad_direction <= 0x07;
-    process_shortcut_bindings(report);
+    const bool mute_pressed = (report[9] & kMuteButtonBit) != 0;
+    const uint32_t now = time_us_32();
+    if (mute_pressed && !mute_button_last_pressed && mute_keyboard_chord_starter_enabled()) {
+        begin_mute_keyboard_chord_window(now);
+    }
+    const DynamicChordProcessingResult dynamic_chord_result = process_dynamic_chord_bindings(report, len);
+    if (dynamic_chord_result.mute_chord_pressed) {
+        cancel_mute_keyboard_chord_window();
+    }
+    const bool shortcut_home_chord_consumed = process_shortcut_bindings(report);
+    const bool home_chord_consumed = dynamic_chord_result.home_chord_consumed || shortcut_home_chord_consumed;
+    apply_home_chord_gate(report, len, home_pressed, home_chord_consumed);
     if (home_pressed && dpad_pressed) {
         report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
     }
 
-    const bool pressed = (report[9] & kMuteButtonBit) != 0;
-    if (mute_button_mode != MuteButtonNormal) {
-        report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
-    }
+    report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
 
-    if (pressed && !mute_button_last_pressed) {
-        if (mute_button_mode == MuteButtonKeyboard) {
-            queue_mute_keyboard_press(mute_keyboard_hold_enabled());
+    if (mute_pressed && !mute_button_last_pressed) {
+        if (mute_button_mode == MuteButtonNormal) {
+            toggle_companion_mic_mute();
+        } else if (mute_button_mode == MuteButtonKeyboard) {
+            if (!mute_keyboard_chord_starter_enabled()) {
+                queue_mute_keyboard_press(mute_keyboard_hold_enabled());
+            }
         } else if (mute_button_mode == MuteButtonQuiet) {
             toggle_quiet_mode();
         }
-    } else if (!pressed && mute_button_last_pressed && mute_button_mode == MuteButtonKeyboard && mute_keyboard_hold_enabled()) {
-        queue_mute_keyboard_release();
+    } else if (!mute_pressed && mute_button_last_pressed && mute_button_mode == MuteButtonKeyboard) {
+        if (mute_keyboard_chord_pending) {
+            commit_mute_keyboard_chord_window(false);
+        } else if (mute_keyboard_hold_enabled()) {
+            queue_mute_keyboard_release();
+        }
     }
 
-    mute_button_last_pressed = pressed;
+    mute_button_last_pressed = mute_pressed;
     apply_button_remap(report, len);
 }
 
@@ -2486,8 +3070,8 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
         case COMPANION_REPORT_AUDIO_STATS:
             return build_audio_stats(buffer, reqlen);
 #endif
-        case COMPANION_REPORT_HOST_AUDIO_STATUS:
-            return build_host_audio_status(buffer, reqlen);
+        case COMPANION_REPORT_AUDIO_STATUS:
+            return build_audio_status(buffer, reqlen);
 #if DS5_TRIGGER_TRACE_ENABLED
         case COMPANION_REPORT_TRIGGER_TRACE:
             return build_trigger_trace(buffer, reqlen);
@@ -2503,18 +3087,6 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
 
 void companion_set_report(uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) {
     if (report_type == HID_REPORT_TYPE_OUTPUT) {
-        if (report_id == COMPANION_REPORT_HOST_AUDIO_STREAM) {
-            audio_host_receive_packet(buffer, bufsize);
-            return;
-        }
-        if (bufsize > 0 && buffer[0] == COMPANION_REPORT_HOST_AUDIO_STREAM) {
-            audio_host_receive_packet(buffer + 1, bufsize - 1);
-            return;
-        }
-        if (report_id == 0 && bufsize >= sizeof(kMagic) && has_magic(buffer)) {
-            audio_host_receive_packet(buffer, bufsize);
-            return;
-        }
         return;
     }
 

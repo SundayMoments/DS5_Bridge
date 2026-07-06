@@ -18,12 +18,13 @@ extern float usb_host_speaker_gain; // Host UAC speaker volume as linear gain.
 void usb_device_stack_init_disconnected();
 uint8_t usb_hid_polling_rate_mode();
 bool usb_set_hid_polling_rate_mode(uint8_t mode);
+void usb_request_reconnect();
 void usb_note_hid_output();
 bool usb_host_hid_output_recent();
 void usb_pm_poll();
 void usb_set_suspend_disconnect_enabled(bool enabled);
 bool usb_suspend_disconnect_enabled();
-bool usb_pm_should_pause_inquiry();
+bool usb_host_suspended_active();
 bool usb_speaker_streaming_active();
 bool usb_mic_streaming_active();
 bool usb_line_streaming_active();

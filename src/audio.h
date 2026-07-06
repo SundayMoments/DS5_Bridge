@@ -9,38 +9,44 @@
 #include <cstdint>
 #include "debug_config.h"
 
-enum AudioRuntimeMode : uint8_t {
-    AudioRuntimeFallbackPicoLocal = 0,
-    AudioRuntimeHostEncodedActive = 1,
+enum AudioReactiveHapticsMode : uint8_t {
+    AudioReactiveHapticsMix = 0,
+    AudioReactiveHapticsReplace = 1,
 };
 
-enum AudioFallbackReason : uint8_t {
-    AudioFallbackNone = 0,
-    AudioFallbackHostDisabled = 1,
-    AudioFallbackHeartbeatTimeout = 2,
-    AudioFallbackStreamTimeout = 3,
-    AudioFallbackInvalidPacket = 4,
-    AudioFallbackCompanionStop = 5,
-    AudioFallbackControllerDisconnected = 6,
+enum AudioReactiveHapticsBassFocus : uint8_t {
+    AudioReactiveHapticsBassDeep = 0,
+    AudioReactiveHapticsBassBalanced = 1,
+    AudioReactiveHapticsBassPunchy = 2,
+    AudioReactiveHapticsBassWide = 3,
 };
 
-struct audio_host_status {
-    uint8_t mode;
-    uint8_t fallback_reason;
-    bool host_requested;
-    bool heartbeat_healthy;
-    bool stream_active;
-    bool stream_healthy;
+enum AudioReactiveHapticsResponse : uint8_t {
+    AudioReactiveHapticsResponseSubtle = 0,
+    AudioReactiveHapticsResponseBalanced = 1,
+    AudioReactiveHapticsResponseStrong = 2,
+};
+
+enum AudioReactiveHapticsAttack : uint8_t {
+    AudioReactiveHapticsAttackSoft = 0,
+    AudioReactiveHapticsAttackBalanced = 1,
+    AudioReactiveHapticsAttackFast = 2,
+    AudioReactiveHapticsAttackSharp = 3,
+};
+
+enum AudioReactiveHapticsRelease : uint8_t {
+    AudioReactiveHapticsReleaseTight = 0,
+    AudioReactiveHapticsReleaseBalanced = 1,
+    AudioReactiveHapticsReleaseSmooth = 2,
+    AudioReactiveHapticsReleaseLong = 3,
+};
+
+struct audio_status {
     bool duplex_requested;
     bool duplex_active;
     bool controller_state_ready;
     bool headset_plugged;
     bool headset_audio_route;
-    uint16_t stream_generation;
-    uint32_t heartbeat_age_ms;
-    uint32_t frame_age_ms;
-    uint32_t host_frames_received;
-    uint32_t host_frames_dropped;
     uint32_t mic_packets_received;
     uint32_t mic_packets_dropped;
     uint32_t mic_decode_success;
@@ -57,12 +63,12 @@ struct audio_host_status {
 
 void audio_init();
 void audio_loop();
+void audio_handle_bridge_audio_report(uint8_t const *report, uint16_t len);
 void audio_test_haptics_loop();
 bool audio_schedule_test_haptics();
 bool audio_test_haptics_busy();
 bool audio_test_haptics_cooldown();
 bool audio_recent();
-bool audio_host_encoded_active();
 bool audio_haptics_ready();
 void audio_set_quiet_mode(bool enabled);
 bool audio_quiet_mode_enabled();
@@ -111,15 +117,23 @@ void audio_set_lightbar_state(uint8_t red, uint8_t green, uint8_t blue, uint8_t 
 void audio_handle_controller_disconnect();
 void set_headset(bool state);
 bool audio_controller_state_ready();
-void audio_host_set_requested(bool enabled);
-void audio_host_note_heartbeat();
-void audio_host_start_stream();
-void audio_host_stop_stream(AudioFallbackReason reason = AudioFallbackCompanionStop);
-bool audio_host_receive_packet(uint8_t const *data, uint16_t len);
-void audio_host_set_duplex_requested(bool enabled);
+void audio_set_duplex_requested(bool enabled);
 bool audio_duplex_active();
-void audio_get_host_status(audio_host_status *status);
+void audio_get_status(audio_status *status);
 void audio_mic_add_packet(uint8_t const *data, uint16_t len);
 void audio_set_mic_output_state(uint8_t volume_percent, bool muted);
+void audio_set_mic_mute_led_passthrough(bool enabled);
+bool audio_set_reactive_haptics_config(
+    bool enabled,
+    uint8_t mode,
+    uint16_t gain_percent,
+    uint8_t bass_focus,
+    uint8_t response,
+    uint8_t attack,
+    uint8_t release,
+    bool suppress_classic_rumble
+);
+bool audio_reactive_haptics_enabled();
+void audio_reactive_haptics_reset();
 
 #endif //DS5_BRIDGE_AUDIO_H

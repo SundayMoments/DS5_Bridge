@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 5;
+export const PROTOCOL_MINOR = 16;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -13,8 +13,7 @@ export const REPORT_ID = {
   INPUT: 0x04,
   AUDIO_DEBUG: 0x05,
   AUDIO_STATS: 0x06,
-  HOST_AUDIO_STREAM: 0x07,
-  HOST_AUDIO_STATUS: 0x08,
+  AUDIO_STATUS: 0x08,
   TRIGGER_TRACE: 0x09,
   FEEDBACK_TRACE: 0x0a
 } as const;
@@ -22,7 +21,9 @@ export const REPORT_ID = {
 export const SHORTCUT_EVENT = {
   CONTROLLER_VOLUME_DOWN: 0x01,
   CONTROLLER_VOLUME_UP: 0x02,
-  SLEEP_CONTROLLER: 0x03
+  SLEEP_CONTROLLER: 0x03,
+  MIC_MUTE_ON: 0x04,
+  MIC_MUTE_OFF: 0x05
 } as const;
 
 export const AUDIO_DEBUG_EVENT = {
@@ -42,8 +43,6 @@ export const AUDIO_DEBUG_EVENT = {
   QUIET_MODE: 14,
   SILENCE_PREROLL: 15,
   USB_SILENCE_TAIL: 16,
-  HOST_MODE: 17,
-  HOST_FRAME: 18,
   MIC_PACKET: 19,
   USB_EVENT: 20,
   HID_EVENT: 21,
@@ -75,10 +74,6 @@ export const COMMAND_ID = {
   SET_POLLING_RATE_MODE: 0x12,
   SET_CLASSIC_RUMBLE_GAIN: 0x13,
   TEST_CLASSIC_RUMBLE: 0x14,
-  SET_HOST_AUDIO_ENABLED: 0x15,
-  HOST_AUDIO_HEARTBEAT: 0x16,
-  START_HOST_AUDIO: 0x17,
-  STOP_HOST_AUDIO: 0x18,
   SET_DUPLEX_ENABLED: 0x19,
   SET_MIC_VOLUME: 0x1A,
   SET_MIC_MUTE: 0x1B,
@@ -86,26 +81,15 @@ export const COMMAND_ID = {
   SET_SPEAKER_VOLUME_SHORTCUT_ENABLED: 0x1D,
   SET_BUTTON_REMAP: 0x1E,
   PREVIEW_ADAPTIVE_TRIGGER_EFFECT: 0x1F,
-  APPLY_ADAPTIVE_TRIGGER_EFFECT: 0x20
+  APPLY_ADAPTIVE_TRIGGER_EFFECT: 0x20,
+  SET_HOST_PERSONA: 0x21,
+  SET_AUDIO_REACTIVE_HAPTICS: 0x22,
+  SET_CHORD_BINDINGS: 0x23,
+  SET_PLAYER_LED_ENABLED: 0x24,
+  SET_CLASSIC_RUMBLE_V1: 0x25,
+  SET_SPEAKER_GAIN: 0x32,
+  ENTER_BOOTLOADER: 0x33
 } as const;
-
-export const HOST_AUDIO_PACKET_TYPE = {
-  HELLO: 1,
-  HEARTBEAT: 2,
-  START: 3,
-  STOP: 4,
-  FRAME_CHUNK: 5,
-  SET_DUPLEX_ENABLED: 6,
-  SET_DUPLEX_DISABLED: 7,
-  FAST_FRAME_FRAGMENT: 8
-} as const;
-
-export const HOST_AUDIO_PAYLOAD_LENGTH = 47;
-export const HOST_AUDIO_FAST_PAYLOAD_LENGTH = 57;
-export const HOST_AUDIO_REPORT_FRAME_LENGTH = 398;
-export const HOST_AUDIO_COMPACT_FRAME_LENGTH = 264;
-export const HOST_AUDIO_FRAME_CHUNK_COUNT = Math.ceil(HOST_AUDIO_REPORT_FRAME_LENGTH / HOST_AUDIO_PAYLOAD_LENGTH);
-export const HOST_AUDIO_FAST_FRAME_CHUNK_COUNT = Math.ceil(HOST_AUDIO_COMPACT_FRAME_LENGTH / HOST_AUDIO_FAST_PAYLOAD_LENGTH);
 
 export const ACK_RESULT = {
   OK: 0x00,
@@ -120,7 +104,7 @@ export const ACK_RESULT = {
 
 export type AckResultCode = typeof ACK_RESULT[keyof typeof ACK_RESULT];
 export type ShortcutEvent = typeof SHORTCUT_EVENT[keyof typeof SHORTCUT_EVENT];
-export type MuteButtonMode = 'normal' | 'keyboard' | 'quiet';
+export type MuteButtonMode = 'normal' | 'keyboard' | 'quiet' | 'chord';
 export type MuteKeyboardBehavior = 'tap' | 'hold';
 export type TriggerTestMode = 'feedback' | 'weapon' | 'vibration';
 export type TriggerTestTarget = 'both' | 'l2' | 'r2';
@@ -132,15 +116,39 @@ export interface AdaptiveTriggerPreviewEffect {
   forcePercent: number;
 }
 export type PollingRateMode = '250' | '500' | '1000';
-export type HostAudioMode = 'fallback-pico-local' | 'host-encoded-active';
-export type HostAudioFallbackReason =
-  | 'none'
-  | 'host-disabled'
-  | 'heartbeat-timeout'
-  | 'stream-timeout'
-  | 'invalid-packet'
-  | 'companion-stop'
-  | 'controller-disconnected';
+export type HostPersonaMode = 'dualsense' | 'xbox' | 'ds4';
+export const CHORD_FUNCTION_EVENT_BASE = 0x20;
+export const MAX_CHORD_ASSIGNMENTS = 16;
+export const MAX_CHORD_FUNCTION_NAME_LENGTH = 16;
+export const MAX_KEYBOARD_FUNCTION_KEYS = 4;
+export const CHORD_CONTROLLER_SETTING_STEP_MIN = 1;
+export const CHORD_CONTROLLER_SETTING_STEP_MAX = 100;
+export const CHORD_CONTROLLER_SETTING_STEP_DEFAULT = 10;
+export interface AudioReactiveHapticsAppSource {
+  kind: 'app-session';
+  processId: number;
+  displayName?: string;
+  executableName?: string;
+  processPath?: string;
+  sessionIdentifier?: string;
+  sessionInstanceIdentifier?: string;
+}
+export type AudioReactiveHapticsSource = 'controller-audio' | 'system-audio' | AudioReactiveHapticsAppSource;
+export type AudioReactiveHapticsMode = 'mix' | 'replace';
+export type AudioReactiveHapticsBassFocus = 'deep' | 'balanced' | 'punchy' | 'wide';
+export type AudioReactiveHapticsResponse = 'subtle' | 'balanced' | 'strong';
+export type AudioReactiveHapticsAttack = 'soft' | 'balanced' | 'fast' | 'sharp';
+export type AudioReactiveHapticsRelease = 'tight' | 'balanced' | 'smooth' | 'long';
+export interface AudioReactiveHapticsConfig {
+  enabled: boolean;
+  source: AudioReactiveHapticsSource;
+  mode: AudioReactiveHapticsMode;
+  gainPercent: number;
+  bassFocus: AudioReactiveHapticsBassFocus;
+  response: AudioReactiveHapticsResponse;
+  attack: AudioReactiveHapticsAttack;
+  release: AudioReactiveHapticsRelease;
+}
 export const BRIDGE_PRESET_IDS = [
   'custom',
   'balanced',
@@ -172,9 +180,76 @@ export const REMAP_BUTTON_IDS = [
   'lb',
   'rb',
   'lfn',
-  'rfn'
+  'rfn',
+  'ps'
 ] as const;
 export type RemapButtonId = typeof REMAP_BUTTON_IDS[number];
+export const CHORD_MUTE_STARTER_ID = 'mute' as const;
+export const CHORD_STARTER_IDS = ['ps', 'lfn', 'rfn', CHORD_MUTE_STARTER_ID] as const;
+export type ChordStarterId = typeof CHORD_STARTER_IDS[number];
+export type ChordRemapButtonId = Exclude<RemapButtonId, 'lfn' | 'rfn' | 'ps'>;
+export type ChordAssignableButtonId = ChordRemapButtonId;
+export const CHORD_ASSIGNABLE_BUTTON_IDS = REMAP_BUTTON_IDS.filter((
+  id
+): id is ChordRemapButtonId => id !== 'lfn' && id !== 'rfn' && id !== 'ps');
+export const CHORD_EDGE_RESERVED_FACE_BUTTON_IDS = ['triangle', 'circle', 'cross', 'square'] as const;
+export type ChordFunctionId = string;
+export type ChordFunctionType = 'keyboard' | 'media' | 'controller-setting';
+export type ChordMediaAction =
+  | 'play-pause'
+  | 'next-track'
+  | 'previous-track'
+  | 'mute'
+  | 'volume-up'
+  | 'volume-down';
+export type ChordControllerSettingAction =
+  | 'toggle-audio-haptics'
+  | 'toggle-lightbar-override'
+  | 'toggle-mic-mute'
+  | 'sleep-controller'
+  | 'persona-dualsense'
+  | 'persona-ds4'
+  | 'persona-xbox'
+  | 'speaker-down'
+  | 'speaker-up'
+  | 'mic-down'
+  | 'mic-up'
+  | 'haptics-down'
+  | 'haptics-up'
+  | 'rumble-down'
+  | 'rumble-up'
+  | 'triggers-down'
+  | 'triggers-up'
+  | 'lighting-down'
+  | 'lighting-up';
+export interface ChordKeyboardFunction {
+  id: ChordFunctionId;
+  name: string;
+  type: 'keyboard';
+  keys: string[];
+}
+export interface ChordMediaFunction {
+  id: ChordFunctionId;
+  name: string;
+  type: 'media';
+  action: ChordMediaAction;
+}
+export interface ChordControllerSettingFunction {
+  id: ChordFunctionId;
+  name: string;
+  type: 'controller-setting';
+  action: ChordControllerSettingAction;
+  stepPercent: number;
+}
+export type ChordFunction = ChordKeyboardFunction | ChordMediaFunction | ChordControllerSettingFunction;
+export interface ChordComboAssignment {
+  id: string;
+  kind: 'chord';
+  starter: ChordStarterId;
+  button: ChordAssignableButtonId;
+  functionId: ChordFunctionId;
+}
+export type ChordAssignment = ChordComboAssignment;
 export type ButtonRemapMap = Record<RemapButtonId, RemapButtonId>;
 export interface ButtonRemapProfile {
   id: string;
@@ -188,6 +263,7 @@ export interface ControllerProfileSettings {
   feedbackBoostEnabled: boolean;
   classicRumbleEnabled: boolean;
   classicRumbleGainPercent: number;
+  classicRumbleV1Enabled: boolean;
   adaptiveTriggersEnabled: boolean;
   triggerEffectIntensityPercent: number;
   triggerTestMode: TriggerTestMode;
@@ -195,6 +271,14 @@ export interface ControllerProfileSettings {
   speakerVolumePercent: number;
   micVolumePercent: number;
   micMuted: boolean;
+  audioReactiveHapticsEnabled: boolean;
+  audioReactiveHapticsSource: AudioReactiveHapticsSource;
+  audioReactiveHapticsMode: AudioReactiveHapticsMode;
+  audioReactiveHapticsGainPercent: number;
+  audioReactiveHapticsBassFocus: AudioReactiveHapticsBassFocus;
+  audioReactiveHapticsResponse: AudioReactiveHapticsResponse;
+  audioReactiveHapticsAttack: AudioReactiveHapticsAttack;
+  audioReactiveHapticsRelease: AudioReactiveHapticsRelease;
   lightbarEnabled: boolean;
   lightbarColor: string;
   lightbarBrightnessPercent: number;
@@ -203,10 +287,11 @@ export interface ControllerProfileSettings {
   muteKeyboardUsage: number;
   muteKeyboardModifiers: number;
   muteKeyboardBehavior: MuteKeyboardBehavior;
+  muteKeyboardChordStarterEnabled: boolean;
   sleepKeybindEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;
-  hostEncodedAudioEnabled: boolean;
+  hostPersonaMode: HostPersonaMode;
   duplexMicEnabled: boolean;
   controllerPowerSavingEnabled: boolean;
 }
@@ -238,8 +323,57 @@ export function isRemapButtonId(value: unknown): value is RemapButtonId {
   return typeof value === 'string' && (REMAP_BUTTON_IDS as readonly string[]).includes(value);
 }
 
+export function isChordStarterId(value: unknown): value is ChordStarterId {
+  return typeof value === 'string' && (CHORD_STARTER_IDS as readonly string[]).includes(value);
+}
+
+export function isChordAssignableButtonId(value: unknown): value is ChordAssignableButtonId {
+  return typeof value === 'string' && (CHORD_ASSIGNABLE_BUTTON_IDS as readonly string[]).includes(value);
+}
+
+export function isChordBindingAllowed(starter: ChordStarterId, button: ChordAssignableButtonId): boolean {
+  return starter === 'ps' || !(CHORD_EDGE_RESERVED_FACE_BUTTON_IDS as readonly string[]).includes(button);
+}
+
+export function defaultChordControllerSettingStepPercent(action: ChordControllerSettingAction): number {
+  switch (action) {
+    case 'haptics-down':
+    case 'haptics-up':
+    case 'rumble-down':
+    case 'rumble-up':
+      return 20;
+    default:
+      return CHORD_CONTROLLER_SETTING_STEP_DEFAULT;
+  }
+}
+
+export function normalizeChordControllerSettingStepPercent(
+  value: unknown,
+  fallback = CHORD_CONTROLLER_SETTING_STEP_DEFAULT
+): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  const resolved = Number.isFinite(numeric) ? numeric : fallback;
+  return Math.max(
+    CHORD_CONTROLLER_SETTING_STEP_MIN,
+    Math.min(CHORD_CONTROLLER_SETTING_STEP_MAX, Math.round(resolved))
+  );
+}
+
 export function remapButtonIdValue(buttonId: RemapButtonId): number {
   return REMAP_BUTTON_IDS.indexOf(buttonId);
+}
+
+export function chordStarterIdValue(starter: ChordStarterId): number {
+  switch (starter) {
+    case 'ps':
+      return 0x01;
+    case 'lfn':
+      return 0x02;
+    case 'rfn':
+      return 0x03;
+    case 'mute':
+      return 0x04;
+  }
 }
 
 export function buildButtonRemapPayload(mapping: ButtonRemapMap): number[] {
@@ -248,7 +382,18 @@ export function buildButtonRemapPayload(mapping: ButtonRemapMap): number[] {
     return remapButtonIdValue(isRemapButtonId(target) ? target : buttonId);
   });
 }
+
+export function buildChordBindingsPayload(assignments: ChordAssignment[]): number[] {
+  return assignments.slice(0, MAX_CHORD_ASSIGNMENTS).flatMap((assignment, index) => {
+    return [
+      (CHORD_FUNCTION_EVENT_BASE + index) & 0xff,
+      chordStarterIdValue(assignment.starter),
+      remapButtonIdValue(assignment.button)
+    ];
+  });
+}
 export const MUTE_KEYBOARD_HOLD_FLAG = 0x80;
+export const MUTE_KEYBOARD_CHORD_STARTER_FLAG = 0x10;
 export const MUTE_KEYBOARD_MODIFIER_MASK = 0x0f;
 
 export interface BridgeStatusPayload {
@@ -260,6 +405,7 @@ export interface BridgeStatusPayload {
   hapticsReady: boolean;
   hapticsGainPercent: number;
   speakerVolumePercent: number;
+  speakerGainLevel: number;
   lightbarColor: {
     red: number;
     green: number;
@@ -267,10 +413,12 @@ export interface BridgeStatusPayload {
     brightnessPercent: number;
   };
   lightbarOverrideEnabled: boolean;
+  micMuted: boolean;
   muteButtonMode: MuteButtonMode;
   muteKeyboardUsage: number;
   muteKeyboardModifiers: number;
   muteKeyboardBehavior: MuteKeyboardBehavior;
+  muteKeyboardChordStarterEnabled: boolean;
   quietModeEnabled: boolean;
   audioDebug: {
     usbHostSpeakerVolumePercent: number;
@@ -308,7 +456,11 @@ export interface BridgeStatusPayload {
     usbSuspendDisconnectControl: boolean;
     sleepControllerControl: boolean;
     pollingRateControl: boolean;
+    hostPersonaControl: boolean;
+    audioReactiveHapticsControl: boolean;
   };
+  hostPersonaMode: HostPersonaMode;
+  supportedHostPersonaModes: HostPersonaMode[];
   protocolVersion: string;
 }
 
@@ -403,23 +555,12 @@ export interface FeedbackTracePayload {
   events: FeedbackTraceEventPayload[];
 }
 
-export interface HostAudioStatusPayload {
-  mode: HostAudioMode;
-  fallbackReason: HostAudioFallbackReason;
-  hostRequested: boolean;
-  heartbeatHealthy: boolean;
-  streamActive: boolean;
-  streamHealthy: boolean;
+export interface AudioStatusPayload {
   duplexRequested: boolean;
   duplexActive: boolean;
   controllerStateReady: boolean;
   headsetPlugged: boolean;
   headsetAudioRoute: boolean;
-  streamGeneration: number;
-  heartbeatAgeMs: number | null;
-  frameAgeMs: number | null;
-  hostFramesReceived: number;
-  hostFramesDropped: number;
   micPacketsReceived: number;
   micPacketsDropped: number;
   micDecodeSuccess: number;
@@ -439,6 +580,11 @@ export class ProtocolError extends Error {
   constructor(message: string, public readonly code: string) {
     super(message);
   }
+}
+
+export interface ReportProtocolVersion {
+  major: number;
+  minor: number;
 }
 
 function assertReport(report: ArrayLike<number>, reportId: number): void {
@@ -463,6 +609,26 @@ function assertVersion(report: ArrayLike<number>): void {
   }
 }
 
+function assertCurrentOrOlderVersion(report: ArrayLike<number>): void {
+  if (report[5] !== PROTOCOL_MAJOR || report[6] > PROTOCOL_MINOR) {
+    throw new ProtocolError(
+      `Firmware update required. Expected companion protocol ${PROTOCOL_MAJOR}.${PROTOCOL_MINOR}, received ${report[5]}.${report[6]}.`,
+      'bad-version'
+    );
+  }
+}
+
+export function readReportProtocolVersion(
+  report: ArrayLike<number>,
+  reportId: number
+): ReportProtocolVersion {
+  assertReport(report, reportId);
+  return {
+    major: report[5],
+    minor: report[6]
+  };
+}
+
 function readU16(report: ArrayLike<number>, offset: number): number {
   return report[offset] | (report[offset + 1] << 8);
 }
@@ -485,46 +651,39 @@ function controllerType(value: number): BridgeStatusPayload['controllerType'] {
 function muteButtonMode(value: number): MuteButtonMode {
   if (value === 1) return 'keyboard';
   if (value === 2) return 'quiet';
+  if (value === 3) return 'chord';
   return 'normal';
-}
-
-function hostAudioMode(value: number): HostAudioMode {
-  return value === 1 ? 'host-encoded-active' : 'fallback-pico-local';
-}
-
-function hostAudioFallbackReason(value: number): HostAudioFallbackReason {
-  switch (value) {
-    case 0:
-      return 'none';
-    case 1:
-      return 'host-disabled';
-    case 2:
-      return 'heartbeat-timeout';
-    case 3:
-      return 'stream-timeout';
-    case 4:
-      return 'invalid-packet';
-    case 5:
-      return 'companion-stop';
-    case 6:
-      return 'controller-disconnected';
-    default:
-      return 'invalid-packet';
-  }
-}
-
-function nullableAge(value: number): number | null {
-  return value === 0xffffffff ? null : value;
-}
-
-function nullableAge16(value: number): number | null {
-  return value === 0xffff ? null : value;
 }
 
 export function pollingRateModeValue(mode: PollingRateMode): number {
   if (mode === '250') return 0;
   if (mode === '500') return 1;
   return 2;
+}
+
+export function hostPersonaModeValue(mode: HostPersonaMode): number {
+  if (mode === 'xbox') return 1;
+  if (mode === 'ds4') return 2;
+  return 0;
+}
+
+function hostPersonaMode(value: number): HostPersonaMode {
+  if (value === 2) return 'ds4';
+  return value === 1 ? 'xbox' : 'dualsense';
+}
+
+function supportedHostPersonaModes(mask: number): HostPersonaMode[] {
+  const modes: HostPersonaMode[] = [];
+  if ((mask & 0x01) !== 0) {
+    modes.push('dualsense');
+  }
+  if ((mask & 0x02) !== 0) {
+    modes.push('xbox');
+  }
+  if ((mask & 0x04) !== 0) {
+    modes.push('ds4');
+  }
+  return modes.length === 0 ? ['dualsense'] : modes;
 }
 
 export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayload {
@@ -546,6 +705,7 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
     hapticsReady: report[12] === 1,
     hapticsGainPercent: readU16(report, 13),
     speakerVolumePercent: readU16(report, 29),
+    speakerGainLevel: Math.max(1, Math.min(7, report[57] || 4)),
     lightbarColor: {
       red: report[31],
       green: report[32],
@@ -553,10 +713,12 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
       brightnessPercent: report[34]
     },
     lightbarOverrideEnabled: report[59] === 1,
+    micMuted: report[51] === 1,
     muteButtonMode: muteButtonMode(report[60]),
     muteKeyboardUsage: report[61],
     muteKeyboardModifiers: report[62] & MUTE_KEYBOARD_MODIFIER_MASK,
     muteKeyboardBehavior: (report[62] & MUTE_KEYBOARD_HOLD_FLAG) !== 0 ? 'hold' : 'tap',
+    muteKeyboardChordStarterEnabled: (report[62] & MUTE_KEYBOARD_CHORD_STARTER_FLAG) !== 0,
     quietModeEnabled: report[63] === 1,
     audioDebug: {
       usbHostSpeakerVolumePercent: report[35],
@@ -593,15 +755,26 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
       adaptiveTriggersControl: (firmwareFlags & 0x80) !== 0,
       usbSuspendDisconnectControl: (statusFlags & 0x20) !== 0,
       sleepControllerControl: (statusFlags & 0x80) !== 0,
-      pollingRateControl: true
+      pollingRateControl: true,
+      hostPersonaControl: report[49] !== 0,
+      audioReactiveHapticsControl: report[6] >= 7
     },
+    hostPersonaMode: hostPersonaMode(report[48]),
+    supportedHostPersonaModes: supportedHostPersonaModes(report[49]),
     protocolVersion: `${report[5]}.${report[6]}`
   };
 }
 
-export function parseAckReport(report: ArrayLike<number>): BridgeAckPayload {
+export function parseAckReport(
+  report: ArrayLike<number>,
+  options: { allowProtocolMismatch?: boolean } = {}
+): BridgeAckPayload {
   assertReport(report, REPORT_ID.ACK);
-  assertVersion(report);
+  if (options.allowProtocolMismatch) {
+    assertCurrentOrOlderVersion(report);
+  } else {
+    assertVersion(report);
+  }
 
   return {
     commandId: report[7],
@@ -757,8 +930,8 @@ export function parseFeedbackTraceReport(report: ArrayLike<number>): FeedbackTra
   return { latestSequence, droppedCount, events };
 }
 
-export function parseHostAudioStatusReport(report: ArrayLike<number>): HostAudioStatusPayload {
-  assertReport(report, REPORT_ID.HOST_AUDIO_STATUS);
+export function parseAudioStatusReport(report: ArrayLike<number>): AudioStatusPayload {
+  assertReport(report, REPORT_ID.AUDIO_STATUS);
   const protocolMajor = report[5];
   const protocolMinor = report[6];
   if (protocolMajor !== PROTOCOL_MAJOR || protocolMinor < 2 || protocolMinor > PROTOCOL_MINOR) {
@@ -768,60 +941,15 @@ export function parseHostAudioStatusReport(report: ArrayLike<number>): HostAudio
     );
   }
 
-  if (protocolMinor < 3) {
-    return {
-      mode: hostAudioMode(report[7]),
-      fallbackReason: hostAudioFallbackReason(report[8]),
-      hostRequested: report[9] === 1,
-      heartbeatHealthy: report[10] === 1,
-      streamActive: report[11] === 1,
-      streamHealthy: report[12] === 1,
-      duplexRequested: report[13] === 1,
-      duplexActive: (report[14] & 0x01) !== 0,
-      headsetPlugged: (report[14] & 0x02) !== 0,
-      headsetAudioRoute: (report[14] & 0x04) !== 0,
-      controllerStateReady: (report[14] & 0x08) !== 0,
-      streamGeneration: readU16(report, 15),
-      heartbeatAgeMs: nullableAge(readU32(report, 17)),
-      frameAgeMs: nullableAge(readU32(report, 21)),
-      hostFramesReceived: readU32(report, 25),
-      hostFramesDropped: readU32(report, 29),
-      micPacketsReceived: readU32(report, 33),
-      micPacketsDropped: readU32(report, 37),
-      micDecodeSuccess: readU32(report, 41),
-      micDecodeFail: readU32(report, 45),
-      micUsbWriteSuccess: readU32(report, 49),
-      micUsbWriteShort: readU32(report, 53),
-      micUsbConcealCount: 0,
-      micPlcCount: 0,
-      micLastDecodedSamples: readU16(report, 57),
-      micLastWrittenBytes: readU16(report, 59),
-      micPeakPermille: readU16(report, 61),
-      micUsbStreaming: report[63] === 1,
-      protocolVersion: `${protocolMajor}.${protocolMinor}`
-    };
-  }
-
   const primaryFlags = report[9];
   const routeFlags = report[10];
 
   return {
-    mode: hostAudioMode(report[7]),
-    fallbackReason: hostAudioFallbackReason(report[8]),
-    hostRequested: (primaryFlags & 0x01) !== 0,
-    heartbeatHealthy: (primaryFlags & 0x02) !== 0,
-    streamActive: (primaryFlags & 0x04) !== 0,
-    streamHealthy: (primaryFlags & 0x08) !== 0,
     duplexRequested: (primaryFlags & 0x10) !== 0,
     duplexActive: (primaryFlags & 0x20) !== 0,
     controllerStateReady: (primaryFlags & 0x40) !== 0,
     headsetPlugged: (routeFlags & 0x01) !== 0,
     headsetAudioRoute: (routeFlags & 0x02) !== 0,
-    streamGeneration: readU16(report, 11),
-    heartbeatAgeMs: nullableAge16(readU16(report, 13)),
-    frameAgeMs: nullableAge16(readU16(report, 15)),
-    hostFramesReceived: readU32(report, 17),
-    hostFramesDropped: readU32(report, 21),
     micPacketsReceived: readU32(report, 25),
     micPacketsDropped: readU32(report, 29),
     micDecodeSuccess: readU32(report, 33),
@@ -842,7 +970,8 @@ export function buildCommandReport(
   commandId: number,
   sequence: number,
   value: number,
-  extraPayload: ArrayLike<number> = []
+  extraPayload: ArrayLike<number> = [],
+  options: { protocolMinor?: number } = {}
 ): number[] {
   const report = new Array<number>(REPORT_LENGTH).fill(0);
   report[0] = REPORT_ID.COMMAND;
@@ -851,7 +980,7 @@ export function buildCommandReport(
   report[3] = MAGIC.charCodeAt(2);
   report[4] = MAGIC.charCodeAt(3);
   report[5] = PROTOCOL_MAJOR;
-  report[6] = PROTOCOL_MINOR;
+  report[6] = options.protocolMinor ?? PROTOCOL_MINOR;
   report[7] = commandId & 0xff;
   report[8] = sequence & 0xff;
   report[9] = value & 0xff;
@@ -860,95 +989,6 @@ export function buildCommandReport(
     report[11 + index] = extraPayload[index] & 0xff;
   }
   return report;
-}
-
-export function buildHostAudioStreamReport(options: {
-  packetType: number;
-  streamGeneration?: number;
-  frameSequence?: number;
-  chunkIndex?: number;
-  chunkCount?: number;
-  payload?: ArrayLike<number>;
-}): number[] {
-  const payload = options.payload ?? [];
-  const payloadLength = Math.min(HOST_AUDIO_PAYLOAD_LENGTH, payload.length);
-  const report = new Array<number>(REPORT_LENGTH).fill(0);
-  report[0] = REPORT_ID.HOST_AUDIO_STREAM;
-  report[1] = MAGIC.charCodeAt(0);
-  report[2] = MAGIC.charCodeAt(1);
-  report[3] = MAGIC.charCodeAt(2);
-  report[4] = MAGIC.charCodeAt(3);
-  report[5] = PROTOCOL_MAJOR;
-  report[6] = PROTOCOL_MINOR;
-  report[7] = options.packetType & 0xff;
-  report[8] = 0;
-  const generation = options.streamGeneration ?? 0;
-  report[9] = generation & 0xff;
-  report[10] = (generation >> 8) & 0xff;
-  const sequence = options.frameSequence ?? 0;
-  report[11] = sequence & 0xff;
-  report[12] = (sequence >> 8) & 0xff;
-  report[13] = (options.chunkIndex ?? 0) & 0xff;
-  report[14] = (options.chunkCount ?? 0) & 0xff;
-  report[15] = payloadLength & 0xff;
-  report[16] = (payloadLength >> 8) & 0xff;
-  for (let index = 0; index < payloadLength; index += 1) {
-    report[17 + index] = payload[index] & 0xff;
-  }
-  return report;
-}
-
-export function buildHostAudioFrameChunkReports(options: {
-  streamGeneration: number;
-  frameSequence: number;
-  frame: ArrayLike<number>;
-}): number[][] {
-  const frame = options.frame;
-  const chunkCount = Math.ceil(frame.length / HOST_AUDIO_PAYLOAD_LENGTH);
-  const reports: number[][] = [];
-  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-    const start = chunkIndex * HOST_AUDIO_PAYLOAD_LENGTH;
-    const end = Math.min(start + HOST_AUDIO_PAYLOAD_LENGTH, frame.length);
-    const payload: number[] = [];
-    for (let index = start; index < end; index += 1) {
-      payload.push(frame[index] & 0xff);
-    }
-    reports.push(buildHostAudioStreamReport({
-      packetType: HOST_AUDIO_PACKET_TYPE.FRAME_CHUNK,
-      streamGeneration: options.streamGeneration,
-      frameSequence: options.frameSequence,
-      chunkIndex,
-      chunkCount,
-      payload
-    }));
-  }
-  return reports;
-}
-
-export function buildHostAudioFastFrameReports(options: {
-  frame: ArrayLike<number>;
-  frameSequence?: number;
-}): number[][] {
-  const frame = options.frame;
-  const sequence = options.frameSequence ?? 0;
-  const fragmentCount = Math.ceil(frame.length / HOST_AUDIO_FAST_PAYLOAD_LENGTH);
-  const reports: number[][] = [];
-  for (let offset = 0, fragmentIndex = 0; offset < frame.length; offset += HOST_AUDIO_FAST_PAYLOAD_LENGTH, fragmentIndex += 1) {
-    const payloadLength = Math.min(HOST_AUDIO_FAST_PAYLOAD_LENGTH, frame.length - offset);
-    const report = new Array<number>(REPORT_LENGTH).fill(0);
-    report[0] = REPORT_ID.HOST_AUDIO_STREAM;
-    report[1] = HOST_AUDIO_PACKET_TYPE.FAST_FRAME_FRAGMENT;
-    report[2] = sequence & 0xff;
-    report[3] = (sequence >> 8) & 0xff;
-    report[4] = fragmentIndex & 0xff;
-    report[5] = fragmentCount & 0xff;
-    report[6] = payloadLength & 0xff;
-    for (let index = 0; index < payloadLength; index += 1) {
-      report[7 + index] = frame[offset + index] & 0xff;
-    }
-    reports.push(report);
-  }
-  return reports;
 }
 
 export function ackResultName(result: number): string {

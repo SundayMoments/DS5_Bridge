@@ -1,7 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AdaptiveTriggerPreviewEffect,
+  AudioReactiveHapticsConfig,
   BridgePresetId,
+  ChordAssignment,
+  ChordFunction,
+  HostPersonaMode,
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
@@ -9,11 +13,21 @@ import type {
   TriggerTestMode,
   TriggerTestTarget
 } from './shared/protocol';
-import type { BridgeDiagnostics, BridgeSnapshot, WindowsDeviceCleanupResult } from './shared/types';
+import type {
+  AudioHapticsSession,
+  BridgeDiagnostics,
+  BridgeSnapshot,
+  PicoFirmwareActionResult,
+  UiThemePreset,
+  WindowsDeviceCleanupResult
+} from './shared/types';
 
 const api = {
   getStatus: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:getStatus'),
   listDevices: () => ipcRenderer.invoke('bridge:listDevices'),
+  listAudioHapticsSessions: (): Promise<AudioHapticsSession[]> => (
+    ipcRenderer.invoke('bridge:listAudioHapticsSessions')
+  ),
   applyPreset: (value: BridgePresetId): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:applyPreset', value),
   selectControllerProfile: (profileId: string): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:selectControllerProfile', profileId)
@@ -44,6 +58,9 @@ const api = {
   setClassicRumbleEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setClassicRumbleEnabled', value)
   ),
+  setClassicRumbleV1Enabled: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setClassicRumbleV1Enabled', value)
+  ),
   setTriggerEffectIntensity: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setTriggerEffectIntensity', value)
   ),
@@ -54,11 +71,14 @@ const api = {
     ipcRenderer.invoke('bridge:setAdaptiveTriggersEnabled', value)
   ),
   setSpeakerVolume: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setSpeakerVolume', value),
+  setSpeakerGainLevel: (value: number): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setSpeakerGainLevel', value)
+  ),
   setSpeakerEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setSpeakerEnabled', value),
   setMicVolume: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setMicVolume', value),
   setMicMute: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setMicMute', value),
-  setHostEncodedAudioEnabled: (value: boolean): Promise<BridgeSnapshot> => (
-    ipcRenderer.invoke('bridge:setHostEncodedAudioEnabled', value)
+  setAudioReactiveHapticsConfig: (value: Partial<AudioReactiveHapticsConfig>): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setAudioReactiveHapticsConfig', value)
   ),
   setDuplexMicEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setDuplexMicEnabled', value)
@@ -74,11 +94,15 @@ const api = {
     mode: MuteButtonMode,
     usage: number,
     modifiers: number,
-    behavior: MuteKeyboardBehavior
+    behavior: MuteKeyboardBehavior,
+    chordStarterEnabled?: boolean
   ): Promise<BridgeSnapshot> => (
-    ipcRenderer.invoke('bridge:setMuteButtonAction', mode, usage, modifiers, behavior)
+    ipcRenderer.invoke('bridge:setMuteButtonAction', mode, usage, modifiers, behavior, chordStarterEnabled)
   ),
   setLedEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setLedEnabled', value),
+  setPlayerLedEnabled: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setPlayerLedEnabled', value)
+  ),
   setIdleDisconnectEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setIdleDisconnectEnabled', value),
   setIdleDisconnectTimeoutMinutes: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setIdleDisconnectTimeoutMinutes', value)
@@ -98,11 +122,29 @@ const api = {
   setLaunchAtStartupEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setLaunchAtStartupEnabled', value)
   ),
+  setShowBatteryPercentTrayIcon: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setShowBatteryPercentTrayIcon', value)
+  ),
   setUiScalePercent: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiScalePercent', value),
+  setUiThemePreset: (value: UiThemePreset): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setUiThemePreset', value)
+  ),
   setPollingRateMode: (value: PollingRateMode): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setPollingRateMode', value)
   ),
+  setHostPersonaMode: (value: HostPersonaMode): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setHostPersonaMode', value)
+  ),
   sleepController: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:sleepController'),
+  mountPicoBootloader: (): Promise<PicoFirmwareActionResult> => (
+    ipcRenderer.invoke('bridge:mountPicoBootloader')
+  ),
+  flashPicoFirmware: (): Promise<PicoFirmwareActionResult> => (
+    ipcRenderer.invoke('bridge:flashPicoFirmware')
+  ),
+  nukePicoFlash: (): Promise<PicoFirmwareActionResult> => (
+    ipcRenderer.invoke('bridge:nukePicoFlash')
+  ),
   setNotifyControllerConnection: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setNotifyControllerConnection', value)
   ),
@@ -144,6 +186,15 @@ const api = {
   ),
   restoreButtonRemappingDefaults: (): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:restoreButtonRemappingDefaults')
+  ),
+  setChordConfiguration: (functions: ChordFunction[], assignments: ChordAssignment[]): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setChordConfiguration', functions, assignments)
+  ),
+  setChordFunctions: (functions: ChordFunction[]): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setChordFunctions', functions)
+  ),
+  setChordAssignments: (assignments: ChordAssignment[]): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setChordAssignments', assignments)
   ),
   repairWindowsDeviceCache: (): Promise<WindowsDeviceCleanupResult> => (
     ipcRenderer.invoke('bridge:repairWindowsDeviceCache')

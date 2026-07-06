@@ -13,8 +13,11 @@ Common identity-changing fields in this project are:
 - Audio topology: no audio, speaker-only, speaker plus mic, or different audio
   interface ordering.
 - HID report descriptor shape and length.
+- Host persona: DualSense, Xbox compatibility, and DS4 compatibility modes
+  intentionally expose different game-facing identities/descriptors.
 - Product string: for example `DualSense Wireless Controller`,
-  `DualSense Edge Wireless Controller`, or `Wireless Controller`.
+  `DualSense Edge Wireless Controller`, `Wireless Controller`, or
+  `Xbox 360 Controller for Windows`.
 - USB port/location when no serial number is exposed.
 
 Audio devices are cached separately. Windows creates MMDevice endpoint records
@@ -34,6 +37,12 @@ The current firmware intentionally exposes no USB serial number:
 - Audio interfaces come first, followed by the game-facing HID interface.
 - Companion firmware appends the companion vendor HID interface and bridge
   keyboard HID interface after the game-facing HID interface.
+- Xbox compatibility mode uses the composite-safe `0x1209:0xDB05` test
+  identity, bumps the USB device revision for Windows cache separation, and
+  advertises the game-facing interface as XUSB-compatible.
+- DS4 compatibility mode uses Sony VID `0x054C`, PID `0x09CC`, and product
+  `Wireless Controller` so Windows, Steam, and older games classify the
+  game-facing persona as a DualShock 4.
 
 Avoid changing those fields during normal firmware work unless the task is
 explicit USB descriptor identity testing.
@@ -72,14 +81,26 @@ USB bridge identity.
 Use `-SkipAudioEndpoints` if you want to leave Windows audio endpoint records
 alone while cleaning only the USB/HID stack.
 
+Use `-SkipUsbFlags` if you want to leave Windows' USB descriptor cache entries
+alone. During persona/descriptor testing, stale `UsbFlags` entries can prevent
+Windows from querying updated Microsoft OS descriptors.
+
 ## What The Script Targets
 
 By default, the script lists or removes non-present instances matching:
 
 - `VID_054C&PID_0CE6`.
 - `VID_054C&PID_0DF2`.
+- The DS4 persona test identity `VID_054C&PID_09CC`.
+- The temporary Xbox persona test identity `VID_045E&PID_028E`.
+- The composite-safe Xbox persona test identity `VID_1209&PID_DB05`.
 - DualSense-named Windows audio endpoints.
 - DS5 Bridge-named Windows audio endpoints and System devices.
+- DS5 Bridge USB descriptor cache keys for the historical `0x0100`, current
+  `0x0151`, and Xbox-persona `0x0152`/`0x0153` USB device revisions.
+- The DS4 persona cache key `054C09CC0100`.
+- The temporary Xbox persona test cache keys `045E028E0114`, `045E028E0154`,
+  `1209DB050155`, and `1209DB050156`.
 
 It does not remove currently present `Status = OK` entries unless
 `-IncludePresent` is supplied.

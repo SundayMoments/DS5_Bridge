@@ -7,41 +7,59 @@ import {
   ACK_RESULT,
   AUDIO_DEBUG_EVENT,
   COMMAND_ID,
+  PROTOCOL_MAJOR,
+  PROTOCOL_MINOR,
   REPORT_ID,
   REPORT_LENGTH,
+  CHORD_FUNCTION_EVENT_BASE,
+  MAX_CHORD_ASSIGNMENTS,
+  MUTE_KEYBOARD_CHORD_STARTER_FLAG,
   MUTE_KEYBOARD_HOLD_FLAG,
   MUTE_KEYBOARD_MODIFIER_MASK,
   ProtocolError,
   ackUserMessage,
+  buildChordBindingsPayload,
   buildCommandReport,
-  buildHostAudioFastFrameReports,
-  buildHostAudioStreamReport,
   parseAckReport,
   parseAudioDebugReport,
   parseAudioStatsReport,
-  parseHostAudioStatusReport,
+  parseAudioStatusReport,
   parseTriggerTraceReport,
   parseFeedbackTraceReport,
   parseStatusReport,
-  HOST_AUDIO_PACKET_TYPE,
+  readReportProtocolVersion,
   SHORTCUT_EVENT,
   buildButtonRemapPayload,
+  hostPersonaModeValue,
+  normalizeChordControllerSettingStepPercent,
   normalizeBridgePresetId,
   pollingRateModeValue
 } from '../shared/protocol';
 import type {
   AdaptiveTriggerPreviewEffect,
+  AudioReactiveHapticsAttack,
+  AudioReactiveHapticsBassFocus,
+  AudioReactiveHapticsConfig,
+  AudioReactiveHapticsMode,
+  AudioReactiveHapticsRelease,
+  AudioReactiveHapticsResponse,
+  AudioReactiveHapticsSource,
   AudioDebugEventPayload,
   AudioDebugStatsPayload,
+  BridgeAckPayload,
   BridgePresetId,
+  ChordAssignment,
+  ChordFunction,
   RemapButtonId,
-  HostAudioStatusPayload,
+  HostPersonaMode,
+  AudioStatusPayload,
   TriggerTraceEventPayload,
   FeedbackTraceEventPayload,
   BridgeStatusPayload,
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
+  ReportProtocolVersion,
   ShortcutEvent,
   TriggerTestMode,
   TriggerTestTarget
@@ -50,31 +68,33 @@ import type {
   BridgeDiagnostics,
   BridgeSnapshot,
   CompanionSettings,
-  HostAudioCaptureIssue,
-  HostAudioCaptureRetry,
+  AudioHapticsSession,
+  HostPersonaTransition,
   HidDeviceSummary,
   UiScalePercent,
+  UiThemePreset,
   WindowsDeviceCleanupResult
 } from '../shared/types';
 import {
-  HostAudioEngine,
-  HostAudioStartError,
+  AudioHapticsSessionMonitor,
   MicKeepaliveEngine,
-  playHostAudioTestTone,
-  type HostAudioStartFailureReason,
-  type HostAudioFramePayload
-} from './host-audio-engine';
+  SystemAudioHapticsEngine,
+  playBridgeHapticsTestPattern,
+  playBridgeSpeakerTestTone,
+  getDefaultRenderEndpointStatus,
+  setDefaultRenderBridgeEndpoint,
+  type DefaultRenderEndpointStatus,
+  type SystemAudioHapticsConfig
+} from './audio-helper';
 import { CompanionDebugConfig } from './debug-config';
 import { HidDiscoveryClient } from './hid-discovery-client';
-import { SettingsStore, normalizeUiScalePercent } from './settings-store';
+import { SettingsStore, normalizeUiScalePercent, normalizeUiThemePreset } from './settings-store';
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
 
 const POLL_INTERVAL_MS = 500;
-const HOST_AUDIO_HEARTBEAT_MS = 250;
-const HOST_AUDIO_ACTIVE_POLL_INTERVAL_MS = 5000;
-const HOST_AUDIO_STATUS_READ_INTERVAL_MS = 500;
-const HOST_AUDIO_HELPER_STATUS_READ_INTERVAL_MS = 5000;
-const HOST_AUDIO_CAPTURE_RETRY_MS = 5000;
+const SHORTCUT_POLL_INTERVAL_MS = 50;
+const SHORTCUT_POLL_ERROR_RETRY_MS = 250;
+const AUDIO_STATUS_READ_INTERVAL_MS = 500;
 const AUDIO_DEBUG_READ_INTERVAL_MS = 500;
 const TRIGGER_TRACE_READ_INTERVAL_MS = 250;
 const FEEDBACK_TRACE_READ_INTERVAL_MS = 250;
@@ -82,10 +102,12 @@ const AUDIO_DEBUG_DIAGNOSTICS_ENABLED = CompanionDebugConfig.audioDebugDiagnosti
 const TRIGGER_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.triggerTraceDiagnosticsEnabled;
 const FEEDBACK_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.feedbackTraceDiagnosticsEnabled;
 const MIC_KEEPALIVE_ENABLED = CompanionDebugConfig.micKeepaliveEnabled;
-const HOST_AUDIO_MAX_QUEUED_FRAMES = 2;
-const HOST_AUDIO_STOP_FADE_MS = 40;
+const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
+const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
+const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
-const MIN_SUPPORTED_FIRMWARE_VERSION = '1.5.0';
+const BUNDLED_FIRMWARE_VERSION = '1.6.3';
+const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
 const AUDIO_DEBUG_LOG_LINE_LIMIT = 300;
 const TRIGGER_TRACE_LOG_LINE_LIMIT = 300;
@@ -94,11 +116,25 @@ const FEEDBACK_TRACE_LOG_LINE_LIMIT = 300;
 const FEEDBACK_TRACE_MAX_READS_PER_POLL = 32;
 const STARTUP_REAPPLY_MIN_SETTLE_MS = 0;
 const STARTUP_REAPPLY_RETRY_DELAYS_MS = [250, 650, 1300] as const;
+const HOST_PERSONA_TRANSITION_TIMEOUT_MS = 8000;
+const HOST_PERSONA_TRANSITION_SETTLE_MS = 0;
+const HOST_PERSONA_TRANSITION_REDISCOVERY_POLL_MS = 50;
+const HOST_PERSONA_TRANSITION_OPEN_RETRY_MS = 250;
+const HOST_PERSONA_RECONNECT_GRACE_MS = 5000;
+const HOST_PERSONA_DEFAULT_RENDER_RESTORE_RETRY_MS = 500;
+const HOST_PERSONA_DEFAULT_RENDER_RESTORE_GRACE_MS = 4000;
 const MIN_IDLE_DISCONNECT_TIMEOUT_MINUTES = 1;
 const MAX_IDLE_DISCONNECT_TIMEOUT_MINUTES = 120;
 const CONTROLLER_POWER_SAVING_CAP_PERCENT = 60;
 const STANDARD_FEEDBACK_GAIN_PERCENT = 200;
 const BOOSTED_FEEDBACK_GAIN_PERCENT = 500;
+const HAPTICS_STEP = 20;
+const SPEAKER_VOLUME_STEP = 10;
+const MIC_VOLUME_STEP = 10;
+const LIGHTBAR_BRIGHTNESS_STEP = 10;
+const TRIGGER_EFFECT_STEP = 10;
+const AUDIO_REACTIVE_HAPTICS_FIXED_GAIN_PERCENT = 100;
+const AUDIO_REACTIVE_HAPTICS_SUPPRESS_CLASSIC_RUMBLE_MODE_FLAG = 0x80;
 const SONY_VENDOR_ID = 0x054c;
 const DUALSENSE_PRODUCT_IDS = new Set([0x0ce6, 0x0df2]);
 const WINDOWS_DEVICE_CLEANUP_RELATIVE_PATH = path.join('tools', 'windows', 'clean-ds5bridge-devices.ps1');
@@ -114,15 +150,29 @@ type BridgeDiagnosticsWithoutAudioLog = Omit<
   | 'triggerTraceDroppedCount'
   | 'feedbackTraceLines'
   | 'feedbackTraceDroppedCount'
-  | 'hostAudioCaptureIssue'
-  | 'hostAudioCaptureRetry'
-  | 'hostAudioStatus'
+  | 'audioStatus'
 >;
 
 type CommandOptions = {
   expectSettingsRevisionChange?: boolean;
   throwOnCommandError?: boolean;
   extraPayload?: ArrayLike<number>;
+  allowAckTransportLoss?: boolean;
+  allowProtocolMismatch?: boolean;
+};
+
+type HostPersonaTransitionState = HostPersonaTransition & {
+  settlingUntil: number | null;
+  reconnectingUntil: number;
+  completedAt: number | null;
+};
+
+type HostPersonaDefaultRenderRestore = {
+  to: HostPersonaMode;
+  deadlineAt: number;
+  nextAttemptAt: number;
+  attempts: number;
+  inFlight: boolean;
 };
 
 export type BridgeToast = {
@@ -187,39 +237,57 @@ function isDualSenseDevice(device: HidDeviceSummary): boolean {
     && /DualSense/i.test(device.product ?? '');
 }
 
-function isSupportedFirmwareVersion(version: string): boolean {
+function parseFirmwareVersion(version: string): { major: number; minor: number; patch: number } | null {
   const [major = 0, minor = 0, patch = 0] = version.split('.').map((part) => Number.parseInt(part, 10));
   if (![major, minor, patch].every(Number.isFinite)) {
-    return false;
+    return null;
   }
-  return major > 1 || (major === 1 && (minor > 5 || (minor === 5 && patch >= 0)));
+  return { major, minor, patch };
 }
 
-function hostAudioCaptureIssueMessage(
-  reason: HostAudioStartFailureReason,
-  retrySeconds: number,
-  fallbackMessage: string
-): string {
-  switch (reason) {
-    case 'device-in-use':
-      return `DualSense audio endpoint is in exclusive use. Host Encoding will retry in ${retrySeconds}s; disable Host Encoding for games that require exclusive DualSense audio.`;
-    case 'device-invalidated':
-      return `DualSense audio endpoint changed while Host Encoding was starting. Host Encoding will retry in ${retrySeconds}s.`;
-    case 'unsupported-format':
-      return `DualSense raw PCM capture endpoint format is not usable by Windows. Re-enumerate or clean stale DualSense audio devices, then Host Encoding will retry in ${retrySeconds}s.`;
-    case 'bulk-pcm-unavailable':
-      return `DS5 Bridge WinUSB PCM pipe is unavailable. Re-enumerate or clean stale DS5 Bridge devices, then Host Encoding will retry in ${retrySeconds}s.`;
-    case 'start-timeout':
-    case 'helper-exit':
-      return `${fallbackMessage} Host Encoding will retry in ${retrySeconds}s.`;
+function compareFirmwareVersions(left: string, right: string): number | null {
+  const leftVersion = parseFirmwareVersion(left);
+  const rightVersion = parseFirmwareVersion(right);
+  if (!leftVersion || !rightVersion) {
+    return null;
   }
+  for (const part of ['major', 'minor', 'patch'] as const) {
+    const delta = leftVersion[part] - rightVersion[part];
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+  return 0;
 }
 
-function shouldSurfaceHostAudioCaptureIssue(reason: HostAudioStartFailureReason): boolean {
-  return reason === 'device-in-use'
-    || reason === 'device-invalidated'
-    || reason === 'unsupported-format'
-    || reason === 'bulk-pcm-unavailable';
+function isSupportedFirmwareVersion(version: string): boolean {
+  const comparison = compareFirmwareVersions(version, MIN_SUPPORTED_FIRMWARE_VERSION);
+  return comparison !== null && comparison >= 0;
+}
+
+function firmwareUpdateAvailable(
+  version: string
+): BridgeDiagnostics['firmwareUpdateAvailable'] {
+  const comparison = compareFirmwareVersions(version, BUNDLED_FIRMWARE_VERSION);
+  if (comparison === null || comparison >= 0) {
+    return null;
+  }
+  return {
+    currentVersion: version,
+    availableVersion: BUNDLED_FIRMWARE_VERSION
+  };
+}
+
+function isBridgeTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /WinUSB bridge (?:GET_REPORT|SET_REPORT|sendFeatureReport|getFeatureReport) failed/i.test(message)
+    || /WinUSB bridge helper request timed out/i.test(message)
+    || /A device attached to the system is not functioning/i.test(message)
+    || /No companion bridge is connected/i.test(message);
+}
+
+function isProtocolMismatch(error: unknown): error is ProtocolError {
+  return error instanceof ProtocolError && error.code === 'bad-version';
 }
 
 function emptyDiagnostics(rawDevices: HidDeviceSummary[]): BridgeDiagnostics {
@@ -230,10 +298,9 @@ function emptyDiagnostics(rawDevices: HidDeviceSummary[]): BridgeDiagnostics {
     settingsRevision: null,
     lastAck: null,
     lastError: null,
+    firmwareUpdateAvailable: null,
     lastPollAt: null,
     rawDevices,
-    hostAudioCaptureIssue: null,
-    hostAudioCaptureRetry: null,
     audioDebugLogPath: null,
     audioDebugLogLines: [],
     audioDebugDroppedCount: 0,
@@ -242,7 +309,7 @@ function emptyDiagnostics(rawDevices: HidDeviceSummary[]): BridgeDiagnostics {
     triggerTraceDroppedCount: 0,
     feedbackTraceLines: [],
     feedbackTraceDroppedCount: 0,
-    hostAudioStatus: null
+    audioStatus: null
   };
 }
 
@@ -259,12 +326,19 @@ function parseHexColor(color: string): { hex: string; red: number; green: number
 function muteButtonModeValue(mode: MuteButtonMode): number {
   if (mode === 'keyboard') return 1;
   if (mode === 'quiet') return 2;
+  if (mode === 'chord') return 3;
   return 0;
 }
 
-function encodeMuteKeyboardOptions(modifiers: number, behavior: MuteKeyboardBehavior): number {
+function encodeMuteKeyboardOptions(
+  modifiers: number,
+  behavior: MuteKeyboardBehavior,
+  chordStarterEnabled = false
+): number {
   const modifierBits = Math.max(0, Math.min(MUTE_KEYBOARD_MODIFIER_MASK, Math.round(modifiers)));
-  return behavior === 'hold' ? modifierBits | MUTE_KEYBOARD_HOLD_FLAG : modifierBits;
+  return modifierBits
+    | (behavior === 'hold' ? MUTE_KEYBOARD_HOLD_FLAG : 0)
+    | (chordStarterEnabled ? MUTE_KEYBOARD_CHORD_STARTER_FLAG : 0);
 }
 
 function triggerTestModeValue(mode: TriggerTestMode): number {
@@ -277,6 +351,64 @@ function triggerTestTargetValue(target: TriggerTestTarget): number {
   if (target === 'l2') return 1;
   if (target === 'r2') return 2;
   return 0;
+}
+
+function audioReactiveHapticsModeValue(mode: AudioReactiveHapticsMode): number {
+  return mode === 'replace' ? 1 : 0;
+}
+
+function audioReactiveHapticsBassFocusValue(focus: AudioReactiveHapticsBassFocus): number {
+  switch (focus) {
+    case 'deep':
+      return 0;
+    case 'punchy':
+      return 2;
+    case 'wide':
+      return 3;
+    case 'balanced':
+    default:
+      return 1;
+  }
+}
+
+function audioReactiveHapticsResponseValue(response: AudioReactiveHapticsResponse): number {
+  switch (response) {
+    case 'subtle':
+      return 0;
+    case 'strong':
+      return 2;
+    case 'balanced':
+    default:
+      return 1;
+  }
+}
+
+function audioReactiveHapticsAttackValue(attack: AudioReactiveHapticsAttack): number {
+  switch (attack) {
+    case 'soft':
+      return 0;
+    case 'fast':
+      return 2;
+    case 'sharp':
+      return 3;
+    case 'balanced':
+    default:
+      return 1;
+  }
+}
+
+function audioReactiveHapticsReleaseValue(release: AudioReactiveHapticsRelease): number {
+  switch (release) {
+    case 'tight':
+      return 0;
+    case 'smooth':
+      return 2;
+    case 'long':
+      return 3;
+    case 'balanced':
+    default:
+      return 1;
+  }
 }
 
 function normalizeTriggerTestMode(mode: unknown): TriggerTestMode {
@@ -318,6 +450,108 @@ function normalizePollingRateMode(mode: PollingRateMode): PollingRateMode {
     return mode;
   }
   return '1000';
+}
+
+function normalizeAudioReactiveHapticsMode(mode: unknown): AudioReactiveHapticsMode {
+  return mode === 'replace' ? 'replace' : 'mix';
+}
+
+function normalizeAudioReactiveHapticsSource(source: unknown): AudioReactiveHapticsSource {
+  if (source === 'controller-audio' || source === 'system-audio') {
+    return source;
+  }
+  if (!source || typeof source !== 'object') {
+    return 'system-audio';
+  }
+  const candidate = source as Partial<Extract<AudioReactiveHapticsSource, { kind: 'app-session' }>>;
+  if (candidate.kind !== 'app-session') {
+    return 'system-audio';
+  }
+  const processId = Number.isFinite(candidate.processId)
+    ? Math.max(0, Math.round(candidate.processId!))
+    : 0;
+  const displayName = normalizeOptionalString(candidate.displayName);
+  const executableName = normalizeOptionalString(candidate.executableName);
+  const processPath = normalizeOptionalString(candidate.processPath);
+  if (processId <= 0 && !processPath && !executableName) {
+    return 'system-audio';
+  }
+  return {
+    kind: 'app-session',
+    processId,
+    ...(displayName ? { displayName } : {}),
+    ...(executableName ? { executableName } : {}),
+    ...(processPath ? { processPath } : {}),
+    ...(normalizeOptionalString(candidate.sessionIdentifier) ? { sessionIdentifier: normalizeOptionalString(candidate.sessionIdentifier) } : {}),
+    ...(normalizeOptionalString(candidate.sessionInstanceIdentifier) ? { sessionInstanceIdentifier: normalizeOptionalString(candidate.sessionInstanceIdentifier) } : {})
+  };
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function audioReactiveHapticsSourceKey(source: AudioReactiveHapticsSource): string {
+  if (source === 'controller-audio' || source === 'system-audio') {
+    return source;
+  }
+  if (source.processPath) {
+    return `app-path:${source.processPath.toLowerCase()}`;
+  }
+  if (source.executableName) {
+    return `app-exe:${source.executableName.toLowerCase()}`;
+  }
+  return `app-pid:${Math.max(0, Math.round(source.processId))}`;
+}
+
+function cloneAudioHapticsSessions(sessions: AudioHapticsSession[]): AudioHapticsSession[] {
+  return sessions.map((session) => ({ ...session }));
+}
+
+function normalizeAudioReactiveHapticsBassFocus(focus: unknown): AudioReactiveHapticsBassFocus {
+  if (focus === 'deep' || focus === 'punchy' || focus === 'wide') {
+    return focus;
+  }
+  return 'balanced';
+}
+
+function normalizeAudioReactiveHapticsResponse(response: unknown): AudioReactiveHapticsResponse {
+  if (response === 'subtle' || response === 'strong') {
+    return response;
+  }
+  return 'balanced';
+}
+
+function normalizeAudioReactiveHapticsAttack(attack: unknown): AudioReactiveHapticsAttack {
+  if (attack === 'soft' || attack === 'fast' || attack === 'sharp') {
+    return attack;
+  }
+  return 'balanced';
+}
+
+function normalizeAudioReactiveHapticsRelease(release: unknown): AudioReactiveHapticsRelease {
+  if (release === 'tight' || release === 'smooth' || release === 'long') {
+    return release;
+  }
+  return 'balanced';
+}
+
+function normalizeAudioReactiveHapticsConfig(
+  config: Partial<AudioReactiveHapticsConfig>,
+  settings: CompanionSettings
+): AudioReactiveHapticsConfig {
+  return {
+    enabled: typeof config.enabled === 'boolean' ? config.enabled : settings.audioReactiveHapticsEnabled,
+    source: normalizeAudioReactiveHapticsSource(config.source ?? settings.audioReactiveHapticsSource),
+    mode: normalizeAudioReactiveHapticsMode(config.mode ?? settings.audioReactiveHapticsMode),
+    gainPercent: Number.isFinite(config.gainPercent ?? settings.audioReactiveHapticsGainPercent)
+      ? Math.max(0, Math.min(200, Math.round(config.gainPercent ?? settings.audioReactiveHapticsGainPercent)))
+      : AUDIO_REACTIVE_HAPTICS_FIXED_GAIN_PERCENT,
+    bassFocus: normalizeAudioReactiveHapticsBassFocus(config.bassFocus ?? settings.audioReactiveHapticsBassFocus),
+    response: normalizeAudioReactiveHapticsResponse(config.response ?? settings.audioReactiveHapticsResponse),
+    attack: normalizeAudioReactiveHapticsAttack(config.attack ?? settings.audioReactiveHapticsAttack),
+    release: normalizeAudioReactiveHapticsRelease(config.release ?? settings.audioReactiveHapticsRelease)
+  };
 }
 
 function normalizeIdleDisconnectTimeoutMinutes(minutes: number): number {
@@ -373,17 +607,145 @@ function formatMicDebugEvent(prefix: string, args: number[]): string {
   }
 }
 
-function parseShortcutEvent(data: Buffer | number[]): ShortcutEvent | null {
+type InputShortcutEvent =
+  | { kind: 'shortcut'; event: ShortcutEvent }
+  | { kind: 'chord-function'; slot: number };
+
+function parseShortcutEvent(data: Buffer | number[]): InputShortcutEvent | null {
   const report = Array.from(data);
   const event = report[0] === REPORT_ID.INPUT ? report[1] : report[0];
+  if (event >= CHORD_FUNCTION_EVENT_BASE && event < CHORD_FUNCTION_EVENT_BASE + MAX_CHORD_ASSIGNMENTS) {
+    return {
+      kind: 'chord-function',
+      slot: event - CHORD_FUNCTION_EVENT_BASE
+    };
+  }
   switch (event) {
     case SHORTCUT_EVENT.CONTROLLER_VOLUME_DOWN:
     case SHORTCUT_EVENT.CONTROLLER_VOLUME_UP:
     case SHORTCUT_EVENT.SLEEP_CONTROLLER:
-      return event;
+    case SHORTCUT_EVENT.MIC_MUTE_ON:
+    case SHORTCUT_EVENT.MIC_MUTE_OFF:
+      return { kind: 'shortcut', event };
     default:
       return null;
   }
+}
+
+const VIRTUAL_KEY_CODES: Record<string, number> = {
+  BACKSPACE: 0x08,
+  TAB: 0x09,
+  ENTER: 0x0d,
+  RETURN: 0x0d,
+  SHIFT: 0x10,
+  CTRL: 0x11,
+  CONTROL: 0x11,
+  ALT: 0x12,
+  PAUSE: 0x13,
+  CAPSLOCK: 0x14,
+  ESC: 0x1b,
+  ESCAPE: 0x1b,
+  SPACE: 0x20,
+  PAGEUP: 0x21,
+  PAGEDOWN: 0x22,
+  END: 0x23,
+  HOME: 0x24,
+  LEFT: 0x25,
+  UP: 0x26,
+  RIGHT: 0x27,
+  DOWN: 0x28,
+  PRINTSCREEN: 0x2c,
+  PRTSC: 0x2c,
+  PRTSCN: 0x2c,
+  SNAPSHOT: 0x2c,
+  INSERT: 0x2d,
+  DELETE: 0x2e,
+  WIN: 0x5b,
+  WINDOWS: 0x5b,
+  META: 0x5b,
+  COMMAND: 0x5b,
+  MENU: 0x5d,
+  NUMLOCK: 0x90,
+  SCROLLLOCK: 0x91,
+  PLAYPAUSE: 0xb3,
+  MEDIAPLAYPAUSE: 0xb3,
+  NEXTTRACK: 0xb0,
+  MEDIANEXTTRACK: 0xb0,
+  PREVIOUSTRACK: 0xb1,
+  MEDIAPREVIOUSTRACK: 0xb1,
+  VOLUMEMUTE: 0xad,
+  VOLUMEUP: 0xaf,
+  VOLUMEDOWN: 0xae
+};
+
+for (let index = 0; index < 26; index += 1) {
+  VIRTUAL_KEY_CODES[String.fromCharCode(65 + index)] = 0x41 + index;
+}
+for (let index = 0; index <= 9; index += 1) {
+  VIRTUAL_KEY_CODES[String(index)] = 0x30 + index;
+  VIRTUAL_KEY_CODES[`NUMPAD${index}`] = 0x60 + index;
+}
+for (let index = 1; index <= 24; index += 1) {
+  VIRTUAL_KEY_CODES[`F${index}`] = 0x6f + index;
+}
+
+const MEDIA_ACTION_KEY_CODES: Record<Extract<ChordFunction, { type: 'media' }>['action'], number> = {
+  'play-pause': 0xb3,
+  'next-track': 0xb0,
+  'previous-track': 0xb1,
+  mute: 0xad,
+  'volume-up': 0xaf,
+  'volume-down': 0xae
+};
+
+function normalizeVirtualKeyName(key: string): string {
+  return key.trim().replace(/\s+/g, '').replace(/-/g, '').toUpperCase();
+}
+
+function virtualKeyCodeFor(key: string): number | null {
+  const normalized = normalizeVirtualKeyName(key);
+  return VIRTUAL_KEY_CODES[normalized] ?? null;
+}
+
+async function sendVirtualKeySequence(codes: number[]): Promise<void> {
+  const normalized = codes
+    .map((code) => Math.max(0, Math.min(0xff, Math.round(code))))
+    .filter((code) => Number.isFinite(code) && code > 0);
+  if (normalized.length === 0) {
+    return;
+  }
+  const downCodes = normalized.join(',');
+  const upCodes = [...normalized].reverse().join(',');
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "Add-Type -Namespace DS5Bridge -Name KeyboardInput -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);'",
+    `foreach ($vk in @(${downCodes})) { [DS5Bridge.KeyboardInput]::keybd_event([byte]$vk, 0, 0, [UIntPtr]::Zero) }`,
+    'Start-Sleep -Milliseconds 20',
+    `foreach ($vk in @(${upCodes})) { [DS5Bridge.KeyboardInput]::keybd_event([byte]$vk, 0, 2, [UIntPtr]::Zero) }`
+  ].join('; ');
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      script
+    ], {
+      windowsHide: true
+    });
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Shortcut key injection failed${stderr ? `: ${stderr.trim()}` : ''}`));
+      }
+    });
+  });
 }
 
 function formatUsbDebugEvent(prefix: string, args: number[]): string {
@@ -406,6 +768,18 @@ function formatUsbDebugEvent(prefix: string, args: number[]): string {
     default:
       return `${prefix} [USB] type=${type} arg1=${arg1} arg2=${arg2} arg3=${arg3} arg4=${arg4}`;
   }
+}
+
+function normalizeHostPersonaMode(mode: HostPersonaMode): HostPersonaMode {
+  if (mode === 'xbox' || mode === 'ds4') {
+    return mode;
+  }
+  return 'dualsense';
+}
+
+function hostPersonaModeLabel(mode: HostPersonaMode): string {
+  if (mode === 'ds4') return 'DualShock 4';
+  return mode === 'xbox' ? 'Xbox Controller' : 'DualSense';
 }
 
 function formatHidDebugEvent(prefix: string, args: number[]): string {
@@ -445,7 +819,7 @@ function routeSourceLabel(source: number): string {
     case 1:
       return 'headset-change';
     case 2:
-      return 'host-primer';
+      return 'route-primer';
     default:
       return String(source);
   }
@@ -456,7 +830,7 @@ function formatAudioDebugEvent(event: AudioDebugEventPayload): string {
   const prefix = `#${event.sequence} t=${event.timeUs}us`;
   switch (event.eventCode) {
     case AUDIO_DEBUG_EVENT.AUDIO_START:
-      return `${prefix} [Audio] START: host audio audio_fifo=${arg0} opus_ready=${arg1} frames=${arg2} packet=${arg3} reportSeq=${arg4}`;
+      return `${prefix} [Audio] START: local audio audio_fifo=${arg0} opus_ready=${arg1} frames=${arg2} packet=${arg3} reportSeq=${arg4}`;
     case AUDIO_DEBUG_EVENT.RESET_GAP:
       return `${prefix} [Audio] RESET: gap detected audio_fifo=${arg0} opus_ready=${arg1} gap_ms=${limitedByte(arg2)} packet=${arg3} skip=${arg4}`;
     case AUDIO_DEBUG_EVENT.CORE1_RESET:
@@ -487,29 +861,6 @@ function formatAudioDebugEvent(event: AudioDebugEventPayload): string {
       return `${prefix} [Audio] PREROLL: encoded silence requested=${arg0} queued=${arg1} opus_fifo=${arg2} skip=${arg3}`;
     case AUDIO_DEBUG_EVENT.USB_SILENCE_TAIL:
       return `${prefix} [Audio] TAIL: forwarding USB silence frames=${arg0} audio_fifo=${arg1} opus_ready=${arg2} packet=${arg3} reportSeq=${arg4}`;
-    case AUDIO_DEBUG_EVENT.HOST_MODE:
-      return `${prefix} [HostPico] MODE runtime=${arg0} reason=${arg1} generation=${arg2}`;
-    case AUDIO_DEBUG_EVENT.HOST_FRAME:
-      if (arg0 === 0xfe || arg0 === 0xfd) {
-        const transport = arg0 === 0xfe ? 'fast' : 'chunked';
-        return `${prefix} [HostPico] FRAME incomplete-${transport} sequence=${arg1} mask=${hexByte(arg2)} chunks=${arg3} expected=${limitedByte(arg4)}`;
-      }
-      if (arg0 === 0xf0) {
-        return `${prefix} [HostPico] JITTER drop-oldest queue=${arg1} target=${arg2} dropped=${arg3} started=${arg4 === 1 ? 'true' : 'false'}`;
-      }
-      if (arg0 === 0xf1) {
-        return `${prefix} [HostPico] JITTER add-fail queue=${arg1} target=${arg2} dropped=${arg3}`;
-      }
-      if (arg0 === 0xf2) {
-        return `${prefix} [HostPico] JITTER start queue=${arg1} target=${arg2} packet=${arg3} duplex=${arg4 === 1 ? 'true' : 'false'}`;
-      }
-      if (arg0 === 0xf3) {
-        return `${prefix} [HostPico] JITTER underrun queue=${arg1} target=${arg2} dropped=${arg3} duplex=${arg4 === 1 ? 'true' : 'false'}`;
-      }
-      if (arg0 === 0xf4) {
-        return `${prefix} [HostPico] JITTER duplex-prebuffer queue=${arg1} target=${arg2} packet=${arg3} reportSeq=${arg4}`;
-      }
-      return `${prefix} [HostPico] FRAME submitted audio_fifo=${arg0} received=${arg1} generation=${arg2} packet=${arg3} reportSeq=${arg4}`;
     case AUDIO_DEBUG_EVENT.MIC_PACKET:
       return formatMicDebugEvent(prefix, event.args);
     case AUDIO_DEBUG_EVENT.USB_EVENT:
@@ -617,9 +968,9 @@ function feedbackTraceStageLabel(stage: number): string {
     case 5:
       return 'DROP';
     case 6:
-      return 'HOST-AUDIO-RX';
+      return 'RESERVED-6';
     case 7:
-      return 'HOST-AUDIO-SUBMIT';
+      return 'RESERVED-7';
     case 8:
       return 'AUDIO-ENQUEUE';
     case 9:
@@ -643,7 +994,7 @@ function outputTraceRouteLabels(flags: number): string {
     labels.push('audio-recent');
   }
   if ((flags & 0x08) !== 0) {
-    labels.push('host-audio');
+    labels.push('route-primed');
   }
   if ((flags & 0x10) !== 0) {
     labels.push('usb-speaker');
@@ -852,10 +1203,18 @@ export class BridgeService extends EventEmitter {
   private device: WinUsbCompanionTransport | null = null;
   private devicePath: string | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
-  private hostAudioHeartbeatTimer: NodeJS.Timeout | null = null;
-  private readonly hostAudioEngine = new HostAudioEngine();
+  private hostPersonaTransitionPollTimer: NodeJS.Timeout | null = null;
+  private pollInFlight = false;
+  private pollAgainRequested = false;
+  private shortcutPollTimer: NodeJS.Timeout | null = null;
+  private shortcutPollInFlight = false;
+  private readonly systemAudioHapticsEngine = new SystemAudioHapticsEngine();
+  private readonly audioHapticsSessionMonitor = new AudioHapticsSessionMonitor();
   private readonly micKeepaliveEngine = new MicKeepaliveEngine();
   private readonly hidDiscovery = new HidDiscoveryClient();
+  private audioHapticsSessionCache: { key: string; expiresAt: number; sessions: AudioHapticsSession[] } | null = null;
+  private audioHapticsSessionListInFlight: Promise<AudioHapticsSession[]> | null = null;
+  private audioHapticsSessionListInFlightKey: string | null = null;
   private snapshot: BridgeSnapshot;
   private lastEmittedSnapshotSignature: string | null = null;
   private commandSequence = 0;
@@ -878,34 +1237,30 @@ export class BridgeService extends EventEmitter {
   private feedbackTraceLines: string[] = [];
   private feedbackTraceDroppedCount = 0;
   private feedbackTraceSupported: boolean | null = null;
-  private hostAudioStatus: HostAudioStatusPayload | null = null;
+  private audioStatus: AudioStatusPayload | null = null;
+  private incompatibleCompanionProtocolVersion: ReportProtocolVersion | null = null;
   private lastAudioStatsSignature: string | null = null;
-  private hostAudioCommandActive = false;
+  private systemAudioHapticsRetryAt = 0;
+  private systemAudioHapticsPassthroughActive = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
-  private hostAudioHeartbeatBusy = false;
-  private hostAudioReportQueue: number[][] = [];
-  private hostAudioWritePumpActive = false;
-  private hostAudioFrameCount = 0;
-  private hostAudioChunkWriteCount = 0;
-  private hostAudioFrameDropCount = 0;
-  private hostAudioCaptureRetryAt = 0;
-  private hostAudioCaptureIssue: HostAudioCaptureIssue | null = null;
-  private hostAudioCaptureRetry: HostAudioCaptureRetry | null = null;
-  private lastHostAudioStageLogAt = 0;
-  private lastHostAudioStatusReadAt = 0;
+  private lastAudioStatusReadAt = 0;
   private lastAudioDebugReadAt = 0;
   private lastTriggerTraceReadAt = 0;
   private lastFeedbackTraceReadAt = 0;
-  private lastHostAudioActivePollAt = 0;
+  private hostPersonaTransition: HostPersonaTransitionState | null = null;
+  private completedHostPersonaMode: HostPersonaMode | null = null;
+  private hostPersonaDefaultRenderRestore: HostPersonaDefaultRenderRestore | null = null;
   private controllerPowerSavingActive: boolean | null = null;
   private previousControllerConnected: boolean | null = null;
   private lowBatteryToastActive = false;
-  private shortcutFeaturePollingAvailable = true;
-  private volumeShortcutQueue: Promise<void> = Promise.resolve();
+  private shortcutFeaturePollRetryAt = 0;
+  private shortcutActionQueue: Promise<void> = Promise.resolve();
   private readonly shortcutActionHandlers: Record<ShortcutEvent, () => Promise<void>> = {
     [SHORTCUT_EVENT.CONTROLLER_VOLUME_DOWN]: () => this.applyControllerVolumeShortcut(-10),
     [SHORTCUT_EVENT.CONTROLLER_VOLUME_UP]: () => this.applyControllerVolumeShortcut(10),
-    [SHORTCUT_EVENT.SLEEP_CONTROLLER]: () => this.applySleepShortcut()
+    [SHORTCUT_EVENT.SLEEP_CONTROLLER]: () => this.applySleepShortcut(),
+    [SHORTCUT_EVENT.MIC_MUTE_ON]: () => this.applyControllerMicMuteEvent(true),
+    [SHORTCUT_EVENT.MIC_MUTE_OFF]: () => this.applyControllerMicMuteEvent(false)
   };
 
   constructor(private readonly settingsStore: SettingsStore) {
@@ -915,15 +1270,32 @@ export class BridgeService extends EventEmitter {
       message: 'No bridge detected',
       status: null,
       settings: this.settingsStore.get(),
-      diagnostics: this.withAudioDebugDiagnostics(emptyDiagnostics([]))
+      diagnostics: this.withAudioDebugDiagnostics(emptyDiagnostics([])),
+      personaTransition: null
     };
-    this.hostAudioEngine.on('frame', (frame: HostAudioFramePayload) => this.sendHostAudioFrame(frame));
-    this.hostAudioEngine.on('error', (error: Error) => this.publishError(error));
-    this.hostAudioEngine.on('status', (line: string) => {
+    this.systemAudioHapticsEngine.on('error', (error: Error) => {
+      this.appendAudioDebugLines([`[SystemHaptics] error: ${error.message}`]);
+      this.emitSnapshot();
+    });
+    this.systemAudioHapticsEngine.on('status', (line: string) => {
       if (line) {
-        this.appendAudioDebugLines([`[HostHelper] ${line}`]);
+        this.appendAudioDebugLines([`[SystemHaptics] ${line}`]);
+      }
+      void this.handleSystemAudioHapticsStatus(line);
+      this.emitSnapshot();
+    });
+    this.audioHapticsSessionMonitor.on('error', (error: Error) => {
+      this.appendAudioDebugLines([`[AudioSessions] error: ${error.message}`]);
+      this.emitSnapshot();
+    });
+    this.audioHapticsSessionMonitor.on('status', (line: string) => {
+      if (line) {
+        this.appendAudioDebugLines([`[AudioSessions] ${line}`]);
       }
       this.emitSnapshot();
+    });
+    this.audioHapticsSessionMonitor.on('sessions', () => {
+      this.audioHapticsSessionCache = null;
     });
     this.micKeepaliveEngine.on('error', (error: Error) => {
       this.appendAudioDebugLines([`[MicKeepalive] error: ${error.message}`]);
@@ -937,40 +1309,44 @@ export class BridgeService extends EventEmitter {
     });
   }
 
-  private enqueueShortcutEvent(event: ShortcutEvent): void {
-    this.volumeShortcutQueue = this.volumeShortcutQueue
+  private enqueueShortcutEvent(event: InputShortcutEvent): void {
+    this.shortcutActionQueue = this.shortcutActionQueue
       .catch(() => {
         // Keep later shortcut events alive after a failed command.
       })
-      .then(() => this.dispatchShortcutAction(event));
+      .then(() => this.dispatchInputShortcutAction(event));
   }
 
   private async pollShortcutEvent(): Promise<void> {
     const device = this.device;
-    if (!device || !this.shortcutFeaturePollingAvailable) {
+    if (!device || Date.now() < this.shortcutFeaturePollRetryAt) {
       return;
     }
 
     try {
       const event = parseShortcutEvent(await device.getFeatureReport(REPORT_ID.INPUT, REPORT_LENGTH));
+      this.shortcutFeaturePollRetryAt = 0;
       if (event !== null) {
         this.enqueueShortcutEvent(event);
       }
     } catch {
       // Shortcut polling is optional and should never make the bridge look
-      // disconnected on its own.
-      this.shortcutFeaturePollingAvailable = false;
+      // disconnected on its own. Keep retrying so one transient control
+      // transfer failure does not leave controller shortcuts on the slow
+      // status-poll path.
+      this.shortcutFeaturePollRetryAt = Date.now() + SHORTCUT_POLL_ERROR_RETRY_MS;
     }
   }
 
   start(): void {
-    this.poll().catch((error) => this.publishError(error));
+    this.runPoll();
     this.pollTimer = setInterval(() => {
-      this.poll().catch((error) => this.publishError(error));
+      this.runPoll();
     }, POLL_INTERVAL_MS);
-    this.hostAudioHeartbeatTimer = setInterval(() => {
-      this.pulseHostAudio().catch((error) => this.publishError(error));
-    }, HOST_AUDIO_HEARTBEAT_MS);
+    this.runShortcutPoll();
+    this.shortcutPollTimer = setInterval(() => {
+      this.runShortcutPoll();
+    }, SHORTCUT_POLL_INTERVAL_MS);
   }
 
   async stop(): Promise<void> {
@@ -978,20 +1354,13 @@ export class BridgeService extends EventEmitter {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
-    if (this.hostAudioHeartbeatTimer) {
-      clearInterval(this.hostAudioHeartbeatTimer);
-      this.hostAudioHeartbeatTimer = null;
+    this.clearHostPersonaTransitionPollTimer();
+    if (this.shortcutPollTimer) {
+      clearInterval(this.shortcutPollTimer);
+      this.shortcutPollTimer = null;
     }
 
-    if (this.device) {
-      try {
-        await this.stopHostAudioSession(false);
-      } catch (error) {
-        this.publishError(error);
-      }
-    }
-    await this.hostAudioEngine.stop();
-    await this.micKeepaliveEngine.stop();
+    await this.stopControllerAudioPolling();
     this.hidDiscovery.stop();
     this.closeDevice();
   }
@@ -1002,6 +1371,77 @@ export class BridgeService extends EventEmitter {
 
   listDevices(): Promise<HidDeviceSummary[]> {
     return this.hidDiscovery.listDevices();
+  }
+
+  private controllerAudioReady(status = this.snapshot.status): boolean {
+    return Boolean(status?.controllerConnected);
+  }
+
+  private currentHostPersonaMode(): HostPersonaMode {
+    return normalizeHostPersonaMode(
+      this.snapshot.status?.hostPersonaMode ?? this.settingsStore.get().hostPersonaMode
+    );
+  }
+
+  private async stopAudioHapticsSessionPolling(): Promise<void> {
+    this.audioHapticsSessionCache = null;
+    this.audioHapticsSessionListInFlight = null;
+    this.audioHapticsSessionListInFlightKey = null;
+    await this.audioHapticsSessionMonitor.stop();
+  }
+
+  private async stopControllerAudioPolling(): Promise<void> {
+    this.systemAudioHapticsRetryAt = 0;
+    this.systemAudioHapticsPassthroughActive = false;
+    await this.systemAudioHapticsEngine.stop();
+    await this.stopAudioHapticsSessionPolling();
+    await this.micKeepaliveEngine.stop();
+  }
+
+  async listAudioHapticsSessions(): Promise<AudioHapticsSession[]> {
+    if (!this.controllerAudioReady()) {
+      await this.stopAudioHapticsSessionPolling();
+      return [];
+    }
+
+    const source = this.settingsStore.get().audioReactiveHapticsSource;
+    const key = audioReactiveHapticsSourceKey(source);
+    const now = Date.now();
+    if (this.audioHapticsSessionCache?.key === key && now < this.audioHapticsSessionCache.expiresAt) {
+      return cloneAudioHapticsSessions(this.audioHapticsSessionCache.sessions);
+    }
+    if (this.audioHapticsSessionListInFlight && this.audioHapticsSessionListInFlightKey === key) {
+      return cloneAudioHapticsSessions(await this.audioHapticsSessionListInFlight);
+    }
+
+    this.audioHapticsSessionListInFlightKey = key;
+    this.audioHapticsSessionListInFlight = this.audioHapticsSessionMonitor.listSessions()
+      .then((sessions) => {
+        if (this.controllerAudioReady()) {
+          this.audioHapticsSessionCache = {
+            key,
+            expiresAt: Date.now() + AUDIO_HAPTICS_SESSION_CACHE_MS,
+            sessions: cloneAudioHapticsSessions(sessions)
+          };
+        }
+        return sessions;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.appendAudioDebugLines([`[AudioSessions] monitor unavailable error=${message}`]);
+        return [];
+      })
+      .finally(() => {
+        this.audioHapticsSessionListInFlight = null;
+        this.audioHapticsSessionListInFlightKey = null;
+      });
+
+    const sessions = await this.audioHapticsSessionListInFlight;
+    if (!this.controllerAudioReady()) {
+      await this.stopAudioHapticsSessionPolling();
+      return [];
+    }
+    return cloneAudioHapticsSessions(sessions);
   }
 
   async repairWindowsDeviceCache(): Promise<WindowsDeviceCleanupResult> {
@@ -1027,6 +1467,57 @@ export class BridgeService extends EventEmitter {
     this.pollPausedUntil = Math.max(this.pollPausedUntil, Date.now() + milliseconds);
   }
 
+  private runPoll(): void {
+    if (this.pollInFlight) {
+      this.pollAgainRequested = true;
+      return;
+    }
+    this.pollInFlight = true;
+    this.poll()
+      .catch((error) => this.publishError(error))
+      .finally(() => {
+        this.pollInFlight = false;
+        if (this.pollAgainRequested && this.pollTimer) {
+          this.pollAgainRequested = false;
+          this.runPoll();
+        } else {
+          this.pollAgainRequested = false;
+        }
+      });
+  }
+
+  private runShortcutPoll(): void {
+    if (this.shortcutPollInFlight) {
+      return;
+    }
+    this.shortcutPollInFlight = true;
+    this.pollShortcutEvent()
+      .catch((error) => this.publishError(error))
+      .finally(() => {
+        this.shortcutPollInFlight = false;
+      });
+  }
+
+  private scheduleHostPersonaTransitionPoll(): void {
+    if (!this.pollTimer || !this.isHostPersonaTransitionActive() || this.hostPersonaTransitionPollTimer) {
+      return;
+    }
+    this.hostPersonaTransitionPollTimer = setTimeout(() => {
+      this.hostPersonaTransitionPollTimer = null;
+      if (this.isHostPersonaTransitionActive()) {
+        this.runPoll();
+      }
+    }, HOST_PERSONA_TRANSITION_REDISCOVERY_POLL_MS);
+  }
+
+  private clearHostPersonaTransitionPollTimer(): void {
+    if (!this.hostPersonaTransitionPollTimer) {
+      return;
+    }
+    clearTimeout(this.hostPersonaTransitionPollTimer);
+    this.hostPersonaTransitionPollTimer = null;
+  }
+
   private withAudioDebugDiagnostics(diagnostics: BridgeDiagnosticsWithoutAudioLog): BridgeDiagnostics {
     return {
       ...diagnostics,
@@ -1038,10 +1529,214 @@ export class BridgeService extends EventEmitter {
       triggerTraceDroppedCount: this.triggerTraceDroppedCount,
       feedbackTraceLines: [...this.feedbackTraceLines],
       feedbackTraceDroppedCount: this.feedbackTraceDroppedCount,
-      hostAudioCaptureIssue: this.hostAudioCaptureIssue ? { ...this.hostAudioCaptureIssue } : null,
-      hostAudioCaptureRetry: this.hostAudioCaptureRetry ? { ...this.hostAudioCaptureRetry } : null,
-      hostAudioStatus: this.hostAudioStatus ? { ...this.hostAudioStatus } : null
+      audioStatus: this.audioStatus ? { ...this.audioStatus } : null
     };
+  }
+
+  private expireHostPersonaTransition(now = Date.now()): HostPersonaTransitionState | null {
+    const transition = this.hostPersonaTransition;
+    if (!transition) {
+      return null;
+    }
+    if (now >= transition.reconnectingUntil) {
+      this.hostPersonaTransition = null;
+      this.clearHostPersonaTransitionPollTimer();
+      return null;
+    }
+    return transition;
+  }
+
+  private hostPersonaTransitionSnapshot(now = Date.now()): HostPersonaTransition | null {
+    const transition = this.expireHostPersonaTransition(now);
+    if (!transition || transition.completedAt !== null) {
+      return null;
+    }
+    if (transition.settlingUntil !== null && now >= transition.settlingUntil) {
+      return null;
+    }
+    return this.hostPersonaTransitionPublicSnapshot(transition);
+  }
+
+  private hostPersonaTransitionMaskSnapshot(now = Date.now()): HostPersonaTransition | null {
+    const transition = this.expireHostPersonaTransition(now);
+    if (!transition) {
+      return null;
+    }
+    return this.hostPersonaTransitionPublicSnapshot(transition);
+  }
+
+  private hostPersonaTransitionPublicSnapshot(transition: HostPersonaTransitionState): HostPersonaTransition {
+    return {
+      from: transition.from,
+      to: transition.to,
+      startedAt: transition.startedAt,
+      deadlineAt: transition.deadlineAt
+    };
+  }
+
+  private isHostPersonaTransitionActive(now = Date.now()): boolean {
+    return this.expireHostPersonaTransition(now) !== null;
+  }
+
+  private hostPersonaTransitionMessage(transition: HostPersonaTransition, forceReconnecting = false): string {
+    const activeTransition = this.hostPersonaTransition;
+    if (
+      forceReconnecting
+      || (
+        activeTransition
+        && activeTransition.to === transition.to
+        && activeTransition.settlingUntil === null
+        && Date.now() >= activeTransition.deadlineAt
+      )
+    ) {
+      return `Please wait, reconnecting to ${hostPersonaModeLabel(transition.to)} mode`;
+    }
+    return `Switching to ${hostPersonaModeLabel(transition.to)} mode`;
+  }
+
+  private beginHostPersonaTransition(to: HostPersonaMode, from: HostPersonaMode): void {
+    const now = Date.now();
+    this.hostPersonaTransition = {
+      from,
+      to,
+      startedAt: now,
+      deadlineAt: now + HOST_PERSONA_TRANSITION_TIMEOUT_MS,
+      settlingUntil: null,
+      reconnectingUntil: now + HOST_PERSONA_TRANSITION_TIMEOUT_MS + HOST_PERSONA_RECONNECT_GRACE_MS,
+      completedAt: null
+    };
+  }
+
+  private async getDefaultRenderEndpointStatus(): Promise<DefaultRenderEndpointStatus> {
+    return getDefaultRenderEndpointStatus();
+  }
+
+  private async setDefaultRenderBridgeEndpoint(mode: HostPersonaMode): Promise<void> {
+    await setDefaultRenderBridgeEndpoint(mode);
+  }
+
+  private async defaultRenderIsBridgeEndpoint(): Promise<boolean> {
+    try {
+      const status = await this.getDefaultRenderEndpointStatus();
+      this.appendAudioDebugLines([
+        `[HostBridge] default render before persona switch device='${status.deviceName}' bridge=${status.isBridgeEndpoint}`
+      ]);
+      return status.isBridgeEndpoint;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([`[HostBridge] default render check skipped: ${message}`]);
+      return false;
+    }
+  }
+
+  private queueHostPersonaDefaultRenderRestore(to: HostPersonaMode): void {
+    const now = Date.now();
+    this.hostPersonaDefaultRenderRestore = {
+      to,
+      deadlineAt: now
+        + HOST_PERSONA_TRANSITION_TIMEOUT_MS
+        + HOST_PERSONA_RECONNECT_GRACE_MS
+        + HOST_PERSONA_DEFAULT_RENDER_RESTORE_GRACE_MS,
+      nextAttemptAt: 0,
+      attempts: 0,
+      inFlight: false
+    };
+  }
+
+  private async restoreHostPersonaDefaultRenderIfReady(status: BridgeStatusPayload): Promise<void> {
+    const restore = this.hostPersonaDefaultRenderRestore;
+    if (!restore || restore.inFlight || status.hostPersonaMode !== restore.to) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now < restore.nextAttemptAt) {
+      return;
+    }
+    const transition = this.hostPersonaTransition;
+    if (transition && transition.to === restore.to && transition.completedAt === null) {
+      return;
+    }
+    if (now >= restore.deadlineAt) {
+      this.hostPersonaDefaultRenderRestore = null;
+      this.appendAudioDebugLines([
+        `[HostBridge] default render restore expired persona=${restore.to} attempts=${restore.attempts}`
+      ]);
+      return;
+    }
+
+    restore.inFlight = true;
+    restore.attempts += 1;
+    try {
+      await this.setDefaultRenderBridgeEndpoint(restore.to);
+      this.hostPersonaDefaultRenderRestore = null;
+      this.appendAudioDebugLines([
+        `[HostBridge] default render restored for persona=${restore.to}`
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      restore.nextAttemptAt = Date.now() + HOST_PERSONA_DEFAULT_RENDER_RESTORE_RETRY_MS;
+      if (restore.attempts <= 3) {
+        this.appendAudioDebugLines([
+          `[HostBridge] default render restore retry persona=${restore.to} attempts=${restore.attempts} error=${message}`
+        ]);
+      }
+    } finally {
+      if (this.hostPersonaDefaultRenderRestore === restore) {
+        restore.inFlight = false;
+      }
+    }
+  }
+
+  private advanceHostPersonaTransition(status: BridgeStatusPayload, now = Date.now()): HostPersonaTransition | null {
+    const transition = this.expireHostPersonaTransition(now);
+    if (!transition) {
+      return null;
+    }
+    if (status.hostPersonaMode === transition.to) {
+      if (transition.settlingUntil === null) {
+        transition.settlingUntil = now + HOST_PERSONA_TRANSITION_SETTLE_MS;
+      }
+      if (now >= transition.settlingUntil) {
+        if (transition.completedAt === null) {
+          transition.completedAt = now;
+          transition.reconnectingUntil = now + HOST_PERSONA_RECONNECT_GRACE_MS;
+          this.completedHostPersonaMode = transition.to;
+          this.clearHostPersonaTransitionPollTimer();
+        }
+        return null;
+      }
+    }
+    return this.hostPersonaTransitionSnapshot(now);
+  }
+
+  private transitionDiagnostics(rawDevices: HidDeviceSummary[]): BridgeDiagnostics {
+    return this.withAudioDebugDiagnostics({
+      ...this.snapshot.diagnostics,
+      lastError: null,
+      lastPollAt: Date.now(),
+      rawDevices
+    });
+  }
+
+  private applyHostPersonaTransitionSnapshot(rawDevices: HidDeviceSummary[]): boolean {
+    const now = Date.now();
+    const transition = this.hostPersonaTransitionMaskSnapshot(now);
+    if (!transition) {
+      return false;
+    }
+    const activeTransition = this.hostPersonaTransition;
+    const forceReconnecting = Boolean(activeTransition?.completedAt !== null);
+    this.snapshot = {
+      ...this.snapshot,
+      state: 'transitioning',
+      message: this.hostPersonaTransitionMessage(transition, forceReconnecting),
+      settings: this.settingsStore.get(),
+      diagnostics: this.transitionDiagnostics(rawDevices),
+      personaTransition: transition
+    };
+    this.scheduleHostPersonaTransitionPoll();
+    return true;
   }
 
   private appendAudioDebugLines(lines: string[]): void {
@@ -1060,6 +1755,29 @@ export class BridgeService extends EventEmitter {
       ...this.snapshot,
       diagnostics: this.withAudioDebugDiagnostics(this.snapshot.diagnostics)
     };
+  }
+
+  private consumeCompletedHostPersonaMode(): HostPersonaMode | null {
+    const mode = this.completedHostPersonaMode;
+    this.completedHostPersonaMode = null;
+    return mode;
+  }
+
+  private async restartSystemAudioHapticsAfterPersonaTransition(mode: HostPersonaMode): Promise<void> {
+    this.systemAudioHapticsRetryAt = 0;
+    await this.systemAudioHapticsEngine.stop();
+    await this.updateSystemAudioHapticsEngine();
+    this.appendAudioDebugLines([`[SystemHaptics] restarted after persona transition persona=${mode}`]);
+  }
+
+  private isBridgeRenderEndpointUnavailableError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('Render endpoint matching') && message.includes('was not found');
+  }
+
+  private skipBridgeHapticsTest(reason: string): BridgeSnapshot {
+    this.appendAudioDebugLines([`[HostBridge] test haptics skipped: ${reason}`]);
+    return this.getSnapshot();
   }
 
   private async readAudioDebugEvents(): Promise<void> {
@@ -1209,32 +1927,44 @@ export class BridgeService extends EventEmitter {
     }
   }
 
-  private async readHostAudioStatus(): Promise<void> {
+  private async readAudioStatus(): Promise<void> {
     if (!this.device) {
-      this.hostAudioStatus = null;
+      this.audioStatus = null;
+      this.publishAudioDiagnosticsSnapshot();
       return;
     }
 
     try {
-      const status = parseHostAudioStatusReport(
-        await this.device.getFeatureReport(REPORT_ID.HOST_AUDIO_STATUS, REPORT_LENGTH)
+      const status = parseAudioStatusReport(
+        await this.device.getFeatureReport(REPORT_ID.AUDIO_STATUS, REPORT_LENGTH)
       );
-      this.hostAudioStatus = status;
-      this.lastHostAudioStatusReadAt = Date.now();
+      this.audioStatus = status;
+      this.lastAudioStatusReadAt = Date.now();
     } catch {
-      this.hostAudioStatus = null;
+      this.audioStatus = null;
     }
+    this.publishAudioDiagnosticsSnapshot();
   }
 
-  private async readHostAudioStatusThrottled(force = false, intervalMs = HOST_AUDIO_STATUS_READ_INTERVAL_MS): Promise<void> {
-    if (!force && Date.now() - this.lastHostAudioStatusReadAt < intervalMs) {
+  private async readAudioStatusThrottled(force = false, intervalMs = AUDIO_STATUS_READ_INTERVAL_MS): Promise<void> {
+    if (!force && Date.now() - this.lastAudioStatusReadAt < intervalMs) {
       return;
     }
-    await this.readHostAudioStatus();
+    await this.readAudioStatus();
+  }
+
+  private publishAudioDiagnosticsSnapshot(): void {
+    this.snapshot = {
+      ...this.snapshot,
+      diagnostics: this.withAudioDebugDiagnostics(this.snapshot.diagnostics)
+    };
+    if (this.snapshot.status) {
+      this.emitSnapshot();
+    }
   }
 
   private isControllerPowerSavingActive(settings: CompanionSettings): boolean {
-    return settings.controllerPowerSavingEnabled && Boolean(this.hostAudioStatus?.headsetPlugged);
+    return settings.controllerPowerSavingEnabled && Boolean(this.audioStatus?.headsetPlugged);
   }
 
   private capForControllerPowerSaving(value: number, settings: CompanionSettings): number {
@@ -1269,6 +1999,76 @@ export class BridgeService extends EventEmitter {
       : 0;
   }
 
+  private audioReactiveHapticsCommandEnabled(settings: CompanionSettings): boolean {
+    return settings.hapticsEnabled
+      && settings.audioReactiveHapticsEnabled
+      && this.systemAudioHapticsPassthroughActive;
+  }
+
+  private audioReactiveHapticsSuppressesClassicRumble(settings: CompanionSettings): boolean {
+    return settings.hapticsEnabled
+      && settings.audioReactiveHapticsEnabled
+      && settings.audioReactiveHapticsMode === 'replace';
+  }
+
+  private audioReactiveHapticsSupported(): boolean {
+    return Boolean(this.snapshot.status?.firmwareFlags.audioReactiveHapticsControl);
+  }
+
+  private systemAudioHapticsSupported(): boolean {
+    return this.audioReactiveHapticsSupported();
+  }
+
+  private systemAudioHapticsDesired(settings: CompanionSettings): boolean {
+    return settings.hapticsEnabled
+      && settings.audioReactiveHapticsEnabled;
+  }
+
+  private systemAudioHapticsConfig(settings: CompanionSettings): SystemAudioHapticsConfig {
+    return {
+      source: settings.audioReactiveHapticsSource,
+      gainPercent: settings.audioReactiveHapticsGainPercent,
+      bassFocus: settings.audioReactiveHapticsBassFocus,
+      response: settings.audioReactiveHapticsResponse,
+      attack: settings.audioReactiveHapticsAttack,
+      release: settings.audioReactiveHapticsRelease
+    };
+  }
+
+  private audioReactiveHapticsCommandPayload(settings: CompanionSettings): number[] {
+    const gain = Math.max(0, Math.min(200, Math.round(settings.audioReactiveHapticsGainPercent)));
+    const mode = audioReactiveHapticsModeValue(settings.audioReactiveHapticsMode)
+      | (this.audioReactiveHapticsSuppressesClassicRumble(settings)
+        ? AUDIO_REACTIVE_HAPTICS_SUPPRESS_CLASSIC_RUMBLE_MODE_FLAG
+        : 0);
+    return [
+      mode,
+      gain & 0xff,
+      (gain >> 8) & 0xff,
+      audioReactiveHapticsBassFocusValue(settings.audioReactiveHapticsBassFocus),
+      audioReactiveHapticsResponseValue(settings.audioReactiveHapticsResponse),
+      audioReactiveHapticsAttackValue(settings.audioReactiveHapticsAttack),
+      audioReactiveHapticsReleaseValue(settings.audioReactiveHapticsRelease)
+    ];
+  }
+
+  private async applyAudioReactiveHapticsSettings(
+    settings: CompanionSettings,
+    expectSettingsRevisionChange: boolean
+  ): Promise<void> {
+    if (!this.audioReactiveHapticsSupported()) {
+      return;
+    }
+    await this.sendCommand(
+      COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS,
+      this.audioReactiveHapticsCommandEnabled(settings) ? 1 : 0,
+      {
+        expectSettingsRevisionChange,
+        extraPayload: this.audioReactiveHapticsCommandPayload(settings)
+      }
+    );
+  }
+
   private effectiveLightbarBrightness(settings: CompanionSettings): number {
     return settings.lightbarEnabled
       ? this.capForControllerPowerSaving(settings.lightbarBrightnessPercent, settings)
@@ -1288,6 +2088,7 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY, this.effectiveTriggerEffectIntensity(settings), {
       expectSettingsRevisionChange
     });
+    await this.applyAudioReactiveHapticsSettings(settings, expectSettingsRevisionChange);
     await this.applyLightbarSettings(settings, expectSettingsRevisionChange);
   }
 
@@ -1331,11 +2132,15 @@ export class BridgeService extends EventEmitter {
     await this.sendSettingCommand(COMMAND_ID.SET_HAPTICS_GAIN, this.effectiveHapticsGain(settings), customSettingUpdate({
       hapticsEnabled: enabled
     }));
+    if (this.snapshot.state === 'connected') {
+      await this.applyAudioReactiveHapticsSettings(this.snapshot.settings, true);
+    }
+    await this.updateSystemAudioHapticsEngine();
     return this.getSnapshot();
   }
 
   async setHapticsBufferLength(length: number): Promise<BridgeSnapshot> {
-    const value = Math.max(1, Math.min(255, Math.round(length)));
+    const value = Math.max(16, Math.min(128, Math.round(length)));
     await this.sendSettingCommand(COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH, value, { hapticsBufferLength: value });
     return this.getSnapshot();
   }
@@ -1386,6 +2191,13 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setClassicRumbleV1Enabled(enabled: boolean): Promise<BridgeSnapshot> {
+    await this.sendSettingCommand(COMMAND_ID.SET_CLASSIC_RUMBLE_V1, enabled ? 1 : 0, customSettingUpdate({
+      classicRumbleV1Enabled: enabled
+    }));
+    return this.getSnapshot();
+  }
+
   async setTriggerEffectIntensity(percent: number): Promise<BridgeSnapshot> {
     const value = Math.max(0, Math.min(100, Math.round(percent)));
     const nextSettings = { ...this.settingsStore.get(), triggerEffectIntensityPercent: value };
@@ -1427,7 +2239,21 @@ export class BridgeService extends EventEmitter {
     if (this.snapshot.status) {
       this.snapshot.status.speakerVolumePercent = value;
     }
-    await this.updateHostAudioEngine();
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  async setSpeakerGainLevel(level: number): Promise<BridgeSnapshot> {
+    const value = Math.max(1, Math.min(7, Math.round(level)));
+    await this.sendCommand(COMMAND_ID.SET_SPEAKER_GAIN, value, {
+      expectSettingsRevisionChange: true
+    });
+    this.snapshot.settings = this.settingsStore.update({
+      speakerGainLevel: value
+    });
+    if (this.snapshot.status) {
+      this.snapshot.status.speakerGainLevel = value;
+    }
     this.emitSnapshot();
     return this.getSnapshot();
   }
@@ -1438,7 +2264,6 @@ export class BridgeService extends EventEmitter {
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
       speakerEnabled: enabled
     }));
-    await this.updateHostAudioEngine();
     this.emitSnapshot();
     return this.getSnapshot();
   }
@@ -1462,37 +2287,55 @@ export class BridgeService extends EventEmitter {
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
       micMuted: enabled
     }));
-    await this.updateMicKeepaliveEngine(Boolean(this.snapshot.status?.controllerConnected));
     this.emitSnapshot();
+    await this.updateMicKeepaliveEngine(Boolean(this.snapshot.status?.controllerConnected));
     return this.getSnapshot();
   }
 
-  async setHostEncodedAudioEnabled(enabled: boolean): Promise<BridgeSnapshot> {
-    const settings = this.settingsStore.get();
-    this.clearHostAudioCaptureBackoff();
-    if (enabled) {
-      if (settings.duplexMicEnabled) {
-        await this.applyMicSettings(settings, false);
-      } else {
-        await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 1, { throwOnCommandError: false });
-      }
-      await this.startHostAudioSession(true);
-    } else {
-      await this.stopHostAudioSession(true);
+  async setAudioReactiveHapticsConfig(config: Partial<AudioReactiveHapticsConfig>): Promise<BridgeSnapshot> {
+    const currentSettings = this.settingsStore.get();
+    const normalized = normalizeAudioReactiveHapticsConfig(config, currentSettings);
+    const nextSettings: CompanionSettings = {
+      ...currentSettings,
+      audioReactiveHapticsEnabled: normalized.enabled,
+      audioReactiveHapticsSource: normalized.source,
+      audioReactiveHapticsMode: normalized.mode,
+      audioReactiveHapticsGainPercent: normalized.gainPercent,
+      audioReactiveHapticsBassFocus: normalized.bassFocus,
+      audioReactiveHapticsResponse: normalized.response,
+      audioReactiveHapticsAttack: normalized.attack,
+      audioReactiveHapticsRelease: normalized.release
+    };
+    if (!this.audioReactiveHapticsSupported()) {
+      throw new Error('Audio reactive haptics require updated bridge firmware.');
     }
-    this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
-      hostEncodedAudioEnabled: enabled,
-      duplexMicEnabled: enabled ? this.snapshot.settings.duplexMicEnabled : false
-    }));
-    await this.readHostAudioStatus();
-    await this.updateHostAudioEngine();
-    this.emitSnapshot();
+    const ack = await this.sendCommand(
+      COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS,
+      this.audioReactiveHapticsCommandEnabled(nextSettings) ? 1 : 0,
+      {
+        expectSettingsRevisionChange: true,
+        extraPayload: this.audioReactiveHapticsCommandPayload(nextSettings)
+      }
+    );
+    if (ack.resultCode === ACK_RESULT.OK) {
+      this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
+        audioReactiveHapticsEnabled: normalized.enabled,
+        audioReactiveHapticsSource: normalized.source,
+        audioReactiveHapticsMode: normalized.mode,
+        audioReactiveHapticsGainPercent: normalized.gainPercent,
+        audioReactiveHapticsBassFocus: normalized.bassFocus,
+        audioReactiveHapticsResponse: normalized.response,
+        audioReactiveHapticsAttack: normalized.attack,
+        audioReactiveHapticsRelease: normalized.release
+      }));
+      await this.updateSystemAudioHapticsEngine();
+      this.emitSnapshot();
+    }
     return this.getSnapshot();
   }
 
   async setDuplexMicEnabled(enabled: boolean): Promise<BridgeSnapshot> {
-    const hostEncodedAudioEnabled = this.settingsStore.get().hostEncodedAudioEnabled;
-    const nextEnabled = enabled && hostEncodedAudioEnabled;
+    const nextEnabled = enabled;
     if (!nextEnabled) {
       await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 1, {
         expectSettingsRevisionChange: true
@@ -1506,9 +2349,6 @@ export class BridgeService extends EventEmitter {
         expectSettingsRevisionChange: true
       });
     }
-    await this.sendHostAudioStreamReport(
-      nextEnabled ? HOST_AUDIO_PACKET_TYPE.SET_DUPLEX_ENABLED : HOST_AUDIO_PACKET_TYPE.SET_DUPLEX_DISABLED
-    );
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
       duplexMicEnabled: nextEnabled,
       micMuted: !nextEnabled
@@ -1518,7 +2358,7 @@ export class BridgeService extends EventEmitter {
     } else {
       await this.micKeepaliveEngine.stop();
     }
-    await this.readHostAudioStatus();
+    await this.readAudioStatus();
     this.emitSnapshot();
     return this.getSnapshot();
   }
@@ -1581,11 +2421,13 @@ export class BridgeService extends EventEmitter {
     mode: MuteButtonMode,
     usage: number,
     modifiers: number,
-    behavior: MuteKeyboardBehavior
+    behavior: MuteKeyboardBehavior,
+    chordStarterEnabled = false
   ): Promise<BridgeSnapshot> {
     const keyUsage = Math.max(1, Math.min(0x73, Math.round(usage)));
     const keyModifiers = Math.max(0, Math.min(MUTE_KEYBOARD_MODIFIER_MASK, Math.round(modifiers)));
-    const keyOptions = encodeMuteKeyboardOptions(keyModifiers, behavior);
+    const keyChordStarterEnabled = mode === 'keyboard' && chordStarterEnabled;
+    const keyOptions = encodeMuteKeyboardOptions(keyModifiers, behavior, keyChordStarterEnabled);
     const ack = await this.sendCommand(COMMAND_ID.SET_MUTE_BUTTON_ACTION, muteButtonModeValue(mode), {
       expectSettingsRevisionChange: true,
       extraPayload: [keyUsage, keyOptions]
@@ -1595,13 +2437,15 @@ export class BridgeService extends EventEmitter {
         muteButtonMode: mode,
         muteKeyboardUsage: keyUsage,
         muteKeyboardModifiers: keyModifiers,
-        muteKeyboardBehavior: behavior
+        muteKeyboardBehavior: behavior,
+        muteKeyboardChordStarterEnabled: keyChordStarterEnabled
       }));
       if (this.snapshot.status) {
         this.snapshot.status.muteButtonMode = mode;
         this.snapshot.status.muteKeyboardUsage = keyUsage;
         this.snapshot.status.muteKeyboardModifiers = keyModifiers;
         this.snapshot.status.muteKeyboardBehavior = behavior;
+        this.snapshot.status.muteKeyboardChordStarterEnabled = keyChordStarterEnabled;
       }
       this.emitSnapshot();
     }
@@ -1613,6 +2457,13 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setPlayerLedEnabled(enabled: boolean): Promise<BridgeSnapshot> {
+    await this.sendSettingCommand(COMMAND_ID.SET_PLAYER_LED_ENABLED, enabled ? 1 : 0, {
+      playerLedEnabled: enabled
+    });
+    return this.getSnapshot();
+  }
+
   async setIdleDisconnectEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     await this.sendSettingCommand(COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED, enabled ? 1 : 0, {
       idleDisconnectEnabled: enabled
@@ -1620,8 +2471,189 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  private async dispatchInputShortcutAction(event: InputShortcutEvent): Promise<void> {
+    if (event.kind === 'chord-function') {
+      await this.dispatchChordFunctionSlot(event.slot);
+      return;
+    }
+    await this.dispatchShortcutAction(event.event);
+  }
+
   private async dispatchShortcutAction(event: ShortcutEvent): Promise<void> {
     await this.shortcutActionHandlers[event]();
+  }
+
+  private async dispatchChordFunctionSlot(slot: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    const assignment = settings.chordAssignments[slot];
+    if (!assignment) {
+      return;
+    }
+    const func = settings.chordFunctions.find((candidate) => candidate.id === assignment.functionId);
+    if (!func) {
+      return;
+    }
+    await this.executeChordFunction(func);
+  }
+
+  private async executeChordFunction(func: ChordFunction): Promise<void> {
+    switch (func.type) {
+      case 'keyboard': {
+        const codes = func.keys.map(virtualKeyCodeFor).filter((code): code is number => code !== null);
+        if (codes.length !== func.keys.length || codes.length === 0) {
+          this.appendAudioDebugLines([`[Chords] ignored invalid keyboard function id=${func.id} keys=${func.keys.join('+')}`]);
+          return;
+        }
+        await sendVirtualKeySequence(codes);
+        return;
+      }
+      case 'media':
+        await sendVirtualKeySequence([MEDIA_ACTION_KEY_CODES[func.action]]);
+        return;
+      case 'controller-setting':
+        await this.executeChordControllerSettingAction(func.action, func.stepPercent);
+        return;
+    }
+  }
+
+  private async executeChordControllerSettingAction(
+    action: Extract<ChordFunction, { type: 'controller-setting' }>['action'],
+    stepPercent: number
+  ): Promise<void> {
+    const settings = this.settingsStore.get();
+    const step = normalizeChordControllerSettingStepPercent(stepPercent);
+    switch (action) {
+      case 'toggle-audio-haptics':
+        await this.setAudioReactiveHapticsConfig({ enabled: !settings.audioReactiveHapticsEnabled });
+        return;
+      case 'toggle-lightbar-override':
+        await this.setLightbarOverrideEnabled(!settings.lightbarOverrideEnabled);
+        return;
+      case 'toggle-mic-mute':
+        if (!settings.duplexMicEnabled) {
+          return;
+        }
+        await this.setMicMute(!settings.micMuted);
+        return;
+      case 'sleep-controller':
+        await this.sleepController();
+        return;
+      case 'persona-dualsense':
+        await this.setHostPersonaMode('dualsense');
+        return;
+      case 'persona-ds4':
+        await this.setHostPersonaMode('ds4');
+        return;
+      case 'persona-xbox':
+        await this.setHostPersonaMode('xbox');
+        return;
+      case 'speaker-down':
+        await this.stepSpeakerVolume(-step);
+        return;
+      case 'speaker-up':
+        await this.stepSpeakerVolume(step);
+        return;
+      case 'mic-down':
+        await this.stepMicVolume(-step);
+        return;
+      case 'mic-up':
+        await this.stepMicVolume(step);
+        return;
+      case 'haptics-down':
+        await this.stepHapticsGain(-step);
+        return;
+      case 'haptics-up':
+        await this.stepHapticsGain(step);
+        return;
+      case 'rumble-down':
+        await this.stepClassicRumbleGain(-step);
+        return;
+      case 'rumble-up':
+        await this.stepClassicRumbleGain(step);
+        return;
+      case 'triggers-down':
+        await this.stepTriggerEffectIntensity(-step);
+        return;
+      case 'triggers-up':
+        await this.stepTriggerEffectIntensity(step);
+        return;
+      case 'lighting-down':
+        await this.stepLightbarBrightness(-step);
+        return;
+      case 'lighting-up':
+        await this.stepLightbarBrightness(step);
+        return;
+    }
+  }
+
+  private clampChordPercent(value: number, max: number): number {
+    return Math.max(0, Math.min(max, Math.round(value)));
+  }
+
+  private async stepSpeakerVolume(deltaPercent: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.speakerEnabled) {
+      return;
+    }
+    const nextValue = this.clampChordPercent(settings.speakerVolumePercent + deltaPercent, 100);
+    if (nextValue !== settings.speakerVolumePercent) {
+      await this.setSpeakerVolume(nextValue);
+    }
+  }
+
+  private async stepMicVolume(deltaPercent: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.duplexMicEnabled) {
+      return;
+    }
+    const nextValue = this.clampChordPercent(settings.micVolumePercent + deltaPercent, 100);
+    if (nextValue !== settings.micVolumePercent) {
+      await this.setMicVolume(nextValue);
+    }
+  }
+
+  private async stepHapticsGain(deltaPercent: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.hapticsEnabled) {
+      return;
+    }
+    const nextValue = this.clampChordPercent(settings.hapticsGainPercent + deltaPercent, this.feedbackGainMax(settings));
+    if (nextValue !== settings.hapticsGainPercent) {
+      await this.setHapticsGain(nextValue);
+    }
+  }
+
+  private async stepClassicRumbleGain(deltaPercent: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.classicRumbleEnabled) {
+      return;
+    }
+    const nextValue = this.clampChordPercent(settings.classicRumbleGainPercent + deltaPercent, this.feedbackGainMax(settings));
+    if (nextValue !== settings.classicRumbleGainPercent) {
+      await this.setClassicRumbleGain(nextValue);
+    }
+  }
+
+  private async stepTriggerEffectIntensity(deltaPercent: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.adaptiveTriggersEnabled) {
+      return;
+    }
+    const nextValue = this.clampChordPercent(settings.triggerEffectIntensityPercent + deltaPercent, 100);
+    if (nextValue !== settings.triggerEffectIntensityPercent) {
+      await this.setTriggerEffectIntensity(nextValue);
+    }
+  }
+
+  private async stepLightbarBrightness(deltaPercent: number): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.lightbarEnabled) {
+      return;
+    }
+    const nextValue = this.clampChordPercent(settings.lightbarBrightnessPercent + deltaPercent, 100);
+    if (nextValue !== settings.lightbarBrightnessPercent) {
+      await this.setLightbarColor(settings.lightbarColor, nextValue);
+    }
   }
 
   private async applyControllerVolumeShortcut(deltaPercent: number): Promise<void> {
@@ -1643,6 +2675,19 @@ export class BridgeService extends EventEmitter {
       return;
     }
     await this.sleepController();
+  }
+
+  private async applyControllerMicMuteEvent(micMuted: boolean): Promise<void> {
+    const settings = this.settingsStore.get();
+    if (!settings.duplexMicEnabled || settings.muteButtonMode !== 'normal') {
+      return;
+    }
+    this.snapshot.settings = this.settingsStore.update(customSettingUpdate({ micMuted }));
+    if (this.snapshot.status) {
+      this.snapshot.status.micMuted = micMuted;
+    }
+    this.emitSnapshot();
+    void this.updateMicKeepaliveEngine(Boolean(this.snapshot.status?.controllerConnected));
   }
 
   async setIdleDisconnectTimeoutMinutes(minutes: number): Promise<BridgeSnapshot> {
@@ -1703,9 +2748,25 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  setUiThemePreset(value: UiThemePreset): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      uiThemePreset: normalizeUiThemePreset(value)
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   setLaunchAtStartupEnabled(enabled: boolean): BridgeSnapshot {
     this.snapshot.settings = this.settingsStore.update({
       launchAtStartupEnabled: enabled
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  setShowBatteryPercentTrayIcon(enabled: boolean): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      showBatteryPercentTrayIcon: enabled
     });
     this.emitSnapshot();
     return this.getSnapshot();
@@ -1726,6 +2787,13 @@ export class BridgeService extends EventEmitter {
       throwOnCommandError: false
     });
     return this.getSnapshot();
+  }
+
+  async mountPicoBootloader(): Promise<void> {
+    await this.sendCommand(COMMAND_ID.ENTER_BOOTLOADER, 0, {
+      allowAckTransportLoss: true,
+      allowProtocolMismatch: true
+    });
   }
 
   async setNotifyControllerConnection(enabled: boolean): Promise<BridgeSnapshot> {
@@ -1750,12 +2818,27 @@ export class BridgeService extends EventEmitter {
   }
 
   async testHaptics(): Promise<BridgeSnapshot> {
-    await this.sendCommand(COMMAND_ID.TEST_HAPTICS, 0, { throwOnCommandError: false });
+    const transition = this.hostPersonaTransitionMaskSnapshot();
+    if (transition) {
+      return this.skipBridgeHapticsTest(`switching to ${transition.to}`);
+    }
+
+    const settings = this.settingsStore.get();
+    const hostPersonaMode = this.currentHostPersonaMode();
+    try {
+      await playBridgeHapticsTestPattern(settings.hapticsGainPercent, hostPersonaMode);
+    } catch (error) {
+      if (this.isBridgeRenderEndpointUnavailableError(error)) {
+        return this.skipBridgeHapticsTest(`${hostPersonaModeLabel(hostPersonaMode)} audio endpoint unavailable`);
+      }
+      throw error;
+    }
     return this.getSnapshot();
   }
 
   async testSpeaker(): Promise<BridgeSnapshot> {
-    await playHostAudioTestTone(this.settingsStore.get().speakerVolumePercent);
+    const settings = this.settingsStore.get();
+    await playBridgeSpeakerTestTone(settings.speakerVolumePercent, this.currentHostPersonaMode());
     return this.getSnapshot();
   }
 
@@ -1772,6 +2855,33 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(COMMAND_ID.TEST_ADAPTIVE_TRIGGERS, value, {
       throwOnCommandError: false
     });
+    return this.getSnapshot();
+  }
+
+  async setHostPersonaMode(mode: HostPersonaMode): Promise<BridgeSnapshot> {
+    const normalizedMode = normalizeHostPersonaMode(mode);
+    const previousMode = this.snapshot.status?.hostPersonaMode ?? this.snapshot.settings.hostPersonaMode;
+    const shouldRestoreDefaultRender = previousMode !== normalizedMode
+      ? await this.defaultRenderIsBridgeEndpoint()
+      : false;
+    const ack = await this.sendCommand(COMMAND_ID.SET_HOST_PERSONA, hostPersonaModeValue(normalizedMode), {
+      expectSettingsRevisionChange: true
+    });
+    if (ack.resultCode === ACK_RESULT.OK) {
+      this.snapshot.settings = this.settingsStore.update({ hostPersonaMode: normalizedMode });
+      if (previousMode !== normalizedMode) {
+        if (shouldRestoreDefaultRender) {
+          this.queueHostPersonaDefaultRenderRestore(normalizedMode);
+        } else {
+          this.hostPersonaDefaultRenderRestore = null;
+        }
+        this.beginHostPersonaTransition(normalizedMode, previousMode);
+        this.systemAudioHapticsRetryAt = 0;
+        await this.systemAudioHapticsEngine.stop();
+        this.applyHostPersonaTransitionSnapshot(this.snapshot.diagnostics.rawDevices);
+      }
+      this.emitSnapshot();
+    }
     return this.getSnapshot();
   }
 
@@ -1804,6 +2914,7 @@ export class BridgeService extends EventEmitter {
     const ack = await this.sendCommand(COMMAND_ID.RESTORE_DEFAULTS, 0, { expectSettingsRevisionChange: true });
     if (ack.resultCode === ACK_RESULT.OK) {
       this.snapshot.settings = this.settingsStore.restoreDefaults();
+      await this.updateSystemAudioHapticsEngine();
       this.emitSnapshot();
     }
     return this.getSnapshot();
@@ -1912,6 +3023,33 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setChordConfiguration(functions: ChordFunction[], assignments: ChordAssignment[]): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.setChordConfiguration(functions, assignments);
+    if (this.snapshot.state === 'connected') {
+      await this.applyChordBindings(this.snapshot.settings);
+    }
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  async setChordFunctions(functions: ChordFunction[]): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.setChordFunctions(functions);
+    if (this.snapshot.state === 'connected') {
+      await this.applyChordBindings(this.snapshot.settings);
+    }
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  async setChordAssignments(assignments: ChordAssignment[]): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.setChordAssignments(assignments);
+    if (this.snapshot.state === 'connected') {
+      await this.applyChordBindings(this.snapshot.settings);
+    }
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   private async applyButtonRemapping(
     settings: CompanionSettings,
     expectSettingsRevisionChange: boolean
@@ -1919,6 +3057,13 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(COMMAND_ID.SET_BUTTON_REMAP, 0, {
       expectSettingsRevisionChange,
       extraPayload: buildButtonRemapPayload(settings.buttonRemappingDraft)
+    });
+  }
+
+  private async applyChordBindings(settings: CompanionSettings): Promise<void> {
+    await this.sendCommand(COMMAND_ID.SET_CHORD_BINDINGS, settings.chordAssignments.length, {
+      throwOnCommandError: false,
+      extraPayload: buildChordBindingsPayload(settings.chordAssignments)
     });
   }
 
@@ -1940,17 +3085,60 @@ export class BridgeService extends EventEmitter {
     return run;
   }
 
+  private acceptCommandTransportLoss(
+    commandId: number,
+    sequence: number,
+    previousSettingsRevision: number | null
+  ): BridgeAckPayload {
+    const ack = {
+      commandId: commandId & 0xff,
+      commandSequence: sequence,
+      resultCode: ACK_RESULT.OK,
+      detailCode: 0,
+      settingsRevision: previousSettingsRevision ?? 0,
+      uptimeSeconds: this.snapshot.diagnostics.uptimeSeconds ?? 0,
+      protocolVersion: this.snapshot.diagnostics.protocolVersion ?? 'unknown'
+    };
+    this.snapshot.diagnostics.lastAck = ack;
+    this.snapshot.diagnostics.lastError = null;
+    this.emitSnapshot();
+    this.closeDevice();
+    return ack;
+  }
+
   private async sendCommand(commandId: number, value: number, options: CommandOptions = {}) {
     return this.enqueueCommand(async () => {
-      await this.ensureCompanionDevice();
+      await this.ensureCompanionDevice(options.allowProtocolMismatch ? { allowProtocolMismatch: true } : undefined);
       if (!this.device) {
         throw new Error('No companion bridge is connected.');
       }
 
       const sequence = this.nextSequence();
+      const protocolMinor = this.commandProtocolMinorFor(options);
       const previousSettingsRevision = this.snapshot.diagnostics.settingsRevision;
-      await this.device.sendFeatureReport(buildCommandReport(commandId, sequence, value, options.extraPayload));
-      const ack = parseAckReport(await this.device.getFeatureReport(REPORT_ID.ACK, REPORT_LENGTH));
+      try {
+        const commandReport = protocolMinor === undefined
+          ? buildCommandReport(commandId, sequence, value, options.extraPayload)
+          : buildCommandReport(commandId, sequence, value, options.extraPayload, { protocolMinor });
+        await this.device.sendFeatureReport(commandReport);
+      } catch (error) {
+        if (!options.allowAckTransportLoss || !isBridgeTransportError(error)) {
+          throw error;
+        }
+        return this.acceptCommandTransportLoss(commandId, sequence, previousSettingsRevision);
+      }
+      let ack: BridgeAckPayload;
+      try {
+        const rawAckReport = await this.device.getFeatureReport(REPORT_ID.ACK, REPORT_LENGTH);
+        ack = options.allowProtocolMismatch
+          ? parseAckReport(rawAckReport, { allowProtocolMismatch: true })
+          : parseAckReport(rawAckReport);
+      } catch (error) {
+        if (!options.allowAckTransportLoss || !isBridgeTransportError(error)) {
+          throw error;
+        }
+        return this.acceptCommandTransportLoss(commandId, sequence, previousSettingsRevision);
+      }
       this.snapshot.diagnostics.lastAck = ack;
       if (ack.commandId !== (commandId & 0xff) || ack.commandSequence !== sequence) {
         const message = `Stale companion ACK: expected command 0x${(commandId & 0xff).toString(16).padStart(2, '0')} sequence ${sequence}, received command 0x${ack.commandId.toString(16).padStart(2, '0')} sequence ${ack.commandSequence}.`;
@@ -1982,248 +3170,111 @@ export class BridgeService extends EventEmitter {
     });
   }
 
-  private async writeHostAudioStreamReport(report: number[]): Promise<boolean> {
-    if (!this.device) {
-      return false;
-    }
-    try {
-      await this.device.write(report);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private sendHostAudioStreamReport(packetType: number): Promise<boolean> {
-    return this.writeHostAudioStreamReport(buildHostAudioStreamReport({ packetType }));
-  }
-
-  private sendHostAudioFrame(payload: HostAudioFramePayload): void {
+  private async updateSystemAudioHapticsEngine(): Promise<void> {
     const settings = this.settingsStore.get();
     if (
-      !settings.hostEncodedAudioEnabled
+      !this.systemAudioHapticsDesired(settings)
       || !this.device
-      || !this.hostAudioCommandActive
+      || !this.controllerAudioReady()
+      || !this.systemAudioHapticsSupported()
     ) {
-      return;
-    }
-
-    const reports = buildHostAudioFastFrameReports({
-      frame: payload.frame,
-      frameSequence: payload.sequence
-    });
-
-    this.hostAudioFrameCount++;
-    if (this.hostAudioReportQueue.length >= reports.length * HOST_AUDIO_MAX_QUEUED_FRAMES) {
-      this.hostAudioReportQueue.splice(0, reports.length);
-      this.hostAudioFrameDropCount++;
-    }
-    this.hostAudioReportQueue.push(...reports);
-    this.logHostAudioStage('enqueue');
-    void this.pumpHostAudioReports();
-  }
-
-  private async pumpHostAudioReports(): Promise<void> {
-    if (this.hostAudioWritePumpActive) {
-      return;
-    }
-    this.hostAudioWritePumpActive = true;
-    const pump = async () => {
-      const report = this.hostAudioReportQueue.shift();
-      if (!report) {
-        this.hostAudioWritePumpActive = false;
-        return;
+      const wasPassthroughActive = this.systemAudioHapticsPassthroughActive;
+      this.systemAudioHapticsPassthroughActive = false;
+      this.systemAudioHapticsRetryAt = 0;
+      await this.systemAudioHapticsEngine.stop();
+      if (wasPassthroughActive && this.device && this.audioReactiveHapticsSupported()) {
+        await this.applyAudioReactiveHapticsSettings(settings, false);
       }
-      if (!(await this.writeHostAudioStreamReport(report))) {
-        this.hostAudioReportQueue = [];
-        this.hostAudioWritePumpActive = false;
-        this.hostAudioCommandActive = false;
-        this.logHostAudioStage('write-failed');
-        return;
-      }
-      this.hostAudioChunkWriteCount++;
-      this.logHostAudioStage('write');
-      setImmediate(() => {
-        void pump();
-      });
-    };
-    setImmediate(() => {
-      void pump();
-    });
-  }
-
-  private logHostAudioStage(stage: string): void {
-    if (!AUDIO_DEBUG_DIAGNOSTICS_ENABLED) {
       return;
     }
-    const now = Date.now();
-    if (stage !== 'write-failed' && now - this.lastHostAudioStageLogAt < 1000) {
-      return;
-    }
-    this.lastHostAudioStageLogAt = now;
-    const picoReceived = this.hostAudioStatus?.hostFramesReceived ?? 0;
-    const picoDropped = this.hostAudioStatus?.hostFramesDropped ?? 0;
-    this.appendAudioDebugLines([
-      `[HostBridge] stage=${stage} helperFrames=${this.hostAudioFrameCount} chunksWritten=${this.hostAudioChunkWriteCount} queuedChunks=${this.hostAudioReportQueue.length} appDroppedFrames=${this.hostAudioFrameDropCount} picoReceivedFrames=${picoReceived} picoDroppedFrames=${picoDropped} generation=${this.hostAudioStatus?.streamGeneration ?? 0}`
-    ]);
-  }
 
-  private async ensureHostAudioCapture(speakerVolumePercent: number): Promise<boolean> {
-    if (this.isHostAudioCaptureRetryPending()) {
-      await this.hostAudioEngine.stop();
-      return false;
+    if (Date.now() < this.systemAudioHapticsRetryAt) {
+      await this.systemAudioHapticsEngine.stop();
+      return;
     }
 
     try {
-      await this.hostAudioEngine.start(this.devicePath, speakerVolumePercent);
-      this.clearHostAudioCaptureBackoff();
-      return true;
+      await this.systemAudioHapticsEngine.start(this.systemAudioHapticsConfig(settings), this.currentHostPersonaMode());
+      if (this.systemAudioHapticsPassthroughActive) {
+        this.systemAudioHapticsPassthroughActive = false;
+        await this.applyAudioReactiveHapticsSettings(settings, false);
+      }
+      this.systemAudioHapticsRetryAt = 0;
     } catch (error) {
-      if (!(error instanceof HostAudioStartError)) {
-        throw error;
+      await this.systemAudioHapticsEngine.stop();
+      if (this.systemAudioHapticsPassthroughActive) {
+        this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS;
+        await this.applyAudioReactiveHapticsSettings(settings, false);
+        this.appendAudioDebugLines([
+          `[SystemHaptics] mirror bypassed because Windows output is already DS5 Bridge; firmware passthrough active retryInMs=${SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS}`
+        ]);
+        return;
+      }
+      this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_RETRY_MS;
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([
+        `[SystemHaptics] capture unavailable retryInMs=${SYSTEM_AUDIO_HAPTICS_RETRY_MS} error=${message}`
+      ]);
+    }
+  }
+
+  private async handleSystemAudioHapticsStatus(line: string): Promise<void> {
+    if (!line) {
+      return;
+    }
+
+    try {
+      const settings = this.settingsStore.get();
+      if (
+        line.includes('route-changed')
+        && this.systemAudioHapticsDesired(settings)
+      ) {
+        this.systemAudioHapticsRetryAt = 0;
+        await this.systemAudioHapticsEngine.stop();
+        await this.updateSystemAudioHapticsEngine();
+        return;
       }
 
-      await this.handleHostAudioCaptureStartFailure(error);
-      return false;
-    }
-  }
-
-  private isHostAudioCaptureRetryPending(): boolean {
-    return this.hostAudioCaptureRetryAt > Date.now();
-  }
-
-  private clearHostAudioCaptureBackoff(): void {
-    this.hostAudioCaptureRetryAt = 0;
-    this.hostAudioCaptureIssue = null;
-    this.hostAudioCaptureRetry = null;
-  }
-
-  private async handleHostAudioCaptureStartFailure(error: HostAudioStartError): Promise<void> {
-    const retryAt = Date.now() + HOST_AUDIO_CAPTURE_RETRY_MS;
-    this.hostAudioCaptureRetryAt = retryAt;
-    await this.deactivateHostAudioFirmwareAfterCaptureFailure();
-
-    const retrySeconds = Math.round(HOST_AUDIO_CAPTURE_RETRY_MS / 1000);
-    const message = hostAudioCaptureIssueMessage(error.reason, retrySeconds, error.message);
-    const surfaceIssue = shouldSurfaceHostAudioCaptureIssue(error.reason);
-    this.hostAudioCaptureRetry = {
-      reason: error.reason,
-      message,
-      retryAt
-    };
-    this.hostAudioCaptureIssue = surfaceIssue
-      ? {
-          reason: error.reason,
-          message,
-          retryAt
+      if (
+        line.includes('system-haptics-bypassed')
+        && line.includes('reason=source-is-bridge')
+        && this.systemAudioHapticsDesired(settings)
+      ) {
+        if (!this.systemAudioHapticsPassthroughActive) {
+          this.systemAudioHapticsPassthroughActive = true;
+          if (this.device && this.audioReactiveHapticsSupported()) {
+            await this.applyAudioReactiveHapticsSettings(settings, false);
+          }
+          this.emitSnapshot();
         }
-      : null;
-    this.appendAudioDebugLines([
-      `[HostBridge] host audio capture unavailable reason=${error.reason} retryInMs=${HOST_AUDIO_CAPTURE_RETRY_MS}`
-    ]);
-    this.snapshot = {
-      ...this.snapshot,
-      diagnostics: this.withAudioDebugDiagnostics({
-        ...this.snapshot.diagnostics,
-        lastError: surfaceIssue ? message : this.snapshot.diagnostics.lastError,
-        lastPollAt: Date.now()
-      })
-    };
-    this.emitSnapshot();
-  }
+        return;
+      }
 
-  private async deactivateHostAudioFirmwareAfterCaptureFailure(): Promise<void> {
-    const wasHostAudioActive = this.hostAudioCommandActive;
-    this.clearHostAudioReportQueue();
-    this.hostAudioCommandActive = false;
-    await this.hostAudioEngine.stop();
-
-    if (!this.device || !wasHostAudioActive) {
-      return;
+      if (
+        this.systemAudioHapticsPassthroughActive
+        && (
+          line.includes('source=system-haptics-mirror')
+          || line.includes('status: recording-started')
+        )
+      ) {
+        this.systemAudioHapticsPassthroughActive = false;
+        if (this.device && this.audioReactiveHapticsSupported()) {
+          await this.applyAudioReactiveHapticsSettings(settings, false);
+        }
+        this.emitSnapshot();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([`[SystemHaptics] status handling failed: ${message}`]);
     }
-
-    await this.sendCommand(COMMAND_ID.STOP_HOST_AUDIO, 0, { throwOnCommandError: false });
-    await this.sendCommand(COMMAND_ID.SET_HOST_AUDIO_ENABLED, 0, { throwOnCommandError: false });
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, 0, { throwOnCommandError: false });
-    await this.readHostAudioStatus();
-  }
-
-  private async updateHostAudioEngine(): Promise<void> {
-    const settings = this.settingsStore.get();
-    if (!settings.hostEncodedAudioEnabled || !this.device || !this.hostAudioCommandActive) {
-      this.clearHostAudioReportQueue();
-      await this.hostAudioEngine.stop();
-      return;
-    }
-    await this.ensureHostAudioCapture(settings.speakerEnabled ? settings.speakerVolumePercent : 0);
-  }
-
-  private async startHostAudioSession(expectSettingsRevisionChange: boolean): Promise<void> {
-    const settings = this.settingsStore.get();
-    const speakerVolumePercent = settings.speakerEnabled ? settings.speakerVolumePercent : 0;
-    const duplexEnabled = settings.duplexMicEnabled;
-    const captureReady = await this.ensureHostAudioCapture(speakerVolumePercent);
-    if (!captureReady) {
-      await this.readHostAudioStatus();
-      return;
-    }
-    if (this.hostAudioCommandActive) {
-      await this.hostAudioEngine.start(this.devicePath, speakerVolumePercent);
-      await this.readHostAudioStatus();
-      return;
-    }
-
-    this.clearHostAudioReportQueue();
-    await this.sendCommand(COMMAND_ID.SET_HOST_AUDIO_ENABLED, 1, { expectSettingsRevisionChange });
-    this.hostAudioCommandActive = true;
-    await this.sendCommand(COMMAND_ID.START_HOST_AUDIO, 0, { throwOnCommandError: false });
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, duplexEnabled ? 1 : 0, { throwOnCommandError: false });
-    await this.sendCommand(COMMAND_ID.HOST_AUDIO_HEARTBEAT, 0, { throwOnCommandError: false });
-    await this.sendHostAudioStreamReport(HOST_AUDIO_PACKET_TYPE.HELLO);
-    await this.sendHostAudioStreamReport(
-      duplexEnabled ? HOST_AUDIO_PACKET_TYPE.SET_DUPLEX_ENABLED : HOST_AUDIO_PACKET_TYPE.SET_DUPLEX_DISABLED
-    );
-    await this.sendHostAudioStreamReport(HOST_AUDIO_PACKET_TYPE.HEARTBEAT);
-    await this.readHostAudioStatus();
-  }
-
-  private async stopHostAudioSession(expectSettingsRevisionChange: boolean): Promise<void> {
-    const wasHostAudioActive = this.hostAudioCommandActive;
-    if (wasHostAudioActive) {
-      await this.fadeOutHostAudioSpeaker();
-    }
-    this.clearHostAudioReportQueue();
-    if (wasHostAudioActive) {
-      await this.sendCommand(COMMAND_ID.STOP_HOST_AUDIO, 0, { throwOnCommandError: false });
-    }
-    await this.sendCommand(COMMAND_ID.SET_HOST_AUDIO_ENABLED, 0, { expectSettingsRevisionChange });
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, 0, { throwOnCommandError: false });
-    this.hostAudioCommandActive = false;
-    await this.hostAudioEngine.stop();
-    await this.micKeepaliveEngine.stop();
-    await this.readHostAudioStatus();
-  }
-
-  private async fadeOutHostAudioSpeaker(): Promise<void> {
-    if (!this.hostAudioEngine.isActive()) {
-      return;
-    }
-    this.hostAudioEngine.setSpeakerVolumePercent(0);
-    await delay(HOST_AUDIO_STOP_FADE_MS);
-  }
-
-  private clearHostAudioReportQueue(): void {
-    this.hostAudioReportQueue = [];
   }
 
   private async updateMicKeepaliveEngine(controllerConnected: boolean): Promise<void> {
     try {
       const settings = this.settingsStore.get();
-      const hostAudioActive = settings.hostEncodedAudioEnabled && this.hostAudioCommandActive;
       if (
         !MIC_KEEPALIVE_ENABLED
         || !controllerConnected
-        || !hostAudioActive
         || !settings.duplexMicEnabled
         || settings.micMuted
       ) {
@@ -2237,58 +3288,18 @@ export class BridgeService extends EventEmitter {
     }
   }
 
-  private async pulseHostAudio(): Promise<void> {
+  private async pulseSystemAudioHaptics(): Promise<void> {
     const settings = this.settingsStore.get();
-    if (!settings.hostEncodedAudioEnabled || this.hostAudioHeartbeatBusy || this.reapplyActive) {
+    if (!this.systemAudioHapticsDesired(settings)) {
+      await this.updateSystemAudioHapticsEngine();
       return;
     }
-    this.hostAudioHeartbeatBusy = true;
-    try {
-      await this.ensureCompanionDevice();
-      if (!this.device) {
-        this.hostAudioCommandActive = false;
-        return;
-      }
-      if (this.isHostAudioCaptureRetryPending()) {
-        if (this.hostAudioCommandActive) {
-          await this.deactivateHostAudioFirmwareAfterCaptureFailure();
-        }
-        await this.readHostAudioStatusThrottled(!this.hostAudioCommandActive);
-        return;
-      }
-      const helperWasActive = this.hostAudioEngine.isActive();
-      if (!helperWasActive) {
-        await this.readHostAudioStatusThrottled(!this.hostAudioCommandActive);
-      }
-      if (!this.hostAudioCommandActive || (!helperWasActive && this.hostAudioStatus?.streamActive === false)) {
-        const speakerVolumePercent = settings.speakerEnabled ? settings.speakerVolumePercent : 0;
-        const captureReady = await this.ensureHostAudioCapture(speakerVolumePercent);
-        if (!captureReady) {
-          return;
-        }
-        await this.sendCommand(COMMAND_ID.SET_HOST_AUDIO_ENABLED, 1, { throwOnCommandError: false });
-        this.hostAudioCommandActive = true;
-        await this.sendCommand(COMMAND_ID.START_HOST_AUDIO, 0, { throwOnCommandError: false });
-        await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, settings.duplexMicEnabled ? 1 : 0, { throwOnCommandError: false });
-        await this.readHostAudioStatus();
-      } else {
-        await this.updateHostAudioEngine();
-      }
-      const helperIsActive = this.hostAudioEngine.isActive();
-      if (!helperIsActive) {
-        await this.sendHostAudioStreamReport(HOST_AUDIO_PACKET_TYPE.HEARTBEAT);
-      }
-      if (this.hostAudioCommandActive) {
-        await this.sendCommand(COMMAND_ID.HOST_AUDIO_HEARTBEAT, 0, { throwOnCommandError: false });
-      }
-      await this.readHostAudioStatusThrottled(
-        false,
-        helperIsActive ? HOST_AUDIO_HELPER_STATUS_READ_INTERVAL_MS : HOST_AUDIO_STATUS_READ_INTERVAL_MS
-      );
-      await this.pollShortcutEvent();
-    } finally {
-      this.hostAudioHeartbeatBusy = false;
+    if (!this.controllerAudioReady() || this.reapplyActive) {
+      await this.updateSystemAudioHapticsEngine();
+      return;
     }
+    await this.ensureCompanionDevice();
+    await this.updateSystemAudioHapticsEngine();
   }
 
   private async poll(): Promise<void> {
@@ -2297,14 +3308,6 @@ export class BridgeService extends EventEmitter {
       return;
     }
     const currentSettings = this.settingsStore.get();
-    const hostAudioActive = currentSettings.hostEncodedAudioEnabled && this.hostAudioCommandActive;
-    if (
-      hostAudioActive
-      && now - this.lastHostAudioActivePollAt < HOST_AUDIO_ACTIVE_POLL_INTERVAL_MS
-    ) {
-      return;
-    }
-    this.lastHostAudioActivePollAt = now;
 
     const rawDevices = await this.hidDiscovery.listDevices();
     let status: BridgeStatusPayload | null;
@@ -2352,6 +3355,7 @@ export class BridgeService extends EventEmitter {
           settingsRevision: status.settingsRevision,
           lastAck: this.snapshot.diagnostics.lastAck,
           lastError: `Firmware ${status.firmwareVersion} is too old for this companion app. Update the bridge firmware to ${MIN_SUPPORTED_FIRMWARE_VERSION} or newer.`,
+          firmwareUpdateAvailable: null,
           lastPollAt: Date.now(),
           rawDevices
         })
@@ -2360,17 +3364,17 @@ export class BridgeService extends EventEmitter {
       return;
     }
 
+    const transition = this.advanceHostPersonaTransition(status, now);
+    const completedHostPersonaMode = this.consumeCompletedHostPersonaMode();
+    const controllerAudioReady = this.controllerAudioReady(status);
+
+    if (!controllerAudioReady) {
+      await this.stopControllerAudioPolling();
+    }
     await this.readTriggerTraceThrottled();
     await this.readFeedbackTraceThrottled();
-    if (hostAudioActive) {
-      await this.readAudioDebugThrottled();
-    }
-    if (hostAudioActive && !this.hostAudioEngine.isActive()) {
-      await this.readHostAudioStatusThrottled();
-    } else if (!hostAudioActive) {
-      await this.readAudioDebugThrottled(true);
-      await this.readHostAudioStatus();
-    }
+    await this.readAudioDebugThrottled(true);
+    await this.readAudioStatus();
     this.maybeEmitStatusToasts(status);
 
     const previousUptime = this.lastUptimeSeconds;
@@ -2386,11 +3390,19 @@ export class BridgeService extends EventEmitter {
     }
     this.lastUptimeSeconds = status.uptimeSeconds;
 
-    const settings = this.settingsStore.get();
+    let settings = this.settingsStore.get();
+    if (
+      this.reappliedSessionKey === this.sessionKey
+      && settings.duplexMicEnabled
+      && settings.micMuted !== status.micMuted
+    ) {
+      settings = this.settingsStore.update(customSettingUpdate({ micMuted: status.micMuted }));
+    }
+    const state = transition ? 'transitioning' : 'connected';
 
     this.snapshot = {
-      state: 'connected',
-      message: 'Companion firmware connected',
+      state,
+      message: transition ? this.hostPersonaTransitionMessage(transition) : 'Companion firmware connected',
       status,
       settings: {
         ...settings,
@@ -2403,11 +3415,20 @@ export class BridgeService extends EventEmitter {
         settingsRevision: status.settingsRevision,
         lastAck: this.snapshot.diagnostics.lastAck,
         lastError: null,
+        firmwareUpdateAvailable: firmwareUpdateAvailable(status.firmwareVersion),
         lastPollAt: Date.now(),
         rawDevices
-      })
+      }),
+      personaTransition: transition
     };
     this.emitSnapshot();
+    if (transition) {
+      this.scheduleHostPersonaTransitionPoll();
+    }
+    await this.restoreHostPersonaDefaultRenderIfReady(status);
+    if (completedHostPersonaMode) {
+      await this.restartSystemAudioHapticsAfterPersonaTransition(completedHostPersonaMode);
+    }
     await this.updateMicKeepaliveEngine(status.controllerConnected);
     await this.syncControllerPowerSavingState(settings);
 
@@ -2421,36 +3442,70 @@ export class BridgeService extends EventEmitter {
       this.reapplyAttempt = 0;
       this.nextReapplyAt = 0;
     }
-    if (!hostAudioActive) {
-      await this.pollShortcutEvent();
+    await this.pollShortcutEvent();
+  }
+
+  private commandProtocolMinorFor(options: CommandOptions): number | undefined {
+    if (!options.allowProtocolMismatch) {
+      return undefined;
+    }
+    const version = this.incompatibleCompanionProtocolVersion;
+    return version?.major === PROTOCOL_MAJOR && version.minor <= PROTOCOL_MINOR
+      ? version.minor
+      : undefined;
+  }
+
+  private rememberIncompatibleProtocolVersion(report: ArrayLike<number>): void {
+    try {
+      this.incompatibleCompanionProtocolVersion = readReportProtocolVersion(report, REPORT_ID.STATUS);
+    } catch {
+      this.incompatibleCompanionProtocolVersion = null;
     }
   }
 
-  private async ensureCompanionDevice(): Promise<void> {
+  private async ensureCompanionDevice(options: { allowProtocolMismatch?: boolean } = {}): Promise<void> {
     if (this.device) {
       return;
     }
-    await this.openAndReadStatus();
+    try {
+      await this.openAndReadStatus();
+    } catch (error) {
+      if (options.allowProtocolMismatch && isProtocolMismatch(error) && this.device) {
+        return;
+      }
+      throw error;
+    }
   }
 
   private async openAndReadStatus() {
     try {
       if (!this.device) {
-        this.device = await WinUsbCompanionTransport.open();
+        this.device = await WinUsbCompanionTransport.open({
+          retryTimeoutMs: this.isHostPersonaTransitionActive() ? HOST_PERSONA_TRANSITION_OPEN_RETRY_MS : 0
+        });
+        const openedDevice = this.device;
         this.device.on('error', (error: Error) => this.publishError(error));
         this.device.on('close', () => {
-          this.closeDevice();
-          this.markBridgeUnavailableAfterDisconnect([]);
-          this.emitSnapshot();
+          void this.handleCompanionTransportClose(openedDevice);
         });
         this.devicePath = this.device.path;
-        this.shortcutFeaturePollingAvailable = true;
+        this.shortcutFeaturePollRetryAt = 0;
         this.lastUptimeSeconds = null;
         this.sessionKey = null;
         this.sessionPath = null;
         this.resetStartupReapplyState();
       }
-      const status = parseStatusReport(await this.device.getFeatureReport(REPORT_ID.STATUS, REPORT_LENGTH));
+      const rawStatusReport = await this.device.getFeatureReport(REPORT_ID.STATUS, REPORT_LENGTH);
+      let status: BridgeStatusPayload;
+      try {
+        status = parseStatusReport(rawStatusReport);
+        this.incompatibleCompanionProtocolVersion = null;
+      } catch (error) {
+        if (isProtocolMismatch(error)) {
+          this.rememberIncompatibleProtocolVersion(rawStatusReport);
+        }
+        throw error;
+      }
       return status;
     } catch (error) {
       if (error instanceof ProtocolError) {
@@ -2459,6 +3514,22 @@ export class BridgeService extends EventEmitter {
       this.closeDevice();
     }
     return null;
+  }
+
+  private async handleCompanionTransportClose(closedDevice: WinUsbCompanionTransport): Promise<void> {
+    if (this.device !== closedDevice) {
+      return;
+    }
+    this.closeDevice();
+    let rawDevices: HidDeviceSummary[] = [];
+    try {
+      rawDevices = await this.hidDiscovery.listDevices();
+    } catch (error) {
+      this.publishError(error);
+    }
+    const normalFirmwarePresent = rawDevices.some(isDualSenseDevice);
+    this.markBridgeUnavailableAfterDisconnect(rawDevices, normalFirmwarePresent);
+    this.emitSnapshot();
   }
 
   private maybeEmitStatusToasts(status: BridgeStatusPayload): void {
@@ -2522,40 +3593,33 @@ export class BridgeService extends EventEmitter {
     }
 
     this.reapplyActive = true;
+    let reapplied = false;
     try {
       const settings = this.settingsStore.get();
       await this.applyCurrentSettings(settings, this.reapplyAttempt === 0);
-      if (!settings.hostEncodedAudioEnabled || this.hostAudioCommandActive) {
-        this.reappliedSessionKey = this.sessionKey;
-      } else if (this.reapplyAttempt >= STARTUP_REAPPLY_RETRY_DELAYS_MS.length) {
-        this.reappliedSessionKey = this.sessionKey;
-      } else {
-        this.nextReapplyAt = Date.now() + STARTUP_REAPPLY_RETRY_DELAYS_MS[this.reapplyAttempt];
-        this.reapplyAttempt += 1;
-      }
+      this.reappliedSessionKey = this.sessionKey;
+      reapplied = true;
     } catch (error) {
       this.publishError(error);
     } finally {
       this.reapplyActive = false;
     }
+    if (reapplied) {
+      await this.updateSystemAudioHapticsEngine();
+    }
   }
 
   private async applyCurrentSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
-    if (settings.hostEncodedAudioEnabled) {
-      await this.startHostAudioSession(expectSettingsRevisionChange);
-      await this.applySpeakerSettings(settings, expectSettingsRevisionChange);
-      if (settings.duplexMicEnabled) {
-        await this.applyMicSettings(settings, expectSettingsRevisionChange);
-      } else {
-        await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 1, { throwOnCommandError: false });
-      }
-    }
     await this.applyLightbarSettings(settings, expectSettingsRevisionChange);
     await this.sendCommand(COMMAND_ID.SET_MUTE_BUTTON_ACTION, muteButtonModeValue(settings.muteButtonMode), {
       expectSettingsRevisionChange,
       extraPayload: [
         settings.muteKeyboardUsage,
-        encodeMuteKeyboardOptions(settings.muteKeyboardModifiers, settings.muteKeyboardBehavior)
+        encodeMuteKeyboardOptions(
+          settings.muteKeyboardModifiers,
+          settings.muteKeyboardBehavior,
+          settings.muteButtonMode === 'keyboard' && settings.muteKeyboardChordStarterEnabled
+        )
       ]
     });
     await this.sendCommand(COMMAND_ID.SET_HAPTICS_GAIN, this.effectiveHapticsGain(settings), {
@@ -2564,11 +3628,18 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH, settings.hapticsBufferLength, {
       expectSettingsRevisionChange
     });
+    await this.applyAudioReactiveHapticsSettings(settings, expectSettingsRevisionChange);
+    if (!this.reapplyActive) {
+      await this.updateSystemAudioHapticsEngine();
+    }
     await this.sendCommand(
       COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN,
       this.effectiveClassicRumbleGain(settings),
       { expectSettingsRevisionChange }
     );
+    await this.sendCommand(COMMAND_ID.SET_CLASSIC_RUMBLE_V1, settings.classicRumbleV1Enabled ? 1 : 0, {
+      expectSettingsRevisionChange
+    });
     await this.sendCommand(
       COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY,
       this.effectiveTriggerEffectIntensity(settings),
@@ -2577,12 +3648,12 @@ export class BridgeService extends EventEmitter {
     if (!settings.adaptiveTriggersEnabled) {
       await this.sendCommand(COMMAND_ID.RESET_ADAPTIVE_TRIGGERS, 0, { throwOnCommandError: false });
     }
-    if (!settings.hostEncodedAudioEnabled) {
-      await this.applySpeakerSettings(settings, expectSettingsRevisionChange);
-      await this.applyMicSettings(settings, expectSettingsRevisionChange);
-      await this.stopHostAudioSession(expectSettingsRevisionChange);
-    }
+    await this.applySpeakerSettings(settings, expectSettingsRevisionChange);
+    await this.applyMicSettings(settings, expectSettingsRevisionChange);
     await this.sendCommand(COMMAND_ID.SET_LED_ENABLED, settings.ledEnabled ? 1 : 0, {
+      expectSettingsRevisionChange
+    });
+    await this.sendCommand(COMMAND_ID.SET_PLAYER_LED_ENABLED, settings.playerLedEnabled ? 1 : 0, {
       expectSettingsRevisionChange
     });
     await this.sendCommand(COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED, settings.idleDisconnectEnabled ? 1 : 0, {
@@ -2607,9 +3678,15 @@ export class BridgeService extends EventEmitter {
       { expectSettingsRevisionChange }
     );
     await this.applyButtonRemapping(settings, expectSettingsRevisionChange);
+    await this.applyChordBindings(settings);
     await this.sendCommand(
       COMMAND_ID.SET_POLLING_RATE_MODE,
       pollingRateModeValue(settings.pollingRateMode),
+      { expectSettingsRevisionChange }
+    );
+    await this.sendCommand(
+      COMMAND_ID.SET_HOST_PERSONA,
+      hostPersonaModeValue(settings.hostPersonaMode),
       { expectSettingsRevisionChange }
     );
   }
@@ -2630,10 +3707,16 @@ export class BridgeService extends EventEmitter {
   }
 
   private async applySpeakerSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
+    await this.sendCommand(COMMAND_ID.SET_SPEAKER_GAIN, settings.speakerGainLevel, {
+      expectSettingsRevisionChange
+    });
     await this.setFirmwareSpeakerVolume(settings.speakerEnabled ? settings.speakerVolumePercent : 0, expectSettingsRevisionChange);
   }
 
   private async applyMicSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
+    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, settings.duplexMicEnabled ? 1 : 0, {
+      expectSettingsRevisionChange
+    });
     await this.sendCommand(COMMAND_ID.SET_MIC_VOLUME, settings.micVolumePercent, {
       expectSettingsRevisionChange
     });
@@ -2659,6 +3742,12 @@ export class BridgeService extends EventEmitter {
 
   private publishError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
+    if (this.applyHostPersonaTransitionSnapshot(this.snapshot.diagnostics.rawDevices)) {
+      this.appendAudioDebugLines([`[HostBridge] masked persona transition error: ${message}`]);
+      this.emitSnapshot();
+      return;
+    }
+
     const isIncompatible = error instanceof ProtocolError && error.code === 'bad-version';
     this.snapshot = {
       ...this.snapshot,
@@ -2667,6 +3756,7 @@ export class BridgeService extends EventEmitter {
       diagnostics: {
         ...this.snapshot.diagnostics,
         lastError: message,
+        firmwareUpdateAvailable: null,
         lastPollAt: Date.now()
       }
     };
@@ -2685,27 +3775,25 @@ export class BridgeService extends EventEmitter {
       }
     }
     this.devicePath = null;
-    this.hostAudioCommandActive = false;
-    this.hostAudioStatus = null;
+    this.audioStatus = null;
+    this.incompatibleCompanionProtocolVersion = null;
     this.triggerTraceSupported = null;
     this.feedbackTraceSupported = null;
     this.controllerPowerSavingActive = null;
-    this.hostAudioReportQueue = [];
-    this.hostAudioWritePumpActive = false;
-    this.hostAudioFrameCount = 0;
-    this.hostAudioChunkWriteCount = 0;
-    this.hostAudioFrameDropCount = 0;
-    this.clearHostAudioCaptureBackoff();
-    void this.hostAudioEngine.stop();
-    void this.micKeepaliveEngine.stop();
+    this.systemAudioHapticsRetryAt = 0;
+    this.systemAudioHapticsPassthroughActive = false;
+    void this.stopControllerAudioPolling();
   }
 
   private markBridgeUnavailableAfterDisconnect(rawDevices: HidDeviceSummary[], normalFirmwarePresent = false): void {
+    if (this.applyHostPersonaTransitionSnapshot(rawDevices)) {
+      return;
+    }
+
     this.lastUptimeSeconds = null;
     this.sessionKey = null;
     this.sessionPath = null;
     this.reapplyActive = false;
-    this.hostAudioHeartbeatBusy = false;
     this.noteControllerUnavailableForToasts();
     this.lowBatteryToastActive = false;
     this.resetStartupReapplyState();
@@ -2721,6 +3809,13 @@ export class BridgeService extends EventEmitter {
   }
 
   private emitSnapshot(): void {
+    const personaTransition = this.snapshot.state === 'transitioning'
+      ? this.hostPersonaTransitionMaskSnapshot()
+      : this.hostPersonaTransitionSnapshot();
+    this.snapshot = {
+      ...this.snapshot,
+      personaTransition
+    };
     const signature = JSON.stringify({
       state: this.snapshot.state,
       message: this.snapshot.message,
@@ -2731,12 +3826,14 @@ export class BridgeService extends EventEmitter {
           }
         : null,
       settings: this.snapshot.settings,
+      personaTransition: this.snapshot.personaTransition,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,
         settingsRevision: this.snapshot.diagnostics.settingsRevision,
         lastAck: this.snapshot.diagnostics.lastAck,
         lastError: this.snapshot.diagnostics.lastError,
+        firmwareUpdateAvailable: this.snapshot.diagnostics.firmwareUpdateAvailable,
         audioDebugLogPath: this.snapshot.diagnostics.audioDebugLogPath,
         audioDebugLogLineCount: this.snapshot.diagnostics.audioDebugLogLines.length,
         audioDebugLogTail: this.snapshot.diagnostics.audioDebugLogLines.at(-1) ?? null,
@@ -2747,9 +3844,7 @@ export class BridgeService extends EventEmitter {
         feedbackTraceLineCount: this.snapshot.diagnostics.feedbackTraceLines.length,
         feedbackTraceTail: this.snapshot.diagnostics.feedbackTraceLines.at(-1) ?? null,
         feedbackTraceDroppedCount: this.snapshot.diagnostics.feedbackTraceDroppedCount,
-        hostAudioCaptureIssue: this.snapshot.diagnostics.hostAudioCaptureIssue,
-        hostAudioCaptureRetry: this.snapshot.diagnostics.hostAudioCaptureRetry,
-        hostAudioStatus: this.snapshot.diagnostics.hostAudioStatus
+        audioStatus: this.snapshot.diagnostics.audioStatus
       }
     });
     if (signature === this.lastEmittedSnapshotSignature) {

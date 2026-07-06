@@ -3,8 +3,10 @@
 // Modified for DS5 Bridge companion firmware and app integration.
 //
 
+#include <algorithm>
 #include <cstdio>
 #include "bsp/board_api.h"
+#include "button_functions.h"
 #include "bt.h"
 #include "controller_packet_compositor.h"
 #include "controller_output_policy.h"
@@ -13,7 +15,14 @@
 #include "resample.h"
 #include "audio.h"
 #include "usb.h"
+#include "host_input.h"
 #include "controller_report.h"
+#include "dualsense_input_decoder.h"
+#include "dualsense_output.h"
+#include "persona/ds4_persona.h"
+#include "persona/dualsense_persona.h"
+#include "persona/host_persona.h"
+#include "persona/xusb360_usb.h"
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
@@ -28,6 +37,7 @@
 
 int reportSeqCounter = 0;
 static constexpr uint32_t HOST_LIGHTBAR_RESTORE_DELAY_MS = 3000;
+static constexpr uint32_t HOST_PERSONA_SWITCH_INPUT_FALLBACK_US = 3'000'000;
 
 enum HidDebugKind : uint8_t {
     HidDebugGetReport = 1,
@@ -165,36 +175,154 @@ uint8_t interrupt_in_data[63] = {
 
 critical_section_t report_cs;
 volatile bool report_dirty = false;
+BridgeControllerState interrupt_in_state{};
+static volatile bool host_input_waiting_for_mount = false;
+static volatile uint32_t host_input_fallback_until_us = 0;
 
-void reset_controller_input_report_cache() {
-    static constexpr uint8_t default_interrupt_in_data[63] = {
-        0x7f, 0x7d, 0x7f, 0x7e, 0x00, 0x00, 0xa7,
-        0x08, 0x00, 0x00, 0x00, 0x52, 0x43, 0x30, 0x41,
-        0x01, 0x00, 0x0e, 0x00, 0xef, 0xff, 0x03, 0x03,
-        0x7b, 0x1b, 0x18, 0xf0, 0xcc, 0x9c, 0x60, 0x00,
-        0xfc, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00,
-        0x00, 0x00, 0x09, 0x09, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0xa7, 0xad, 0x60, 0x00, 0x29, 0x18, 0x00,
-        0x53, 0x9f, 0x28, 0x35, 0xa5, 0xa8, 0x0c, 0x8b
-    };
+static constexpr uint8_t kNeutralDualSenseUsbInputReport[63] = {
+    0x7f, 0x7d, 0x7f, 0x7e, 0x00, 0x00, 0xa7,
+    0x08, 0x00, 0x00, 0x00, 0x52, 0x43, 0x30, 0x41,
+    0x01, 0x00, 0x0e, 0x00, 0xef, 0xff, 0x03, 0x03,
+    0x7b, 0x1b, 0x18, 0xf0, 0xcc, 0x9c, 0x60, 0x00,
+    0xfc, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00,
+    0x00, 0x00, 0x09, 0x09, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xa7, 0xad, 0x60, 0x00, 0x29, 0x18, 0x00,
+    0x53, 0x9f, 0x28, 0x35, 0xa5, 0xa8, 0x0c, 0x8b
+};
+
+static bool time_reached_u32(uint32_t now, uint32_t target) {
+    return static_cast<int32_t>(now - target) >= 0;
+}
+
+static bool host_input_quiet_active(uint32_t now) {
+    if (!host_input_waiting_for_mount) {
+        return false;
+    }
+    if (host_input_fallback_until_us != 0 && time_reached_u32(now, host_input_fallback_until_us)) {
+        host_input_waiting_for_mount = false;
+        host_input_fallback_until_us = 0;
+        return false;
+    }
+    return true;
+}
+
+static BridgeControllerState neutral_controller_state() {
+    BridgeControllerState state{};
+    (void)dualsense_decode_usb_input_report(
+        kNeutralDualSenseUsbInputReport,
+        sizeof(kNeutralDualSenseUsbInputReport),
+        state
+    );
+    return state;
+}
+
+static bool host_input_ready_for_persona(HostPersonaMode persona) {
+    return persona == HostPersonaModeXusb360 ? xusb360_usb_ready() : tud_hid_ready();
+}
+
+static bool host_input_send_report_for_persona(HostPersonaMode persona, BridgeControllerState const &state) {
+    if (!host_input_ready_for_persona(persona)) {
+        return false;
+    }
+
+    HostPersonaInputReport report{};
+    if (!host_persona_encode_input(persona, state, report)) {
+        return false;
+    }
+
+    note_usb_input_report(report.bytes, report.len);
+    return persona == HostPersonaModeXusb360
+        ? xusb360_usb_send_report(report.bytes, report.len)
+        : tud_hid_report(report.report_id, report.bytes, report.len);
+}
+
+static uint16_t ds4_copy_input_report_payload(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
+    if (report_id != kDs4InputReportId || buffer == nullptr) {
+        return 0;
+    }
+
+    BridgeControllerState safe_state{};
+    critical_section_enter_blocking(&report_cs);
+    safe_state = interrupt_in_state;
+    critical_section_exit(&report_cs);
+
+    HostPersonaInputReport report{};
+    if (!host_persona_encode_input(HostPersonaModeDs4, safe_state, report)) {
+        return 0;
+    }
+
+    const uint16_t copy_len = std::min<uint16_t>(report.len, reqlen);
+    if (copy_len > 0) {
+        memcpy(buffer, report.bytes, copy_len);
+    }
+    return copy_len;
+}
+
+static bool dualsense_feature_report_may_use_bt_passthrough(uint8_t report_id) {
+    if (report_id != 0x20 && report_id != 0x22) {
+        return true;
+    }
+
+    // We never enumerate as DualSense Edge. Do not leak DSE firmware or
+    // hardware identity through stock DualSense identity feature reports.
+    return bt_controller_type() != ControllerTypeDualSenseEdge;
+}
+
+void host_input_prepare_persona_switch() {
+    const HostPersonaMode current_persona = host_persona_active();
+    const BridgeControllerState neutral_state = neutral_controller_state();
+    const uint32_t now = time_us_32();
 
     critical_section_enter_blocking(&report_cs);
-    memcpy(interrupt_in_data, default_interrupt_in_data, sizeof(interrupt_in_data));
+    memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
+    interrupt_in_state = neutral_state;
+    report_dirty = false;
+    host_input_waiting_for_mount = true;
+    host_input_fallback_until_us = now + HOST_PERSONA_SWITCH_INPUT_FALLBACK_US;
+    critical_section_exit(&report_cs);
+
+    (void)host_input_send_report_for_persona(current_persona, neutral_state);
+}
+
+void host_input_note_usb_mounted() {
+    host_input_waiting_for_mount = false;
+    host_input_fallback_until_us = 0;
+}
+
+void reset_controller_input_report_cache() {
+    BridgeControllerState default_state{};
+    (void)dualsense_decode_usb_input_report(
+        kNeutralDualSenseUsbInputReport,
+        sizeof(kNeutralDualSenseUsbInputReport),
+        default_state
+    );
+
+    critical_section_enter_blocking(&report_cs);
+    memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
+    interrupt_in_state = default_state;
     report_dirty = false;
     critical_section_exit(&report_cs);
 }
 
 void interrupt_loop() {
-    if (!tud_hid_ready()) return;
+    const uint32_t now = time_us_32();
+    if (host_input_quiet_active(now)) {
+        return;
+    }
+
+    const HostPersonaMode persona = host_persona_active();
+    const bool xusb = persona == HostPersonaModeXusb360;
+    if (!host_input_ready_for_persona(persona)) {
+        return;
+    }
 
     bool should_send = false;
-    // Local buffer to hold the report data while we prepare it to send. 
-    uint8_t safe_report[63];
+    BridgeControllerState safe_state{};
 
 
     critical_section_enter_blocking(&report_cs);
     if (report_dirty) {
-        memcpy(safe_report, interrupt_in_data, 63);
+        safe_state = interrupt_in_state;
         report_dirty = false;
         should_send = true;
     }
@@ -202,8 +330,15 @@ void interrupt_loop() {
 
     // Only send to TinyUSB if we actually grabbed fresh data
     if (should_send) {
-        note_usb_input_report(safe_report, sizeof(safe_report));
-        if (!tud_hid_report(0x01, safe_report, 63)) {
+        HostPersonaInputReport safe_report{};
+        if (!host_persona_encode_input(persona, safe_state, safe_report)) {
+            return;
+        }
+        note_usb_input_report(safe_report.bytes, safe_report.len);
+        const bool queued = xusb
+            ? xusb360_usb_send_report(safe_report.bytes, safe_report.len)
+            : tud_hid_report(safe_report.report_id, safe_report.bytes, safe_report.len);
+        if (!queued) {
             DS5_LOG("[USBHID] tud_hid_report error\n");
             
             // If the report failed to queue, restore the dirty flag 
@@ -237,6 +372,11 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     companion_process_controller_report(controller_report, sizeof(controller_report));
 #endif
 
+    BridgeControllerState controller_state{};
+    if (!dualsense_decode_usb_input_report(controller_report, sizeof(controller_report), controller_state)) {
+        return;
+    }
+
     // We add the critical section here to avoid any race conditions when writing to the interrupt_in_data buffer,
     // which is shared between the main loop and this callback.
     // The critical section ensures that only one thread can access the buffer at a time,
@@ -245,6 +385,7 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     //  and needs to be sent in the next interrupt report.
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, controller_report, sizeof(controller_report));
+    interrupt_in_state = controller_state;
     report_dirty = true;
     critical_section_exit(&report_cs);
 #ifdef ENABLE_COMPANION
@@ -264,10 +405,20 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     (void) reqlen;
 
 #ifdef ENABLE_COMPANION
-    if (itf == KEYBOARD_HID_INSTANCE) {
+    if (itf == host_persona_keyboard_hid_instance()) {
         return 0;
     }
 #endif
+
+    if (host_persona_active() == HostPersonaModeDs4) {
+        if (report_type == HID_REPORT_TYPE_INPUT) {
+            return ds4_copy_input_report_payload(report_id, buffer, reqlen);
+        }
+        if (report_type == HID_REPORT_TYPE_FEATURE) {
+            return ds4_persona_get_feature_report(report_id, buffer, reqlen);
+        }
+        return 0;
+    }
 
     audio_debug_note_hid_event(
         HidDebugGetReport,
@@ -276,18 +427,25 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         reqlen,
         0
     );
-    std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
-    if (feature_data.empty() || buffer == nullptr) {
+    if (report_type != HID_REPORT_TYPE_FEATURE) {
         return 0;
     }
 
-    const uint16_t available = static_cast<uint16_t>(feature_data.size() - 1);
-    const uint16_t copy_len = available < reqlen ? available : reqlen;
-    if (copy_len > 0) {
-        memcpy(buffer, feature_data.data() + 1, copy_len);
+    std::vector<uint8_t> feature_data;
+    if (dualsense_feature_report_may_use_bt_passthrough(report_id)) {
+        feature_data = get_feature_data(report_id, reqlen);
+    }
+    if (!feature_data.empty() && buffer != nullptr) {
+        const uint16_t available = static_cast<uint16_t>(feature_data.size() - 1);
+        const uint16_t copy_len = available < reqlen ? available : reqlen;
+        if (copy_len > 0) {
+            memcpy(buffer, feature_data.data() + 1, copy_len);
+        }
+
+        return copy_len;
     }
 
-    return copy_len;
+    return dualsense_persona_get_feature_report(report_id, buffer, reqlen);
 }
 
 // Invoked when received SET_REPORT control request or
@@ -301,11 +459,12 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void) bufsize;
 
 #ifdef ENABLE_COMPANION
-    if (itf == KEYBOARD_HID_INSTANCE) {
+    if (itf == host_persona_keyboard_hid_instance()) {
         return;
     }
 #endif
 
+    const HostPersonaMode active_persona = host_persona_active();
     audio_debug_note_hid_event(
         HidDebugSetReport,
         report_id,
@@ -313,6 +472,45 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         bufsize,
         bufsize > 0 && buffer != nullptr ? buffer[0] : 0
     );
+
+    if (active_persona == HostPersonaModeDs4) {
+        if (report_type == HID_REPORT_TYPE_FEATURE) {
+            ds4_persona_set_feature_report(report_id, buffer, bufsize);
+            return;
+        }
+
+        uint8_t output_report[64]{};
+        uint8_t const *output_data = buffer;
+        uint16_t output_len = bufsize;
+        if (report_id != 0) {
+            output_report[0] = report_id;
+            const uint16_t copy_len = static_cast<uint16_t>(std::min<uint16_t>(bufsize, sizeof(output_report) - 1));
+            if (copy_len > 0 && buffer != nullptr) {
+                memcpy(output_report + 1, buffer, copy_len);
+            }
+            output_data = output_report;
+            output_len = static_cast<uint16_t>(copy_len + 1);
+        }
+
+        uint8_t payload[ds5::output::kCommonPayloadSize]{};
+        uint16_t payload_len = 0;
+        if (host_persona_decode_output_to_ds5_payload(
+            active_persona,
+            output_data,
+            output_len,
+            payload,
+            sizeof(payload),
+            payload_len
+        )) {
+            usb_note_hid_output();
+#ifdef ENABLE_COMPANION
+            companion_note_trigger_trace_report(CompanionTriggerTraceHost, output_data, output_len);
+            companion_note_feedback_trace_report(CompanionFeedbackTraceHost, output_data, output_len);
+#endif
+            controller_output_submit_usb_payload(payload, payload_len);
+        }
+        return;
+    }
 
     // INTERRUPT OUT
     if (report_id == 0) {
@@ -343,9 +541,11 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 }
 
 int main() {
+#if SYS_CLOCK_KHZ != 150000
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     sleep_ms(1000);
-    set_sys_clock_khz(320000, true);
+    set_sys_clock_khz(SYS_CLOCK_KHZ, true);
+#endif
 
     board_init();
     usb_device_stack_init_disconnected();
@@ -392,6 +592,7 @@ int main() {
         interrupt_loop();
         usb_pm_poll();
         audio_loop();
+        button_check();
         bt_lightbar_loop();
         bt_signal_strength_loop();
         bt_inquiry_loop();

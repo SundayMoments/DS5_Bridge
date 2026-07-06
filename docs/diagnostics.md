@@ -56,8 +56,8 @@ Runtime presets:
 off         Default. No extra feature-report polling.
 audio       Poll audio debug/stats reports.
 traces      Poll audio debug/stats plus trigger and feedback trace reports.
-host-audio  Enable host audio helper diagnostics.
-all         Enable all companion diagnostic polling and host helper diagnostics.
+helper      Enable audio helper diagnostics.
+all         Enable all companion diagnostic polling and audio helper diagnostics.
 ```
 
 Individual runtime flags override the preset:
@@ -67,8 +67,7 @@ DS5_BRIDGE_AUDIO_DEBUG_DIAGNOSTICS=1
 DS5_BRIDGE_TRIGGER_TRACE_DIAGNOSTICS=1
 DS5_BRIDGE_FEEDBACK_TRACE_DIAGNOSTICS=1
 DS5_BRIDGE_MIC_KEEPALIVE=1
-DS5_BRIDGE_HOST_AUDIO_DIAGNOSTICS=1
-DS5_BRIDGE_HOST_AUDIO_DUMP=1
+DS5_BRIDGE_AUDIO_HELPER_DIAGNOSTICS=1
 ```
 
 Companion runtime defaults and environment variable names live in
@@ -102,11 +101,10 @@ cd companion
 npm run dev
 ```
 
-Host audio helper dumps:
+Audio helper diagnostics:
 
 ```powershell
-$env:DS5_BRIDGE_DIAGNOSTICS="host-audio"
-$env:DS5_BRIDGE_HOST_AUDIO_DUMP="1"
+$env:DS5_BRIDGE_DIAGNOSTICS="helper"
 cd companion
 npm run dev
 ```

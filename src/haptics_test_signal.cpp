@@ -24,6 +24,17 @@ uint8_t haptics_test_signal_amplitude(uint8_t base_amplitude, uint16_t gain_perc
     return haptics_test_signal_amplitude_internal(base_amplitude, gain_percent, envelope_percent);
 }
 
+bool haptics_test_signal_packet_due(
+    uint32_t now_us,
+    uint32_t last_packet_us,
+    uint32_t interval_us,
+    bool carrier_paced
+) {
+    return carrier_paced
+        || last_packet_us == 0
+        || static_cast<uint32_t>(now_us - last_packet_us) >= interval_us;
+}
+
 void haptics_test_signal_fill(
     int8_t *destination,
     uint16_t len,

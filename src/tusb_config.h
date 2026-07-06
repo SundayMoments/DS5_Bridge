@@ -113,8 +113,7 @@
 // HID buffer size Should be sufficient to hold ID (if any) + Data
 #define CFG_TUD_HID_EP_BUFSIZE    64
 
-// Lossless host PCM mirror. Full-speed bulk uses 64 byte USB packets, but the
-// software FIFO needs room for a few milliseconds of 48 kHz stereo PCM frames.
+// Companion control bridge.
 #define CFG_TUD_VENDOR_EPSIZE     64
 #define CFG_TUD_VENDOR_RX_BUFSIZE 64
 #define CFG_TUD_VENDOR_TX_BUFSIZE 16384
@@ -161,15 +160,14 @@
 #define CFG_TUD_AUDIO_FUNC_2_EP_IN_SZ_MAX           CFG_TUD_AUDIO_FUNC_2_FORMAT_1_EP_SZ_IN
 #endif
 
-#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ       (12 * CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX)
-#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ        (96 * CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX)
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ       (3 * CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX)
+#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ        (16 * CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX)
 #ifndef ENABLE_COMPANION
 #define CFG_TUD_AUDIO_FUNC_2_EP_OUT_SW_BUF_SZ       0
 #define CFG_TUD_AUDIO_FUNC_2_EP_IN_SW_BUF_SZ        (16 * CFG_TUD_AUDIO_FUNC_2_EP_IN_SZ_MAX)
 #endif
 
-// Enable OUT EP (speaker) and IN EP (mic). The WinUSB PCM path is a custom
-// companion driver, not a TinyUSB audio function.
+// Enable OUT EP (speaker) and IN EP (mic).
 #define CFG_TUD_AUDIO_ENABLE_EP_OUT                 1
 #define CFG_TUD_AUDIO_ENABLE_EP_IN                  1
 

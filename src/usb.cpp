@@ -11,6 +11,7 @@
 
 #include "audio.h"
 #include "bt.h"
+#include "host_input.h"
 #include "usb.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
@@ -21,8 +22,6 @@ uint32_t usb_host_volume_set_count[3] = {0, 0, 0};
 float usb_host_speaker_gain = 1.0f;
 static uint32_t usb_last_hid_output_us = 0;
 static uint8_t usb_hid_polling_rate = 2;
-static volatile bool usb_suspended = false;
-static volatile bool usb_suspend_disconnect_requested = false;
 static bool usb_suspend_disconnect = true;
 static volatile bool usb_speaker_streaming = false;
 static volatile bool usb_mic_streaming = false;
@@ -30,11 +29,12 @@ static volatile bool usb_line_streaming = false;
 static bool usb_reconnect_requested = false;
 static bool usb_reconnect_connect_pending = false;
 static uint32_t usb_reconnect_at_us = 0;
-static bool usb_controller_connect_pending = false;
-static uint32_t usb_controller_connect_at_us = 0;
 static bool usb_controller_transport_ready = false;
+static bool usb_controller_transport_disconnect_pending = false;
 static volatile bool usb_mounted = false;
-static uint32_t usb_controller_last_attach_us = 0;
+static volatile bool usb_host_suspended = false;
+static volatile uint32_t usb_suspend_at_us = 0;
+static volatile uint32_t usb_reconnect_grace_until_us = 0;
 
 extern "C" {
 uint8_t usb_hid_polling_interval_ms_value = 1;
@@ -44,10 +44,10 @@ uint8_t usb_hid_polling_interval_ms_value = 1;
 #define UAC1_ENTITY_MIC_FEATURE_UNIT    0x05
 #define UAC1_ENTITY_LINE_FEATURE_UNIT   0x08
 #define HID_OUTPUT_ACTIVE_US            500000
-#define USB_RECONNECT_DELAY_US          250000
-#define USB_RECONNECT_HOLD_US           150000
-#define USB_CONTROLLER_REATTACH_HOLD_US 3000000
-#define USB_CONTROLLER_ENUMERATION_RETRY_US 3000000
+#define USB_RECONNECT_DELAY_US          50000
+#define USB_RECONNECT_HOLD_US           100000
+#define USB_SUSPEND_POWEROFF_DEBOUNCE_US 3000000
+#define USB_RECONNECT_GRACE_US          5000000
 
 enum UsbAudioDebugKind : uint8_t {
     UsbAudioDebugSetInterface = 1,
@@ -71,6 +71,15 @@ static bool time_reached(uint32_t now, uint32_t target) {
     return static_cast<int32_t>(now - target) >= 0;
 }
 
+static bool reconnect_grace_active(uint32_t now) {
+    return usb_reconnect_grace_until_us != 0
+        && !time_reached(now, usb_reconnect_grace_until_us);
+}
+
+static bool usb_bus_suspended() {
+    return usb_host_suspended || (tud_inited() && tud_suspended());
+}
+
 static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
     switch (mode) {
         case 0:
@@ -86,6 +95,15 @@ static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
 static void usb_schedule_reconnect() {
     usb_reconnect_requested = true;
     usb_reconnect_at_us = time_us_32() + USB_RECONNECT_DELAY_US;
+}
+
+static void usb_note_reconnect_disconnect(uint32_t now) {
+    usb_reconnect_grace_until_us = now + USB_RECONNECT_GRACE_US;
+    usb_suspend_at_us = 0;
+}
+
+void usb_request_reconnect() {
+    usb_schedule_reconnect();
 }
 
 static void usb_reset_audio_class_state() {
@@ -116,6 +134,7 @@ static void usb_deinit_device_stack() {
 }
 
 void usb_device_stack_init_disconnected() {
+    const bool initialized_now = !tud_inited();
     if (!tud_inited()) {
         tusb_rhport_init_t dev_init = {
             .role = TUSB_ROLE_DEVICE,
@@ -124,15 +143,16 @@ void usb_device_stack_init_disconnected() {
         tusb_init(BOARD_TUD_RHPORT, &dev_init);
     }
     usb_mounted = false;
-    usb_suspended = false;
     usb_reset_audio_class_state();
+    if (initialized_now) {
+        sleep_ms(150);
+    }
     tud_disconnect();
 }
 
 static void usb_connect_controller_transport(uint32_t now) {
+    (void)now;
     usb_controller_transport_ready = true;
-    usb_controller_connect_pending = false;
-    usb_controller_last_attach_us = now;
     usb_device_stack_init_disconnected();
     tud_connect();
 }
@@ -166,17 +186,14 @@ bool usb_host_hid_output_recent() {
 
 void usb_set_suspend_disconnect_enabled(bool enabled) {
     usb_suspend_disconnect = enabled;
-    if (!enabled) {
-        usb_suspend_disconnect_requested = false;
-    }
 }
 
 bool usb_suspend_disconnect_enabled() {
     return usb_suspend_disconnect;
 }
 
-bool usb_pm_should_pause_inquiry() {
-    return usb_suspend_disconnect && usb_mounted && usb_suspended;
+bool usb_host_suspended_active() {
+    return usb_bus_suspended();
 }
 
 bool usb_speaker_streaming_active() {
@@ -194,36 +211,40 @@ bool usb_line_streaming_active() {
 void usb_handle_controller_transport_disconnect() {
     usb_reconnect_requested = false;
     usb_reconnect_connect_pending = false;
-    usb_controller_connect_pending = false;
     usb_controller_transport_ready = false;
-    usb_mounted = false;
-    usb_suspended = false;
-    usb_suspend_disconnect_requested = false;
-    usb_controller_connect_at_us = time_us_32() + USB_CONTROLLER_REATTACH_HOLD_US;
     usb_reset_audio_class_state();
+    if (usb_bus_suspended()) {
+        usb_controller_transport_disconnect_pending = true;
+        return;
+    }
+    usb_controller_transport_disconnect_pending = false;
+    usb_mounted = false;
     usb_deinit_device_stack();
 }
 
 void usb_handle_controller_transport_ready() {
-    const uint32_t now = time_us_32();
-    usb_reset_audio_class_state();
-    if (!time_reached(now, usb_controller_connect_at_us)) {
-        usb_controller_connect_pending = true;
+    if (usb_controller_transport_ready) {
         return;
     }
-    usb_connect_controller_transport(now);
+    usb_reset_audio_class_state();
+    usb_controller_transport_disconnect_pending = false;
+    if (usb_bus_suspended()) {
+        usb_controller_transport_ready = true;
+        return;
+    }
+    usb_connect_controller_transport(time_us_32());
 }
 
 extern "C" void tud_mount_cb(void) {
     usb_mounted = true;
-    usb_suspended = false;
-    usb_suspend_disconnect_requested = false;
+    usb_host_suspended = false;
+    usb_suspend_at_us = 0;
+    usb_reconnect_grace_until_us = 0;
+    host_input_note_usb_mounted();
 }
 
 extern "C" void tud_umount_cb(void) {
     usb_mounted = false;
-    usb_suspended = false;
-    usb_suspend_disconnect_requested = false;
 }
 
 extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
@@ -251,22 +272,53 @@ extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t cons
 
 extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
     (void) remote_wakeup_en;
-    usb_suspended = true;
-    if (usb_suspend_disconnect && usb_mounted) {
-        usb_suspend_disconnect_requested = true;
+    const uint32_t now = time_us_32();
+    if (reconnect_grace_active(now)) {
+        usb_suspend_at_us = 0;
+        return;
     }
+    usb_host_suspended = true;
+    if (usb_suspend_disconnect) {
+        usb_suspend_at_us = now;
+    } else {
+        usb_suspend_at_us = 0;
+    }
+    usb_speaker_streaming = false;
+    usb_mic_streaming = false;
+    usb_line_streaming = false;
 }
 
 extern "C" void tud_resume_cb(void) {
-    usb_suspended = false;
+    usb_host_suspended = false;
+    usb_suspend_at_us = 0;
 }
 
 void usb_pm_poll() {
     const uint32_t now = time_us_32();
-    if (usb_controller_connect_pending && time_reached(now, usb_controller_connect_at_us)) {
-        usb_reset_audio_class_state();
-        usb_connect_controller_transport(now);
+    if (usb_reconnect_grace_until_us != 0 && time_reached(now, usb_reconnect_grace_until_us)) {
+        usb_reconnect_grace_until_us = 0;
     }
+
+    if (
+        usb_suspend_at_us != 0
+        && usb_host_suspended
+        && static_cast<uint32_t>(now - usb_suspend_at_us) >= USB_SUSPEND_POWEROFF_DEBOUNCE_US
+    ) {
+        (void)bt_power_off_controller();
+        usb_suspend_at_us = 0;
+    }
+
+    if (usb_bus_suspended()) {
+        return;
+    }
+
+    if (usb_controller_transport_disconnect_pending && !usb_controller_transport_ready) {
+        usb_controller_transport_disconnect_pending = false;
+        usb_mounted = false;
+        usb_deinit_device_stack();
+        return;
+    }
+
     if (usb_reconnect_connect_pending && time_reached(now, usb_reconnect_at_us)) {
         usb_reconnect_connect_pending = false;
         tud_connect();
@@ -275,36 +327,11 @@ void usb_pm_poll() {
         usb_reconnect_requested = false;
         usb_reconnect_connect_pending = true;
         usb_reconnect_at_us = now + USB_RECONNECT_HOLD_US;
+        usb_note_reconnect_disconnect(now);
         tud_disconnect();
         return;
     }
 
-    if (
-        usb_controller_transport_ready
-        && bt_is_controller_connected()
-        && !usb_mounted
-        && !usb_controller_connect_pending
-        && !usb_reconnect_requested
-        && !usb_reconnect_connect_pending
-        && time_reached(now, usb_controller_last_attach_us + USB_CONTROLLER_ENUMERATION_RETRY_US)
-    ) {
-        usb_controller_connect_pending = true;
-        usb_controller_connect_at_us = now + USB_RECONNECT_HOLD_US;
-        usb_controller_last_attach_us = now;
-        usb_device_stack_init_disconnected();
-        return;
-    }
-
-    if (!usb_suspend_disconnect_requested) {
-        return;
-    }
-    usb_suspend_disconnect_requested = false;
-
-    // TinyUSB suspend callbacks may run in IRQ context, so defer BTstack work
-    // to the main loop.
-    if (usb_suspend_disconnect && usb_suspended) {
-        bt_disconnect();
-    }
 }
 
 static UsbAudioVolumeRange const &usb_volume_range(uint8_t index) {

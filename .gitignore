@@ -1,5 +1,6 @@
 build
 build-*
+!tools/build-pico-universal-flash-nuke.ps1
 artifacts
 .vscode
 .idea
@@ -8,5 +9,10 @@ companion/node_modules
 companion/dist
 companion/dist-main
 companion/artifacts
+companion/*.uf2
+companion/firmware/*.uf2
+companion/firmware/*.uf2.sha256
 companion/native/**/bin
 companion/native/**/obj
+tools/**/bin
+tools/**/obj

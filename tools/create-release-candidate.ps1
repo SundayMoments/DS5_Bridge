@@ -32,6 +32,15 @@ function Read-FirmwareVersion([string] $CompanionSourcePath) {
   return "$($major.Groups[1].Value).$($minor.Groups[1].Value).$($patch.Groups[1].Value)"
 }
 
+function Read-BundledFirmwareVersion([string] $BridgeServiceSourcePath) {
+  $source = Get-Content -LiteralPath $BridgeServiceSourcePath -Raw
+  $version = [regex]::Match($source, "BUNDLED_FIRMWARE_VERSION\s*=\s*'(\d+\.\d+\.\d+)'")
+  if (-not $version.Success) {
+    throw "Unable to read bundled firmware version from $BridgeServiceSourcePath"
+  }
+  return $version.Groups[1].Value
+}
+
 function Invoke-Step([string] $Name, [scriptblock] $Action) {
   Write-Host ""
   Write-Host "==> $Name"
@@ -105,6 +114,7 @@ $portableArtifactsDir = Join-Path $companionRoot 'artifacts'
 $companionPackage = Read-JsonFile (Join-Path $companionRoot 'package.json')
 $companionVersion = [string] $companionPackage.version
 $firmwareVersion = Read-FirmwareVersion (Join-Path $repoRoot 'src\companion.cpp')
+$bundledFirmwareVersion = Read-BundledFirmwareVersion (Join-Path $companionRoot 'src\main\bridge-service.ts')
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $labelSuffix = if ([string]::IsNullOrWhiteSpace($Label)) { '' } else { " $($Label.Trim())" }
 $releaseDir = Join-Path $OutputRoot "DS5 Bridge Release Candidate$labelSuffix $stamp"
@@ -115,6 +125,10 @@ if (-not (Test-Path -LiteralPath $OutputRoot)) {
 
 Assert-SemanticVersion 'Companion' $companionVersion
 Assert-SemanticVersion 'Firmware' $firmwareVersion
+Assert-SemanticVersion 'Bundled firmware' $bundledFirmwareVersion
+if ($bundledFirmwareVersion -ne $firmwareVersion) {
+  throw "Bundled firmware version must match firmware version. Found bundled=$bundledFirmwareVersion firmware=$firmwareVersion"
+}
 
 if ($ValidateOnly) {
   $requiredFiles = @(
@@ -132,6 +146,7 @@ if ($ValidateOnly) {
   Write-Host 'Release candidate toolchain validation passed.'
   Write-Host "Companion version: $companionVersion"
   Write-Host "Firmware version: $firmwareVersion"
+  Write-Host "Bundled firmware version: $bundledFirmwareVersion"
   Write-Host "Output root: $OutputRoot"
   return
 }

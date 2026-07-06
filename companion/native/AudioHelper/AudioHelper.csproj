@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>Assets\ds5-audio-bridge.ico</ApplicationIcon>
+    <AssemblyTitle>DS5 Bridge Audio Helper</AssemblyTitle>
+    <Description>DS5 Bridge Audio Helper</Description>
+    <Product>DS5 Bridge Audio Helper</Product>
+    <Company>DS5 Bridge</Company>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+    <EnableSourceLink>false</EnableSourceLink>
+    <PathMap>$(MSBuildProjectDirectory)=/_/companion/native/AudioHelper</PathMap>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Concentus" Version="1.1.7" />
+    <PackageReference Include="HidSharp" Version="2.1.0" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="NETStandard.Library" Version="2.0.3" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\src\renderer\assets\test-speaker-tone-silence-tail.mp3">
+      <Link>test-speaker-tone-silence-tail.mp3</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

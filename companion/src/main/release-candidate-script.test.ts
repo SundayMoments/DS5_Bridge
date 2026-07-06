@@ -66,6 +66,7 @@ describe('release candidate toolchain', () => {
     expect(result.stdout).toContain('Release candidate toolchain validation passed.');
     expect(result.stdout).toMatch(/Companion version: \d+\.\d+\.\d+/);
     expect(result.stdout).toMatch(/Firmware version: \d+\.\d+\.\d+/);
+    expect(result.stdout).toMatch(/Bundled firmware version: \d+\.\d+\.\d+/);
     expect(readdirSync(outputRoot)).toEqual([]);
   });
 });

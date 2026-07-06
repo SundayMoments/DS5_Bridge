@@ -1,12 +1,20 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { resolveHostAudioHelperPath } from './host-audio-engine';
+import { resolveAudioHelperPath } from './audio-helper';
 
-type TransportReady = {
+type TransportReadySuccess = {
   id: 0;
   ok: true;
   path: string;
 };
+
+type TransportReadyFailure = {
+  id: 0;
+  ok: false;
+  error: string;
+};
+
+type TransportReady = TransportReadySuccess | TransportReadyFailure;
 
 type TransportResponse = {
   id: number;
@@ -25,8 +33,14 @@ type PendingRequest = {
   timeout: NodeJS.Timeout;
 };
 
+type OpenOptions = {
+  retryTimeoutMs?: number;
+  retryDelayMs?: number;
+};
+
 const REQUEST_TIMEOUT_MS = 1500;
 const START_TIMEOUT_MS = 2500;
+const DEFAULT_OPEN_RETRY_DELAY_MS = 50;
 const REPORT_LENGTH = 64;
 
 export class WinUsbCompanionTransport extends EventEmitter {
@@ -55,18 +69,38 @@ export class WinUsbCompanionTransport extends EventEmitter {
     });
   }
 
-  static async open(): Promise<WinUsbCompanionTransport> {
-    const helper = spawn(resolveHostAudioHelperPath(), ['--companion-transport'], {
+  static async open(options: OpenOptions = {}): Promise<WinUsbCompanionTransport> {
+    const retryTimeoutMs = Math.max(0, options.retryTimeoutMs ?? 0);
+    const retryDelayMs = Math.max(1, options.retryDelayMs ?? DEFAULT_OPEN_RETRY_DELAY_MS);
+    const startedAt = Date.now();
+    let lastError: Error | null = null;
+
+    while (true) {
+      try {
+        return await WinUsbCompanionTransport.openOnce();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const elapsedMs = Date.now() - startedAt;
+        if (retryTimeoutMs <= 0 || elapsedMs >= retryTimeoutMs) {
+          throw lastError;
+        }
+        await delay(Math.min(retryDelayMs, retryTimeoutMs - elapsedMs));
+      }
+    }
+  }
+
+  private static async openOnce(): Promise<WinUsbCompanionTransport> {
+    const helper = spawn(resolveAudioHelperPath(), ['--companion-transport'], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    const ready = await new Promise<TransportReady>((resolve, reject) => {
+    const ready = await new Promise<TransportReadySuccess>((resolve, reject) => {
       let settled = false;
       let stdout = '';
       let stderr = '';
       let timeout: NodeJS.Timeout;
-      function finish(message?: TransportReady, error?: Error) {
+      function finish(message?: TransportReadySuccess, error?: Error) {
         if (settled) {
           return;
         }
@@ -99,6 +133,8 @@ export class WinUsbCompanionTransport extends EventEmitter {
           const message = JSON.parse(line) as TransportReady;
           if (message.ok && message.id === 0 && message.path) {
             finish(message);
+          } else if (message.ok === false && message.id === 0 && message.error) {
+            finish(undefined, new Error(message.error));
           } else {
             finish(undefined, new Error('WinUSB bridge helper returned an invalid ready response.'));
           }
@@ -242,4 +278,8 @@ function normalizeReport(report: ArrayLike<number>): number[] {
     throw new Error(`Expected ${REPORT_LENGTH} report bytes, received ${report.length}.`);
   }
   return Array.from({ length: REPORT_LENGTH }, (_, index) => report[index] & 0xff);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

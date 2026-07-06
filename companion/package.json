@@ -1,6 +1,6 @@
 {
   "name": "ds5-bridge-companion",
-  "version": "1.5.1",
+  "version": "1.6.3",
   "private": true,
   "description": "Windows companion app for the Pico DS5 Bridge companion firmware.",
   "author": "SundayMoments",
@@ -10,15 +10,17 @@
   "scripts": {
     "dev": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",
-    "build:host-audio": "dotnet publish native/HostAudioHelper/HostAudioHelper.csproj -c Release -r win-x64 --self-contained true -o native/HostAudioHelper/bin/publish/win-x64",
-    "build": "npm run build:host-audio && tsc -p tsconfig.main.json && vite build",
-    "package:win": "npm run build && node scripts/package-win.mjs",
-    "installer:win": "npm run build && electron-builder --win nsis --x64",
-    "test": "npm run test:companion && npm run test:native && npm run test:firmware",
+    "build:audio-helper": "dotnet publish native/AudioHelper/AudioHelper.csproj -c Release -r win-x64 --self-contained true -o native/AudioHelper/bin/publish/win-x64",
+    "build:firmware-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File ../tools/build-pico-universal-flash-nuke.ps1",
+    "build:app": "tsc -p tsconfig.main.json && vite build",
+    "build": "npm run build:audio-helper && npm run build:app",
+    "package:win": "npm run build:firmware-tools && npm run build && node scripts/package-win.mjs",
+    "installer:win": "npm run build:firmware-tools && npm run build && electron-builder --win nsis --x64",
+    "test": "npm run test:companion && npm run test:installer && npm run test:native && npm run test:firmware",
     "test:companion": "vitest run src",
-    "test:native": "dotnet test native/HostAudioHelper.Tests/HostAudioHelper.Tests.csproj --nologo",
+    "test:installer": "node scripts/check-installer-upgrade-config.mjs",
+    "test:native": "dotnet test native/AudioHelper.Tests/AudioHelper.Tests.csproj --nologo",
     "test:firmware": "cmake -S ../tests/firmware -B ../build-firmware-tests -G Ninja && cmake --build ../build-firmware-tests && ctest --test-dir ../build-firmware-tests --output-on-failure",
-    "analyze:host-audio": "node scripts/analyze-host-audio-capture.mjs",
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
     "layout:check": "npm run build && node scripts/layout-check.mjs"
   },
@@ -47,14 +49,23 @@
         "filter": [
           "ds5-bridge_app-icon-tile.ico",
           "ds5-bridge_app-icon-tile.png",
+          "ds5-bridge_mark.ico",
           "ds5-bridge_mark.png"
         ]
       },
       {
-        "from": "native/HostAudioHelper/bin/publish/win-x64",
-        "to": "native/HostAudioHelper",
+        "from": "native/AudioHelper/bin/publish/win-x64",
+        "to": "native/AudioHelper",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "firmware",
+        "to": "firmware",
+        "filter": [
+          "pico-universal-flash-nuke.uf2",
+          "pico-universal-flash-nuke.uf2.sha256"
         ]
       },
       {
@@ -83,12 +94,15 @@
       ]
     },
     "nsis": {
+      "guid": "40464839-1bb3-5f24-b04b-13b55106e88b",
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DS5 Bridge"
+      "shortcutName": "DS5 Bridge",
+      "uninstallDisplayName": "DS5 Bridge"
     }
   },
   "dependencies": {

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACK_RESULT,
   AUDIO_DEBUG_EVENT,
+  CHORD_FUNCTION_EVENT_BASE,
   COMMAND_ID,
   COMPANION_USAGE,
   COMPANION_USAGE_PAGE,
@@ -53,6 +54,11 @@ const winUsbTransportMock = vi.hoisted(() => ({
   })
 }));
 
+const audioHelperMock = vi.hoisted(() => ({
+  playBridgeHapticsTestPattern: vi.fn(async () => undefined),
+  playBridgeSpeakerTestTone: vi.fn(async () => undefined)
+}));
+
 vi.mock('node-hid', () => ({
   default: {
     devices: hidMock.devices,
@@ -66,6 +72,15 @@ vi.mock('./winusb-companion-transport', () => ({
   }
 }));
 
+vi.mock('./audio-helper', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./audio-helper')>();
+  return {
+    ...actual,
+    playBridgeHapticsTestPattern: audioHelperMock.playBridgeHapticsTestPattern,
+    playBridgeSpeakerTestTone: audioHelperMock.playBridgeSpeakerTestTone
+  };
+});
+
 import { BridgeService } from './bridge-service';
 import { SettingsStore } from './settings-store';
 
@@ -73,6 +88,7 @@ type StatusOverrides = {
   controllerConnected?: boolean;
   batteryPercent?: number;
   speakerVolumePercent?: number;
+  speakerGainLevel?: number;
   idleDisconnectTimeoutMinutes?: number;
   settingsRevision?: number;
   uptimeSeconds?: number;
@@ -84,6 +100,9 @@ type StatusOverrides = {
   firmwarePatch?: number;
   firmwareFlags?: number;
   statusFlags?: number;
+  hostPersonaMode?: 'dualsense' | 'xbox' | 'ds4';
+  supportedHostPersonaModesMask?: number;
+  micMuted?: boolean;
 };
 
 const FULL_REAPPLY_COMMANDS = [
@@ -92,21 +111,26 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_MUTE_BUTTON_ACTION,
   COMMAND_ID.SET_HAPTICS_GAIN,
   COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH,
+  COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS,
   COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN,
+  COMMAND_ID.SET_CLASSIC_RUMBLE_V1,
   COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY,
+  COMMAND_ID.SET_SPEAKER_GAIN,
   COMMAND_ID.SET_SPEAKER_VOLUME,
+  COMMAND_ID.SET_DUPLEX_ENABLED,
   COMMAND_ID.SET_MIC_VOLUME,
   COMMAND_ID.SET_MIC_MUTE,
-  COMMAND_ID.SET_HOST_AUDIO_ENABLED,
-  COMMAND_ID.SET_DUPLEX_ENABLED,
   COMMAND_ID.SET_LED_ENABLED,
+  COMMAND_ID.SET_PLAYER_LED_ENABLED,
   COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED,
   COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT,
   COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED,
   COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED,
   COMMAND_ID.SET_SPEAKER_VOLUME_SHORTCUT_ENABLED,
   COMMAND_ID.SET_BUTTON_REMAP,
-  COMMAND_ID.SET_POLLING_RATE_MODE
+  COMMAND_ID.SET_CHORD_BINDINGS,
+  COMMAND_ID.SET_POLLING_RATE_MODE,
+  COMMAND_ID.SET_HOST_PERSONA
 ];
 
 class MockHidDevice extends EventEmitter {
@@ -114,7 +138,7 @@ class MockHidDevice extends EventEmitter {
   status = statusReport();
   audioDebugReports: number[][] = [];
   audioStatsReports: number[][] = [];
-  hostAudioStatusReports: number[][] = [];
+  audioStatusReports: number[][] = [];
   shortcutEvents: number[] = [];
   shortcutReadError: Error | null = null;
   featureReportIds: number[] = [];
@@ -123,6 +147,10 @@ class MockHidDevice extends EventEmitter {
   ackResults: number[] = [];
   ackReports: number[][] = [];
   writeError: Error | null = null;
+  statusReadError: Error | null = null;
+  ackReadErrorOnce: Error | null = null;
+  featureReportWriteErrorOnce: Error | null = null;
+  closeCount = 0;
   settingsRevision = 0;
   fixedAckRevision: number | null = null;
 
@@ -134,9 +162,17 @@ class MockHidDevice extends EventEmitter {
     expect(length).toBe(REPORT_LENGTH);
     this.featureReportIds.push(reportId);
     if (reportId === REPORT_ID.STATUS) {
+      if (this.statusReadError) {
+        throw this.statusReadError;
+      }
       return [...this.status];
     }
     if (reportId === REPORT_ID.ACK) {
+      if (this.ackReadErrorOnce) {
+        const error = this.ackReadErrorOnce;
+        this.ackReadErrorOnce = null;
+        throw error;
+      }
       const queuedAck = this.ackReports.shift();
       if (queuedAck) {
         return [...queuedAck];
@@ -159,8 +195,8 @@ class MockHidDevice extends EventEmitter {
     if (reportId === REPORT_ID.AUDIO_STATS) {
       return [...(this.audioStatsReports.shift() ?? audioStatsReport())];
     }
-    if (reportId === REPORT_ID.HOST_AUDIO_STATUS) {
-      return [...(this.hostAudioStatusReports.shift() ?? hostAudioStatusReport())];
+    if (reportId === REPORT_ID.AUDIO_STATUS) {
+      return [...(this.audioStatusReports.shift() ?? audioStatusReport())];
     }
     if (reportId === REPORT_ID.INPUT) {
       if (this.shortcutReadError) {
@@ -173,6 +209,11 @@ class MockHidDevice extends EventEmitter {
 
   sendFeatureReport(report: number[]): number {
     this.sentReports.push([...report]);
+    if (this.featureReportWriteErrorOnce) {
+      const error = this.featureReportWriteErrorOnce;
+      this.featureReportWriteErrorOnce = null;
+      throw error;
+    }
     return report.length;
   }
 
@@ -189,7 +230,7 @@ class MockHidDevice extends EventEmitter {
   }
 
   close(): void {
-    // No-op for tests.
+    this.closeCount += 1;
   }
 }
 
@@ -263,11 +304,15 @@ function statusReport(overrides: StatusOverrides = {}): number[] {
   report[20] = overrides.statusFlags ?? 0xb0;
   writeU32(report, 21, overrides.uptimeSeconds ?? 10);
   report[25] = overrides.firmwareMajor ?? 1;
-  report[26] = overrides.firmwareMinor ?? 5;
-  report[27] = overrides.firmwarePatch ?? 0;
+  report[26] = overrides.firmwareMinor ?? 6;
+  report[27] = overrides.firmwarePatch ?? 3;
   report[28] = overrides.firmwareFlags ?? 1;
   writeU16(report, 29, overrides.speakerVolumePercent ?? 30);
   writeU16(report, 43, overrides.idleDisconnectTimeoutMinutes ?? 15);
+  report[48] = overrides.hostPersonaMode === 'xbox' ? 1 : overrides.hostPersonaMode === 'ds4' ? 2 : 0;
+  report[49] = overrides.supportedHostPersonaModesMask ?? 0;
+  report[51] = overrides.micMuted ? 1 : 0;
+  report[57] = overrides.speakerGainLevel ?? 4;
   return report;
 }
 
@@ -276,11 +321,14 @@ function ackReport(options: {
   sequence: number;
   result: number;
   settingsRevision: number;
+  protocolMajor?: number;
+  protocolMinor?: number;
 }): number[] {
   const report = new Array<number>(REPORT_LENGTH).fill(0);
   report[0] = REPORT_ID.ACK;
   writeMagic(report);
-  writeVersion(report);
+  report[5] = options.protocolMajor ?? PROTOCOL_MAJOR;
+  report[6] = options.protocolMinor ?? PROTOCOL_MINOR;
   report[7] = options.commandId;
   report[8] = options.sequence;
   report[9] = options.result;
@@ -360,38 +408,25 @@ function audioStatsReport(values: Partial<{
   return report;
 }
 
-function hostAudioStatusReport(overrides: Partial<{
-  mode: number;
-  fallbackReason: number;
-  hostRequested: boolean;
-  heartbeatHealthy: boolean;
-  streamActive: boolean;
-  streamHealthy: boolean;
+function audioStatusReport(overrides: Partial<{
   duplexRequested: boolean;
   duplexActive: boolean;
   controllerStateReady: boolean;
   headsetPlugged: boolean;
   headsetAudioRoute: boolean;
-  streamGeneration: number;
   micUsbConcealCount: number;
   micPlcCount: number;
 }> = {}): number[] {
   const report = new Array<number>(REPORT_LENGTH).fill(0);
-  report[0] = REPORT_ID.HOST_AUDIO_STATUS;
+  report[0] = REPORT_ID.AUDIO_STATUS;
   writeMagic(report);
   writeVersion(report);
-  report[7] = overrides.mode ?? 0;
-  report[8] = overrides.fallbackReason ?? 1;
-  report[9] = (overrides.hostRequested ? 0x01 : 0x00)
-    | (overrides.heartbeatHealthy ? 0x02 : 0x00)
-    | (overrides.streamActive ? 0x04 : 0x00)
-    | (overrides.streamHealthy ? 0x08 : 0x00)
-    | (overrides.duplexRequested ? 0x10 : 0x00)
+  report[7] = 1;
+  report[9] = (overrides.duplexRequested ? 0x10 : 0x00)
     | (overrides.duplexActive ? 0x20 : 0x00)
     | (overrides.controllerStateReady ? 0x40 : 0x00);
   report[10] = (overrides.headsetPlugged ? 0x01 : 0x00)
     | (overrides.headsetAudioRoute ? 0x02 : 0x00);
-  writeU16(report, 11, overrides.streamGeneration ?? 0);
   writeU32(report, 49, overrides.micUsbConcealCount ?? 0);
   writeU32(report, 53, overrides.micPlcCount ?? 0);
   return report;
@@ -425,6 +460,10 @@ async function pollShortcut(service: BridgeService): Promise<void> {
   await (service as unknown as { pollShortcutEvent(): Promise<void> }).pollShortcutEvent();
 }
 
+async function flushShortcutActions(service: BridgeService): Promise<void> {
+  await (service as unknown as { shortcutActionQueue: Promise<void> }).shortcutActionQueue;
+}
+
 async function flushReapply(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -443,6 +482,8 @@ describe('BridgeService', () => {
     hidMock.devices.mockClear();
     hidMock.HID.mockClear();
     winUsbTransportMock.open.mockClear();
+    audioHelperMock.playBridgeHapticsTestPattern.mockClear();
+    audioHelperMock.playBridgeSpeakerTestTone.mockClear();
     tempDirs = [];
     services = [];
   });
@@ -489,6 +530,7 @@ describe('BridgeService', () => {
     await poll(service);
 
     device.emit('close');
+    await flushImmediate();
 
     expect(service.getSnapshot().state).toBe('no-bridge');
     expect(service.getSnapshot().message).toBe('No bridge detected');
@@ -505,6 +547,30 @@ describe('BridgeService', () => {
 
     expect(service.getSnapshot().state).toBe('connected');
     expect(service.getSnapshot().message).toBe('Companion firmware connected');
+  });
+
+  it('retries shortcut polling after a transient shortcut report read failure', async () => {
+    const service = serviceFixture({
+      duplexMicEnabled: true,
+      micMuted: true,
+      muteButtonMode: 'normal'
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, micMuted: true });
+    device.shortcutReadError = new Error('could not read from HID device');
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await pollShortcut(service);
+
+    device.shortcutReadError = null;
+    (service as unknown as { shortcutFeaturePollRetryAt: number }).shortcutFeaturePollRetryAt = 0;
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_OFF);
+    await pollShortcut(service);
+    await flushImmediate();
+
+    expect(service.getSnapshot().settings.micMuted).toBe(false);
   });
 
   it('does not start the companion interrupt input read loop', async () => {
@@ -588,11 +654,11 @@ describe('BridgeService', () => {
     await pollAndPublishErrors(badVersionService);
 
     expect(badVersionService.getSnapshot().state).toBe('incompatible');
-    expect(badVersionService.getSnapshot().message).toBe('Firmware 1.5.0 update required');
+    expect(badVersionService.getSnapshot().message).toBe('Firmware 1.6.1 update required');
     expect(badVersionService.getSnapshot().diagnostics.lastError).toContain('Firmware update required');
   });
 
-  it('requires users to update pre-1.5 bridge firmware', async () => {
+  it('requires users to update pre-1.6.1 bridge firmware', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
     device.status = statusReport({ firmwareMajor: 0, firmwareMinor: 5, firmwarePatch: 15 });
@@ -603,14 +669,49 @@ describe('BridgeService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.state).toBe('incompatible');
-    expect(snapshot.message).toBe('Firmware 1.5.0 update required');
+    expect(snapshot.message).toBe('Firmware 1.6.1 update required');
     expect(snapshot.status?.firmwareVersion).toBe('0.5.15');
-    expect(snapshot.diagnostics.lastError).toContain('Update the bridge firmware to 1.5.0 or newer');
+    expect(snapshot.diagnostics.lastError).toContain('Update the bridge firmware to 1.6.1 or newer');
+    expect(snapshot.diagnostics.firmwareUpdateAvailable).toBeNull();
     expect(device.sentReports).toEqual([]);
   });
 
+  it('surfaces a compatible older bridge firmware as an available update', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 2 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.state).toBe('connected');
+    expect(snapshot.status?.firmwareVersion).toBe('1.6.2');
+    expect(snapshot.diagnostics.lastError).toBeNull();
+    expect(snapshot.diagnostics.firmwareUpdateAvailable).toEqual({
+      currentVersion: '1.6.2',
+      availableVersion: '1.6.3'
+    });
+  });
+
+  it('does not surface an available update for the bundled bridge firmware', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 3 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.state).toBe('connected');
+    expect(snapshot.status?.firmwareVersion).toBe('1.6.3');
+    expect(snapshot.diagnostics.firmwareUpdateAvailable).toBeNull();
+  });
+
   it('reapplies saved settings once per companion session and again after uptime drops', async () => {
-    const service = serviceFixture({ hostEncodedAudioEnabled: false });
+    const service = serviceFixture();
     const device = new MockHidDevice();
     device.settingsRevision = 4;
     device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
@@ -642,8 +743,115 @@ describe('BridgeService', () => {
     expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length * 2);
   });
 
+  it('starts saved audio haptics after startup settings reapply', async () => {
+    const appSource = {
+      kind: 'app-session' as const,
+      processId: 4321,
+      displayName: 'Microsoft Edge',
+      executableName: 'msedge.exe',
+      processPath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+    };
+    const service = serviceFixture({
+      audioReactiveHapticsEnabled: true,
+      audioReactiveHapticsSource: appSource
+    });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({
+      controllerConnected: true,
+      hostPersonaMode: 'dualsense',
+      settingsRevision: 4,
+      uptimeSeconds: 30
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => undefined);
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start: typeof start;
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+    };
+    internals.systemAudioHapticsEngine = {
+      start,
+      stop,
+      isActive: () => false
+    };
+
+    await poll(service);
+    await flushReapply();
+
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({
+      source: appSource,
+      gainPercent: 100
+    }), 'dualsense');
+  });
+
+  it('ignores firmware-reported mic unmute when duplex mic is disabled', async () => {
+    const service = serviceFixture({ duplexMicEnabled: false, micMuted: true });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({
+      controllerConnected: true,
+      micMuted: false,
+      settingsRevision: 4,
+      uptimeSeconds: 30
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    expect(service.getSnapshot().settings.micMuted).toBe(true);
+
+    await flushReapply();
+    expect(device.sentReports.find((report) => report[7] === COMMAND_ID.SET_MIC_MUTE)?.[9]).toBe(1);
+
+    device.status = statusReport({
+      controllerConnected: true,
+      micMuted: false,
+      settingsRevision: device.settingsRevision,
+      uptimeSeconds: 31
+    });
+    await poll(service);
+
+    expect(service.getSnapshot().settings.micMuted).toBe(true);
+  });
+
+  it('syncs firmware-reported mic mute after startup settings reapply when duplex mic is enabled', async () => {
+    const service = serviceFixture({ duplexMicEnabled: true, micMuted: true });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({
+      controllerConnected: true,
+      micMuted: false,
+      settingsRevision: 4,
+      uptimeSeconds: 30
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    expect(service.getSnapshot().settings.micMuted).toBe(true);
+
+    await flushReapply();
+    expect(device.sentReports.find((report) => report[7] === COMMAND_ID.SET_MIC_MUTE)?.[9]).toBe(1);
+
+    device.status = statusReport({
+      controllerConnected: true,
+      micMuted: false,
+      settingsRevision: device.settingsRevision,
+      uptimeSeconds: 31
+    });
+    await poll(service);
+
+    expect(service.getSnapshot().settings.micMuted).toBe(false);
+  });
+
   it('reapplies current settings without feature-bit fallbacks', async () => {
-    const service = serviceFixture({ hostEncodedAudioEnabled: false });
+    const service = serviceFixture();
     const device = new MockHidDevice();
     device.status = statusReport({
       controllerConnected: true,
@@ -660,17 +868,84 @@ describe('BridgeService', () => {
     expect(device.sentReports.map((report) => report[7])).toEqual(FULL_REAPPLY_COMMANDS);
   });
 
-  it('surfaces test haptics ACK failures without rejecting IPC', async () => {
-    const service = serviceFixture();
+  it('plays test haptics through the bridge audio helper', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
     const device = new MockHidDevice();
-    device.ackResults = [ACK_RESULT.ERR_NOT_CONNECTED];
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
+    await poll(service);
     const snapshot = await service.testHaptics();
 
-    expect(snapshot.diagnostics.lastError).toBe('Controller not connected');
-    expect(snapshot.diagnostics.lastAck?.resultCode).toBe(ACK_RESULT.ERR_NOT_CONNECTED);
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, 'dualsense');
+    expect(device.sentReports.some((report) => report[7] === COMMAND_ID.TEST_HAPTICS)).toBe(false);
+    expect(snapshot.settings.hapticsGainPercent).toBe(130);
+  });
+
+  it.each([
+    ['ds4' as const],
+    ['xbox' as const]
+  ])('plays test haptics through the %s persona audio endpoint', async (hostPersonaMode) => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode, supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.testHaptics();
+
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, hostPersonaMode);
+  });
+
+  it('skips test haptics while a host persona transition is active', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setHostPersonaMode('xbox');
+    const snapshot = await service.testHaptics();
+
+    expect(audioHelperMock.playBridgeHapticsTestPattern).not.toHaveBeenCalled();
+    expect(snapshot.personaTransition?.to).toBe('xbox');
+    expect(snapshot.state).toBe('transitioning');
+  });
+
+  it('does not reject test haptics when the persona audio endpoint is still reconnecting', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'xbox', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    audioHelperMock.playBridgeHapticsTestPattern.mockRejectedValueOnce(new Error(
+      "Unhandled exception. System.InvalidOperationException: Render endpoint matching persona 'xbox' ('Xbox 360 Controller for Windows') was not found."
+    ));
+
+    await poll(service);
+    const snapshot = await service.testHaptics();
+
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, 'xbox');
+    expect(snapshot.settings.hapticsGainPercent).toBe(130);
+  });
+
+  it('plays test speaker through the current persona audio endpoint', async () => {
+    const service = serviceFixture({ speakerVolumePercent: 65 });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'xbox', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.testSpeaker();
+
+    expect(audioHelperMock.playBridgeSpeakerTestTone).toHaveBeenCalledWith(65, 'xbox');
   });
 
   it('sends rumble test commands without rejecting busy ACKs', async () => {
@@ -745,18 +1020,18 @@ describe('BridgeService', () => {
     };
     internals.device = device;
 
-    const [lightbarAck, hostAudioAck] = await Promise.all([
+    const [lightbarAck, speakerAck] = await Promise.all([
       internals.sendCommand(COMMAND_ID.SET_LIGHTBAR_COLOR, 60, { extraPayload: [1, 2, 3] }),
-      internals.sendCommand(COMMAND_ID.SET_HOST_AUDIO_ENABLED, 1)
+      internals.sendCommand(COMMAND_ID.SET_SPEAKER_VOLUME, 80)
     ]);
 
     expect(lightbarAck.commandId).toBe(COMMAND_ID.SET_LIGHTBAR_COLOR);
-    expect(hostAudioAck.commandId).toBe(COMMAND_ID.SET_HOST_AUDIO_ENABLED);
+    expect(speakerAck.commandId).toBe(COMMAND_ID.SET_SPEAKER_VOLUME);
     expect(lightbarAck.commandSequence).toBe(1);
-    expect(hostAudioAck.commandSequence).toBe(2);
+    expect(speakerAck.commandSequence).toBe(2);
     expect(device.sentReports.map((report) => report[7])).toEqual([
       COMMAND_ID.SET_LIGHTBAR_COLOR,
-      COMMAND_ID.SET_HOST_AUDIO_ENABLED
+      COMMAND_ID.SET_SPEAKER_VOLUME
     ]);
     expect(service.getSnapshot().diagnostics.lastError).toBeNull();
   });
@@ -769,20 +1044,39 @@ describe('BridgeService', () => {
     hidMock.state.openDevices.set('companion-path', device);
 
     await poll(service);
-    const snapshot = await service.setMuteButtonAction('keyboard', 0x68, 0x02, 'hold');
+    const snapshot = await service.setMuteButtonAction('keyboard', 0x68, 0x02, 'hold', true);
 
     const command = device.sentReports.at(-1);
     expect(command?.[7]).toBe(COMMAND_ID.SET_MUTE_BUTTON_ACTION);
     expect(command?.[9]).toBe(1);
     expect(command?.[11]).toBe(0x68);
-    expect(command?.[12]).toBe(0x82);
+    expect(command?.[12]).toBe(0x92);
     expect(snapshot.settings.muteButtonMode).toBe('keyboard');
     expect(snapshot.settings.muteKeyboardUsage).toBe(0x68);
     expect(snapshot.settings.muteKeyboardModifiers).toBe(0x02);
     expect(snapshot.settings.muteKeyboardBehavior).toBe('hold');
+    expect(snapshot.settings.muteKeyboardChordStarterEnabled).toBe(true);
   });
 
-  it('sends and stores haptics buffer length', async () => {
+  it('sends and stores mute button chord mode', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, firmwareFlags: 0x21 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setMuteButtonAction('chord', 0x68, 0, 'tap');
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_MUTE_BUTTON_ACTION);
+    expect(command?.[9]).toBe(3);
+    expect(command?.[12]).toBe(0);
+    expect(snapshot.settings.muteButtonMode).toBe('chord');
+    expect(snapshot.settings.muteKeyboardChordStarterEnabled).toBe(false);
+  });
+
+  it('sends and stores clamped haptics buffer length', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
     device.status = statusReport({ controllerConnected: false, firmwareFlags: 0x41 });
@@ -790,12 +1084,26 @@ describe('BridgeService', () => {
     hidMock.state.openDevices.set('companion-path', device);
 
     await poll(service);
-    const snapshot = await service.setHapticsBufferLength(64);
+    let snapshot = await service.setHapticsBufferLength(2);
 
-    const command = device.sentReports.at(-1);
+    let command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH);
+    expect(command?.[9]).toBe(16);
+    expect(snapshot.settings.hapticsBufferLength).toBe(16);
+
+    snapshot = await service.setHapticsBufferLength(64);
+
+    command = device.sentReports.at(-1);
     expect(command?.[7]).toBe(COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH);
     expect(command?.[9]).toBe(64);
     expect(snapshot.settings.hapticsBufferLength).toBe(64);
+
+    snapshot = await service.setHapticsBufferLength(255);
+
+    command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH);
+    expect(command?.[9]).toBe(128);
+    expect(snapshot.settings.hapticsBufferLength).toBe(128);
   });
 
   it('sends and stores adaptive trigger intensity', async () => {
@@ -816,12 +1124,11 @@ describe('BridgeService', () => {
 
   it('caps power-hungry controller settings while headphones are plugged in', async () => {
     const service = serviceFixture({
-      hostEncodedAudioEnabled: false,
       controllerPowerSavingEnabled: true
     });
     const device = new MockHidDevice();
     device.status = statusReport({ controllerConnected: false });
-    device.hostAudioStatusReports = [hostAudioStatusReport({ headsetPlugged: true })];
+    device.audioStatusReports = [audioStatusReport({ headsetPlugged: true })];
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
@@ -855,7 +1162,6 @@ describe('BridgeService', () => {
 
   it('applies and removes power-saving caps as headphones connect and disconnect', async () => {
     const service = serviceFixture({
-      hostEncodedAudioEnabled: false,
       controllerPowerSavingEnabled: true,
       hapticsGainPercent: 100,
       classicRumbleGainPercent: 120,
@@ -864,19 +1170,20 @@ describe('BridgeService', () => {
     });
     const device = new MockHidDevice();
     device.status = statusReport({ controllerConnected: false });
-    device.hostAudioStatusReports = [hostAudioStatusReport({ headsetPlugged: false })];
+    device.audioStatusReports = [audioStatusReport({ headsetPlugged: false })];
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
     await poll(service);
     expect(device.sentReports).toEqual([]);
 
-    device.hostAudioStatusReports = [hostAudioStatusReport({ headsetPlugged: true })];
+    device.audioStatusReports = [audioStatusReport({ headsetPlugged: true })];
     await poll(service);
     expect(device.sentReports.map((report) => [report[7], report[9]])).toEqual([
       [COMMAND_ID.SET_HAPTICS_GAIN, 60],
       [COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN, 60],
       [COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY, 60],
+      [COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS, 0],
       [COMMAND_ID.SET_LIGHTBAR_COLOR, 60],
       [COMMAND_ID.SET_LIGHTBAR_OVERRIDE, 0]
     ]);
@@ -888,12 +1195,13 @@ describe('BridgeService', () => {
     });
 
     device.sentReports = [];
-    device.hostAudioStatusReports = [hostAudioStatusReport({ headsetPlugged: false })];
+    device.audioStatusReports = [audioStatusReport({ headsetPlugged: false })];
     await poll(service);
     expect(device.sentReports.map((report) => [report[7], report[9]])).toEqual([
       [COMMAND_ID.SET_HAPTICS_GAIN, 100],
       [COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN, 120],
       [COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY, 80],
+      [COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS, 0],
       [COMMAND_ID.SET_LIGHTBAR_COLOR, 90],
       [COMMAND_ID.SET_LIGHTBAR_OVERRIDE, 0]
     ]);
@@ -914,6 +1222,226 @@ describe('BridgeService', () => {
     expect(command?.[9]).toBe(25);
     expect(snapshot.settings.speakerVolumePercent).toBe(25);
     expect(snapshot.status?.speakerVolumePercent).toBe(25);
+  });
+
+  it('sends speaker gain as a global pinned firmware amp setting', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, firmwareFlags: 0x05 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setSpeakerGainLevel(6);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_SPEAKER_GAIN);
+    expect(command?.[9]).toBe(6);
+    expect(snapshot.settings.speakerGainLevel).toBe(6);
+    expect(snapshot.status?.speakerGainLevel).toBe(6);
+    expect(snapshot.settings.controllerProfiles[0]?.settings).not.toHaveProperty('speakerGainLevel');
+  });
+
+  it('stores audio reactive haptics settings and enables firmware DSP only for bridge output passthrough', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setAudioReactiveHapticsConfig({
+      enabled: true,
+      mode: 'replace',
+      gainPercent: 150,
+      bassFocus: 'punchy',
+      response: 'strong',
+      attack: 'sharp',
+      release: 'smooth'
+    });
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
+    expect(command?.[9]).toBe(0);
+    expect(command?.slice(11, 18)).toEqual([0x81, 150, 0, 2, 2, 3, 2]);
+    expect(snapshot.settings).toMatchObject({
+      audioReactiveHapticsEnabled: true,
+      audioReactiveHapticsMode: 'replace',
+      audioReactiveHapticsGainPercent: 150,
+      audioReactiveHapticsBassFocus: 'punchy',
+      audioReactiveHapticsResponse: 'strong',
+      audioReactiveHapticsAttack: 'sharp',
+      audioReactiveHapticsRelease: 'smooth'
+    });
+
+    await (service as unknown as {
+      handleSystemAudioHapticsStatus(line: string): Promise<void>;
+    }).handleSystemAudioHapticsStatus(
+      "status: system-haptics-bypassed reason=source-is-bridge device='DS5 Bridge'"
+    );
+    const passthroughCommand = device.sentReports.at(-1);
+    expect(passthroughCommand?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
+    expect(passthroughCommand?.[9]).toBe(1);
+    expect(passthroughCommand?.slice(11, 18)).toEqual([0x81, 150, 0, 2, 2, 3, 2]);
+  });
+
+  it('restarts system audio haptics immediately after a route change', async () => {
+    const service = serviceFixture({
+      audioReactiveHapticsEnabled: true
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'ds4', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => undefined);
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start: typeof start;
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+      handleSystemAudioHapticsStatus(line: string): Promise<void>;
+    };
+    internals.systemAudioHapticsEngine = {
+      start,
+      stop,
+      isActive: () => true
+    };
+
+    await internals.handleSystemAudioHapticsStatus('status: route-changed reason=default-render-changed');
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'system-audio',
+      gainPercent: 100
+    }), 'ds4');
+  });
+
+  it('restarts system audio haptics after a host persona transition completes', async () => {
+    const service = serviceFixture({
+      audioReactiveHapticsEnabled: true
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => undefined);
+    const getDefaultRenderEndpointStatus = vi.fn(async () => ({
+      deviceName: 'Speakers (Yeti Classic)',
+      isBridgeEndpoint: false
+    }));
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start: typeof start;
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+      getDefaultRenderEndpointStatus: typeof getDefaultRenderEndpointStatus;
+    };
+    internals.systemAudioHapticsEngine = {
+      start,
+      stop,
+      isActive: () => false
+    };
+    internals.getDefaultRenderEndpointStatus = getDefaultRenderEndpointStatus;
+
+    await service.setHostPersonaMode('xbox');
+    expect(stop).toHaveBeenCalledOnce();
+
+    stop.mockClear();
+    device.status = statusReport({
+      controllerConnected: true,
+      hostPersonaMode: 'xbox',
+      supportedHostPersonaModesMask: 0x07
+    });
+    await poll(service);
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'system-audio',
+      gainPercent: 100
+    }), 'xbox');
+  });
+
+  it('preserves selected audio haptics app source on partial config updates', async () => {
+    const appSource = {
+      kind: 'app-session' as const,
+      processId: 4321,
+      displayName: 'Battlefront II',
+      executableName: 'starwarsbattlefrontii.exe',
+      processPath: 'C:\\Games\\Battlefront\\starwarsbattlefrontii.exe'
+    };
+    const service = serviceFixture({
+      audioReactiveHapticsSource: appSource
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setAudioReactiveHapticsConfig({
+      gainPercent: 130
+    });
+
+    expect(snapshot.settings.audioReactiveHapticsSource).toEqual(appSource);
+  });
+
+  it('does not poll app audio sessions while the controller is disconnected', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    const monitor = (service as unknown as {
+      audioHapticsSessionMonitor: {
+        listSessions: () => Promise<unknown[]>;
+        stop: () => Promise<void>;
+      };
+    }).audioHapticsSessionMonitor;
+    const listSessions = vi.spyOn(monitor, 'listSessions').mockResolvedValue([{
+      processId: 4321,
+      displayName: 'Battlefront II'
+    }]);
+    const stop = vi.spyOn(monitor, 'stop').mockResolvedValue(undefined);
+
+    await poll(service);
+
+    await expect(service.listAudioHapticsSessions()).resolves.toEqual([]);
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it('does not request classic rumble suppression when audio reactive haptics is disabled', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setAudioReactiveHapticsConfig({
+      enabled: false,
+      mode: 'replace'
+    });
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
+    expect(command?.[9]).toBe(0);
+    expect(command?.slice(11, 18)).toEqual([1, 100, 0, 1, 1, 1, 1]);
   });
 
   it('sends and stores USB suspend disconnect settings', async () => {
@@ -946,6 +1474,24 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT);
     expect(command?.[9]).toBe(20);
     expect(snapshot.settings.idleDisconnectTimeoutMinutes).toBe(20);
+  });
+
+  it('sends and stores player slot LED settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: true });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    device.sentReports = [];
+    const snapshot = await service.setPlayerLedEnabled(false);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_PLAYER_LED_ENABLED);
+    expect(command?.[9]).toBe(0);
+    expect(snapshot.settings.playerLedEnabled).toBe(false);
   });
 
   it('sends and stores sleep keybind settings', async () => {
@@ -1026,6 +1572,188 @@ describe('BridgeService', () => {
     expect(volumeCommand?.[9]).toBe(40);
   });
 
+  it('applies notch chord functions through the normal setting command path', async () => {
+    const service = serviceFixture({ speakerVolumePercent: 30 });
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      settingsRevision: 4,
+      speakerVolumePercent: 30
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setChordConfiguration([{
+      id: 'speaker-up',
+      name: 'Speaker Up',
+      type: 'controller-setting',
+      action: 'speaker-up',
+      stepPercent: 25
+    }], [{
+      id: 'ps-triangle',
+      kind: 'chord',
+      starter: 'ps',
+      button: 'triangle',
+      functionId: 'speaker-up'
+    }]);
+
+    device.queueShortcutEvent(CHORD_FUNCTION_EVENT_BASE);
+    await pollShortcut(service);
+    await flushReapply();
+    await flushReapply();
+
+    expect(service.getSnapshot().settings.speakerVolumePercent).toBe(55);
+    const volumeCommand = device.sentReports.filter((report) => report[7] === COMMAND_ID.SET_SPEAKER_VOLUME).at(-1);
+    expect(volumeCommand?.[9]).toBe(55);
+  });
+
+  it('applies arbitrary whole-number chord steps without coarse slider notches', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 30 });
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      settingsRevision: 4
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setChordConfiguration([{
+      id: 'haptics-up',
+      name: 'Haptics Up',
+      type: 'controller-setting',
+      action: 'haptics-up',
+      stepPercent: 3
+    }], [{
+      id: 'ps-triangle',
+      kind: 'chord',
+      starter: 'ps',
+      button: 'triangle',
+      functionId: 'haptics-up'
+    }]);
+
+    device.queueShortcutEvent(CHORD_FUNCTION_EVENT_BASE);
+    await pollShortcut(service);
+    await flushShortcutActions(service);
+
+    expect(service.getSnapshot().settings.hapticsGainPercent).toBe(33);
+    const hapticsCommand = device.sentReports.filter((report) => report[7] === COMMAND_ID.SET_HAPTICS_GAIN).at(-1);
+    expect(hapticsCommand?.[9]).toBe(33);
+  });
+
+  it('applies host persona chord functions through the normal persona command path', async () => {
+    const service = serviceFixture({ hostPersonaMode: 'dualsense' });
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setChordConfiguration([{
+      id: 'persona-xbox',
+      name: 'Xbox Persona',
+      type: 'controller-setting',
+      action: 'persona-xbox',
+      stepPercent: 10
+    }], [{
+      id: 'ps-options',
+      kind: 'chord',
+      starter: 'ps',
+      button: 'options',
+      functionId: 'persona-xbox'
+    }]);
+
+    device.queueShortcutEvent(CHORD_FUNCTION_EVENT_BASE);
+    await pollShortcut(service);
+    await flushShortcutActions(service);
+
+    expect(service.getSnapshot().settings.hostPersonaMode).toBe('xbox');
+    const personaCommand = device.sentReports.filter((report) => report[7] === COMMAND_ID.SET_HOST_PERSONA).at(-1);
+    expect(personaCommand?.[9]).toBe(1);
+  });
+
+  it('applies controller mic mute events without waiting for a status poll', async () => {
+    const service = serviceFixture({
+      duplexMicEnabled: true,
+      micMuted: true,
+      muteButtonMode: 'normal'
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, micMuted: true });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_OFF);
+    await pollShortcut(service);
+
+    expect(service.getSnapshot().settings.micMuted).toBe(false);
+    expect(service.getSnapshot().status?.micMuted).toBe(false);
+  });
+
+  it('emits controller mic mute snapshots before mic keepalive refresh completes', async () => {
+    const service = serviceFixture({
+      duplexMicEnabled: true,
+      micMuted: true,
+      muteButtonMode: 'normal'
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: true, micMuted: true });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    let releaseKeepalive!: () => void;
+    const keepaliveRefresh = vi.fn(() => new Promise<void>((resolve) => {
+      releaseKeepalive = resolve;
+    }));
+    (service as unknown as {
+      updateMicKeepaliveEngine(controllerConnected: boolean): Promise<void>;
+    }).updateMicKeepaliveEngine = keepaliveRefresh;
+    const emittedMicStates: boolean[] = [];
+    service.on('snapshot', (snapshot) => {
+      emittedMicStates.push(snapshot.settings.micMuted);
+    });
+
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_OFF);
+    await pollShortcut(service);
+    await flushImmediate();
+
+    expect(keepaliveRefresh).toHaveBeenCalledWith(true);
+    expect(service.getSnapshot().settings.micMuted).toBe(false);
+    expect(emittedMicStates).toContain(false);
+
+    releaseKeepalive();
+    await flushImmediate();
+  });
+
+  it('ignores controller mic mute events when mic pass-through is not armed', async () => {
+    const service = serviceFixture({
+      duplexMicEnabled: true,
+      micMuted: true,
+      muteButtonMode: 'keyboard'
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, micMuted: true });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_OFF);
+    await pollShortcut(service);
+
+    expect(service.getSnapshot().settings.micMuted).toBe(true);
+    expect(service.getSnapshot().status?.micMuted).toBe(true);
+  });
+
   it('sends and stores classic rumble gain', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
@@ -1040,6 +1768,22 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN);
     expect(command?.[9]).toBe(140);
     expect(snapshot.settings.classicRumbleGainPercent).toBe(140);
+  });
+
+  it('sends and stores classic rumble v1 compatibility mode', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setClassicRumbleV1Enabled(true);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_CLASSIC_RUMBLE_V1);
+    expect(command?.[9]).toBe(1);
+    expect(snapshot.settings.classicRumbleV1Enabled).toBe(true);
   });
 
   it('allows boosted haptics and rumble gains up to 500 percent', async () => {
@@ -1089,6 +1833,258 @@ describe('BridgeService', () => {
     expect(snapshot.settings.pollingRateMode).toBe('500');
   });
 
+  it('sends and stores host persona settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setHostPersonaMode('xbox');
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_HOST_PERSONA);
+    expect(command?.[9]).toBe(1);
+    expect(snapshot.settings.hostPersonaMode).toBe('xbox');
+  });
+
+  it('sends and stores DS4 host persona settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setHostPersonaMode('ds4');
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_HOST_PERSONA);
+    expect(command?.[9]).toBe(2);
+    expect(snapshot.settings.hostPersonaMode).toBe('ds4');
+    expect(snapshot.message).toBe('Switching to DualShock 4 mode');
+    expect(snapshot.personaTransition?.to).toBe('ds4');
+  });
+
+  it('restores controller default output after a host persona transition reconnects', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    const getDefaultRenderEndpointStatus = vi.fn(async () => ({
+      deviceName: 'Speakers (DualSense Wireless Controller)',
+      isBridgeEndpoint: true
+    }));
+    const setDefaultRenderBridgeEndpoint = vi.fn(async () => undefined);
+    const internals = service as unknown as {
+      getDefaultRenderEndpointStatus: typeof getDefaultRenderEndpointStatus;
+      setDefaultRenderBridgeEndpoint(mode: 'dualsense' | 'xbox' | 'ds4'): Promise<void>;
+    };
+    internals.getDefaultRenderEndpointStatus = getDefaultRenderEndpointStatus;
+    internals.setDefaultRenderBridgeEndpoint = setDefaultRenderBridgeEndpoint;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      await service.setHostPersonaMode('ds4');
+      expect(getDefaultRenderEndpointStatus).toHaveBeenCalledOnce();
+      expect(setDefaultRenderBridgeEndpoint).not.toHaveBeenCalled();
+
+      device.status = statusReport({
+        controllerConnected: false,
+        hostPersonaMode: 'ds4',
+        supportedHostPersonaModesMask: 0x07
+      });
+      nowSpy.mockReturnValue(1_000_050);
+      await poll(service);
+      expect(setDefaultRenderBridgeEndpoint).toHaveBeenCalledOnce();
+      expect(setDefaultRenderBridgeEndpoint).toHaveBeenCalledWith('ds4');
+
+      nowSpy.mockReturnValue(1_001_251);
+      await poll(service);
+      expect(setDefaultRenderBridgeEndpoint).toHaveBeenCalledOnce();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('masks transient bridge loss during host persona re-enumeration', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const switchingSnapshot = await service.setHostPersonaMode('xbox');
+
+    expect(switchingSnapshot.state).toBe('transitioning');
+    expect(switchingSnapshot.message).toBe('Switching to Xbox Controller mode');
+    expect(switchingSnapshot.personaTransition).toMatchObject({
+      from: 'dualsense',
+      to: 'xbox'
+    });
+    expect(switchingSnapshot.diagnostics.lastError).toBeNull();
+
+    device.statusReadError = new Error('No WinUSB bridge transport');
+    await poll(service);
+
+    const maskedSnapshot = service.getSnapshot();
+    expect(maskedSnapshot.state).toBe('transitioning');
+    expect(maskedSnapshot.message).toBe('Switching to Xbox Controller mode');
+    expect(maskedSnapshot.diagnostics.lastError).toBeNull();
+    expect(maskedSnapshot.personaTransition?.to).toBe('xbox');
+  });
+
+  it('keeps transition status when the WinUSB helper closes during host persona re-enumeration', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setHostPersonaMode('xbox');
+    device.emit('close');
+    await flushImmediate();
+
+    const maskedSnapshot = service.getSnapshot();
+    expect(maskedSnapshot.state).toBe('transitioning');
+    expect(maskedSnapshot.message).toBe('Switching to Xbox Controller mode');
+    expect(maskedSnapshot.diagnostics.lastError).toBeNull();
+    expect(maskedSnapshot.personaTransition?.to).toBe('xbox');
+  });
+
+  it('uses a short rediscovery retry while a host persona transition is active', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('xbox-path', device);
+
+    await poll(service);
+    await service.setHostPersonaMode('xbox');
+    device.statusReadError = new Error('WinUSB path vanished');
+    await poll(service);
+
+    device.statusReadError = null;
+    hidMock.state.devicesList = [companionDeviceInfo('xbox-path')];
+    await poll(service);
+
+    expect(winUsbTransportMock.open).toHaveBeenLastCalledWith({ retryTimeoutMs: 250 });
+    expect(service.getSnapshot().state).toBe('transitioning');
+  });
+
+  it('keeps a reconnecting grace state before reporting no bridge after a host persona switch', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      const service = serviceFixture();
+      const device = new MockHidDevice();
+      device.status = statusReport({
+        controllerConnected: false,
+        hostPersonaMode: 'dualsense',
+        supportedHostPersonaModesMask: 0x07
+      });
+      hidMock.state.devicesList = [companionDeviceInfo()];
+      hidMock.state.openDevices.set('companion-path', device);
+
+      await poll(service);
+      const switchingSnapshot = await service.setHostPersonaMode('xbox');
+      const deadlineAt = switchingSnapshot.personaTransition?.deadlineAt ?? 1_008_000;
+
+      device.statusReadError = new Error('WinUSB path vanished');
+      nowSpy.mockReturnValue(deadlineAt + 1);
+      await poll(service);
+
+      const reconnectingSnapshot = service.getSnapshot();
+      expect(reconnectingSnapshot.state).toBe('transitioning');
+      expect(reconnectingSnapshot.message).toBe('Please wait, reconnecting to Xbox Controller mode');
+      expect(reconnectingSnapshot.diagnostics.lastError).toBeNull();
+      expect(reconnectingSnapshot.personaTransition?.to).toBe('xbox');
+
+      nowSpy.mockReturnValue(deadlineAt + 5001);
+      await poll(service);
+
+      expect(service.getSnapshot().state).toBe('no-bridge');
+      expect(service.getSnapshot().message).toBe('No bridge detected');
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('keeps reconnecting grace if the bridge drops after the target persona was seen', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      const service = serviceFixture();
+      const device = new MockHidDevice();
+      device.status = statusReport({
+        controllerConnected: false,
+        hostPersonaMode: 'dualsense',
+        supportedHostPersonaModesMask: 0x07
+      });
+      hidMock.state.devicesList = [companionDeviceInfo()];
+      hidMock.state.openDevices.set('companion-path', device);
+
+      await poll(service);
+      await flushReapply();
+      await service.setHostPersonaMode('xbox');
+
+      device.status = statusReport({
+        controllerConnected: false,
+        hostPersonaMode: 'xbox',
+        supportedHostPersonaModesMask: 0x07
+      });
+      nowSpy.mockReturnValue(1_000_500);
+      await poll(service);
+
+      expect(service.getSnapshot().state).toBe('connected');
+      expect(service.getSnapshot().message).toBe('Companion firmware connected');
+
+      nowSpy.mockReturnValue(1_001_701);
+      await poll(service);
+
+      expect(service.getSnapshot().state).toBe('connected');
+      expect(service.getSnapshot().personaTransition).toBeNull();
+
+      device.statusReadError = new Error('WinUSB path vanished after target persona was seen');
+      nowSpy.mockReturnValue(1_001_800);
+      await poll(service);
+
+      const reconnectingSnapshot = service.getSnapshot();
+      expect(reconnectingSnapshot.state).toBe('transitioning');
+      expect(reconnectingSnapshot.message).toBe('Please wait, reconnecting to Xbox Controller mode');
+      expect(reconnectingSnapshot.diagnostics.lastError).toBeNull();
+      expect(reconnectingSnapshot.personaTransition?.to).toBe('xbox');
+
+      nowSpy.mockReturnValue(1_006_702);
+      await poll(service);
+
+      expect(service.getSnapshot().state).toBe('no-bridge');
+      expect(service.getSnapshot().message).toBe('No bridge detected');
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('sends manual sleep command without requiring a settings revision change', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
@@ -1107,6 +2103,70 @@ describe('BridgeService', () => {
     expect(snapshot.diagnostics.lastAck?.resultCode).toBe(ACK_RESULT.OK);
   });
 
+  it('sends Pico bootloader command and tolerates the expected transport drop', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    device.ackReadErrorOnce = new Error('WinUSB bridge GET_REPORT failed: A device attached to the system is not functioning.');
+    await service.mountPicoBootloader();
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.ENTER_BOOTLOADER);
+    expect(command?.[9]).toBe(0);
+    expect(device.closeCount).toBe(1);
+    expect(service.getSnapshot().diagnostics.lastAck?.resultCode).toBe(ACK_RESULT.OK);
+  });
+
+  it('sends Pico bootloader command using an older incompatible firmware protocol minor', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    const oldMinor = PROTOCOL_MINOR - 1;
+    device.status = statusReport({ protocolMinor: oldMinor });
+    device.ackReports.push(ackReport({
+      commandId: COMMAND_ID.ENTER_BOOTLOADER,
+      sequence: 1,
+      result: ACK_RESULT.OK,
+      settingsRevision: 0,
+      protocolMinor: oldMinor
+    }));
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    expect(service.getSnapshot().state).toBe('incompatible');
+
+    await service.mountPicoBootloader();
+
+    const command = device.sentReports.find((report) => report[7] === COMMAND_ID.ENTER_BOOTLOADER);
+    expect(command?.[5]).toBe(PROTOCOL_MAJOR);
+    expect(command?.[6]).toBe(oldMinor);
+    expect(command?.[7]).toBe(COMMAND_ID.ENTER_BOOTLOADER);
+    expect(command?.[9]).toBe(0);
+    expect(service.getSnapshot().diagnostics.lastAck?.protocolVersion).toBe(`${PROTOCOL_MAJOR}.${oldMinor}`);
+  });
+
+  it('tolerates Pico bootloader transport loss while sending the command', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    device.featureReportWriteErrorOnce = new Error('WinUSB bridge helper request timed out.');
+    await service.mountPicoBootloader();
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.ENTER_BOOTLOADER);
+    expect(command?.[9]).toBe(0);
+    expect(device.closeCount).toBe(1);
+    expect(service.getSnapshot().diagnostics.lastAck?.resultCode).toBe(ACK_RESULT.OK);
+  });
+
   it('stores notification preferences without sending firmware commands', async () => {
     const service = serviceFixture();
 
@@ -1118,7 +2178,7 @@ describe('BridgeService', () => {
   });
 
   it('emits controller connect and disconnect toasts on status transitions', async () => {
-    const service = serviceFixture({ hostEncodedAudioEnabled: false });
+    const service = serviceFixture();
     const device = new MockHidDevice();
     device.status = statusReport({ controllerConnected: false });
     const toasts: Array<{ title: string; body: string }> = [];
@@ -1141,7 +2201,7 @@ describe('BridgeService', () => {
   });
 
   it('emits controller toasts when the companion interface disappears and returns', async () => {
-    const service = serviceFixture({ hostEncodedAudioEnabled: false });
+    const service = serviceFixture();
     const device = new MockHidDevice();
     device.status = statusReport({ controllerConnected: true });
     const toasts: Array<{ title: string; body: string }> = [];
@@ -1154,6 +2214,7 @@ describe('BridgeService', () => {
     expect(toasts).toEqual([]);
 
     device.emit('close');
+    await flushImmediate();
     expect(toasts.at(-1)?.body).toBe('Controller disconnected');
 
     device.status = statusReport({ controllerConnected: true, uptimeSeconds: 1 });
@@ -1164,7 +2225,7 @@ describe('BridgeService', () => {
   });
 
   it('emits low battery toasts once until battery recovers', async () => {
-    const service = serviceFixture({ hostEncodedAudioEnabled: false });
+    const service = serviceFixture();
     const device = new MockHidDevice();
     device.status = statusReport({ controllerConnected: true, batteryPercent: 30 });
     const toasts: Array<{ title: string; body: string }> = [];
@@ -1215,15 +2276,14 @@ describe('BridgeService', () => {
     await service.setSpeakerEnabled(false);
     const snapshot = await service.setAdaptiveTriggersEnabled(false);
 
-    expect(device.sentReports.at(-5)?.[7]).toBe(COMMAND_ID.SET_HAPTICS_GAIN);
-    expect(device.sentReports.at(-5)?.[9]).toBe(0);
-    expect(device.sentReports.at(-4)?.[7]).toBe(COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN);
-    expect(device.sentReports.at(-4)?.[9]).toBe(0);
-    expect(device.sentReports.at(-3)?.[7]).toBe(COMMAND_ID.SET_SPEAKER_VOLUME);
-    expect(device.sentReports.at(-3)?.[9]).toBe(0);
-    expect(device.sentReports.at(-2)?.[7]).toBe(COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY);
-    expect(device.sentReports.at(-2)?.[9]).toBe(0);
-    expect(device.sentReports.at(-1)?.[7]).toBe(COMMAND_ID.RESET_ADAPTIVE_TRIGGERS);
+    expect(device.sentReports.slice(-6).map((report) => [report[7], report[9]])).toEqual([
+      [COMMAND_ID.SET_HAPTICS_GAIN, 0],
+      [COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS, 0],
+      [COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN, 0],
+      [COMMAND_ID.SET_SPEAKER_VOLUME, 0],
+      [COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY, 0],
+      [COMMAND_ID.RESET_ADAPTIVE_TRIGGERS, 0]
+    ]);
     expect(snapshot.settings.hapticsEnabled).toBe(false);
     expect(snapshot.settings.classicRumbleEnabled).toBe(false);
     expect(snapshot.settings.speakerEnabled).toBe(false);
@@ -1281,7 +2341,9 @@ describe('BridgeService', () => {
     await poll(service);
     const snapshot = await service.setHapticsEnabled(true);
 
-    expect(device.sentReports.at(-1)?.[7]).toBe(COMMAND_ID.SET_HAPTICS_GAIN);
+    expect(device.sentReports.at(-2)?.[7]).toBe(COMMAND_ID.SET_HAPTICS_GAIN);
+    expect(device.sentReports.at(-2)?.[9]).toBe(0);
+    expect(device.sentReports.at(-1)?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
     expect(device.sentReports.at(-1)?.[9]).toBe(0);
     expect(snapshot.settings.hapticsEnabled).toBe(true);
     expect(snapshot.settings.hapticsGainPercent).toBe(0);
@@ -1459,15 +2521,18 @@ describe('BridgeService', () => {
 
     await poll(service);
     await service.setButtonRemap('lb', 'square');
-    const snapshot = await service.setButtonRemap('cross', 'circle');
+    await service.setButtonRemap('cross', 'circle');
+    const snapshot = await service.setButtonRemap('rfn', 'ps');
 
     const command = device.sentReports.filter((report) => report[7] === COMMAND_ID.SET_BUTTON_REMAP).at(-1);
     expect(command?.[7]).toBe(COMMAND_ID.SET_BUTTON_REMAP);
     expect(command?.[9]).toBe(0);
     expect(command?.[11 + 13]).toBe(12);
     expect(command?.[11 + 16]).toBe(14);
+    expect(command?.[11 + 19]).toBe(20);
     expect(snapshot.settings.buttonRemappingDraft.cross).toBe('circle');
     expect(snapshot.settings.buttonRemappingDraft.lb).toBe('square');
+    expect(snapshot.settings.buttonRemappingDraft.rfn).toBe('ps');
   });
 
   it('sends adaptive trigger test commands without rejecting busy ACKs', async () => {
@@ -1573,58 +2638,37 @@ describe('BridgeService', () => {
     expect(device.sentReports.at(-1)?.[13]).toBe(75);
   });
 
-  it('drops the oldest host-audio frame when the companion write queue backs up', async () => {
+  it('publishes local audio status reads into the snapshot immediately', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
-    const internals = service as unknown as {
-      device: MockHidDevice;
-      hostAudioCommandActive: boolean;
-      hostAudioReportQueue: number[][];
-      hostAudioFrameDropCount: number;
-      sendHostAudioFrame(payload: { frame: number[]; sequence: number }): void;
-    };
-    internals.device = device;
-    internals.hostAudioCommandActive = true;
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
 
-    const makeFrame = (sequence: number) => new Array<number>(264).fill(0).map((_, index) => (
-      (sequence * 31 + index) & 0xff
-    ));
-
-    internals.sendHostAudioFrame({ frame: makeFrame(1), sequence: 1 });
-    internals.sendHostAudioFrame({ frame: makeFrame(2), sequence: 2 });
-    internals.sendHostAudioFrame({ frame: makeFrame(3), sequence: 3 });
-
-    const queuedSequences = [...new Set(internals.hostAudioReportQueue.map((report) => (
-      report[2] | (report[3] << 8)
-    )))];
-    expect(queuedSequences).toEqual([2, 3]);
-    expect(internals.hostAudioReportQueue).toHaveLength(10);
-    expect(internals.hostAudioFrameDropCount).toBe(1);
-  });
-
-  it('deactivates host audio and clears queued frames after an OUT report write failure', async () => {
-    const service = serviceFixture();
-    const device = new MockHidDevice();
-    device.writeError = new Error('bulk pipe disappeared');
-    const internals = service as unknown as {
-      device: MockHidDevice;
-      hostAudioCommandActive: boolean;
-      hostAudioReportQueue: number[][];
-      sendHostAudioFrame(payload: { frame: number[]; sequence: number }): void;
-    };
-    internals.device = device;
-    internals.hostAudioCommandActive = true;
-
-    internals.sendHostAudioFrame({
-      frame: new Array<number>(264).fill(0).map((_, index) => index & 0xff),
-      sequence: 17
+    await poll(service);
+    expect(service.getSnapshot().diagnostics.audioStatus).toMatchObject({
+      duplexRequested: false,
+      headsetPlugged: false
     });
-    await flushImmediate();
-    await flushImmediate();
 
-    expect(internals.hostAudioCommandActive).toBe(false);
-    expect(internals.hostAudioReportQueue).toEqual([]);
-    expect(service.getSnapshot().diagnostics.audioDebugLogLines.at(-1)).toContain('stage=write-failed');
+    device.audioStatusReports = [
+      audioStatusReport({
+        controllerStateReady: true,
+        duplexRequested: true,
+        duplexActive: true,
+        headsetPlugged: true,
+        headsetAudioRoute: true
+      })
+    ];
+
+    await (service as unknown as { readAudioStatus(): Promise<void> }).readAudioStatus();
+
+    expect(service.getSnapshot().diagnostics.audioStatus).toMatchObject({
+      controllerStateReady: true,
+      duplexRequested: true,
+      duplexActive: true,
+      headsetPlugged: true,
+      headsetAudioRoute: true
+    });
   });
 
   it('rejects accepted setting commands that do not advance settings_revision', async () => {

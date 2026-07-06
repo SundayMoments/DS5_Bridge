@@ -1,13 +1,24 @@
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerMonitor, screen, shell } from 'electron';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BridgeService } from './bridge-service';
+import {
+  PICO_UNIVERSAL_FLASH_NUKE_FILE,
+  PICO_UNIVERSAL_FLASH_NUKE_SHA256_FILE,
+  flashPicoFirmwareUf2,
+  mountPicoBootloaderDrive,
+  nukePicoFlash as copyPicoFlashNuke
+} from './pico-firmware-updater';
 import { SettingsStore } from './settings-store';
 import type {
   AdaptiveTriggerPreviewEffect,
+  AudioReactiveHapticsConfig,
   BridgePresetId,
+  ChordAssignment,
+  ChordFunction,
+  HostPersonaMode,
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
@@ -16,22 +27,42 @@ import type {
   TriggerTestTarget
 } from '../shared/protocol';
 import type { BridgeToast } from './bridge-service';
-import type { UiScalePercent } from '../shared/types';
+import type {
+  AudioHapticsSession,
+  BridgeSnapshot,
+  PicoFirmwareAction,
+  PicoFirmwareActionResult,
+  UiScalePercent,
+  UiThemePreset
+} from '../shared/types';
 
 const APP_NAME = 'DS5 Bridge';
 const WINDOWS_APP_USER_MODEL_ID = 'io.github.sundaymoments.ds5bridge';
 const WINDOWS_TOAST_ACTIVATOR_CLSID = '{A8B3700D-4BB5-4E22-BF57-0C43B7C2FDF6}';
 const APP_MARK_PNG = path.join('assets', 'controllers', 'ds5-bridge_mark.png');
+const APP_TRAY_ICON_ICO = path.join('assets', 'controllers', 'ds5-bridge_mark.ico');
+const APP_TRAY_ICON_PNG = path.join('assets', 'controllers', 'ds5-bridge_mark.png');
 const APP_ICON_ICO = path.join('assets', 'controllers', 'ds5-bridge_app-icon-tile.ico');
+const PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH = path.join('firmware', PICO_UNIVERSAL_FLASH_NUKE_FILE);
+const PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH = path.join('firmware', PICO_UNIVERSAL_FLASH_NUKE_SHA256_FILE);
 const BASE_WINDOW_WIDTH = 1120;
 const BASE_WINDOW_HEIGHT = 630;
 const START_IN_TRAY_ARG = '--start-in-tray';
+const ALLOW_PARALLEL_AUTOMATION_INSTANCE = process.env.DS5_BRIDGE_ALLOW_PARALLEL_AUTOMATION_INSTANCE === '1';
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let trayDefaultIcon: Electron.NativeImage | null = null;
 let bridgeService: BridgeService | null = null;
 let isQuitting = false;
 let shutdownComplete = false;
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const hasSingleInstanceLock = ALLOW_PARALLEL_AUTOMATION_INSTANCE || app.requestSingleInstanceLock();
+const audioHapticsIconCache = new Map<string, Promise<string | null> | string | null>();
+const TRAY_BATTERY_ICON_SIZE = 32;
+const TRAY_BATTERY_ICON_SCALE_FACTOR = 2;
+const TRAY_BATTERY_ICON_SHADOW = { red: 0, green: 0, blue: 0, alpha: 180 };
+const TRAY_BATTERY_ICON_DISCHARGING = { red: 245, green: 248, blue: 255, alpha: 255 };
+const TRAY_BATTERY_ICON_CHARGING = { red: 57, green: 215, blue: 125, alpha: 255 };
+const trayBatteryIconCache = new Map<string, Electron.NativeImage>();
 
 function windowsAppUserModelId(): string {
   return WINDOWS_APP_USER_MODEL_ID;
@@ -71,17 +102,13 @@ function sendToMainWindow(channel: string, ...args: unknown[]): void {
 }
 
 async function createTrayIcon(): Promise<Electron.NativeImage> {
-  const icon = createRuntimeIcon();
+  const icon = createImageAsset(APP_TRAY_ICON_ICO);
   if (!icon.isEmpty()) {
-    return icon.resize({ width: 16, height: 16, quality: 'best' });
+    return icon;
   }
 
-  try {
-    const fileIcon = await app.getFileIcon(process.execPath, { size: 'normal' });
-    return fileIcon.isEmpty() ? nativeImage.createEmpty() : fileIcon;
-  } catch {
-    return nativeImage.createEmpty();
-  }
+  const pngIcon = createImageAsset(APP_TRAY_ICON_PNG);
+  return pngIcon.isEmpty() ? nativeImage.createEmpty() : pngIcon;
 }
 
 function scaledWindowSize(uiScalePercent: UiScalePercent): { width: number; height: number } {
@@ -119,6 +146,196 @@ function applySnapshotWindowScale(snapshot: { settings: { uiScalePercent: UiScal
   if (mainWindow) {
     applyWindowScale(mainWindow, snapshot.settings.uiScalePercent, true);
   }
+}
+
+function currentUiScalePercent(): UiScalePercent {
+  return bridgeService?.getSnapshot().settings.uiScalePercent ?? 100;
+}
+
+function trayControllerName(type: NonNullable<BridgeSnapshot['status']>['controllerType'] | undefined): string {
+  if (type === 'dualsense-edge') return 'DualSense Edge';
+  if (type === 'dualsense') return 'DualSense';
+  return 'Controller';
+}
+
+function trayTooltipForSnapshot(snapshot: BridgeSnapshot): string {
+  if (!snapshot.status?.controllerConnected) {
+    return APP_NAME;
+  }
+
+  const name = trayControllerName(snapshot.status.controllerType);
+  return snapshot.status.batteryPercent === null
+    ? name
+    : `${name} \u2014 ${snapshot.status.batteryPercent}%`;
+}
+
+type TrayBatteryIconColor = {
+  red: number;
+  green: number;
+  blue: number;
+  alpha: number;
+};
+
+const TRAY_BATTERY_DIGIT_SEGMENTS: Record<string, string> = {
+  '0': 'abcdef',
+  '1': 'bc',
+  '2': 'abdeg',
+  '3': 'abcdg',
+  '4': 'bcfg',
+  '5': 'acdfg',
+  '6': 'acdefg',
+  '7': 'abc',
+  '8': 'abcdefg',
+  '9': 'abcdfg'
+};
+
+function setTrayIconPixel(buffer: Buffer, x: number, y: number, color: TrayBatteryIconColor): void {
+  if (x < 0 || y < 0 || x >= TRAY_BATTERY_ICON_SIZE || y >= TRAY_BATTERY_ICON_SIZE) {
+    return;
+  }
+  const offset = ((y * TRAY_BATTERY_ICON_SIZE) + x) * 4;
+  buffer[offset] = color.blue;
+  buffer[offset + 1] = color.green;
+  buffer[offset + 2] = color.red;
+  buffer[offset + 3] = color.alpha;
+}
+
+function drawTrayIconRect(
+  buffer: Buffer,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: TrayBatteryIconColor
+): void {
+  for (let row = y; row < y + height; row += 1) {
+    for (let column = x; column < x + width; column += 1) {
+      setTrayIconPixel(buffer, column, row, color);
+    }
+  }
+}
+
+function drawTrayIconDigit(
+  buffer: Buffer,
+  digit: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  thickness: number,
+  color: TrayBatteryIconColor
+): void {
+  const segments = TRAY_BATTERY_DIGIT_SEGMENTS[digit];
+  if (!segments) {
+    return;
+  }
+
+  const middleY = Math.floor((height - thickness) / 2);
+  const lowerHeight = height - middleY - (thickness * 2);
+  const rects: Record<string, [number, number, number, number]> = {
+    a: [x + thickness, y, width - (thickness * 2), thickness],
+    b: [x + width - thickness, y + thickness, thickness, middleY - thickness],
+    c: [x + width - thickness, y + middleY + thickness, thickness, lowerHeight],
+    d: [x + thickness, y + height - thickness, width - (thickness * 2), thickness],
+    e: [x, y + middleY + thickness, thickness, lowerHeight],
+    f: [x, y + thickness, thickness, middleY - thickness],
+    g: [x + thickness, y + middleY, width - (thickness * 2), thickness]
+  };
+
+  for (const segment of segments) {
+    const [segmentX, segmentY, segmentWidth, segmentHeight] = rects[segment];
+    drawTrayIconRect(buffer, segmentX, segmentY, segmentWidth, segmentHeight, color);
+  }
+}
+
+function drawTrayIconNumber(buffer: Buffer, text: string, color: TrayBatteryIconColor, offset = 0): void {
+  const digitCount = text.length;
+  const digitWidth = digitCount === 1 ? 14 : digitCount === 2 ? 12 : 9;
+  const digitHeight = digitCount === 1 ? 24 : digitCount === 2 ? 24 : 22;
+  const thickness = digitCount === 3 ? 2 : 3;
+  const spacing = digitCount === 1 ? 0 : digitCount === 2 ? 2 : 1;
+  const totalWidth = (digitCount * digitWidth) + ((digitCount - 1) * spacing);
+  const startX = Math.floor((TRAY_BATTERY_ICON_SIZE - totalWidth) / 2) + offset;
+  const startY = Math.floor((TRAY_BATTERY_ICON_SIZE - digitHeight) / 2) + offset;
+
+  for (let index = 0; index < text.length; index += 1) {
+    drawTrayIconDigit(
+      buffer,
+      text[index],
+      startX + (index * (digitWidth + spacing)),
+      startY,
+      digitWidth,
+      digitHeight,
+      thickness,
+      color
+    );
+  }
+}
+
+function batteryTrayIcon(percent: number, charging: boolean): Electron.NativeImage {
+  const clampedPercent = Math.max(0, Math.min(100, Math.round(percent)));
+  const text = String(clampedPercent);
+  const key = `${text}:${charging ? 'charging' : 'discharging'}`;
+  const cached = trayBatteryIconCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const buffer = Buffer.alloc(TRAY_BATTERY_ICON_SIZE * TRAY_BATTERY_ICON_SIZE * 4);
+  drawTrayIconNumber(buffer, text, TRAY_BATTERY_ICON_SHADOW, 1);
+  drawTrayIconNumber(buffer, text, charging ? TRAY_BATTERY_ICON_CHARGING : TRAY_BATTERY_ICON_DISCHARGING);
+  const image = nativeImage.createFromBitmap(buffer, {
+    width: TRAY_BATTERY_ICON_SIZE,
+    height: TRAY_BATTERY_ICON_SIZE,
+    scaleFactor: TRAY_BATTERY_ICON_SCALE_FACTOR
+  });
+  trayBatteryIconCache.set(key, image);
+  return image;
+}
+
+function isChargingPowerState(rawPowerState: number | undefined): boolean {
+  return rawPowerState === 0x01 || rawPowerState === 0x02;
+}
+
+function trayIconForSnapshot(snapshot: BridgeSnapshot): Electron.NativeImage | null {
+  if (
+    !snapshot.settings.showBatteryPercentTrayIcon
+    || !snapshot.status?.controllerConnected
+    || snapshot.status.batteryPercent === null
+  ) {
+    return trayDefaultIcon;
+  }
+
+  return batteryTrayIcon(snapshot.status.batteryPercent, isChargingPowerState(snapshot.status.rawPowerState));
+}
+
+function updateTrayTooltip(snapshot: BridgeSnapshot): void {
+  tray?.setToolTip(trayTooltipForSnapshot(snapshot));
+}
+
+function updateTrayIcon(snapshot: BridgeSnapshot): void {
+  const icon = trayIconForSnapshot(snapshot);
+  if (icon) {
+    tray?.setImage(icon);
+  }
+}
+
+function updateTrayPresentation(snapshot: BridgeSnapshot): void {
+  updateTrayTooltip(snapshot);
+  updateTrayIcon(snapshot);
+}
+
+function restoreMainWindowScale(recenter: boolean): void {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+  applyWindowScale(window, currentUiScalePercent(), recenter);
+}
+
+function scheduleMainWindowScaleRestore(recenter: boolean): void {
+  setTimeout(() => restoreMainWindowScale(recenter), 0);
+  setTimeout(() => restoreMainWindowScale(recenter), 250);
 }
 
 function shouldStartInTray(argv = process.argv): boolean {
@@ -238,15 +455,17 @@ function showWindowCentered(): void {
     return;
   }
 
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  restoreMainWindowScale(false);
+
   const display = screen.getPrimaryDisplay();
   const windowBounds = mainWindow.getBounds();
   const x = Math.round(display.workArea.x + (display.workArea.width - windowBounds.width) / 2);
   const y = Math.round(display.workArea.y + (display.workArea.height - windowBounds.height) / 2);
 
   mainWindow.setPosition(x, y, false);
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
   mainWindow.show();
   mainWindow.focus();
 }
@@ -509,9 +728,274 @@ function showBridgeNotification(toast: BridgeToast): void {
   }
 }
 
+async function addAudioHapticsSessionIcons(sessions: AudioHapticsSession[]): Promise<AudioHapticsSession[]> {
+  return Promise.all(sessions.map(async (session) => ({
+    ...session,
+    iconDataUrl: await audioHapticsSessionIconDataUrl(session)
+  })));
+}
+
+async function audioHapticsSessionIconDataUrl(session: AudioHapticsSession): Promise<string | null> {
+  const cacheKey = audioHapticsSessionIconCacheKey(session);
+  if (!cacheKey) {
+    return null;
+  }
+  const cached = audioHapticsIconCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached instanceof Promise ? cached : cached;
+  }
+  const pending = loadAudioHapticsSessionIconDataUrl(session);
+  audioHapticsIconCache.set(cacheKey, pending);
+  const value = await pending;
+  audioHapticsIconCache.set(cacheKey, value);
+  return value;
+}
+
+function audioHapticsSessionIconCacheKey(session: AudioHapticsSession): string | null {
+  return session.iconPath
+    || session.processPath
+    || session.executableName
+    || (session.processId > 0 ? `pid:${session.processId}` : null);
+}
+
+async function loadAudioHapticsSessionIconDataUrl(session: AudioHapticsSession): Promise<string | null> {
+  // 1. Try loading a native image directly from the icon path (handles
+  //    UWP / packaged-app .png icons that the C# shell APIs miss).
+  for (const imagePath of audioHapticsSessionIconFileCandidates(session.iconPath)) {
+    const sessionIcon = nativeImageFromPath(imagePath);
+    if (sessionIcon && !sessionIcon.isEmpty()) {
+      return sessionIcon.resize({ width: 32, height: 32 }).toDataURL();
+    }
+  }
+
+  // 2. Prefer the icon already resolved by the native helper via
+  //    ExtractAssociatedIcon / SHGetFileInfo (best result for regular apps).
+  if (session.iconDataUrl) {
+    return session.iconDataUrl;
+  }
+
+  // 3. Fall back to Electron's shell icon extraction as a last resort.
+  for (const iconPath of audioHapticsSessionIconFileCandidates(session.processPath, session.iconPath)) {
+    try {
+      const image = await app.getFileIcon(iconPath, { size: 'normal' });
+      if (!image.isEmpty()) {
+        return image.resize({ width: 32, height: 32 }).toDataURL();
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+
+function nativeImageFromPath(filePath: string | null): Electron.NativeImage | null {
+  if (!filePath || !fs.existsSync(filePath) || !/\.(ico|png|jpg|jpeg|bmp)$/i.test(filePath)) {
+    return null;
+  }
+  try {
+    return nativeImage.createFromPath(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function audioHapticsSessionIconFileCandidates(...paths: Array<string | null | undefined>): string[] {
+  const candidates = new Set<string>();
+  for (const candidate of paths) {
+    const normalized = normalizeAudioHapticsSessionIconPath(candidate);
+    if (normalized) {
+      candidates.add(normalized);
+    }
+  }
+  // Fall back to raw trimmed paths for entries that didn't survive
+  // normalization (e.g. paths that don't pass existsSync but can still
+  // be resolved by Electron's getFileIcon).
+  for (const candidate of paths) {
+    const raw = candidate?.trim();
+    if (raw) {
+      candidates.add(raw);
+    }
+  }
+  return [...candidates];
+}
+
+function normalizeAudioHapticsSessionIconPath(filePath: string | null | undefined): string | null {
+  if (!filePath?.trim()) {
+    return null;
+  }
+  const candidates = [
+    filePath.trim(),
+    stripAudioHapticsIconResourceIndex(filePath)
+  ];
+  for (const candidate of candidates) {
+    if (!candidate?.trim()) {
+      continue;
+    }
+    const normalized = candidate.trim().replace(/^@/, '').replace(/^"|"$/g, '');
+    if (fs.existsSync(normalized)) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
+function stripAudioHapticsIconResourceIndex(filePath: string): string | null {
+  let value = filePath.trim();
+  if (value.startsWith('@')) {
+    value = value.slice(1).trim();
+  }
+  if (value.startsWith('"')) {
+    const quoteEnd = value.indexOf('"', 1);
+    return quoteEnd > 1 ? value.slice(1, quoteEnd) : value.replace(/^"|"$/g, '');
+  }
+  const commaIndex = value.lastIndexOf(',');
+  if (commaIndex > 0 && /^-?\d+$/.test(value.slice(commaIndex + 1).trim())) {
+    return value.slice(0, commaIndex).trim().replace(/^"|"$/g, '');
+  }
+  return value.replace(/^"|"$/g, '');
+}
+
+async function selectPicoFirmwareUf2Path(): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = {
+    title: 'Choose Pico firmware UF2',
+    properties: ['openFile'],
+    filters: [
+      { name: 'UF2 firmware', extensions: ['uf2'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
+function picoFirmwareOptions(service: BridgeService, includeNukeUf2 = false) {
+  return {
+    enterBootloader: () => service.mountPicoBootloader(),
+    ...(includeNukeUf2
+      ? {
+          nukeUf2Path: resolvePicoUniversalFlashNukePath(),
+          nukeUf2Sha256Path: resolvePicoUniversalFlashNukeSha256Path()
+        }
+      : {})
+  };
+}
+
+function resolvePicoUniversalFlashNukePath(): string {
+  const packagedCandidate = process.resourcesPath
+    ? path.join(process.resourcesPath, PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH)
+    : null;
+  const candidates = [
+    packagedCandidate,
+    path.resolve(process.cwd(), PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH),
+    path.resolve(__dirname, '..', '..', '..', PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH)
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  const nukePath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!nukePath) {
+    throw new Error('Pico flash nuke UF2 is missing. Run tools\\build-pico-universal-flash-nuke.ps1 from the repository root.');
+  }
+  return nukePath;
+}
+
+function resolvePicoUniversalFlashNukeSha256Path(): string {
+  const packagedCandidate = process.resourcesPath
+    ? path.join(process.resourcesPath, PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH)
+    : null;
+  const candidates = [
+    packagedCandidate,
+    path.resolve(process.cwd(), PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH),
+    path.resolve(__dirname, '..', '..', '..', PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH)
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  const sha256Path = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!sha256Path) {
+    throw new Error('Pico flash nuke SHA-256 manifest is missing. Run tools\\build-pico-universal-flash-nuke.ps1 from the repository root.');
+  }
+  return sha256Path;
+}
+
+async function flashSelectedPicoFirmware(service: BridgeService): Promise<PicoFirmwareActionResult> {
+  const sourcePath = await selectPicoFirmwareUf2Path();
+  if (!sourcePath) {
+    return {
+      ok: false,
+      action: 'flash',
+      cancelled: true,
+      message: 'Firmware flash cancelled.'
+    };
+  }
+  return flashPicoFirmwareUf2(sourcePath, picoFirmwareOptions(service));
+}
+
+async function confirmPicoFlashNuke(): Promise<boolean> {
+  const options: Electron.MessageBoxOptions = {
+    type: 'warning',
+    title: 'Nuke Pico flash?',
+    message: 'Nuke Pico flash?',
+    detail: 'This will copy the bundled Pico Universal Flash Nuke UF2 to the mounted Pico bootloader drive and erase the Pico flash.\n\nThe bridge will not work again until you flash the DS5 Bridge firmware back onto the Pico. Use this only when recovering from a bad or stuck firmware install.',
+    buttons: ['Nuke Pico', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 0;
+}
+
+async function nukePicoFlash(service: BridgeService): Promise<PicoFirmwareActionResult> {
+  if (!await confirmPicoFlashNuke()) {
+    return {
+      ok: false,
+      action: 'nuke',
+      cancelled: true,
+      message: 'Pico flash nuke cancelled.'
+    };
+  }
+  return copyPicoFlashNuke(picoFirmwareOptions(service, true));
+}
+
+function picoFirmwareErrorMessage(error: unknown): string {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : '';
+  const cleaned = message
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .trim();
+
+  if (/No companion bridge is connected/i.test(cleaned)) {
+    return 'No companion bridge is connected. Connect the companion bridge, then try again.';
+  }
+
+  return cleaned || 'Pico firmware action failed.';
+}
+
+async function runPicoFirmwareIpcAction(
+  action: PicoFirmwareAction,
+  task: () => Promise<PicoFirmwareActionResult>
+): Promise<PicoFirmwareActionResult> {
+  try {
+    return await task();
+  } catch (error) {
+    return {
+      ok: false,
+      action,
+      message: picoFirmwareErrorMessage(error)
+    };
+  }
+}
+
 function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:getStatus', () => service.getSnapshot());
   ipcMain.handle('bridge:listDevices', () => service.listDevices());
+  ipcMain.handle('bridge:listAudioHapticsSessions', async () => (
+    addAudioHapticsSessionIcons(await service.listAudioHapticsSessions())
+  ));
   ipcMain.handle('bridge:applyPreset', (_event, value: BridgePresetId) => service.applyPreset(value));
   ipcMain.handle('bridge:selectControllerProfile', (_event, profileId: string) => (
     service.selectControllerProfile(profileId)
@@ -534,6 +1018,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setHapticsBufferLength', (_event, value: number) => service.setHapticsBufferLength(value));
   ipcMain.handle('bridge:setClassicRumbleGain', (_event, value: number) => service.setClassicRumbleGain(value));
   ipcMain.handle('bridge:setClassicRumbleEnabled', (_event, value: boolean) => service.setClassicRumbleEnabled(value));
+  ipcMain.handle('bridge:setClassicRumbleV1Enabled', (_event, value: boolean) => (
+    service.setClassicRumbleV1Enabled(value)
+  ));
   ipcMain.handle('bridge:setTriggerEffectIntensity', (_event, value: number) => (
     service.setTriggerEffectIntensity(value)
   ));
@@ -542,11 +1029,15 @@ function registerIpc(service: BridgeService): void {
     service.setAdaptiveTriggersEnabled(value)
   ));
   ipcMain.handle('bridge:setSpeakerVolume', (_event, value: number) => service.setSpeakerVolume(value));
+  ipcMain.handle('bridge:setSpeakerGainLevel', (_event, value: number) => service.setSpeakerGainLevel(value));
   ipcMain.handle('bridge:setSpeakerEnabled', (_event, value: boolean) => service.setSpeakerEnabled(value));
   ipcMain.handle('bridge:setMicVolume', (_event, value: number) => service.setMicVolume(value));
   ipcMain.handle('bridge:setMicMute', (_event, value: boolean) => service.setMicMute(value));
-  ipcMain.handle('bridge:setHostEncodedAudioEnabled', (_event, value: boolean) => (
-    service.setHostEncodedAudioEnabled(value)
+  ipcMain.handle('bridge:setAudioReactiveHapticsConfig', (
+    _event,
+    value: Partial<AudioReactiveHapticsConfig>
+  ) => (
+    service.setAudioReactiveHapticsConfig(value)
   ));
   ipcMain.handle('bridge:setDuplexMicEnabled', (_event, value: boolean) => service.setDuplexMicEnabled(value));
   ipcMain.handle('bridge:setLightbarColor', (_event, color: string, brightness: number) => (
@@ -561,11 +1052,13 @@ function registerIpc(service: BridgeService): void {
     mode: MuteButtonMode,
     usage: number,
     modifiers: number,
-    behavior: MuteKeyboardBehavior
+    behavior: MuteKeyboardBehavior,
+    chordStarterEnabled?: boolean
   ) => (
-    service.setMuteButtonAction(mode, usage, modifiers, behavior)
+    service.setMuteButtonAction(mode, usage, modifiers, behavior, chordStarterEnabled)
   ));
   ipcMain.handle('bridge:setLedEnabled', (_event, value: boolean) => service.setLedEnabled(value));
+  ipcMain.handle('bridge:setPlayerLedEnabled', (_event, value: boolean) => service.setPlayerLedEnabled(value));
   ipcMain.handle('bridge:setIdleDisconnectEnabled', (_event, value: boolean) => service.setIdleDisconnectEnabled(value));
   ipcMain.handle('bridge:setIdleDisconnectTimeoutMinutes', (_event, value: number) => (
     service.setIdleDisconnectTimeoutMinutes(value)
@@ -587,15 +1080,36 @@ function registerIpc(service: BridgeService): void {
     applySnapshotWindowScale(snapshot);
     return snapshot;
   });
+  ipcMain.handle('bridge:setUiThemePreset', (_event, value: UiThemePreset) => (
+    service.setUiThemePreset(value)
+  ));
   ipcMain.handle('bridge:setLaunchAtStartupEnabled', (_event, value: boolean) => {
     const snapshot = service.setLaunchAtStartupEnabled(Boolean(value));
     applyLaunchAtStartup(snapshot.settings.launchAtStartupEnabled);
     return snapshot;
   });
+  ipcMain.handle('bridge:setShowBatteryPercentTrayIcon', (_event, value: boolean) => (
+    service.setShowBatteryPercentTrayIcon(Boolean(value))
+  ));
   ipcMain.handle('bridge:setPollingRateMode', (_event, value: PollingRateMode) => (
     service.setPollingRateMode(value)
   ));
+  ipcMain.handle('bridge:setHostPersonaMode', (_event, value: HostPersonaMode) => (
+    service.setHostPersonaMode(value)
+  ));
   ipcMain.handle('bridge:sleepController', () => service.sleepController());
+  ipcMain.handle('bridge:mountPicoBootloader', () => runPicoFirmwareIpcAction(
+    'mount',
+    () => mountPicoBootloaderDrive(picoFirmwareOptions(service))
+  ));
+  ipcMain.handle('bridge:flashPicoFirmware', () => runPicoFirmwareIpcAction(
+    'flash',
+    () => flashSelectedPicoFirmware(service)
+  ));
+  ipcMain.handle('bridge:nukePicoFlash', () => runPicoFirmwareIpcAction(
+    'nuke',
+    () => nukePicoFlash(service)
+  ));
   ipcMain.handle('bridge:setNotifyControllerConnection', (_event, value: boolean) => (
     service.setNotifyControllerConnection(value)
   ));
@@ -641,6 +1155,15 @@ function registerIpc(service: BridgeService): void {
     service.deleteButtonRemappingProfile(profileId)
   ));
   ipcMain.handle('bridge:restoreButtonRemappingDefaults', () => service.restoreButtonRemappingDefaults());
+  ipcMain.handle('bridge:setChordConfiguration', (_event, functions: ChordFunction[], assignments: ChordAssignment[]) => (
+    service.setChordConfiguration(functions, assignments)
+  ));
+  ipcMain.handle('bridge:setChordFunctions', (_event, functions: ChordFunction[]) => (
+    service.setChordFunctions(functions)
+  ));
+  ipcMain.handle('bridge:setChordAssignments', (_event, assignments: ChordAssignment[]) => (
+    service.setChordAssignments(assignments)
+  ));
   ipcMain.handle('bridge:repairWindowsDeviceCache', () => service.repairWindowsDeviceCache());
   ipcMain.handle('bridge:getDiagnostics', () => service.getSnapshot().diagnostics);
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
@@ -678,14 +1201,21 @@ app.whenReady().then(async () => {
   mainWindow = createWindow(settingsStore.get().uiScalePercent);
   mainWindow.on('maximize', sendWindowMaximizedState);
   mainWindow.on('unmaximize', sendWindowMaximizedState);
+  mainWindow.on('show', () => scheduleMainWindowScaleRestore(false));
+  mainWindow.on('restore', () => scheduleMainWindowScaleRestore(false));
+  mainWindow.on('focus', () => scheduleMainWindowScaleRestore(false));
   mainWindow.once('ready-to-show', () => {
     if (!shouldStartInTray()) {
       showWindowCentered();
     }
   });
+  powerMonitor.on('resume', () => scheduleMainWindowScaleRestore(true));
+  powerMonitor.on('unlock-screen', () => scheduleMainWindowScaleRestore(true));
+  screen.on('display-metrics-changed', () => scheduleMainWindowScaleRestore(true));
 
-  tray = new Tray(await createTrayIcon());
-  tray.setToolTip(APP_NAME);
+  trayDefaultIcon = await createTrayIcon();
+  tray = new Tray(trayDefaultIcon);
+  updateTrayPresentation(bridgeService.getSnapshot());
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: `Open ${APP_NAME}`, click: showWindowCentered },
     { type: 'separator' },
@@ -694,6 +1224,7 @@ app.whenReady().then(async () => {
   tray.on('click', showWindowCentered);
 
   bridgeService.on('snapshot', (snapshot) => {
+    updateTrayPresentation(snapshot);
     sendToMainWindow('bridge:snapshot', snapshot);
   });
   bridgeService.on('toast', (toast) => {

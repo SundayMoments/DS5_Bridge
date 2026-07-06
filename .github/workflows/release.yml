@@ -100,6 +100,32 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Set up Arm GNU Toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1.12.3
+
+      - name: Install firmware build dependencies
+        shell: pwsh
+        run: |
+          choco install ninja -y --no-progress
+          arm-none-eabi-gcc --version
+          ninja --version
+
+      - name: Download Pico SDK
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch "$env:PICO_SDK_REF" https://github.com/raspberrypi/pico-sdk.git "$env:PICO_SDK_PATH"
+          git -C "$env:PICO_SDK_PATH" submodule update --init --recursive
+
+      - name: Switch TinyUSB to configured tag
+        shell: pwsh
+        run: |
+          $tinyUsbPath = Join-Path $env:PICO_SDK_PATH 'lib/tinyusb'
+          $tagExists = -not [string]::IsNullOrWhiteSpace((git -C "$tinyUsbPath" tag --list "$env:TINYUSB_REF"))
+          if (-not $tagExists) {
+            git -C "$tinyUsbPath" fetch --depth 1 origin "refs/tags/${env:TINYUSB_REF}:refs/tags/${env:TINYUSB_REF}"
+          }
+          git -C "$tinyUsbPath" checkout --detach "$env:TINYUSB_REF"
+
       - name: Install companion dependencies
         working-directory: companion
         run: npm ci

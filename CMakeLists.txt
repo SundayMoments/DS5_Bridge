@@ -24,6 +24,8 @@ if (EXISTS ${picoVscode})
 endif ()
 # ====================================================================================
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
+set(SYS_CLOCK_KHZ_VALUE 150000 CACHE STRING "RP2350 system clock in kHz")
+set(CYW43_PIO_CLOCK_DIV_VALUE 2 CACHE STRING "CYW43 PIO clock divider")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -38,9 +40,17 @@ pico_sdk_init()
 add_executable(ds5-bridge
         src/usb_descriptors.c
         src/main.cpp
+        src/button_functions.cpp
+        src/dualsense_input_decoder.cpp
+        src/persona/host_persona.cpp
+        src/persona/dualsense_persona.cpp
+        src/persona/ds4_persona.cpp
+        src/persona/xusb360_persona.cpp
+        src/persona/xusb360_usb.cpp
         src/usb.cpp
         src/controller_packet_compositor.cpp
         src/controller_output_policy.cpp
+        src/controller_output_rumble_state.cpp
         src/controller_output_state.cpp
         src/haptics_test_signal.cpp
         src/output_scheduler.cpp
@@ -59,22 +69,61 @@ target_include_directories(wdl_resampler PUBLIC
 # Opus
 add_subdirectory(lib/opus)
 
-target_compile_options(wdl_resampler PRIVATE -fsigned-char)
+# Relocate libopus into Pico SDK .time_critical sections so the host fallback
+# encoder runs from SRAM instead of XIP flash.
+add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
+        COMMAND ${CMAKE_OBJCOPY}
+                --rename-section .text=.time_critical.opus_text
+                --rename-section .rodata=.time_critical.opus_rodata
+                --rename-section .rodata.str1.4=.time_critical.opus_strings
+                $<TARGET_FILE:opus>
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
+        DEPENDS $<TARGET_FILE:opus>
+        COMMENT "Relocating libopus to .time_critical.* sections"
+        VERBATIM
+)
+add_custom_target(opus_ram_relocate ALL DEPENDS ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp)
+add_dependencies(ds5-bridge opus_ram_relocate)
+
+target_compile_options(wdl_resampler PRIVATE -fsigned-char -ffunction-sections)
+add_custom_command(TARGET wdl_resampler POST_BUILD
+        COMMAND ${CMAKE_OBJCOPY}
+                --rename-section .text._ZN13WDL_Resampler11ResampleOutEPfiii=.time_critical.WDL_ResampleOut
+                --rename-section .text._ZN13WDL_Resampler15ResamplePrepareEiiPPf=.time_critical.WDL_ResamplePrepare
+                $<TARGET_FILE:wdl_resampler>
+        COMMENT "Relocating WDL_Resampler hot path to .time_critical.*"
+        VERBATIM
+)
 target_compile_options(ds5-bridge PRIVATE -fsigned-char)
 target_compile_definitions(wdl_resampler PRIVATE
         WDL_RESAMPLE_TYPE=float
 )
+if(SYS_CLOCK_KHZ_VALUE GREATER 266000)
+    set(PICO_FLASH_SPI_CLKDIV 4)
+else()
+    set(PICO_FLASH_SPI_CLKDIV 2)
+endif()
+if(TARGET bs2_default)
+    target_compile_definitions(bs2_default PRIVATE
+            PICO_FLASH_SPI_CLKDIV=${PICO_FLASH_SPI_CLKDIV}
+    )
+endif()
 target_compile_definitions(ds5-bridge PRIVATE
         CYW43_LWIP=0
-        PICO_FLASH_ASSUME_CORE1_SAFE=1
+        PICO_EMBED_XIP_SETUP=1
+        # BOOTSEL polling floats QSPI CSn briefly; flash_safe_execute() must
+        # park core 1 while that happens.
+        PICO_FLASH_ASSUME_CORE1_SAFE=0
         WDL_RESAMPLE_TYPE=float
-        CYW43_PIO_CLOCK_DIV_INT=4
+        CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
+        SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ_VALUE}
 )
-option(ENABLE_DSE "Enable DSE" OFF)
+# Kitsune Input intentionally enumerates as a stock DualSense only. Never turn
+# this on: DualSense Edge USB identity/descriptors are not a supported persona.
+option(ENABLE_DSE "Unsupported: do not enable DualSense Edge USB enumeration" OFF)
 if(ENABLE_DSE)
-    target_compile_definitions(ds5-bridge PRIVATE
-            ENABLE_DSE # Use the DualSense Edge USB PID and product name.
-    )
+    message(FATAL_ERROR "ENABLE_DSE is intentionally disabled. Kitsune Input must never enumerate as DualSense Edge.")
 endif()
 
 option(ENABLE_COMPANION "Enable the optional companion HID interface" OFF)
@@ -82,7 +131,6 @@ if(ENABLE_COMPANION)
     target_sources(ds5-bridge PRIVATE
             src/companion.cpp
             src/host_bridge.cpp
-            src/host_pcm_iso.cpp
             src/usb_app_drivers.cpp
     )
     target_compile_definitions(ds5-bridge PRIVATE
@@ -160,7 +208,7 @@ if(DS5_ENABLE_FEEDBACK_TRACE_REPORTS)
 endif()
 
 pico_set_program_name(ds5-bridge "ds5-bridge")
-pico_set_program_version(ds5-bridge "1.5.1")
+pico_set_program_version(ds5-bridge "1.6.2")
 
 if(DS5_ENABLE_FIRMWARE_LOGS)
     pico_enable_stdio_uart(ds5-bridge 1)

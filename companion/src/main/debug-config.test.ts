@@ -6,14 +6,7 @@ const DEBUG_ENV_KEYS = [
   'DS5_BRIDGE_TRIGGER_TRACE_DIAGNOSTICS',
   'DS5_BRIDGE_FEEDBACK_TRACE_DIAGNOSTICS',
   'DS5_BRIDGE_MIC_KEEPALIVE',
-  'DS5_BRIDGE_HOST_AUDIO_SOURCE',
-  'DS5_BRIDGE_HOST_AUDIO_AUTO_CAPTURE',
-  'DS5_BRIDGE_HOST_AUDIO_DIAGNOSTICS',
-  'DS5_BRIDGE_HOST_AUDIO_DUMP',
-  'DS5_BRIDGE_HOST_AUDIO_RAW_CAPTURE_DUMP',
-  'DS5_BRIDGE_HOST_AUDIO_RAW_CAPTURE_DUMP_SECONDS',
-  'DS5_BRIDGE_HOST_AUDIO_FRAME_DUMP',
-  'DS5_BRIDGE_HOST_AUDIO_FRAME_DUMP_LIMIT'
+  'DS5_BRIDGE_AUDIO_HELPER_DIAGNOSTICS'
 ] as const;
 
 const originalEnv = { ...process.env };
@@ -46,7 +39,7 @@ afterEach(() => {
 });
 
 describe('CompanionDebugConfig', () => {
-  it('defaults to diagnostics off while leaving host audio auto-capture enabled', async () => {
+  it('defaults to diagnostics off', async () => {
     const config = await loadConfig({});
 
     expect(config).toMatchObject({
@@ -55,10 +48,7 @@ describe('CompanionDebugConfig', () => {
       triggerTraceDiagnosticsEnabled: false,
       feedbackTraceDiagnosticsEnabled: false,
       micKeepaliveEnabled: false,
-      hostAudioSource: undefined,
-      hostAudioAutoCaptureEnabled: true,
-      hostAudioHelperDiagnosticsEnabled: false,
-      hostAudioDumpEnabled: false
+      audioHelperDiagnosticsEnabled: false
     });
   });
 
@@ -68,7 +58,7 @@ describe('CompanionDebugConfig', () => {
       audioDebugDiagnosticsEnabled: true,
       triggerTraceDiagnosticsEnabled: false,
       feedbackTraceDiagnosticsEnabled: false,
-      hostAudioHelperDiagnosticsEnabled: false
+      audioHelperDiagnosticsEnabled: false
     });
 
     await expect(loadConfig({ DS5_BRIDGE_DIAGNOSTICS: 'traces' })).resolves.toMatchObject({
@@ -76,15 +66,15 @@ describe('CompanionDebugConfig', () => {
       audioDebugDiagnosticsEnabled: true,
       triggerTraceDiagnosticsEnabled: true,
       feedbackTraceDiagnosticsEnabled: true,
-      hostAudioHelperDiagnosticsEnabled: false
+      audioHelperDiagnosticsEnabled: false
     });
 
-    await expect(loadConfig({ DS5_BRIDGE_DIAGNOSTICS: 'host-audio' })).resolves.toMatchObject({
-      diagnosticsPreset: 'host-audio',
+    await expect(loadConfig({ DS5_BRIDGE_DIAGNOSTICS: 'helper' })).resolves.toMatchObject({
+      diagnosticsPreset: 'helper',
       audioDebugDiagnosticsEnabled: false,
       triggerTraceDiagnosticsEnabled: false,
       feedbackTraceDiagnosticsEnabled: false,
-      hostAudioHelperDiagnosticsEnabled: true
+      audioHelperDiagnosticsEnabled: true
     });
 
     await expect(loadConfig({ DS5_BRIDGE_DIAGNOSTICS: 'all' })).resolves.toMatchObject({
@@ -92,7 +82,7 @@ describe('CompanionDebugConfig', () => {
       audioDebugDiagnosticsEnabled: true,
       triggerTraceDiagnosticsEnabled: true,
       feedbackTraceDiagnosticsEnabled: true,
-      hostAudioHelperDiagnosticsEnabled: true
+      audioHelperDiagnosticsEnabled: true
     });
   });
 
@@ -102,11 +92,8 @@ describe('CompanionDebugConfig', () => {
       DS5_BRIDGE_AUDIO_DEBUG_DIAGNOSTICS: '0',
       DS5_BRIDGE_TRIGGER_TRACE_DIAGNOSTICS: 'false',
       DS5_BRIDGE_FEEDBACK_TRACE_DIAGNOSTICS: 'off',
-      DS5_BRIDGE_HOST_AUDIO_DIAGNOSTICS: 'no',
-      DS5_BRIDGE_MIC_KEEPALIVE: 'yes',
-      DS5_BRIDGE_HOST_AUDIO_DUMP: 'on',
-      DS5_BRIDGE_HOST_AUDIO_AUTO_CAPTURE: '0',
-      DS5_BRIDGE_HOST_AUDIO_SOURCE: '  Bridge Microphone  '
+      DS5_BRIDGE_AUDIO_HELPER_DIAGNOSTICS: 'no',
+      DS5_BRIDGE_MIC_KEEPALIVE: 'yes'
     });
 
     expect(config).toMatchObject({
@@ -114,11 +101,8 @@ describe('CompanionDebugConfig', () => {
       audioDebugDiagnosticsEnabled: false,
       triggerTraceDiagnosticsEnabled: false,
       feedbackTraceDiagnosticsEnabled: false,
-      hostAudioHelperDiagnosticsEnabled: false,
-      micKeepaliveEnabled: true,
-      hostAudioDumpEnabled: true,
-      hostAudioAutoCaptureEnabled: false,
-      hostAudioSource: 'Bridge Microphone'
+      audioHelperDiagnosticsEnabled: false,
+      micKeepaliveEnabled: true
     });
   });
 });

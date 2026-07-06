@@ -12,8 +12,7 @@
 #define COMPANION_REPORT_INPUT 0x04
 #define COMPANION_REPORT_AUDIO_DEBUG 0x05
 #define COMPANION_REPORT_AUDIO_STATS 0x06
-#define COMPANION_REPORT_HOST_AUDIO_STREAM 0x07
-#define COMPANION_REPORT_HOST_AUDIO_STATUS 0x08
+#define COMPANION_REPORT_AUDIO_STATUS 0x08
 #define COMPANION_REPORT_TRIGGER_TRACE 0x09
 #define COMPANION_REPORT_FEEDBACK_TRACE 0x0A
 #define COMPANION_PAYLOAD_SIZE 63
@@ -32,8 +31,6 @@ enum CompanionFeedbackTraceStage : uint8_t {
     CompanionFeedbackTraceBridgeOut = 3,
     CompanionFeedbackTraceBt = 4,
     CompanionFeedbackTraceDrop = 5,
-    CompanionFeedbackTraceHostAudioRx = 6,
-    CompanionFeedbackTraceHostAudioSubmit = 7,
     CompanionFeedbackTraceAudioEnqueue = 8,
     CompanionFeedbackTraceAudioDrop = 9,
     CompanionFeedbackTraceLocalAudio = 10,

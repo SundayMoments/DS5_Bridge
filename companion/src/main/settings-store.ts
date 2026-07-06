@@ -1,11 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  CHORD_ASSIGNABLE_BUTTON_IDS,
+  CHORD_STARTER_IDS,
   DEFAULT_BUTTON_REMAP_PROFILE,
   DEFAULT_BUTTON_REMAP_PROFILE_ID,
   DEFAULT_CONTROLLER_PROFILE_ID,
+  MAX_CHORD_ASSIGNMENTS,
+  MAX_CHORD_FUNCTION_NAME_LENGTH,
+  MAX_KEYBOARD_FUNCTION_KEYS,
   REMAP_BUTTON_IDS,
+  defaultChordControllerSettingStepPercent,
+  isChordBindingAllowed,
   isRemapButtonId,
+  normalizeChordControllerSettingStepPercent,
   normalizeBridgePresetId
 } from '../shared/protocol';
 import type {
@@ -14,9 +22,22 @@ import type {
   ButtonRemapProfile,
   ControllerProfile,
   ControllerProfileSettings,
+  AudioReactiveHapticsSource,
+  AudioReactiveHapticsBassFocus,
+  AudioReactiveHapticsMode,
+  AudioReactiveHapticsResponse,
+  AudioReactiveHapticsAttack,
+  AudioReactiveHapticsRelease,
+  ChordAssignableButtonId,
+  ChordAssignment,
+  ChordControllerSettingAction,
+  ChordFunction,
+  ChordMediaAction,
+  ChordStarterId,
+  HostPersonaMode,
   RemapButtonId
 } from '../shared/protocol';
-import type { CompanionSettings, UiScalePercent } from '../shared/types';
+import type { CompanionSettings, UiScalePercent, UiThemePreset } from '../shared/types';
 
 const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   hapticsEnabled: true,
@@ -24,13 +45,22 @@ const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   feedbackBoostEnabled: false,
   classicRumbleEnabled: true,
   classicRumbleGainPercent: 100,
+  classicRumbleV1Enabled: false,
   adaptiveTriggersEnabled: true,
   triggerEffectIntensityPercent: 100,
   triggerTestMode: 'feedback',
   speakerEnabled: true,
   speakerVolumePercent: 100,
   micVolumePercent: 100,
-  micMuted: true,
+  micMuted: false,
+  audioReactiveHapticsEnabled: false,
+  audioReactiveHapticsSource: 'system-audio',
+  audioReactiveHapticsMode: 'mix',
+  audioReactiveHapticsGainPercent: 100,
+  audioReactiveHapticsBassFocus: 'balanced',
+  audioReactiveHapticsResponse: 'balanced',
+  audioReactiveHapticsAttack: 'balanced',
+  audioReactiveHapticsRelease: 'balanced',
   lightbarEnabled: true,
   lightbarColor: '#0000ff',
   lightbarBrightnessPercent: 100,
@@ -39,11 +69,12 @@ const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   muteKeyboardUsage: 0x68,
   muteKeyboardModifiers: 0,
   muteKeyboardBehavior: 'tap',
+  muteKeyboardChordStarterEnabled: false,
   sleepKeybindEnabled: false,
   speakerVolumeShortcutEnabled: false,
   pollingRateMode: '1000',
-  hostEncodedAudioEnabled: true,
-  duplexMicEnabled: false,
+  hostPersonaMode: 'dualsense',
+  duplexMicEnabled: true,
   controllerPowerSavingEnabled: false
 };
 
@@ -72,6 +103,7 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
   'feedbackBoostEnabled',
   'classicRumbleEnabled',
   'classicRumbleGainPercent',
+  'classicRumbleV1Enabled',
   'adaptiveTriggersEnabled',
   'triggerEffectIntensityPercent',
   'triggerTestMode',
@@ -79,6 +111,14 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
   'speakerVolumePercent',
   'micVolumePercent',
   'micMuted',
+  'audioReactiveHapticsEnabled',
+  'audioReactiveHapticsSource',
+  'audioReactiveHapticsMode',
+  'audioReactiveHapticsGainPercent',
+  'audioReactiveHapticsBassFocus',
+  'audioReactiveHapticsResponse',
+  'audioReactiveHapticsAttack',
+  'audioReactiveHapticsRelease',
   'lightbarEnabled',
   'lightbarColor',
   'lightbarBrightnessPercent',
@@ -87,10 +127,11 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
   'muteKeyboardUsage',
   'muteKeyboardModifiers',
   'muteKeyboardBehavior',
+  'muteKeyboardChordStarterEnabled',
   'sleepKeybindEnabled',
   'speakerVolumeShortcutEnabled',
   'pollingRateMode',
-  'hostEncodedAudioEnabled',
+  'hostPersonaMode',
   'duplexMicEnabled',
   'controllerPowerSavingEnabled'
 ]);
@@ -98,20 +139,32 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
 export const DEFAULT_SETTINGS: CompanionSettings = {
   selectedPresetId: 'balanced',
   uiScalePercent: 100,
+  uiThemePreset: 'dark',
   launchAtStartupEnabled: false,
+  showBatteryPercentTrayIcon: false,
   hapticsEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsEnabled,
   hapticsGainPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsGainPercent,
   feedbackBoostEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.feedbackBoostEnabled,
   hapticsBufferLength: 64,
   classicRumbleEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.classicRumbleEnabled,
   classicRumbleGainPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.classicRumbleGainPercent,
+  classicRumbleV1Enabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.classicRumbleV1Enabled,
   adaptiveTriggersEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.adaptiveTriggersEnabled,
   triggerEffectIntensityPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.triggerEffectIntensityPercent,
   triggerTestMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.triggerTestMode,
   speakerEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerEnabled,
   speakerVolumePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumePercent,
+  speakerGainLevel: 4,
   micVolumePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.micVolumePercent,
   micMuted: DEFAULT_CONTROLLER_PROFILE_SETTINGS.micMuted,
+  audioReactiveHapticsEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsEnabled,
+  audioReactiveHapticsSource: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsSource,
+  audioReactiveHapticsMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsMode,
+  audioReactiveHapticsGainPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsGainPercent,
+  audioReactiveHapticsBassFocus: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsBassFocus,
+  audioReactiveHapticsResponse: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsResponse,
+  audioReactiveHapticsAttack: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsAttack,
+  audioReactiveHapticsRelease: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsRelease,
   lightbarEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarEnabled,
   lightbarColor: DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarColor,
   lightbarBrightnessPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarBrightnessPercent,
@@ -120,23 +173,27 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   muteKeyboardUsage: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardUsage,
   muteKeyboardModifiers: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardModifiers,
   muteKeyboardBehavior: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardBehavior,
+  muteKeyboardChordStarterEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardChordStarterEnabled,
   ledEnabled: true,
+  playerLedEnabled: true,
   idleDisconnectEnabled: true,
   idleDisconnectTimeoutMinutes: 15,
   usbSuspendDisconnectEnabled: true,
   sleepKeybindEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
   speakerVolumeShortcutEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumeShortcutEnabled,
   pollingRateMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.pollingRateMode,
+  hostPersonaMode: 'dualsense',
   notifyControllerConnection: false,
   notifyLowBattery: false,
-  hostEncodedAudioEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hostEncodedAudioEnabled,
   duplexMicEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.duplexMicEnabled,
   controllerPowerSavingEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.controllerPowerSavingEnabled,
   selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
   controllerProfiles: [DEFAULT_CONTROLLER_PROFILE],
   selectedButtonRemappingProfileId: DEFAULT_BUTTON_REMAP_PROFILE_ID,
   buttonRemappingProfiles: [DEFAULT_BUTTON_REMAP_PROFILE],
-  buttonRemappingDraft: { ...DEFAULT_BUTTON_REMAP_PROFILE.mappings }
+  buttonRemappingDraft: { ...DEFAULT_BUTTON_REMAP_PROFILE.mappings },
+  chordFunctions: [],
+  chordAssignments: []
 };
 
 function normalizeColor(value: unknown): string {
@@ -161,8 +218,113 @@ function normalizePollingRateMode(value: unknown): CompanionSettings['pollingRat
   }
 }
 
+function normalizeHostPersonaMode(value: unknown): HostPersonaMode {
+  switch (value) {
+    case 'xbox':
+    case 'ds4':
+      return value;
+    default:
+      return 'dualsense';
+  }
+}
+
+function normalizeAudioReactiveHapticsMode(value: unknown): AudioReactiveHapticsMode {
+  return value === 'replace' ? value : DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsMode;
+}
+
+function normalizeAudioReactiveHapticsSource(value: unknown): AudioReactiveHapticsSource {
+  if (value === 'controller-audio' || value === 'system-audio') {
+    return value;
+  }
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsSource;
+  }
+  const candidate = value as Partial<Extract<AudioReactiveHapticsSource, { kind: 'app-session' }>>;
+  if (candidate.kind !== 'app-session') {
+    return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsSource;
+  }
+  const processId = Number.isFinite(candidate.processId)
+    ? Math.max(0, Math.round(candidate.processId!))
+    : 0;
+  const displayName = normalizeOptionalString(candidate.displayName);
+  const executableName = normalizeOptionalString(candidate.executableName);
+  const processPath = normalizeOptionalString(candidate.processPath);
+  if (processId <= 0 && !processPath && !executableName) {
+    return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsSource;
+  }
+  return {
+    kind: 'app-session',
+    processId,
+    ...(displayName ? { displayName } : {}),
+    ...(executableName ? { executableName } : {}),
+    ...(processPath ? { processPath } : {}),
+    ...(normalizeOptionalString(candidate.sessionIdentifier) ? { sessionIdentifier: normalizeOptionalString(candidate.sessionIdentifier) } : {}),
+    ...(normalizeOptionalString(candidate.sessionInstanceIdentifier) ? { sessionInstanceIdentifier: normalizeOptionalString(candidate.sessionInstanceIdentifier) } : {})
+  };
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeAudioReactiveHapticsBassFocus(value: unknown): AudioReactiveHapticsBassFocus {
+  switch (value) {
+    case 'deep':
+    case 'punchy':
+    case 'wide':
+      return value;
+    default:
+      return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsBassFocus;
+  }
+}
+
+function normalizeAudioReactiveHapticsResponse(value: unknown): AudioReactiveHapticsResponse {
+  switch (value) {
+    case 'subtle':
+    case 'strong':
+      return value;
+    default:
+      return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsResponse;
+  }
+}
+
+function normalizeAudioReactiveHapticsAttack(value: unknown): AudioReactiveHapticsAttack {
+  switch (value) {
+    case 'soft':
+    case 'fast':
+    case 'sharp':
+      return value;
+    default:
+      return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsAttack;
+  }
+}
+
+function normalizeAudioReactiveHapticsRelease(value: unknown): AudioReactiveHapticsRelease {
+  switch (value) {
+    case 'tight':
+    case 'smooth':
+    case 'long':
+      return value;
+    default:
+      return DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsRelease;
+  }
+}
+
 export function normalizeUiScalePercent(value: unknown): UiScalePercent {
   return value === 75 || value === 125 || value === 150 ? value : 100;
+}
+
+export function normalizeUiThemePreset(value: unknown): UiThemePreset {
+  switch (value) {
+    case 'light':
+    case 'dark':
+    case 'bubble-gum':
+    case 'pomegranate':
+    case 'kiwi':
+      return value;
+    default:
+      return DEFAULT_SETTINGS.uiThemePreset;
+  }
 }
 
 function cloneRemapMap(map: ButtonRemapMap): ButtonRemapMap {
@@ -180,6 +342,7 @@ export function controllerProfileSettingsFrom(settings: CompanionSettings): Cont
     feedbackBoostEnabled: settings.feedbackBoostEnabled,
     classicRumbleEnabled: settings.classicRumbleEnabled,
     classicRumbleGainPercent: settings.classicRumbleGainPercent,
+    classicRumbleV1Enabled: settings.classicRumbleV1Enabled,
     adaptiveTriggersEnabled: settings.adaptiveTriggersEnabled,
     triggerEffectIntensityPercent: settings.triggerEffectIntensityPercent,
     triggerTestMode: settings.triggerTestMode,
@@ -187,6 +350,14 @@ export function controllerProfileSettingsFrom(settings: CompanionSettings): Cont
     speakerVolumePercent: settings.speakerVolumePercent,
     micVolumePercent: settings.micVolumePercent,
     micMuted: settings.micMuted,
+    audioReactiveHapticsEnabled: settings.audioReactiveHapticsEnabled,
+    audioReactiveHapticsSource: settings.audioReactiveHapticsSource,
+    audioReactiveHapticsMode: settings.audioReactiveHapticsMode,
+    audioReactiveHapticsGainPercent: settings.audioReactiveHapticsGainPercent,
+    audioReactiveHapticsBassFocus: settings.audioReactiveHapticsBassFocus,
+    audioReactiveHapticsResponse: settings.audioReactiveHapticsResponse,
+    audioReactiveHapticsAttack: settings.audioReactiveHapticsAttack,
+    audioReactiveHapticsRelease: settings.audioReactiveHapticsRelease,
     lightbarEnabled: settings.lightbarEnabled,
     lightbarColor: settings.lightbarColor,
     lightbarBrightnessPercent: settings.lightbarBrightnessPercent,
@@ -195,10 +366,11 @@ export function controllerProfileSettingsFrom(settings: CompanionSettings): Cont
     muteKeyboardUsage: settings.muteKeyboardUsage,
     muteKeyboardModifiers: settings.muteKeyboardModifiers,
     muteKeyboardBehavior: settings.muteKeyboardBehavior,
+    muteKeyboardChordStarterEnabled: settings.muteKeyboardChordStarterEnabled,
     sleepKeybindEnabled: settings.sleepKeybindEnabled,
     speakerVolumeShortcutEnabled: settings.speakerVolumeShortcutEnabled,
     pollingRateMode: settings.pollingRateMode,
-    hostEncodedAudioEnabled: settings.hostEncodedAudioEnabled,
+    hostPersonaMode: settings.hostPersonaMode,
     duplexMicEnabled: settings.duplexMicEnabled,
     controllerPowerSavingEnabled: settings.controllerPowerSavingEnabled
   };
@@ -222,6 +394,9 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
     classicRumbleGainPercent: Number.isFinite(candidate.classicRumbleGainPercent)
       ? Math.max(0, Math.min(500, Math.round(candidate.classicRumbleGainPercent!)))
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.classicRumbleGainPercent,
+    classicRumbleV1Enabled: typeof candidate.classicRumbleV1Enabled === 'boolean'
+      ? candidate.classicRumbleV1Enabled
+      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.classicRumbleV1Enabled,
     adaptiveTriggersEnabled: typeof candidate.adaptiveTriggersEnabled === 'boolean'
       ? candidate.adaptiveTriggersEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.adaptiveTriggersEnabled,
@@ -241,6 +416,18 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
       ? Math.max(0, Math.min(100, Math.round(candidate.micVolumePercent!)))
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.micVolumePercent,
     micMuted: typeof candidate.micMuted === 'boolean' ? candidate.micMuted : DEFAULT_CONTROLLER_PROFILE_SETTINGS.micMuted,
+    audioReactiveHapticsEnabled: typeof candidate.audioReactiveHapticsEnabled === 'boolean'
+      ? candidate.audioReactiveHapticsEnabled
+      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsEnabled,
+    audioReactiveHapticsSource: normalizeAudioReactiveHapticsSource(candidate.audioReactiveHapticsSource),
+    audioReactiveHapticsMode: normalizeAudioReactiveHapticsMode(candidate.audioReactiveHapticsMode),
+    audioReactiveHapticsGainPercent: Number.isFinite(candidate.audioReactiveHapticsGainPercent)
+      ? Math.max(0, Math.min(200, Math.round(candidate.audioReactiveHapticsGainPercent!)))
+      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsGainPercent,
+    audioReactiveHapticsBassFocus: normalizeAudioReactiveHapticsBassFocus(candidate.audioReactiveHapticsBassFocus),
+    audioReactiveHapticsResponse: normalizeAudioReactiveHapticsResponse(candidate.audioReactiveHapticsResponse),
+    audioReactiveHapticsAttack: normalizeAudioReactiveHapticsAttack(candidate.audioReactiveHapticsAttack),
+    audioReactiveHapticsRelease: normalizeAudioReactiveHapticsRelease(candidate.audioReactiveHapticsRelease),
     lightbarEnabled: typeof candidate.lightbarEnabled === 'boolean'
       ? candidate.lightbarEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarEnabled,
@@ -251,7 +438,10 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
     lightbarOverrideEnabled: typeof candidate.lightbarOverrideEnabled === 'boolean'
       ? candidate.lightbarOverrideEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarOverrideEnabled,
-    muteButtonMode: candidate.muteButtonMode === 'keyboard' || candidate.muteButtonMode === 'quiet' || candidate.muteButtonMode === 'normal'
+    muteButtonMode: candidate.muteButtonMode === 'keyboard'
+      || candidate.muteButtonMode === 'quiet'
+      || candidate.muteButtonMode === 'chord'
+      || candidate.muteButtonMode === 'normal'
       ? candidate.muteButtonMode
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteButtonMode,
     muteKeyboardUsage: Number.isFinite(candidate.muteKeyboardUsage)
@@ -263,6 +453,9 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
     muteKeyboardBehavior: candidate.muteKeyboardBehavior === 'hold' || candidate.muteKeyboardBehavior === 'tap'
       ? candidate.muteKeyboardBehavior
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardBehavior,
+    muteKeyboardChordStarterEnabled: typeof candidate.muteKeyboardChordStarterEnabled === 'boolean'
+      ? candidate.muteKeyboardChordStarterEnabled
+      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardChordStarterEnabled,
     sleepKeybindEnabled: typeof candidate.sleepKeybindEnabled === 'boolean'
       ? candidate.sleepKeybindEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
@@ -270,9 +463,7 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
       ? candidate.speakerVolumeShortcutEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumeShortcutEnabled,
     pollingRateMode: normalizePollingRateMode(candidate.pollingRateMode),
-    hostEncodedAudioEnabled: typeof candidate.hostEncodedAudioEnabled === 'boolean'
-      ? candidate.hostEncodedAudioEnabled
-      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.hostEncodedAudioEnabled,
+    hostPersonaMode: normalizeHostPersonaMode(candidate.hostPersonaMode),
     duplexMicEnabled: typeof candidate.duplexMicEnabled === 'boolean'
       ? candidate.duplexMicEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.duplexMicEnabled,
@@ -421,6 +612,160 @@ function normalizeSelectedRemapProfileId(value: unknown, profiles: ButtonRemapPr
     : DEFAULT_BUTTON_REMAP_PROFILE_ID;
 }
 
+const CHORD_MEDIA_ACTIONS = new Set<ChordMediaAction>([
+  'play-pause',
+  'next-track',
+  'previous-track',
+  'mute',
+  'volume-up',
+  'volume-down'
+]);
+const CHORD_CONTROLLER_SETTING_ACTIONS = new Set<ChordControllerSettingAction>([
+  'toggle-audio-haptics',
+  'toggle-lightbar-override',
+  'toggle-mic-mute',
+  'sleep-controller',
+  'persona-dualsense',
+  'persona-ds4',
+  'persona-xbox',
+  'speaker-down',
+  'speaker-up',
+  'mic-down',
+  'mic-up',
+  'haptics-down',
+  'haptics-up',
+  'rumble-down',
+  'rumble-up',
+  'triggers-down',
+  'triggers-up',
+  'lighting-down',
+  'lighting-up'
+]);
+
+function isChordStarterId(value: unknown): value is ChordStarterId {
+  return typeof value === 'string' && (CHORD_STARTER_IDS as readonly string[]).includes(value);
+}
+
+function isChordAssignableButtonId(value: unknown): value is ChordAssignableButtonId {
+  return typeof value === 'string' && (CHORD_ASSIGNABLE_BUTTON_IDS as readonly string[]).includes(value);
+}
+
+function normalizeChordName(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim().slice(0, MAX_CHORD_FUNCTION_NAME_LENGTH)
+    : fallback.slice(0, MAX_CHORD_FUNCTION_NAME_LENGTH);
+}
+
+function normalizeChordId(value: unknown, fallbackPrefix: string, index: number): string {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim().slice(0, 64)
+    : `${fallbackPrefix}-${index + 1}`;
+}
+
+function normalizeChordFunction(value: unknown, index: number): ChordFunction | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const candidate = value as Partial<ChordFunction>;
+  const id = normalizeChordId(candidate.id, 'function', index);
+  switch (candidate.type) {
+    case 'keyboard': {
+      const keys = Array.isArray(candidate.keys)
+        ? candidate.keys
+          .filter((key): key is string => typeof key === 'string' && key.trim().length > 0)
+          .map((key) => key.trim().slice(0, 24))
+          .slice(0, MAX_KEYBOARD_FUNCTION_KEYS)
+        : [];
+      if (keys.length === 0) {
+        return null;
+      }
+      return {
+        id,
+        name: normalizeChordName(candidate.name, 'Shortcut'),
+        type: 'keyboard',
+        keys
+      };
+    }
+    case 'media':
+      return {
+        id,
+        name: normalizeChordName(candidate.name, 'Media'),
+        type: 'media',
+        action: CHORD_MEDIA_ACTIONS.has(candidate.action as ChordMediaAction)
+          ? candidate.action as ChordMediaAction
+          : 'play-pause'
+      };
+    case 'controller-setting': {
+      const action = CHORD_CONTROLLER_SETTING_ACTIONS.has(candidate.action as ChordControllerSettingAction)
+        ? candidate.action as ChordControllerSettingAction
+        : 'sleep-controller';
+      return {
+        id,
+        name: normalizeChordName(candidate.name, 'Setting'),
+        type: 'controller-setting',
+        action,
+        stepPercent: normalizeChordControllerSettingStepPercent(
+          (candidate as { stepPercent?: unknown }).stepPercent,
+          defaultChordControllerSettingStepPercent(action)
+        )
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function normalizeChordFunctions(value: unknown): ChordFunction[] {
+  const functions = Array.isArray(value)
+    ? value.map(normalizeChordFunction).filter((func): func is ChordFunction => func !== null)
+    : [];
+  const unique = new Map<string, ChordFunction>();
+  for (const func of functions) {
+    unique.set(func.id, func);
+  }
+  return Array.from(unique.values()).slice(0, 64);
+}
+
+function normalizeChordAssignment(
+  value: unknown,
+  functionIds: Set<string>,
+  index: number
+): ChordAssignment | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const candidate = value as Partial<ChordAssignment>;
+  if (typeof candidate.functionId !== 'string' || !functionIds.has(candidate.functionId)) {
+    return null;
+  }
+  const id = normalizeChordId(candidate.id, 'assignment', index);
+  if (candidate.kind === 'chord') {
+    if (
+      !isChordStarterId(candidate.starter)
+      || !isChordAssignableButtonId(candidate.button)
+      || !isChordBindingAllowed(candidate.starter, candidate.button)
+    ) {
+      return null;
+    }
+    return {
+      id,
+      kind: 'chord',
+      starter: candidate.starter,
+      button: candidate.button,
+      functionId: candidate.functionId
+    };
+  }
+  return null;
+}
+
+function normalizeChordAssignments(value: unknown, functions: ChordFunction[]): ChordAssignment[] {
+  const functionIds = new Set(functions.map((func) => func.id));
+  return (Array.isArray(value) ? value : [])
+    .map((assignment, index) => normalizeChordAssignment(assignment, functionIds, index))
+    .filter((assignment): assignment is ChordAssignment => assignment !== null)
+    .slice(0, MAX_CHORD_ASSIGNMENTS);
+}
+
 function syncSelectedButtonRemappingProfile(settings: CompanionSettings): CompanionSettings {
   const mappings = cloneRemapMap(settings.buttonRemappingDraft);
   if (settings.selectedButtonRemappingProfileId === DEFAULT_BUTTON_REMAP_PROFILE_ID) {
@@ -465,7 +810,9 @@ function cloneSettings(settings: CompanionSettings): CompanionSettings {
       ...profile,
       mappings: cloneRemapMap(profile.mappings)
     })),
-    buttonRemappingDraft: cloneRemapMap(settings.buttonRemappingDraft)
+    buttonRemappingDraft: cloneRemapMap(settings.buttonRemappingDraft),
+    chordFunctions: settings.chordFunctions.map((func) => ({ ...func })),
+    chordAssignments: settings.chordAssignments.map((assignment) => ({ ...assignment }))
   };
 }
 
@@ -488,29 +835,6 @@ function migratePersistedSettings(value: PersistedSettings): PersistedSettings {
     ...value,
     settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION
   };
-  if (version < 2) {
-    next.duplexMicEnabled = false;
-    next.micMuted = true;
-    next.controllerProfiles = Array.isArray(value.controllerProfiles)
-      ? value.controllerProfiles.map((profile) => ({
-        ...profile,
-        settings: profile?.settings
-          ? {
-            ...profile.settings,
-            duplexMicEnabled: false,
-            micMuted: true
-          }
-          : profile?.settings
-      }))
-      : value.controllerProfiles;
-    next.customProfile = value.customProfile
-      ? {
-        ...value.customProfile,
-        duplexMicEnabled: false,
-        micMuted: true
-      }
-      : value.customProfile;
-  }
   return next;
 }
 
@@ -526,13 +850,18 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     value?.selectedButtonRemappingProfileId,
     buttonRemappingProfiles
   );
+  const chordFunctions = normalizeChordFunctions(value?.chordFunctions);
 
   return {
     selectedPresetId,
     uiScalePercent: normalizeUiScalePercent(value?.uiScalePercent),
+    uiThemePreset: normalizeUiThemePreset(value?.uiThemePreset),
     launchAtStartupEnabled: typeof value?.launchAtStartupEnabled === 'boolean'
       ? value.launchAtStartupEnabled
       : DEFAULT_SETTINGS.launchAtStartupEnabled,
+    showBatteryPercentTrayIcon: typeof value?.showBatteryPercentTrayIcon === 'boolean'
+      ? value.showBatteryPercentTrayIcon
+      : DEFAULT_SETTINGS.showBatteryPercentTrayIcon,
     hapticsEnabled: typeof value?.hapticsEnabled === 'boolean'
       ? value.hapticsEnabled
       : DEFAULT_SETTINGS.hapticsEnabled,
@@ -543,7 +872,7 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
       ? value.feedbackBoostEnabled
       : DEFAULT_SETTINGS.feedbackBoostEnabled,
     hapticsBufferLength: Number.isFinite(value?.hapticsBufferLength)
-      ? Math.max(64, Math.min(255, Math.round(value!.hapticsBufferLength!)))
+      ? Math.max(16, Math.min(128, Math.round(value!.hapticsBufferLength!)))
       : DEFAULT_SETTINGS.hapticsBufferLength,
     classicRumbleEnabled: typeof value?.classicRumbleEnabled === 'boolean'
       ? value.classicRumbleEnabled
@@ -551,6 +880,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     classicRumbleGainPercent: Number.isFinite(value?.classicRumbleGainPercent)
       ? Math.max(0, Math.min(500, Math.round(value!.classicRumbleGainPercent!)))
       : DEFAULT_SETTINGS.classicRumbleGainPercent,
+    classicRumbleV1Enabled: typeof value?.classicRumbleV1Enabled === 'boolean'
+      ? value.classicRumbleV1Enabled
+      : DEFAULT_SETTINGS.classicRumbleV1Enabled,
     adaptiveTriggersEnabled: typeof value?.adaptiveTriggersEnabled === 'boolean'
       ? value.adaptiveTriggersEnabled
       : DEFAULT_SETTINGS.adaptiveTriggersEnabled,
@@ -566,12 +898,27 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     speakerVolumePercent: Number.isFinite(value?.speakerVolumePercent)
       ? Math.max(0, Math.min(100, Math.round(value!.speakerVolumePercent!)))
       : DEFAULT_SETTINGS.speakerVolumePercent,
+    speakerGainLevel: Number.isFinite(value?.speakerGainLevel)
+      ? Math.max(1, Math.min(7, Math.round(value!.speakerGainLevel!)))
+      : DEFAULT_SETTINGS.speakerGainLevel,
     micVolumePercent: Number.isFinite(value?.micVolumePercent)
       ? Math.max(0, Math.min(100, Math.round(value!.micVolumePercent!)))
       : DEFAULT_SETTINGS.micVolumePercent,
     micMuted: typeof value?.micMuted === 'boolean'
       ? value.micMuted
       : DEFAULT_SETTINGS.micMuted,
+    audioReactiveHapticsEnabled: typeof value?.audioReactiveHapticsEnabled === 'boolean'
+      ? value.audioReactiveHapticsEnabled
+      : DEFAULT_SETTINGS.audioReactiveHapticsEnabled,
+    audioReactiveHapticsSource: normalizeAudioReactiveHapticsSource(value?.audioReactiveHapticsSource),
+    audioReactiveHapticsMode: normalizeAudioReactiveHapticsMode(value?.audioReactiveHapticsMode),
+    audioReactiveHapticsGainPercent: Number.isFinite(value?.audioReactiveHapticsGainPercent)
+      ? Math.max(0, Math.min(200, Math.round(value!.audioReactiveHapticsGainPercent!)))
+      : DEFAULT_SETTINGS.audioReactiveHapticsGainPercent,
+    audioReactiveHapticsBassFocus: normalizeAudioReactiveHapticsBassFocus(value?.audioReactiveHapticsBassFocus),
+    audioReactiveHapticsResponse: normalizeAudioReactiveHapticsResponse(value?.audioReactiveHapticsResponse),
+    audioReactiveHapticsAttack: normalizeAudioReactiveHapticsAttack(value?.audioReactiveHapticsAttack),
+    audioReactiveHapticsRelease: normalizeAudioReactiveHapticsRelease(value?.audioReactiveHapticsRelease),
     lightbarEnabled: typeof value?.lightbarEnabled === 'boolean'
       ? value.lightbarEnabled
       : DEFAULT_SETTINGS.lightbarEnabled,
@@ -582,7 +929,10 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     lightbarOverrideEnabled: typeof value?.lightbarOverrideEnabled === 'boolean'
       ? value.lightbarOverrideEnabled
       : DEFAULT_SETTINGS.lightbarOverrideEnabled,
-    muteButtonMode: value?.muteButtonMode === 'keyboard' || value?.muteButtonMode === 'quiet' || value?.muteButtonMode === 'normal'
+    muteButtonMode: value?.muteButtonMode === 'keyboard'
+      || value?.muteButtonMode === 'quiet'
+      || value?.muteButtonMode === 'chord'
+      || value?.muteButtonMode === 'normal'
       ? value.muteButtonMode
       : DEFAULT_SETTINGS.muteButtonMode,
     muteKeyboardUsage: Number.isFinite(value?.muteKeyboardUsage)
@@ -594,7 +944,13 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     muteKeyboardBehavior: value?.muteKeyboardBehavior === 'hold' || value?.muteKeyboardBehavior === 'tap'
       ? value.muteKeyboardBehavior
       : DEFAULT_SETTINGS.muteKeyboardBehavior,
+    muteKeyboardChordStarterEnabled: typeof value?.muteKeyboardChordStarterEnabled === 'boolean'
+      ? value.muteKeyboardChordStarterEnabled
+      : DEFAULT_SETTINGS.muteKeyboardChordStarterEnabled,
     ledEnabled: typeof value?.ledEnabled === 'boolean' ? value.ledEnabled : DEFAULT_SETTINGS.ledEnabled,
+    playerLedEnabled: typeof value?.playerLedEnabled === 'boolean'
+      ? value.playerLedEnabled
+      : DEFAULT_SETTINGS.playerLedEnabled,
     idleDisconnectEnabled: typeof value?.idleDisconnectEnabled === 'boolean'
       ? value.idleDisconnectEnabled
       : DEFAULT_SETTINGS.idleDisconnectEnabled,
@@ -611,15 +967,13 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
       ? value.speakerVolumeShortcutEnabled
       : DEFAULT_SETTINGS.speakerVolumeShortcutEnabled,
     pollingRateMode: normalizePollingRateMode(value?.pollingRateMode),
+    hostPersonaMode: normalizeHostPersonaMode(value?.hostPersonaMode),
     notifyControllerConnection: typeof value?.notifyControllerConnection === 'boolean'
       ? value.notifyControllerConnection
       : DEFAULT_SETTINGS.notifyControllerConnection,
     notifyLowBattery: typeof value?.notifyLowBattery === 'boolean'
       ? value.notifyLowBattery
       : DEFAULT_SETTINGS.notifyLowBattery,
-    hostEncodedAudioEnabled: typeof value?.hostEncodedAudioEnabled === 'boolean'
-      ? value.hostEncodedAudioEnabled
-      : DEFAULT_SETTINGS.hostEncodedAudioEnabled,
     duplexMicEnabled: typeof value?.duplexMicEnabled === 'boolean'
       ? value.duplexMicEnabled
       : DEFAULT_SETTINGS.duplexMicEnabled,
@@ -630,7 +984,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     controllerProfiles,
     selectedButtonRemappingProfileId,
     buttonRemappingProfiles,
-    buttonRemappingDraft: normalizeRemapMap(value?.buttonRemappingDraft)
+    buttonRemappingDraft: normalizeRemapMap(value?.buttonRemappingDraft),
+    chordFunctions,
+    chordAssignments: normalizeChordAssignments(value?.chordAssignments, chordFunctions)
   };
 }
 
@@ -858,6 +1214,26 @@ export class SettingsStore {
     return this.update({
       selectedButtonRemappingProfileId: DEFAULT_BUTTON_REMAP_PROFILE_ID,
       buttonRemappingDraft: DEFAULT_BUTTON_REMAP_PROFILE.mappings
+    });
+  }
+
+  setChordConfiguration(functions: ChordFunction[], assignments: ChordAssignment[]): CompanionSettings {
+    return this.update({
+      chordFunctions: functions,
+      chordAssignments: assignments
+    });
+  }
+
+  setChordFunctions(functions: ChordFunction[]): CompanionSettings {
+    return this.update({
+      chordFunctions: functions,
+      chordAssignments: this.settings.chordAssignments
+    });
+  }
+
+  setChordAssignments(assignments: ChordAssignment[]): CompanionSettings {
+    return this.update({
+      chordAssignments: assignments
     });
   }
 

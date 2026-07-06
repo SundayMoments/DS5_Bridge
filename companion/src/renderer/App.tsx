@@ -1,25 +1,34 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   type TablerIcon,
   IconAdjustmentsSpark,
   IconActivity as Activity,
   IconAdjustmentsHorizontal as Settings2,
   IconAdjustmentsHorizontal as SlidersHorizontal,
+  IconAlertHexagon,
+  IconAlertTriangle,
   IconArrowRight as ArrowRight,
   IconBatteryEco,
   IconBell as Bell,
   IconBinary,
   IconBolt as Zap,
+  IconBooks,
   IconBulb,
   IconCheck as Check,
   IconChevronDown as ChevronDown,
+  IconCircleCheck,
   IconCpu,
   IconDeviceFloppy as Save,
   IconDeviceGamepad2,
   IconDeviceGamepad3,
   IconFlame,
   IconFlask2,
+  IconBrandDeezer,
+  IconDeviceAudioTape,
+  IconBrandXbox,
   IconBrandGithub,
+  IconHeart as Heart,
   IconDeviceMobileVibration as Vibrate,
   IconHeadphones as Headphones,
   IconKeyboard as Keyboard,
@@ -27,14 +36,17 @@ import {
   IconLink as LinkIcon,
   IconLinkOff as LinkOffIcon,
   IconMicrophone as Mic,
+  IconMicrophoneOff as MicOff,
   IconMinus as Minus,
   IconMoon as Moon,
   IconPalette as Palette,
   IconPencil as Pencil,
   IconPlayerPlay as Play,
+  IconPlus as Plus,
   IconQuestionMark,
+  IconRadioactive,
   IconRefresh as RefreshCcw,
-  IconRipple,
+  IconReplace,
   IconSettings as SettingsIcon,
   IconBluetooth,
   IconSparkleHighlight,
@@ -43,13 +55,14 @@ import {
   IconTestPipe,
   IconTool,
   IconTrash as Trash2,
+  IconUpload,
+  IconUsb,
   IconVolume,
   IconVolume as Volume2,
   IconVolumeOff as VolumeX,
   IconX as X
 } from '@tabler/icons-react';
-import kofiBadgeUrl from '../../../assets/brand/support_me_on_kofi_badge_dark.png';
-import bridgeMarkUrl from '../../../assets/controllers/ds5-bridge_mark.svg';
+import playStationLogoUrl from '../../../assets/brand/playstation-logo.svg';
 import controllerImage from '../../../assets/controllers/dualsense-edge-front.svg';
 import remappingEdgeLayoutImage from '../../../assets/controllers/dualsense-edge-remapping-layout.svg';
 import remappingLayoutImage from '../../../assets/controllers/dualsense-remapping-layout.svg';
@@ -71,9 +84,44 @@ import rightStickClickGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-
 import squareGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Square.svg';
 import triangleGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Triangle.svg';
 import testSpeakerToneUrl from './assets/test-speaker-tone-silence-tail.mp3';
-import { DEFAULT_BUTTON_REMAP_PROFILE_ID, DEFAULT_CONTROLLER_PROFILE_ID, REMAP_BUTTON_IDS, ackResultName } from '../shared/protocol';
+import {
+  DEFAULT_UI_THEME_PRESET,
+  UI_THEME_KOFI_BADGES,
+  UI_THEME_OPTIONS,
+  UI_THEME_PREVIEW_SWATCHES
+} from './ui-themes';
+import {
+  CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
+  CHORD_CONTROLLER_SETTING_STEP_MAX,
+  CHORD_CONTROLLER_SETTING_STEP_MIN,
+  CHORD_MUTE_STARTER_ID,
+  DEFAULT_BUTTON_REMAP_PROFILE_ID,
+  DEFAULT_CONTROLLER_PROFILE_ID,
+  MAX_CHORD_ASSIGNMENTS,
+  MAX_CHORD_FUNCTION_NAME_LENGTH,
+  MAX_KEYBOARD_FUNCTION_KEYS,
+  REMAP_BUTTON_IDS,
+  ackResultName,
+  normalizeChordControllerSettingStepPercent,
+  isChordBindingAllowed
+} from '../shared/protocol';
 import type {
+  AudioReactiveHapticsBassFocus,
+  AudioReactiveHapticsConfig,
+  AudioReactiveHapticsMode,
+  AudioReactiveHapticsSource,
+  AudioReactiveHapticsAttack,
+  AudioReactiveHapticsRelease,
+  AudioReactiveHapticsResponse,
+  ChordAssignment,
+  ChordAssignableButtonId,
+  ChordControllerSettingAction,
+  ChordFunction,
+  ChordFunctionType,
+  ChordMediaAction,
+  ChordStarterId,
   ControllerProfileSettings,
+  HostPersonaMode,
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
@@ -82,9 +130,10 @@ import type {
   TriggerTestMode,
   TriggerTestTarget
 } from '../shared/protocol';
-import type { BridgeSnapshot, UiScalePercent } from '../shared/types';
+import type { AudioHapticsSession, BridgeSnapshot, UiScalePercent, UiThemePreset } from '../shared/types';
 
-type ControlTab = 'overview' | 'haptics' | 'audio' | 'triggers' | 'lighting' | 'remapping' | 'system';
+type ControlTab = 'overview' | 'haptics' | 'audio' | 'triggers' | 'lighting' | 'remapping' | 'chords' | 'system';
+type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type ControllerType = BridgeStatusPayload['controllerType'];
 type KnownControllerType = Exclude<ControllerType, 'unknown'>;
 type RemapButtonDefinition = {
@@ -93,10 +142,67 @@ type RemapButtonDefinition = {
   glyphUrl?: string;
   textGlyph?: string;
 };
-type DualSenseEdgeRemapButtonId = Extract<RemapButtonId, 'lb' | 'rb' | 'lfn' | 'rfn'>;
-type StandardRemapButtonId = Exclude<RemapButtonId, DualSenseEdgeRemapButtonId>;
+type ChordStarterDefinition = {
+  id: ChordStarterId;
+  label: string;
+  glyphUrl?: string;
+  textGlyph?: string;
+  Icon?: TablerIcon;
+};
+type TargetOnlyRemapButtonId = Extract<RemapButtonId, 'ps'>;
+type SourceRemapButtonId = Exclude<RemapButtonId, TargetOnlyRemapButtonId>;
+type DualSenseEdgeRemapButtonId = Extract<SourceRemapButtonId, 'lb' | 'rb' | 'lfn' | 'rfn'>;
+type StandardRemapButtonId = Exclude<SourceRemapButtonId, DualSenseEdgeRemapButtonId>;
 type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
 type ControllerProfileDialogMode = 'save' | 'rename' | 'delete';
+type ChordFunctionDraft = {
+  id: string;
+  name: string;
+  type: ChordFunctionType;
+  keyboardKey: string;
+  keyboardModifiers: ChordKeyboardModifier[];
+  mediaAction: ChordMediaAction;
+  controllerAction: ChordControllerSettingAction;
+  controllerStepPercent: number;
+};
+type ChordKeyboardModifier = 'Ctrl' | 'Shift' | 'Alt' | 'Win';
+type ChordNotchTargetId = 'speaker' | 'mic' | 'haptics' | 'rumble' | 'triggers' | 'lighting';
+type ChordNotchDirection = 'down' | 'up';
+type ChordNotchAction = Extract<ChordControllerSettingAction, `${ChordNotchTargetId}-${ChordNotchDirection}`>;
+type ChordControllerSettingSelectValue = Exclude<ChordControllerSettingAction, ChordNotchAction> | ChordNotchTargetId;
+type ChordFunctionDialogMode = 'rename' | 'delete';
+type ChordFunctionDialogState = {
+  mode: ChordFunctionDialogMode;
+  functionId: string;
+};
+const CHORD_UNASSIGNED_BUTTON = '__unassigned__';
+type ChordButtonSelectValue = ChordAssignableButtonId | typeof CHORD_UNASSIGNED_BUTTON;
+type ChordAssignmentDraftRow = {
+  id: string;
+  starter: ChordStarterId;
+  button: ChordAssignableButtonId | null;
+  functionId: string;
+};
+type ChordAssignmentDropHint = {
+  targetId: string;
+  placement: 'before' | 'after';
+};
+type ChordAssignmentDragSession = {
+  active: boolean;
+  id: string;
+  offsetX: number;
+  offsetY: number;
+  overlay: HTMLElement | null;
+  startX: number;
+  startY: number;
+  cleanup: () => void;
+  dropHint: ChordAssignmentDropHint | null;
+};
+type ChordAssignmentScrollbarState = {
+  visible: boolean;
+  top: number;
+  height: number;
+};
 type TriggerLabProfileDialogMode = 'save' | 'rename' | 'delete';
 type TriggerLabBuiltinProfileId = 'default';
 type TriggerLabCustomProfileId = 'custom' | `custom-${string}`;
@@ -152,19 +258,21 @@ type LightbarPaletteCell = {
 type FeatureTipsPanelProps = {
   tab: 'audio' | 'haptics' | 'triggers' | 'lighting';
   onSettingsFocusRequest?: (target: SettingsFocusTarget) => void;
-  onFeatureFocusRequest?: (target: FeatureFocusTarget) => void;
-  hostEncodingTipActionable?: boolean;
+  audioHapticsOpen?: boolean;
   triggerLabOpen?: boolean;
 };
 type SettingsFocusTarget = 'controller-power-saving' | 'sleep-shortcut' | 'volume-shortcut';
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
-type FeatureFocusTarget = 'host-encoding';
 
 const HAPTICS_STEP = 20;
 const STANDARD_FEEDBACK_GAIN_PERCENT = 200;
 const BOOSTED_FEEDBACK_GAIN_PERCENT = 500;
 const SPEAKER_VOLUME_STEP = 10;
 const MIC_VOLUME_STEP = 10;
+const AUDIO_BUFFER_LENGTH_MIN = 16;
+const AUDIO_BUFFER_LENGTH_MAX = 128;
+const AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX = 44;
+const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
 const LIGHTBAR_BRIGHTNESS_STEP = 10;
 const TRIGGER_EFFECT_STEP = 10;
 const CONTROLLER_POWER_SAVING_CAP_PERCENT = 60;
@@ -172,7 +280,6 @@ const TEST_HAPTICS_LOCK_MS = 1100;
 const TEST_SPEAKER_LOCK_MS = 900;
 const TEST_MIC_LISTEN_MS = 5000;
 const TEST_SPEAKER_VOLUME_SETTLE_MS = 90;
-const HOST_AUDIO_INITIAL_START_GRACE_MS = 2500;
 const TEST_SPEAKER_ENDPOINT_ATTEMPTS = 12;
 const TEST_SPEAKER_ENDPOINT_RETRY_MS = 150;
 const TEST_SPEAKER_ENDPOINT_REFRESH_MS = 1500;
@@ -268,7 +375,8 @@ const TRIGGER_LAB_AUTO_CUSTOM_PROFILE_NAME = 'Custom';
 const MUTE_BUTTON_MODE_OPTIONS: Array<[string, MuteButtonMode]> = [
   ['Normal', 'normal'],
   ['Keyboard Key', 'keyboard'],
-  ['Quiet Toggle', 'quiet']
+  ['Quiet Toggle', 'quiet'],
+  ['Chord', 'chord']
 ];
 const MUTE_KEYBOARD_BEHAVIOR_OPTIONS: Array<[string, MuteKeyboardBehavior]> = [
   ['Tap Once', 'tap'],
@@ -279,6 +387,53 @@ const POLLING_RATE_OPTIONS: Array<[string, PollingRateMode]> = [
   ['500 Hz', '500'],
   ['250 Hz', '250']
 ];
+const HOST_PERSONA_OPTIONS: Array<[string, HostPersonaMode]> = [
+  ['DualSense', 'dualsense'],
+  ['DualShock 4', 'ds4'],
+  ['Xbox', 'xbox']
+];
+const SPEAKER_GAIN_OPTIONS: Array<[string, number]> = [
+  ['1', 1],
+  ['2', 2],
+  ['3', 3],
+  ['4', 4],
+  ['5', 5],
+  ['6', 6],
+  ['7', 7]
+];
+const AUDIO_REACTIVE_HAPTICS_MODE_OPTIONS: Array<[string, AudioReactiveHapticsMode]> = [
+  ['Mix', 'mix'],
+  ['Replace', 'replace']
+];
+const AUDIO_REACTIVE_HAPTICS_BASS_FOCUS_OPTIONS: Array<[string, AudioReactiveHapticsBassFocus]> = [
+  ['80 Hz', 'deep'],
+  ['160 Hz', 'balanced'],
+  ['240 Hz', 'punchy'],
+  ['400 Hz', 'wide']
+];
+const AUDIO_REACTIVE_HAPTICS_RESPONSE_OPTIONS: Array<[string, AudioReactiveHapticsResponse]> = [
+  ['Subtle', 'subtle'],
+  ['Dynamic', 'balanced'],
+  ['Aggressive', 'strong']
+];
+const AUDIO_REACTIVE_HAPTICS_ATTACK_OPTIONS: Array<[string, AudioReactiveHapticsAttack]> = [
+  ['Slow Ramp', 'soft'],
+  ['Medium Ramp', 'balanced'],
+  ['Fast Ramp', 'fast'],
+  ['Instant Ramp', 'sharp']
+];
+const AUDIO_REACTIVE_HAPTICS_RELEASE_OPTIONS: Array<[string, AudioReactiveHapticsRelease]> = [
+  ['Fast Fade', 'tight'],
+  ['Medium Fade', 'balanced'],
+  ['Slow Fade', 'smooth'],
+  ['Long Fade', 'long']
+];
+const AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS = {
+  bassFocus: 'Applies a low-pass filter that chooses which part of the low-end audio becomes vibration.',
+  response: 'Controls how strongly haptics react to audio, especially louder peaks.',
+  attack: 'Controls how quickly the haptics ramp when a sound rises or spikes.',
+  release: 'Controls how quickly the haptics fade when a sound drops.'
+} as const;
 const TRIGGER_TARGET_OPTIONS: Array<[string, TriggerTestTarget]> = [
   ['L2', 'l2'],
   ['R2', 'r2'],
@@ -315,7 +470,8 @@ const REMAP_BUTTONS: Record<RemapButtonId, RemapButtonDefinition> = {
   lb: { id: 'lb', label: 'Left Back Button', textGlyph: 'LB' },
   rb: { id: 'rb', label: 'Right Back Button', textGlyph: 'RB' },
   lfn: { id: 'lfn', label: 'Left Function Button', textGlyph: 'LFN' },
-  rfn: { id: 'rfn', label: 'Right Function Button', textGlyph: 'RFN' }
+  rfn: { id: 'rfn', label: 'Right Function Button', textGlyph: 'RFN' },
+  ps: { id: 'ps', label: 'PS Button', glyphUrl: psHomeGlyphUrl }
 };
 const REMAP_LEFT_BUTTON_IDS: StandardRemapButtonId[] = ['l2', 'l1', 'create', 'dpad-up', 'dpad-right', 'dpad-down', 'dpad-left', 'l3'];
 const REMAP_RIGHT_BUTTON_IDS: StandardRemapButtonId[] = ['r2', 'r1', 'options', 'triangle', 'circle', 'cross', 'r3', 'square'];
@@ -329,29 +485,146 @@ const REMAP_EDGE_BUTTON_IDS: DualSenseEdgeRemapButtonId[] = [
   ...REMAP_EDGE_TOP_BUTTON_IDS,
   ...REMAP_EDGE_BOTTOM_BUTTON_IDS
 ];
+const REMAP_STANDARD_TARGET_BUTTON_IDS: StandardRemapButtonId[] = [
+  'triangle',
+  'circle',
+  'cross',
+  'square',
+  'dpad-up',
+  'dpad-right',
+  'dpad-down',
+  'dpad-left',
+  'l1',
+  'r1',
+  'l2',
+  'r2',
+  'l3',
+  'r3',
+  'create',
+  'options'
+];
+const REMAP_TARGET_BUTTON_IDS: RemapButtonId[] = [
+  ...REMAP_STANDARD_TARGET_BUTTON_IDS,
+  'ps'
+];
+const CHORD_BUTTON_MENU_IDS: ChordAssignableButtonId[] = [
+  ...REMAP_STANDARD_TARGET_BUTTON_IDS,
+  'lb',
+  'rb'
+];
 const REMAP_ALL_BUTTON_IDS = [...REMAP_BUTTON_IDS] as RemapButtonId[];
-const REMAP_STICK_CLICK_IDS: StandardRemapButtonId[] = ['l3', 'r3'];
-const REMAP_TARGET_OPTIONS: Array<[string, StandardRemapButtonId]> = [
-  ...REMAP_STANDARD_BUTTON_IDS
+const REMAP_TARGET_OPTIONS: Array<[string, RemapButtonId]> = [
+  ...REMAP_TARGET_BUTTON_IDS
 ].map((id) => [REMAP_BUTTONS[id].label, id]);
+const CHORD_STARTERS: Record<ChordStarterId, ChordStarterDefinition> = {
+  ps: { id: 'ps', label: 'PS Button', glyphUrl: psHomeGlyphUrl },
+  lfn: { id: 'lfn', label: 'LFN', textGlyph: 'LFN' },
+  rfn: { id: 'rfn', label: 'RFN', textGlyph: 'RFN' },
+  mute: { id: CHORD_MUTE_STARTER_ID, label: 'Mute Button', Icon: MicOff }
+};
+const CHORD_STARTER_OPTIONS: Array<[string, ChordStarterId]> = [
+  [CHORD_STARTERS.ps.label, 'ps'],
+  [CHORD_STARTERS.lfn.label, 'lfn'],
+  [CHORD_STARTERS.rfn.label, 'rfn'],
+  [CHORD_STARTERS.mute.label, CHORD_MUTE_STARTER_ID]
+];
+const CHORD_FUNCTION_TYPE_OPTIONS: Array<[string, ChordFunctionType]> = [
+  ['Keyboard Shortcut', 'keyboard'],
+  ['Media Action', 'media'],
+  ['Controller Setting', 'controller-setting']
+];
+const CHORD_MEDIA_ACTION_OPTIONS: Array<[string, ChordMediaAction]> = [
+  ['Play / Pause', 'play-pause'],
+  ['Next Track', 'next-track'],
+  ['Previous Track', 'previous-track'],
+  ['Mute Output', 'mute'],
+  ['Volume Up', 'volume-up'],
+  ['Volume Down', 'volume-down']
+];
+const CHORD_NOTCH_TARGETS: Array<{
+  id: ChordNotchTargetId;
+  label: string;
+  downAction: ChordNotchAction;
+  upAction: ChordNotchAction;
+}> = [
+  { id: 'speaker', label: 'Speaker', downAction: 'speaker-down', upAction: 'speaker-up' },
+  { id: 'mic', label: 'Mic', downAction: 'mic-down', upAction: 'mic-up' },
+  { id: 'haptics', label: 'Haptics', downAction: 'haptics-down', upAction: 'haptics-up' },
+  { id: 'rumble', label: 'Rumble', downAction: 'rumble-down', upAction: 'rumble-up' },
+  { id: 'triggers', label: 'Triggers', downAction: 'triggers-down', upAction: 'triggers-up' },
+  { id: 'lighting', label: 'Lighting', downAction: 'lighting-down', upAction: 'lighting-up' }
+];
+const CHORD_CONTROLLER_SETTING_ACTION_OPTIONS: Array<[string, ChordControllerSettingSelectValue]> = [
+  ['Audio Haptics', 'toggle-audio-haptics'],
+  ['Lightbar Override', 'toggle-lightbar-override'],
+  ['Mic Mute', 'toggle-mic-mute'],
+  ['Sleep Controller', 'sleep-controller'],
+  ['DualSense', 'persona-dualsense'],
+  ['DualShock 4', 'persona-ds4'],
+  ['Xbox', 'persona-xbox'],
+  ...CHORD_NOTCH_TARGETS.map((target): [string, ChordNotchTargetId] => [target.label, target.id])
+];
+const CHORD_KEYBOARD_KEY_OPTIONS: Array<[string, string]> = [
+  ['Esc', 'Esc'],
+  ['Enter', 'Enter'],
+  ['Space', 'Space'],
+  ['Tab', 'Tab'],
+  ['Backspace', 'Backspace'],
+  ['Delete', 'Delete'],
+  ['Insert', 'Insert'],
+  ['Home', 'Home'],
+  ['End', 'End'],
+  ['Page Up', 'Page Up'],
+  ['Page Down', 'Page Down'],
+  ['Up Arrow', 'Up'],
+  ['Down Arrow', 'Down'],
+  ['Left Arrow', 'Left'],
+  ['Right Arrow', 'Right'],
+  ['Print Screen', 'Print Screen'],
+  ['Pause', 'Pause'],
+  ['Caps Lock', 'Caps Lock'],
+  ['Num Lock', 'Num Lock'],
+  ['Scroll Lock', 'Scroll Lock'],
+  ['Menu', 'Menu'],
+  ...Array.from({ length: 24 }, (_, index): [string, string] => [`F${index + 1}`, `F${index + 1}`]),
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((letter): [string, string] => [letter, letter]),
+  ...'1234567890'.split('').map((digit): [string, string] => [digit, digit]),
+  ...'0123456789'.split('').map((digit): [string, string] => [`Numpad ${digit}`, `Numpad${digit}`])
+];
+const CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH = Math.max(
+  ...CHORD_KEYBOARD_KEY_OPTIONS.map(([label]) => label.length)
+);
+const CHORD_KEYBOARD_MODIFIER_OPTIONS: Array<[ChordKeyboardModifier, ChordKeyboardModifier]> = [
+  ['Ctrl', 'Ctrl'],
+  ['Shift', 'Shift'],
+  ['Alt', 'Alt'],
+  ['Win', 'Win']
+];
+const DEFAULT_CHORD_KEYBOARD_KEYS = ['Ctrl', 'Shift', 'Esc'];
+const EMPTY_CHORD_FUNCTION_DRAFT: ChordFunctionDraft = {
+  id: '',
+  name: 'Task Manager',
+  type: 'keyboard',
+  keyboardKey: 'Esc',
+  keyboardModifiers: ['Ctrl', 'Shift'],
+  mediaAction: 'play-pause',
+  controllerAction: 'sleep-controller',
+  controllerStepPercent: CHORD_CONTROLLER_SETTING_STEP_DEFAULT
+};
 const DEFAULT_REMAP_DRAFT = Object.fromEntries(
   REMAP_ALL_BUTTON_IDS.map((id) => [id, id])
 ) as Record<RemapButtonId, RemapButtonId>;
-const REMAP_STICK_CLICK_TARGET_OPTIONS: Array<[string, StandardRemapButtonId]> = REMAP_STICK_CLICK_IDS.map((id) => [
-  REMAP_BUTTONS[id].label,
-  id
-]);
 const REMAP_CALLOUT_POINTS: Record<StandardRemapButtonId, Array<[number, number]>> = {
-  l2: [[2.4, 3.17], [117.91, 3.17], [171.1, 93.49]],
-  l1: [[2.4, 63.71], [129.99, 63.71], [161.13, 118.36]],
+  l2: [[2.4, 3.17], [118.22, 3.17], [171.1, 93.49]],
+  l1: [[2.4, 63.71], [121.9, 63.71], [153.13, 118.36]],
   create: [[2.4, 124.24], [110.86, 124.24], [134, 163], [186.65, 162.89]],
   'dpad-up': [[2.4, 184.78], [146.83, 184.78]],
   'dpad-right': [[2.4, 245.32], [126.31, 245.32], [138.09, 221.25]],
   'dpad-down': [[2.4, 305.86], [124.63, 305.86], [162.42, 241.39]],
   'dpad-left': [[2.4, 366.39], [106.55, 366.39], [189.13, 221.85]],
   l3: [[2.4, 426.93], [143.77, 426.93], [230.4, 275.47]],
-  r2: [[595.34, 3.17], [480.78, 3.17], [427.95, 93.94]],
-  r1: [[595.34, 63.71], [468.92, 63.71], [437.92, 117.79]],
+  r2: [[595.34, 3.17], [481.09, 3.17], [427.95, 93.94]],
+  r1: [[595.34, 63.71], [476.83, 63.71], [445.92, 117.79]],
   options: [[595.34, 124.24], [487.5, 124.24], [464.28, 162.89], [411.62, 162.89]],
   triangle: [[595.34, 184.78], [453.97, 184.78]],
   circle: [[595.34, 245.32], [486.88, 245.32], [473.71, 222.09]],
@@ -360,16 +633,16 @@ const REMAP_CALLOUT_POINTS: Record<StandardRemapButtonId, Array<[number, number]
   r3: [[595.34, 426.93], [453.97, 426.93], [369.45, 275.47]]
 };
 const REMAP_EDGE_CALLOUT_POINTS: Record<StandardRemapButtonId, Array<[number, number]>> = {
-  l2: [[0.5, 0.5], [116.01, 0.5], [162.08, 90.82]],
-  l1: [[0.5, 61.04], [128.09, 61.04], [162.08, 112.52]],
+  l2: [[0.5, 0.5], [119.4, 0.5], [162.08, 90.82]],
+  l1: [[0.5, 61.04], [118.08, 61.04], [154.08, 112.52]],
   create: [[0.5, 121.57], [108.96, 121.57], [132.1, 160.28], [183.55, 160.28]],
   'dpad-up': [[0.5, 182.11], [141.23, 182.11]],
   'dpad-right': [[0.5, 363.72], [104.65, 363.72], [188.5, 216.96]],
   'dpad-down': [[0.5, 303.19], [122.73, 303.19], [159.9, 239.79]],
   'dpad-left': [[0.5, 242.65], [124.41, 242.65], [137.98, 216.32]],
   l3: [[0.5, 424.26], [141.87, 424.26], [226.76, 271.06]],
-  r2: [[593.44, 0.5], [478.88, 0.5], [439.58, 90.82]],
-  r1: [[593.44, 61.04], [467.02, 61.04], [439.58, 112.52]],
+  r2: [[593.44, 0.5], [482.26, 0.5], [439.58, 90.82]],
+  r1: [[593.44, 61.04], [483.58, 61.04], [447.58, 112.52]],
   options: [[593.44, 121.57], [485.6, 121.57], [462.38, 160.22], [414.99, 160.22]],
   triangle: [[593.44, 182.11], [455.88, 182.11]],
   circle: [[593.44, 242.65], [484.98, 242.65], [470.67, 217.4]],
@@ -457,10 +730,34 @@ type SinkSelectableAudio = HTMLAudioElement & {
 const LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY = 'ds5bridge.lastRemapControllerType';
 const TRIGGER_LAB_CUSTOM_PROFILES_STORAGE_KEY = 'ds5bridge.triggerLabProfiles';
 const TRIGGER_LAB_WORKSPACE_STORAGE_KEY = 'ds5bridge.triggerLabWorkspace';
+const UI_THEME_PRESET_STORAGE_KEY = 'ds5bridge.uiThemePreset';
+const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
+const STARTUP_READY_HOLD_MS = 1000;
 
 function storedRemapControllerType(): KnownControllerType {
   const saved = window.localStorage.getItem(LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY);
   return saved === 'dualsense-edge' ? 'dualsense-edge' : 'dualsense';
+}
+
+function isUiThemePreset(value: string | null): value is UiThemePreset {
+  return UI_THEME_OPTIONS.some(([, preset]) => preset === value);
+}
+
+function storedUiThemePreset(): UiThemePreset {
+  const saved = window.localStorage.getItem(UI_THEME_PRESET_STORAGE_KEY);
+  return isUiThemePreset(saved) ? saved : DEFAULT_UI_THEME_PRESET;
+}
+
+function saveUiThemePreset(preset: UiThemePreset): void {
+  window.localStorage.setItem(UI_THEME_PRESET_STORAGE_KEY, preset);
+}
+
+function storedStartupTutorialStep(): StartupTutorialStep {
+  return window.localStorage.getItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY) === '1' ? 'done' : 'feature-toggle';
+}
+
+function saveStartupTutorialCompleted(): void {
+  window.localStorage.setItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY, '1');
 }
 
 type CustomSelectProps<T extends SelectValue> = {
@@ -468,8 +765,12 @@ type CustomSelectProps<T extends SelectValue> = {
   options: Array<[string, T]>;
   disabled?: boolean;
   className?: string;
+  floatingMenu?: boolean;
+  floatingMenuMinWidth?: number;
+  suspendOutsideClose?: boolean;
   showSelectedCheck?: boolean;
   closeOnSelect?: boolean;
+  getOptionClassName?: (label: string, value: T) => string | undefined;
   renderValue?: (label: string, value: T) => ReactNode;
   renderOption?: (label: string, value: T) => ReactNode;
   renderMenuFooter?: (closeMenu: () => void) => ReactNode;
@@ -477,8 +778,62 @@ type CustomSelectProps<T extends SelectValue> = {
   onChange: (value: T) => void;
 };
 
+type CustomSelectMenuStyle = CSSProperties & {
+  '--custom-select-menu-max-height'?: string;
+};
+
 function snapHapticsValue(value: number, max = STANDARD_FEEDBACK_GAIN_PERCENT): number {
   return Math.max(0, Math.min(max, Math.round(value / HAPTICS_STEP) * HAPTICS_STEP));
+}
+
+function audioHapticsAppSource(source: AudioReactiveHapticsSource | null | undefined) {
+  return source && typeof source === 'object' && source.kind === 'app-session' ? source : null;
+}
+
+function audioHapticsSessionKey(session: AudioHapticsSession): string {
+  if (session.processPath) {
+    return `app-path:${session.processPath.toLowerCase()}`;
+  }
+  if (session.executableName) {
+    return `app-exe:${session.executableName.toLowerCase()}`;
+  }
+  return `app-pid:${session.processId}`;
+}
+
+function audioHapticsSourceKey(source: AudioReactiveHapticsSource | null | undefined): string {
+  const appSource = audioHapticsAppSource(source);
+  if (!appSource) {
+    return 'system-audio';
+  }
+  if (appSource.processPath) {
+    return `app-path:${appSource.processPath.toLowerCase()}`;
+  }
+  if (appSource.executableName) {
+    return `app-exe:${appSource.executableName.toLowerCase()}`;
+  }
+  return `app-pid:${Math.max(0, Math.round(appSource.processId))}`;
+}
+
+function audioHapticsSourceFromSession(session: AudioHapticsSession): AudioReactiveHapticsSource {
+  return {
+    kind: 'app-session',
+    processId: session.processId,
+    displayName: session.displayName,
+    ...(session.executableName ? { executableName: session.executableName } : {}),
+    ...(session.processPath ? { processPath: session.processPath } : {}),
+    ...(session.sessionIdentifier ? { sessionIdentifier: session.sessionIdentifier } : {}),
+    ...(session.sessionInstanceIdentifier ? { sessionInstanceIdentifier: session.sessionInstanceIdentifier } : {})
+  };
+}
+
+function audioHapticsSourceDisplayName(source: AudioReactiveHapticsSource | null | undefined): string {
+  const appSource = audioHapticsAppSource(source);
+  if (!appSource) {
+    return 'System';
+  }
+  return appSource.displayName
+    || appSource.executableName?.replace(/\.[^.]+$/, '')
+    || 'Selected app';
 }
 
 function snapSpeakerVolume(value: number): number {
@@ -487,6 +842,58 @@ function snapSpeakerVolume(value: number): number {
 
 function snapMicVolume(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value / MIC_VOLUME_STEP) * MIC_VOLUME_STEP));
+}
+
+function clampAudioBufferLength(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 64;
+  }
+  return Math.max(AUDIO_BUFFER_LENGTH_MIN, Math.min(AUDIO_BUFFER_LENGTH_MAX, Math.round(value)));
+}
+
+function audioBufferDelayMs(value: number): number {
+  return clampAudioBufferLength(value) / 3;
+}
+
+function audioBufferDelayLabel(value: number): string {
+  return `${audioBufferDelayMs(value).toFixed(1)} ms`;
+}
+
+function audioBufferPercent(value: number): number {
+  return ((clampAudioBufferLength(value) - AUDIO_BUFFER_LENGTH_MIN) / (AUDIO_BUFFER_LENGTH_MAX - AUDIO_BUFFER_LENGTH_MIN)) * 100;
+}
+
+function audioBufferZoneLabel(value: number): string {
+  const bufferLength = clampAudioBufferLength(value);
+  if (bufferLength <= AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX) {
+    return 'High stutter';
+  }
+  if (bufferLength <= AUDIO_BUFFER_LENGTH_RISKY_MAX) {
+    return 'Risky';
+  }
+  return 'Safe';
+}
+
+function audioBufferZoneTooltip(value: number): string {
+  const bufferLength = clampAudioBufferLength(value);
+  if (bufferLength <= AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX) {
+    return 'Danger: lowest haptic delay, but speaker audio is likely to stutter or underrun.';
+  }
+  if (bufferLength <= AUDIO_BUFFER_LENGTH_RISKY_MAX) {
+    return 'Warning: lower haptic delay, with a minimal chance of speaker stutter under load.';
+  }
+  return 'Safe: more speaker buffer headroom, with higher DualSense haptic delay.';
+}
+
+function audioBufferZoneTone(value: number): 'stutter' | 'risky' | 'safe' {
+  const bufferLength = clampAudioBufferLength(value);
+  if (bufferLength <= AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX) {
+    return 'stutter';
+  }
+  if (bufferLength <= AUDIO_BUFFER_LENGTH_RISKY_MAX) {
+    return 'risky';
+  }
+  return 'safe';
 }
 
 function snapLightbarBrightness(value: number): number {
@@ -677,7 +1084,7 @@ function saveTriggerLabWorkspaceState(state: TriggerLabWorkspaceState) {
 }
 
 function controllerPowerSavingActiveFromSnapshot(snapshot: BridgeSnapshot | null | undefined): boolean {
-  return Boolean(snapshot?.settings.controllerPowerSavingEnabled && snapshot.diagnostics.hostAudioStatus?.headsetPlugged);
+  return Boolean(snapshot?.settings.controllerPowerSavingEnabled && snapshot.diagnostics.audioStatus?.headsetPlugged);
 }
 
 function capControllerPowerSavingValue(value: number, snapshot: BridgeSnapshot | null | undefined): number {
@@ -701,25 +1108,19 @@ function feedbackSliderTicks(max: number): number[] {
 }
 
 function displayHapticsValue(snapshot: BridgeSnapshot): number {
-  return snapHapticsValue(
-    capControllerPowerSavingValue(snapshot.settings.hapticsGainPercent, snapshot),
-    feedbackSliderMaxFromSnapshot(snapshot)
-  );
+  return capControllerPowerSavingValue(snapshot.settings.hapticsGainPercent, snapshot);
 }
 
 function displayClassicRumbleValue(snapshot: BridgeSnapshot): number {
-  return snapHapticsValue(
-    capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot),
-    feedbackSliderMaxFromSnapshot(snapshot)
-  );
+  return capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot);
 }
 
 function displayLightbarBrightnessValue(snapshot: BridgeSnapshot): number {
-  return snapLightbarBrightness(capControllerPowerSavingValue(snapshot.settings.lightbarBrightnessPercent, snapshot));
+  return capControllerPowerSavingValue(snapshot.settings.lightbarBrightnessPercent, snapshot);
 }
 
 function displayTriggerEffectIntensityValue(snapshot: BridgeSnapshot): number {
-  return snapTriggerEffectIntensity(capControllerPowerSavingValue(snapshot.settings.triggerEffectIntensityPercent, snapshot));
+  return capControllerPowerSavingValue(snapshot.settings.triggerEffectIntensityPercent, snapshot);
 }
 
 function sliderTickClass(value: number, max: number): string | undefined {
@@ -771,49 +1172,167 @@ function TriggerLabMeter({ label, value, disabled = false, onChange, onCommit }:
   );
 }
 
-type HostAudioCaptureStatusReason =
-  | NonNullable<BridgeSnapshot['diagnostics']['hostAudioCaptureIssue']>['reason']
-  | NonNullable<BridgeSnapshot['diagnostics']['hostAudioCaptureRetry']>['reason'];
-
-function hostAudioCaptureIssueLabel(reason: HostAudioCaptureStatusReason): string {
-  switch (reason) {
-    case 'device-in-use':
-      return 'Endpoint Busy';
-    case 'device-invalidated':
-      return 'Endpoint Changed';
-    case 'unsupported-format':
-      return 'Format Error';
-    case 'bulk-pcm-unavailable':
-      return 'PCM Pipe Missing';
-    case 'start-timeout':
-      return 'Retrying';
-    case 'helper-exit':
-      return 'Helper Restarting';
-  }
+function BridgeMark() {
+  return (
+    <svg className="bridge-mark" viewBox="335 88 310 292" aria-hidden="true" focusable="false">
+      <path
+        d="M 864.77 430.4 L 864.77 430.4 A 0.3453 0.3389 -55.841 0 1 864.65 429.74 C 890.7 418.97 908.21 394.39 913.07 367.04 Q 913.87 362.54 913.87 350.25 Q 913.87 343.85 913.73 310.51 C 913.59 279.64 890.84 248.89 859.8 243.26 Q 855.01 242.39 845.2 242.4 Q 735.01 242.44 716.25 242.4 Q 708.72 242.38 705.28 242.67 C 688.41 244.09 674.53 255.82 670.13 271.87 Q 668.71 277.05 668.72 288.26 Q 668.8 403.3 668.79 407.26 C 668.73 429.15 687.02 445.81 708.28 445.78 Q 723.29 445.75 737.72 445.69 L 737.72 445.69 A 0.6565 0.6519 78.2735 0 1 738.34 446.1 Q 748.79 472.7 773.46 487.92 L 773.46 487.92 A 0.2759 0.2737 60.5847 0 1 773.32 488.43 Q 746.06 488.27 717.83 488.45 Q 699.82 488.56 692.29 486.93 Q 675.65 483.32 663.78 475.73 Q 640.67 460.95 630.84 435.18 C 626.71 424.34 625.81 415.24 625.82 402.4 Q 625.87 313.63 625.78 289.05 Q 625.72 274.97 627.22 267.58 C 634.19 233.22 661.15 206.38 695.82 200.44 Q 701.96 199.39 712.75 199.39 Q 768.15 199.4 854 199.4 Q 858.34 199.41 867.8 201.07 Q 874.86 202.32 881.21 204.48 C 914.65 215.86 940.3 242.82 951.4 276.34 Q 956.72 292.43 956.78 308.5 Q 956.81 318.91 956.88 344.27 Q 956.94 364.15 955.25 374.14 Q 951.72 395.08 941.77 413.99 C 938.94 419.38 934.77 424.88 931.3 429.85 L 931.3 429.85 A 1.2776 1.2741 17.2763 0 1 930.25 430.4 L 864.77 430.4 Z"
+        fill="var(--bridge-mark-primary)"
+        transform="matrix(0.5818 0 0 0.5818 0 0)"
+      />
+      <path
+        d="M 896.95 373.03 L 896.95 373.03 A 0.6463 0.6441 -83.8938 0 1 896.32 373.54 Q 871.83 373.82 838.84 373.65 Q 820.82 373.56 816.73 374.53 C 795.55 379.55 784.9 400.68 790.87 421.13 C 793.48 430.08 798.91 436.11 806.81 440.77 Q 815.27 445.76 824.54 445.77 Q 857.29 445.77 980.74 445.82 Q 993.93 445.83 1007.2 451.29 C 1046.5 467.48 1065.63 510.54 1050.8199 550.98 Q 1043.61 570.68 1027.51 584.73 Q 1023.67 588.08 1014.98 593.18 Q 1005.17 598.94 992.3 601.61 Q 986.5 602.81 968.13 602.8 Q 876.32 602.75 842.35 602.75 Q 818.37 602.75 817.15 602.59 C 805.99 601.11 795.75 597.97 785.66 591.65 Q 759.6 575.33 750.46 544.77 Q 746.76 532.39 747.41 519.21 L 747.41 519.21 A 1.3529 1.3514 -88.6671 0 1 748.76 517.92 L 787.86 517.92 L 787.86 517.92 A 1.8981 1.8942 -88.1551 0 1 789.75 519.94 C 788.61 537.13 798.59 553.44 815.27 558.67 Q 820.27 560.24 835.53 560.22 Q 897.28 560.16 976.26 560.16 Q 990.81 560.16 1000.68 551.71 Q 1015.36 539.15 1013.57 519.34 Q 1013.3 516.35 1011.1 510.38 C 1008.01 501.96 1001.86 496.55 993.91 492.23 C 986.35 488.13 979.5 488.45 970 488.44 Q 892 488.41 827.25 488.47 Q 816.38 488.48 807.56 486.62 C 787.46 482.39 769.98 469.71 759.32 452.36 Q 757.23 448.98 755.78 445.86 C 754.36 442.81 752.55 439.97 751.58 437.02 Q 740.83 404.12 755.51 374.72 C 767.26 351.19 788.59 335.04 814.84 331.58 Q 820.95 330.78 832.06 330.81 Q 883.87 330.98 897.79 330.8 L 897.79 330.8 A 0.7015 0.6915 -89.2094 0 1 898.49 331.53 Q 898.05 343.01 898.46 354.62 C 898.72 361.7 898.34 366.91 896.95 373.03 Z"
+        fill="var(--bridge-mark-secondary)"
+        transform="matrix(0.5818 0 0 0.5818 0 0)"
+      />
+      <path
+        d="M 971.82 331.88 L 971.82 331.88 A 0.98 0.98 -60.1943 0 1 972.8 330.9 C 994.8 331.03 1015.5 340.93 1030.0601 357.64 Q 1049.92 380.42 1049.22 413.11 L 1049.22 413.11 A 1.591 1.5905 -89.2606 0 1 1047.63 414.66 L 1008.32 414.66 L 1008.32 414.66 A 1.9801 1.98 89.8546 0 1 1006.34 412.69 Q 1006.3 406.39 1006.21 405.46 Q 1004.53 389.03 991.04 379.45 Q 983.23 373.91 972.94 373.98 L 972.94 373.98 A 1.1101 1.11 -0.2558 0 1 971.82 372.87 L 971.82 331.88 Z"
+        fill="var(--bridge-mark-secondary)"
+        transform="matrix(0.5818 0 0 0.5818 0 0)"
+      />
+    </svg>
+  );
 }
 
-function hostAudioCaptureIssueTooltip(reason: HostAudioCaptureStatusReason): string {
-  switch (reason) {
-    case 'device-in-use':
-      return 'Another app has exclusive control of the DualSense audio endpoint. Host Encoding will retry automatically.';
-    case 'device-invalidated':
-      return 'Windows changed the DualSense audio endpoint while Host Encoding was starting. The app will retry automatically.';
-    case 'unsupported-format':
-      return 'Windows rejected the DualSense raw PCM capture format. Re-enumerate or clean stale DualSense audio devices.';
-    case 'bulk-pcm-unavailable':
-      return 'Windows did not expose the DS5 Bridge WinUSB PCM pipe. Re-enumerate or clean stale DS5 Bridge devices.';
-    case 'start-timeout':
-      return 'The host audio encoder did not start in time. The app will retry automatically.';
-    case 'helper-exit':
-      return 'The host audio encoder stopped before capture started. The app will retry automatically.';
-  }
+function StartupScreen({ ready }: { ready: boolean }) {
+  return (
+    <main className={`startup-screen ${ready ? 'ready' : ''}`} aria-live="polite">
+      <section className="startup-card" aria-label="Starting DS5 Bridge">
+        <div className="startup-brand">
+          <BridgeMark />
+          <div>
+            <strong>DS5 Bridge</strong>
+            <span>Starting companion</span>
+          </div>
+        </div>
+        <div className="startup-progress" aria-hidden="true">
+          <span />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function StartupTutorial({
+  step,
+  featureExampleActive,
+  supportCountdown,
+  kofiBadgeUrl,
+  onFeatureExampleToggle,
+  onFeatureStepComplete,
+  onSupport,
+  onFinish
+}: {
+  step: Exclude<StartupTutorialStep, 'done'>;
+  featureExampleActive: boolean;
+  supportCountdown: number;
+  kofiBadgeUrl: string;
+  onFeatureExampleToggle: () => void;
+  onFeatureStepComplete: () => void;
+  onSupport: () => void;
+  onFinish: () => void;
+}) {
+  return (
+    <div className="modal-backdrop startup-tutorial-backdrop" role="presentation">
+      <section
+        className="settings-menu bridge-settings-modal startup-tutorial-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={step === 'feature-toggle' ? 'Feature tile tutorial' : 'Support DS5 Bridge'}
+      >
+        {step === 'feature-toggle' ? (
+          <>
+            <div className="settings-menu-heading bridge-settings-modal-heading">
+              <div className="modal-heading-copy">
+                <IconSparkleHighlight size={16} />
+                <span>Feature Tiles</span>
+              </div>
+              <span className="startup-tutorial-step">1 / 2</span>
+            </div>
+            <div className="startup-tutorial-copy">
+              <h2>Click The Square</h2>
+              <p>Feature tiles turn effects on and off. Try it once here, then keep going.</p>
+            </div>
+            <div className="startup-tutorial-feature-demo">
+              <button
+                className={`startup-tutorial-feature-icon ${featureExampleActive ? 'active' : ''}`}
+                type="button"
+                aria-pressed={featureExampleActive}
+                aria-label="Toggle example effect"
+                onClick={onFeatureExampleToggle}
+              >
+                <IconSparkleHighlight size={24} />
+              </button>
+              <span>
+                <strong>Example Effect</strong>
+                <span>{featureExampleActive ? 'On' : 'Off'}</span>
+              </span>
+            </div>
+            <div className="startup-tutorial-actions">
+              <button
+                type="button"
+                className="primary-action"
+                disabled={!featureExampleActive}
+                onClick={onFeatureStepComplete}
+              >
+                Next <ArrowRight size={16} />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="settings-menu-heading bridge-settings-modal-heading">
+              <div className="modal-heading-copy">
+                <Heart size={16} />
+                <span>One Tiny Ask</span>
+              </div>
+              <span className="startup-tutorial-step">2 / 2</span>
+            </div>
+            <div className="startup-tutorial-copy">
+              <h2>Enjoying DS5 Bridge?</h2>
+              <p>If this app makes your setup better, please consider supporting the work on Ko-fi.</p>
+            </div>
+            <button
+              className="startup-tutorial-kofi-button"
+              type="button"
+              aria-label="Support SundayMoments on Ko-fi"
+              onClick={onSupport}
+            >
+              <img src={kofiBadgeUrl} alt="" />
+            </button>
+            <div className="startup-tutorial-actions">
+              <button
+                type="button"
+                className="primary-action"
+                disabled={supportCountdown > 0}
+                onClick={onFinish}
+              >
+                {supportCountdown > 0 ? `Continue In ${supportCountdown}` : 'Continue'}
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ProfileSaveStatus() {
+  return (
+    <div className="system-profile-save-status">
+      <span className="autosave-check-icon" aria-hidden="true">
+        <Check className="autosave-check-outline" size={16} />
+        <Check className="autosave-check-fill" size={16} />
+      </span>
+      <span>Changes Are Automatically Saved</span>
+    </div>
+  );
 }
 
 function FeatureTipsPanel({
   tab,
   onSettingsFocusRequest,
-  onFeatureFocusRequest,
-  hostEncodingTipActionable = false,
+  audioHapticsOpen = false,
   triggerLabOpen = false
 }: FeatureTipsPanelProps) {
   const [featureTileSampleActive, setFeatureTileSampleActive] = useState(false);
@@ -846,12 +1365,19 @@ function FeatureTipsPanel({
       title: 'Lab Override',
       text: 'Active Lab effects stay applied and ignore incoming game trigger output.'
     });
+  } else if (tab === 'haptics' && audioHapticsOpen) {
+    tips.push({
+      key: 'audio-haptics',
+      icon: <IconDeviceAudioTape size={16} />,
+      title: 'Audio Haptics',
+      text: 'Audio Haptics turns system audio into haptic feedback.'
+    });
   } else if (tab === 'audio') {
     tips.push({
-      key: 'host-encoding',
+      key: 'headphones',
       icon: <Headphones size={16} />,
       title: 'Headphones',
-      text: 'Use Host Encoding when listening through the controller headphone jack.'
+      text: 'Headphones use the same Pico-local audio path as the controller speaker.'
     });
   } else {
     tips.push({
@@ -869,6 +1395,13 @@ function FeatureTipsPanel({
       icon: triggerLabLinkTipSplit ? <LinkOffIcon size={16} /> : <LinkIcon size={16} />,
       title: 'Linked / Split',
       text: 'When Linked is on, the selected effect mirrors across L2 and R2. Split keeps each trigger separate.'
+    });
+  } else if (tab === 'haptics' && audioHapticsOpen) {
+    tips.push({
+      key: 'audio-haptics-mode',
+      icon: <IconBrandDeezer size={16} />,
+      title: 'Mix / Replace',
+      text: 'Mix adds audio feedback to native haptics and rumble; Replace uses only the derived audio feel.'
     });
   } else if (tab === 'lighting') {
     tips.push({
@@ -895,10 +1428,7 @@ function FeatureTipsPanel({
       <div className="feature-help-grid">
         {tips.map((tip) => (
           <div
-            className={[
-              'feature-help-item',
-              tip.key === 'host-encoding' && hostEncodingTipActionable ? 'feature-help-item-attention' : ''
-            ].filter(Boolean).join(' ')}
+            className="feature-help-item"
             key={tip.key}
           >
             {tip.key === 'toggle' ? (
@@ -917,15 +1447,6 @@ function FeatureTipsPanel({
                 type="button"
                 aria-label="Open Controller Power Saving settings"
                 onClick={() => onSettingsFocusRequest?.('controller-power-saving')}
-              >
-                {tip.icon}
-              </button>
-            ) : tip.key === 'host-encoding' && hostEncodingTipActionable ? (
-              <button
-                className="feature-help-icon feature-help-icon-button"
-                type="button"
-                aria-label="Highlight Host Encoding"
-                onClick={() => onFeatureFocusRequest?.('host-encoding')}
               >
                 {tip.icon}
               </button>
@@ -962,6 +1483,7 @@ function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): Contro
     feedbackBoostEnabled: snapshot.settings.feedbackBoostEnabled,
     classicRumbleEnabled: snapshot.settings.classicRumbleEnabled,
     classicRumbleGainPercent: snapshot.settings.classicRumbleGainPercent,
+    classicRumbleV1Enabled: snapshot.settings.classicRumbleV1Enabled,
     adaptiveTriggersEnabled: snapshot.settings.adaptiveTriggersEnabled,
     triggerEffectIntensityPercent: snapshot.settings.triggerEffectIntensityPercent,
     triggerTestMode: snapshot.settings.triggerTestMode,
@@ -977,11 +1499,20 @@ function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): Contro
     muteKeyboardUsage: snapshot.settings.muteKeyboardUsage,
     muteKeyboardModifiers: snapshot.settings.muteKeyboardModifiers,
     muteKeyboardBehavior: snapshot.settings.muteKeyboardBehavior,
+    muteKeyboardChordStarterEnabled: snapshot.settings.muteKeyboardChordStarterEnabled,
     sleepKeybindEnabled: snapshot.settings.sleepKeybindEnabled,
     speakerVolumeShortcutEnabled: snapshot.settings.speakerVolumeShortcutEnabled,
     pollingRateMode: snapshot.settings.pollingRateMode,
-    hostEncodedAudioEnabled: snapshot.settings.hostEncodedAudioEnabled,
+    hostPersonaMode: snapshot.settings.hostPersonaMode,
     duplexMicEnabled: snapshot.settings.duplexMicEnabled,
+    audioReactiveHapticsEnabled: snapshot.settings.audioReactiveHapticsEnabled,
+    audioReactiveHapticsSource: snapshot.settings.audioReactiveHapticsSource,
+    audioReactiveHapticsMode: snapshot.settings.audioReactiveHapticsMode,
+    audioReactiveHapticsGainPercent: snapshot.settings.audioReactiveHapticsGainPercent,
+    audioReactiveHapticsBassFocus: snapshot.settings.audioReactiveHapticsBassFocus,
+    audioReactiveHapticsResponse: snapshot.settings.audioReactiveHapticsResponse,
+    audioReactiveHapticsAttack: snapshot.settings.audioReactiveHapticsAttack,
+    audioReactiveHapticsRelease: snapshot.settings.audioReactiveHapticsRelease,
     controllerPowerSavingEnabled: snapshot.settings.controllerPowerSavingEnabled
   };
 }
@@ -1013,7 +1544,10 @@ function muteButtonSummary(settings: ControllerProfileSettings): string {
   const modifiers = MUTE_MODIFIER_OPTIONS
     .filter(([, bit]) => (settings.muteKeyboardModifiers & bit) !== 0)
     .map(([label]) => label);
-  return [...modifiers, key].join(' + ');
+  const chordStarter = settings.muteButtonMode === 'keyboard' && settings.muteKeyboardChordStarterEnabled
+    ? ['Chord Starter']
+    : [];
+  return [...modifiers, key, ...chordStarter].join(' + ');
 }
 
 function SystemProfileSummary({
@@ -1048,7 +1582,7 @@ function SystemProfileSummary({
         <dl>
           <div><dt>Speaker</dt><dd>{settings.speakerEnabled ? percentLabel(settings.speakerVolumePercent) : 'Off'}</dd></div>
           <div><dt>Mic</dt><dd>{settings.micMuted ? 'Muted' : percentLabel(settings.micVolumePercent)}</dd></div>
-          <div><dt>Host Encoding</dt><dd>{enabledLabel(settings.hostEncodedAudioEnabled)}</dd></div>
+          <div><dt>Pass-through</dt><dd>{enabledLabel(settings.duplexMicEnabled)}</dd></div>
         </dl>
       </div>
 
@@ -1226,8 +1760,15 @@ function controllerName(type: string | undefined): string {
 
 function healthLabel(snapshot: BridgeSnapshot | null | undefined): string {
   if (!snapshot) return 'Unavailable';
-  if (snapshot.state !== 'connected') return snapshot.message;
+  if (snapshot.state !== 'connected') {
+    return /^Firmware .+ update required$/i.test(snapshot.message)
+      ? 'Update required: Bridge Settings > Firmware'
+      : snapshot.message;
+  }
   if (snapshot.diagnostics.lastError) return snapshot.diagnostics.lastError;
+  if (snapshot.diagnostics.firmwareUpdateAvailable) {
+    return `Firmware ${snapshot.diagnostics.firmwareUpdateAvailable.availableVersion} available`;
+  }
   return 'All systems normal';
 }
 
@@ -1590,8 +2131,12 @@ function CustomSelect<T extends SelectValue>({
   options,
   disabled = false,
   className = '',
+  floatingMenu = false,
+  floatingMenuMinWidth,
+  suspendOutsideClose = false,
   showSelectedCheck = true,
   closeOnSelect = true,
+  getOptionClassName,
   renderValue,
   renderOption,
   renderMenuFooter,
@@ -1606,6 +2151,7 @@ function CustomSelect<T extends SelectValue>({
   const defaultMenuMaxHeight = longList ? 360 : 232;
   const [menuMaxHeight, setMenuMaxHeight] = useState(defaultMenuMaxHeight);
   const [menuPlacement, setMenuPlacement] = useState<'top' | 'bottom'>('bottom');
+  const [floatingMenuStyle, setFloatingMenuStyle] = useState<CustomSelectMenuStyle>({});
 
   function updateMenuMaxHeight() {
     const root = rootRef.current;
@@ -1615,31 +2161,61 @@ function CustomSelect<T extends SelectValue>({
     }
 
     const rootRect = root.getBoundingClientRect();
-    const boundary = root.closest('.system-card, .feature-card, .settings-menu, .control-page') as HTMLElement | null;
+    const boundary = floatingMenu
+      ? null
+      : root.closest('.system-card, .feature-card, .settings-menu, .control-page') as HTMLElement | null;
     const boundaryRect = boundary?.getBoundingClientRect();
     const menuGap = 6;
-    const lowerLimit = Math.min(window.innerHeight, boundaryRect?.bottom ?? window.innerHeight);
-    const upperLimit = Math.max(0, boundaryRect?.top ?? 0);
+    const viewportPadding = floatingMenu ? 8 : 0;
+    const lowerLimit = Math.min(window.innerHeight - viewportPadding, boundaryRect?.bottom ?? window.innerHeight);
+    const upperLimit = Math.max(viewportPadding, boundaryRect?.top ?? 0);
     const spaceBelow = Math.max(1, Math.floor(lowerLimit - rootRect.bottom - menuGap));
     const spaceAbove = Math.max(1, Math.floor(rootRect.top - upperLimit - menuGap));
-    const nextPlacement = spaceBelow < 92 && spaceAbove > spaceBelow ? 'top' : 'bottom';
+    const preferredVisibleHeight = Math.min(defaultMenuMaxHeight, 184);
+    const nextPlacement = spaceBelow < preferredVisibleHeight && spaceAbove > spaceBelow ? 'top' : 'bottom';
     const availableSpace = nextPlacement === 'top' ? spaceAbove : spaceBelow;
     const nextMaxHeight = longList ? availableSpace : Math.min(defaultMenuMaxHeight, availableSpace);
 
     setMenuPlacement(nextPlacement);
     setMenuMaxHeight(Math.max(1, nextMaxHeight));
+
+    if (floatingMenu) {
+      const minimumWidth = floatingMenuMinWidth ?? rootRect.width;
+      const width = Math.min(
+        Math.max(rootRect.width, minimumWidth),
+        Math.max(1, window.innerWidth - viewportPadding * 2)
+      );
+      const idealLeft = rootRect.left + (rootRect.width - width) / 2;
+      const left = Math.min(
+        Math.max(viewportPadding, idealLeft),
+        Math.max(viewportPadding, window.innerWidth - viewportPadding - width)
+      );
+      setFloatingMenuStyle({
+        left: `${Math.round(left)}px`,
+        width: `${Math.round(width)}px`,
+        ...(nextPlacement === 'top'
+          ? { bottom: `${Math.round(window.innerHeight - rootRect.top + menuGap)}px` }
+          : { top: `${Math.round(rootRect.bottom + menuGap)}px` }),
+        '--custom-select-menu-max-height': `${Math.max(1, nextMaxHeight)}px`
+      });
+    }
   }
 
   useEffect(() => {
     if (!open) return undefined;
     function closeIfOutside(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !suspendOutsideClose
+        && !rootRef.current?.contains(target)
+        && !menuRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     }
     document.addEventListener('mousedown', closeIfOutside);
     return () => document.removeEventListener('mousedown', closeIfOutside);
-  }, [open]);
+  }, [open, suspendOutsideClose]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -1650,18 +2226,19 @@ function CustomSelect<T extends SelectValue>({
       window.removeEventListener('resize', updateMenuMaxHeight);
       window.removeEventListener('scroll', updateMenuMaxHeight, true);
     };
-  }, [open, defaultMenuMaxHeight, longList]);
+  }, [open, defaultMenuMaxHeight, floatingMenu, floatingMenuMinWidth, longList]);
 
   useEffect(() => {
     if (!open) return;
     window.requestAnimationFrame(() => {
       const menu = menuRef.current;
+      const optionsContainer = menu?.querySelector('.custom-select-menu-options') as HTMLElement | null;
       const selectedElement = menu?.querySelector('[data-selected="true"]') as HTMLElement | null;
-      if (!menu || !selectedElement) {
+      if (!optionsContainer || !selectedElement) {
         return;
       }
       const selectedCenter = selectedElement.offsetTop + selectedElement.offsetHeight / 2;
-      menu.scrollTop = Math.max(0, selectedCenter - menu.clientHeight / 2);
+      optionsContainer.scrollTop = Math.max(0, selectedCenter - optionsContainer.clientHeight / 2);
     });
   }, [open]);
 
@@ -1685,6 +2262,40 @@ function CustomSelect<T extends SelectValue>({
     updateMenuMaxHeight();
     setOpen(true);
   }
+
+  const menu = open ? (
+    <div ref={menuRef} className="custom-select-menu" role="listbox" aria-label={ariaLabel}>
+      <div className="custom-select-menu-options">
+        {options.map(([label, optionValue]) => {
+          const selectedOption = optionValue === value;
+          const optionClassName = getOptionClassName?.(label, optionValue);
+          return (
+            <button
+              key={String(optionValue)}
+              type="button"
+              role="option"
+              aria-selected={selectedOption}
+              data-selected={selectedOption ? 'true' : undefined}
+              className={[selectedOption ? 'selected' : '', optionClassName].filter(Boolean).join(' ')}
+              onClick={() => choose(optionValue)}
+            >
+              <span>{renderOption?.(label, optionValue) ?? label}</span>
+              {showSelectedCheck && selectedOption && <Check size={15} />}
+            </button>
+          );
+        })}
+      </div>
+      {renderMenuFooter && (
+        <div className="custom-select-menu-footer">
+          {renderMenuFooter(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const portalTarget = floatingMenu
+    ? (rootRef.current?.closest('.shell') as HTMLElement | null) ?? document.body
+    : null;
 
   return (
     <div
@@ -1713,33 +2324,55 @@ function CustomSelect<T extends SelectValue>({
         <span>{selected ? (renderValue?.(selected[0], selected[1]) ?? selected[0]) : String(value)}</span>
         <ChevronDown size={18} />
       </button>
-      {open && (
-        <div ref={menuRef} className="custom-select-menu" role="listbox" aria-label={ariaLabel}>
-          {options.map(([label, optionValue]) => {
-            const selectedOption = optionValue === value;
-            return (
-              <button
-                key={String(optionValue)}
-                type="button"
-                role="option"
-                aria-selected={selectedOption}
-                data-selected={selectedOption ? 'true' : undefined}
-                className={selectedOption ? 'selected' : ''}
-                onClick={() => choose(optionValue)}
-              >
-                <span>{renderOption?.(label, optionValue) ?? label}</span>
-                {showSelectedCheck && selectedOption && <Check size={15} />}
-              </button>
-            );
-          })}
-          {renderMenuFooter && (
-            <div className="custom-select-menu-footer">
-              {renderMenuFooter(() => setOpen(false))}
-            </div>
-          )}
-        </div>
-      )}
+      {floatingMenu && portalTarget && menu
+        ? createPortal(
+          <div
+            className={`custom-select custom-select-floating-layer open menu-${menuPlacement} ${suspendOutsideClose ? 'dialog-suspended' : ''} ${className}`}
+            style={floatingMenuStyle}
+          >
+            {menu}
+          </div>,
+          portalTarget
+        )
+        : menu}
     </div>
+  );
+}
+
+function ThemeOption({ label, value }: { label: string; value: UiThemePreset }) {
+  return (
+      <span className="theme-option">
+        <span className="theme-option-swatches" aria-hidden="true">
+        {UI_THEME_PREVIEW_SWATCHES[value].map((swatch) => (
+          <span key={`${value}-${swatch.role}`} title={swatch.role} style={{ background: swatch.color }} />
+        ))}
+      </span>
+      <span className="theme-option-label">{label}</span>
+    </span>
+  );
+}
+
+function AudioHapticsConfigLabel({
+  id,
+  label,
+  tooltip,
+  className = '',
+  showQuestionMark = false
+}: {
+  id: string;
+  label: string;
+  tooltip: string;
+  className?: string;
+  showQuestionMark?: boolean;
+}) {
+  return (
+    <span className={`audio-haptics-config-label ${className}`.trim()} tabIndex={0} aria-describedby={id}>
+      {label}
+      {showQuestionMark ? <IconQuestionMark size={12} stroke={3} aria-hidden="true" /> : null}
+      <span id={id} className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-haptics-config-tooltip" role="tooltip">
+        {tooltip}
+      </span>
+    </span>
   );
 }
 
@@ -1797,23 +2430,343 @@ function RemapSourceGlyph({ button }: { button: RemapButtonDefinition }) {
   );
 }
 
+function ChordStarterGlyph({ starter, label = CHORD_STARTERS[starter].label }: { starter: ChordStarterId; label?: string }) {
+  const button = CHORD_STARTERS[starter];
+  const Icon = button.Icon;
+
+  return Icon ? (
+    <span className="chords-unassigned-glyph chords-starter-icon-glyph" title={label} aria-label={label}>
+      <Icon size={18} />
+    </span>
+  ) : button.glyphUrl ? (
+    <img src={button.glyphUrl} alt={label} title={label} />
+  ) : (
+    <span className="remap-text-glyph remap-text-glyph-source" title={label}>
+      {button.textGlyph ?? button.label}
+    </span>
+  );
+}
+
+function ChordStarterGlyphOption({ label, value }: { label: string; value: ChordStarterId }) {
+  return (
+    <span className="chords-starter-glyph-option" title={label}>
+      <ChordStarterGlyph starter={value} label={label} />
+    </span>
+  );
+}
+
+function ChordButtonGlyphOption({ label, value }: { label: string; value: ChordButtonSelectValue }) {
+  if (value === CHORD_UNASSIGNED_BUTTON) {
+    return (
+      <span className="chords-unassigned-glyph" title={label} aria-label={label}>
+        <IconQuestionMark size={16} />
+      </span>
+    );
+  }
+
+  return <RemapGlyphOption label={label} value={value} />;
+}
+
+function HostPersonaOption({ label, value }: { label: string; value: HostPersonaMode }) {
+  const sonyPersona = value === 'dualsense' || value === 'ds4';
+  return (
+    <span className="host-persona-option">
+      {sonyPersona ? (
+        <span
+          className="host-persona-brand-icon"
+          style={{ '--host-persona-brand-mask': `url("${playStationLogoUrl}")` } as CSSProperties}
+          aria-hidden="true"
+        />
+      ) : (
+        <IconBrandXbox size={18} aria-hidden="true" />
+      )}
+      <span className="host-persona-label">{label}</span>
+    </span>
+  );
+}
+
+function AudioHapticsSourceOption({
+  label,
+  value,
+  session,
+  loading
+}: {
+  label: string;
+  value: string;
+  session?: AudioHapticsSession;
+  loading?: boolean;
+}) {
+  const system = value === 'system-audio';
+  const unavailable = !system && !session;
+  let sublabel = 'System mix';
+  if (!system) {
+    if (!session) {
+      sublabel = loading ? 'Scanning' : 'Unavailable';
+    } else {
+      sublabel = session.state === 'active'
+        ? session.endpointName || 'Active'
+        : 'Idle';
+    }
+  }
+  return (
+    <span className={`audio-haptics-source-option ${unavailable ? 'unavailable' : ''}`}>
+      <span className="audio-haptics-source-icon" aria-hidden="true">
+        {system ? (
+          <IconDeviceAudioTape size={17} />
+        ) : session?.iconDataUrl ? (
+          <img src={session.iconDataUrl} alt="" />
+        ) : (
+          <IconBrandDeezer size={17} />
+        )}
+      </span>
+      <span className="audio-haptics-source-copy">
+        <strong>{label}</strong>
+        <small>{sublabel}</small>
+      </span>
+    </span>
+  );
+}
+
 function remapTargetOptionsFor(buttonId: RemapButtonId): Array<[string, RemapButtonId]> {
   if ((REMAP_EDGE_BUTTON_IDS as readonly RemapButtonId[]).includes(buttonId)) {
-    return [[REMAP_BUTTONS[buttonId].label, buttonId], ...REMAP_TARGET_OPTIONS];
+    return [...REMAP_TARGET_OPTIONS, [REMAP_BUTTONS[buttonId].label, buttonId]];
   }
-  return (REMAP_STICK_CLICK_IDS as readonly RemapButtonId[]).includes(buttonId)
-    ? REMAP_STICK_CLICK_TARGET_OPTIONS
-    : REMAP_TARGET_OPTIONS;
+  return REMAP_TARGET_OPTIONS;
+}
+
+function chordFunctionTypeLabel(type: ChordFunctionType): string {
+  return CHORD_FUNCTION_TYPE_OPTIONS.find(([, value]) => value === type)?.[0] ?? 'Function';
+}
+
+function chordMediaActionLabel(action: ChordMediaAction): string {
+  return CHORD_MEDIA_ACTION_OPTIONS.find(([, value]) => value === action)?.[0] ?? 'Media Action';
+}
+
+function chordNotchTargetForAction(action: ChordControllerSettingAction): {
+  target: (typeof CHORD_NOTCH_TARGETS)[number];
+  direction: ChordNotchDirection;
+} | null {
+  for (const target of CHORD_NOTCH_TARGETS) {
+    if (target.downAction === action) {
+      return { target, direction: 'down' };
+    }
+    if (target.upAction === action) {
+      return { target, direction: 'up' };
+    }
+  }
+  return null;
+}
+
+function chordControllerSettingSelectValue(action: ChordControllerSettingAction): ChordControllerSettingSelectValue {
+  const notchTarget = chordNotchTargetForAction(action);
+  if (notchTarget) {
+    return notchTarget.target.id;
+  }
+  return action as ChordControllerSettingSelectValue;
+}
+
+function chordControllerSettingActionFromSelectValue(
+  value: ChordControllerSettingSelectValue,
+  currentAction: ChordControllerSettingAction
+): ChordControllerSettingAction {
+  const target = CHORD_NOTCH_TARGETS.find((candidate) => candidate.id === value);
+  if (!target) {
+    return value as ChordControllerSettingAction;
+  }
+  const currentTarget = chordNotchTargetForAction(currentAction);
+  return currentTarget?.target.id === target.id && currentTarget.direction === 'down'
+    ? target.downAction
+    : target.upAction;
+}
+
+function chordControllerSettingActionLabel(action: ChordControllerSettingAction): string {
+  const notchTarget = chordNotchTargetForAction(action);
+  if (notchTarget) {
+    return notchTarget.target.label;
+  }
+  return CHORD_CONTROLLER_SETTING_ACTION_OPTIONS.find(([, value]) => value === action)?.[0] ?? 'Controller Setting';
+}
+
+function chordControllerSettingSummary(action: ChordControllerSettingAction, stepPercent?: number): string {
+  const notchTarget = chordNotchTargetForAction(action);
+  if (notchTarget) {
+    const actionText = `${notchTarget.direction === 'up' ? 'Increase' : 'Decrease'} ${notchTarget.target.label}`;
+    return typeof stepPercent === 'number'
+      ? `${actionText} — ${stepPercent}% step`
+      : actionText;
+  }
+  switch (action) {
+    case 'toggle-audio-haptics':
+      return 'Toggle Audio Haptics';
+    case 'toggle-lightbar-override':
+      return 'Toggle Lightbar Override';
+    case 'toggle-mic-mute':
+      return 'Toggle Mic Mute';
+    case 'sleep-controller':
+      return 'Sleep Controller';
+    case 'persona-dualsense':
+      return 'Set Persona: DualSense';
+    case 'persona-ds4':
+      return 'Set Persona: DualShock 4';
+    case 'persona-xbox':
+      return 'Set Persona: Xbox';
+  }
+  return 'Controller Setting';
+}
+
+function chordControllerSettingAdjustmentText(action: ChordControllerSettingAction): string {
+  const notchTarget = chordNotchTargetForAction(action);
+  if (!notchTarget) {
+    return chordControllerSettingSummary(action);
+  }
+  return `${notchTarget.direction === 'up' ? 'Increase' : 'Decrease'} ${notchTarget.target.label}`;
+}
+
+function chordStarterLabel(starter: ChordStarterId): string {
+  return CHORD_STARTER_OPTIONS.find(([, value]) => value === starter)?.[0] ?? starter.toUpperCase();
+}
+
+function chordButtonLabel(button: ChordAssignableButtonId): string {
+  return REMAP_BUTTONS[button].label;
+}
+
+function chordFunctionSummary(func: ChordFunction): string {
+  switch (func.type) {
+    case 'keyboard':
+      return func.keys.join(' + ');
+    case 'media':
+      return chordMediaActionLabel(func.action);
+    case 'controller-setting':
+      return chordControllerSettingSummary(func.action, func.stepPercent);
+  }
+}
+
+function chordFunctionToDraft(func: ChordFunction | null): ChordFunctionDraft {
+  if (!func) {
+    return { ...EMPTY_CHORD_FUNCTION_DRAFT };
+  }
+  const keyboardParts = func.type === 'keyboard'
+    ? chordKeyboardParts(func.keys)
+    : chordKeyboardParts(DEFAULT_CHORD_KEYBOARD_KEYS);
+  return {
+    id: func.id,
+    name: func.name,
+    type: func.type,
+    keyboardKey: keyboardParts.key,
+    keyboardModifiers: keyboardParts.modifiers,
+    mediaAction: func.type === 'media' ? func.action : 'play-pause',
+    controllerAction: func.type === 'controller-setting' ? func.action : 'sleep-controller',
+    controllerStepPercent: func.type === 'controller-setting'
+      ? normalizeChordControllerSettingStepPercent(func.stepPercent)
+      : CHORD_CONTROLLER_SETTING_STEP_DEFAULT
+  };
+}
+
+function normalizeChordKeyLabel(key: string): string {
+  const trimmed = key.trim();
+  const normalized = trimmed.replace(/\s+/g, ' ').toLowerCase();
+  switch (normalized) {
+    case 'control':
+    case 'ctrl':
+      return 'Ctrl';
+    case 'escape':
+    case 'esc':
+      return 'Esc';
+    case 'windows':
+    case 'win':
+    case 'meta':
+      return 'Win';
+    case 'spacebar':
+    case 'space':
+      return 'Space';
+    case 'left arrow':
+      return 'Left';
+    case 'right arrow':
+      return 'Right';
+    case 'up arrow':
+      return 'Up';
+    case 'down arrow':
+      return 'Down';
+    case 'print screen':
+    case 'printscreen':
+    case 'prtsc':
+    case 'prtscn':
+    case 'snapshot':
+      return 'Print Screen';
+    default:
+      return trimmed.length === 1 ? trimmed.toUpperCase() : trimmed;
+  }
+}
+
+function chordKeyboardParts(keys: string[]): {
+  key: string;
+  modifiers: ChordKeyboardModifier[];
+} {
+  const normalizedKeys = keys.map(normalizeChordKeyLabel);
+  const modifiers = CHORD_KEYBOARD_MODIFIER_OPTIONS
+    .map(([, modifier]) => modifier)
+    .filter((modifier) => normalizedKeys.includes(modifier))
+    .slice(0, MAX_KEYBOARD_FUNCTION_KEYS - 1);
+  const supportedKeys = new Set(CHORD_KEYBOARD_KEY_OPTIONS.map(([, value]) => value));
+  const key = normalizedKeys.find((candidate) => supportedKeys.has(candidate)) ?? 'Esc';
+  return { key, modifiers };
+}
+
+function chordFunctionFromDraft(draft: ChordFunctionDraft): ChordFunction {
+  const name = (draft.name.trim() || chordFunctionTypeLabel(draft.type)).slice(0, MAX_CHORD_FUNCTION_NAME_LENGTH);
+  const id = draft.id || `function-${Date.now().toString(36)}`;
+  switch (draft.type) {
+    case 'keyboard':
+      return {
+        id,
+        name,
+        type: 'keyboard',
+        keys: [...draft.keyboardModifiers, draft.keyboardKey].slice(0, MAX_KEYBOARD_FUNCTION_KEYS)
+      };
+    case 'media':
+      return {
+        id,
+        name,
+        type: 'media',
+        action: draft.mediaAction
+      };
+    case 'controller-setting':
+      return {
+        id,
+        name,
+        type: 'controller-setting',
+        action: draft.controllerAction,
+        stepPercent: normalizeChordControllerSettingStepPercent(draft.controllerStepPercent)
+      };
+  }
+}
+
+function chordAssignmentLabel(assignment: ChordAssignment): string {
+  return `${chordStarterLabel(assignment.starter)} + ${chordButtonLabel(assignment.button)}`;
+}
+
+function chordBindingKey(starter: ChordStarterId, button: ChordAssignableButtonId): string {
+  return `chord:${starter}:${button}`;
+}
+
+function chordAssignmentKey(assignment: ChordAssignment): string {
+  return chordBindingKey(assignment.starter, assignment.button);
+}
+
+function createChordAssignmentId(starter: ChordStarterId, button: ChordAssignableButtonId): string {
+  return `chord-${starter}-${button}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
+  const [startupVisible, setStartupVisible] = useState(true);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const [hapticsValue, setHapticsValue] = useState(100);
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
   const [micVolumeValue, setMicVolumeValue] = useState(100);
+  const [audioBufferLengthValue, setAudioBufferLengthValue] = useState(64);
   const [lightbarColor, setLightbarColor] = useState('#ffff00');
   const [customLightbarColor, setCustomLightbarColor] = useState<string | null>(() => {
     const saved = window.localStorage.getItem('ds5bridge.customLightbarColor');
@@ -1833,6 +2786,9 @@ export function App() {
   }
   const triggerLabInitialState = triggerLabInitialStateRef.current;
   const [triggerLabOpen, setTriggerLabOpen] = useState(false);
+  const [audioHapticsOpen, setAudioHapticsOpen] = useState(false);
+  const [audioHapticsSessions, setAudioHapticsSessions] = useState<AudioHapticsSession[]>([]);
+  const [audioHapticsSessionsLoading, setAudioHapticsSessionsLoading] = useState(false);
   const [triggerLabLinked, setTriggerLabLinked] = useState(triggerLabInitialState.linked);
   const [triggerLabDrafts, setTriggerLabDrafts] = useState<Record<TriggerLabSide, TriggerLabDraft>>(triggerLabInitialState.drafts);
   const [triggerLabActive, setTriggerLabActive] = useState<Record<TriggerLabSide, boolean>>(triggerLabInitialState.active);
@@ -1843,6 +2799,18 @@ export function App() {
   const [remapDraft, setRemapDraft] = useState<Record<RemapButtonId, RemapButtonId>>(DEFAULT_REMAP_DRAFT);
   const [remapProfileDialogMode, setRemapProfileDialogMode] = useState<RemapProfileDialogMode | null>(null);
   const [remapProfileNameDraft, setRemapProfileNameDraft] = useState('');
+  const [selectedChordFunctionId, setSelectedChordFunctionId] = useState('');
+  const [chordFunctionDraft, setChordFunctionDraft] = useState<ChordFunctionDraft>(EMPTY_CHORD_FUNCTION_DRAFT);
+  const [chordFunctionDialog, setChordFunctionDialog] = useState<ChordFunctionDialogState | null>(null);
+  const [chordFunctionNameDraft, setChordFunctionNameDraft] = useState('');
+  const [chordAssignmentDraftRows, setChordAssignmentDraftRows] = useState<ChordAssignmentDraftRow[]>([]);
+  const [draggedChordAssignmentId, setDraggedChordAssignmentId] = useState<string | null>(null);
+  const [chordAssignmentDropHint, setChordAssignmentDropHint] = useState<ChordAssignmentDropHint | null>(null);
+  const [chordAssignmentScrollbar, setChordAssignmentScrollbar] = useState<ChordAssignmentScrollbarState>({
+    visible: false,
+    top: 0,
+    height: 0
+  });
   const [controllerProfileDialogMode, setControllerProfileDialogMode] = useState<ControllerProfileDialogMode | null>(null);
   const [controllerProfileNameDraft, setControllerProfileNameDraft] = useState('');
   const [remapCalloutLayout, setRemapCalloutLayout] = useState<Record<StandardRemapButtonId, RemapCalloutLayout> | null>(null);
@@ -1852,14 +2820,13 @@ export function App() {
   const [showBridgeSettings, setShowBridgeSettings] = useState(false);
   const [settingsFocusTarget, setSettingsFocusTarget] = useState<SettingsFocusTarget | null>(null);
   const [notificationFocusTarget, setNotificationFocusTarget] = useState<NotificationFocusTarget | null>(null);
-  const [featureFocusTarget, setFeatureFocusTarget] = useState<FeatureFocusTarget | null>(null);
-  const [featureFocusPulse, setFeatureFocusPulse] = useState(0);
   const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
   const [showClassicRumbleControl, setShowClassicRumbleControl] = useState(false);
   const [showMicrophoneControl, setShowMicrophoneControl] = useState(false);
   const [lastRemapControllerType, setLastRemapControllerType] = useState<KnownControllerType>(storedRemapControllerType);
   const [windowDragging, setWindowDragging] = useState(false);
   const [testLocked, setTestLocked] = useState(false);
+  const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
   const [speakerTestLocked, setSpeakerTestLocked] = useState(false);
   const [speakerOutputAvailable, setSpeakerOutputAvailable] = useState<boolean | null>(null);
   const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
@@ -1868,18 +2835,27 @@ export function App() {
   const [triggerTestLocked, setTriggerTestLocked] = useState(false);
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
+  const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
+  const [feedbackBoostCommitPending, setFeedbackBoostCommitPending] = useState(false);
   const [speakerVolumeCommitPending, setSpeakerVolumeCommitPending] = useState(false);
   const [micVolumeCommitPending, setMicVolumeCommitPending] = useState(false);
+  const [audioBufferLengthCommitPending, setAudioBufferLengthCommitPending] = useState(false);
+  const [audioReactiveHapticsCommitPending, setAudioReactiveHapticsCommitPending] = useState(false);
   const [lightbarCommitPending, setLightbarCommitPending] = useState(false);
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
-  const [hostEncodingDisableConfirmVisible, setHostEncodingDisableConfirmVisible] = useState(false);
   const [deviceCleanupConfirmVisible, setDeviceCleanupConfirmVisible] = useState(false);
+  const [startupTutorialStep, setStartupTutorialStep] = useState<StartupTutorialStep>(storedStartupTutorialStep);
+  const [startupTutorialFeatureActive, setStartupTutorialFeatureActive] = useState(false);
+  const [startupTutorialSupportCountdown, setStartupTutorialSupportCountdown] = useState(5);
   const [deviceCleanupMessage, setDeviceCleanupMessage] = useState<string | null>(null);
   const [deviceCleanupError, setDeviceCleanupError] = useState<string | null>(null);
+  const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
+  const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
   const hapticsEditingRef = useRef(false);
   const classicRumbleEditingRef = useRef(false);
   const speakerVolumeEditingRef = useRef(false);
   const micVolumeEditingRef = useRef(false);
+  const audioBufferLengthEditingRef = useRef(false);
   const lightbarBrightnessEditingRef = useRef(false);
   const triggerEffectEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -1892,17 +2868,63 @@ export function App() {
   const overviewSleepConfirmTimerRef = useRef<number | null>(null);
   const settingsFocusTimerRef = useRef<number | null>(null);
   const notificationFocusTimerRef = useRef<number | null>(null);
-  const featureFocusTimerRef = useRef<number | null>(null);
+  const chordAssignmentDragRef = useRef<ChordAssignmentDragSession | null>(null);
+  const chordAssignmentListRef = useRef<HTMLDivElement>(null);
   const windowDraggingRef = useRef(false);
   const windowDragReleaseTimerRef = useRef<number | null>(null);
+  const startupReadyTimerRef = useRef<number | null>(null);
+  const startupReadyArmedRef = useRef(false);
   const triggerLabRestoreAppliedRef = useRef(false);
   const deferredSnapshotRef = useRef<BridgeSnapshot | null>(null);
   const overviewSleepConfirmArmedRef = useRef(false);
-  const appOpenedAtRef = useRef(Date.now());
+  useEffect(() => () => {
+    const session = chordAssignmentDragRef.current;
+    session?.cleanup();
+    session?.overlay?.remove();
+    document.body.classList.remove('chords-assignment-pointer-dragging');
+    chordAssignmentDragRef.current = null;
+  }, []);
 
   useEffect(() => {
     saveTriggerLabCustomProfiles(triggerLabCustomProfiles);
   }, [triggerLabCustomProfiles]);
+
+  useEffect(() => {
+    const liveTheme = snapshot?.settings.uiThemePreset;
+    if (!liveTheme) return;
+    setStartupTheme(liveTheme);
+    saveUiThemePreset(liveTheme);
+  }, [snapshot?.settings.uiThemePreset]);
+
+  useEffect(() => {
+    const hasSnapshot = Boolean(snapshot);
+    if (!hasSnapshot || !startupVisible || startupReadyArmedRef.current) return undefined;
+    startupReadyArmedRef.current = true;
+    startupReadyTimerRef.current = window.setTimeout(() => {
+      setStartupVisible(false);
+      startupReadyTimerRef.current = null;
+    }, STARTUP_READY_HOLD_MS);
+    return () => {
+      if (startupReadyTimerRef.current !== null) {
+        window.clearTimeout(startupReadyTimerRef.current);
+        startupReadyTimerRef.current = null;
+      }
+    };
+  }, [Boolean(snapshot), startupVisible]);
+
+  useEffect(() => {
+    if (startupTutorialStep !== 'support') {
+      return undefined;
+    }
+
+    setStartupTutorialSupportCountdown(5);
+    const interval = window.setInterval(() => {
+      setStartupTutorialSupportCountdown((value) => Math.max(0, value - 1));
+    }, 1000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [startupTutorialStep]);
 
   useEffect(() => {
     saveTriggerLabWorkspaceState({
@@ -1913,7 +2935,11 @@ export function App() {
     });
   }, [triggerLabActive, triggerLabDrafts, triggerLabLinked, triggerLabSplitState]);
 
+  const personaTransition = snapshot?.personaTransition ?? null;
+  const personaTransitionActive = Boolean(personaTransition);
   const connected = snapshot?.state === 'connected';
+  const controllerConnected = Boolean(snapshot?.status?.controllerConnected);
+  const controllerControlsAvailable = connected && controllerConnected;
   const liveControllerType = snapshot?.status?.controllerType;
   const remapControllerType = snapshot?.status?.controllerConnected && liveControllerType && liveControllerType !== 'unknown'
     ? liveControllerType
@@ -1945,6 +2971,126 @@ export function App() {
   ), [snapshot?.settings.buttonRemappingProfiles]);
   const selectedRemapProfileIsDefault = selectedRemapProfileId === DEFAULT_BUTTON_REMAP_PROFILE_ID;
   const remappingLayoutAsset = showDualSenseEdgeRemapButtons ? REMAP_EDGE_LAYOUT_ASSET : REMAP_STANDARD_LAYOUT_ASSET;
+  const chordFunctions = snapshot?.settings.chordFunctions ?? [];
+  const chordAssignments = snapshot?.settings.chordAssignments ?? [];
+  const muteButtonChordStarterActive = snapshot?.settings.muteButtonMode === 'chord'
+    || (
+      snapshot?.settings.muteButtonMode === 'keyboard'
+      && snapshot.settings.muteKeyboardChordStarterEnabled
+    );
+  const selectedChordFunction = chordFunctions.find((func) => func.id === selectedChordFunctionId) ?? chordFunctions[0] ?? null;
+  const chordFunctionDialogFunction = chordFunctionDialog
+    ? chordFunctions.find((func) => func.id === chordFunctionDialog.functionId) ?? null
+    : null;
+  const chordAssignmentConflictState = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const assignment of chordAssignments) {
+      const key = chordAssignmentKey(assignment);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const conflictKeys = new Set<string>();
+    let conflictCount = 0;
+    for (const [key, count] of counts) {
+      if (count > 1) {
+        conflictKeys.add(key);
+        conflictCount += count - 1;
+      }
+    }
+    const shortcutKeys = new Set<string>();
+    if (snapshot?.settings.sleepKeybindEnabled) {
+      shortcutKeys.add(chordBindingKey('ps', 'triangle'));
+    }
+    if (snapshot?.settings.speakerVolumeShortcutEnabled) {
+      shortcutKeys.add(chordBindingKey('ps', 'dpad-up'));
+      shortcutKeys.add(chordBindingKey('ps', 'dpad-down'));
+    }
+    for (const assignment of chordAssignments) {
+      const key = chordAssignmentKey(assignment);
+      if (shortcutKeys.has(key)) {
+        conflictKeys.add(key);
+        conflictCount += 1;
+      }
+      if (assignment.starter === CHORD_MUTE_STARTER_ID && !muteButtonChordStarterActive) {
+        conflictKeys.add(key);
+        conflictCount += 1;
+      }
+    }
+    return { conflictKeys, conflictCount };
+  }, [
+    chordAssignments,
+    muteButtonChordStarterActive,
+    snapshot?.settings.sleepKeybindEnabled,
+    snapshot?.settings.speakerVolumeShortcutEnabled
+  ]);
+  const chordFunctionsSignature = useMemo(() => (
+    chordFunctions.map((func) => `${func.id}:${func.name}:${chordFunctionSummary(func)}`).join('|')
+  ), [chordFunctions]);
+  const chordFunctionOptions = useMemo<Array<[string, string]>>(() => (
+    chordFunctions.length > 0
+      ? chordFunctions.map((func) => [func.name, func.id])
+      : [['No Functions', '']]
+  ), [chordFunctions]);
+  const defaultChordFunctionId = selectedChordFunction?.id ?? chordFunctions[0]?.id ?? '';
+  const chordStarterOptions = useMemo<Array<[string, ChordStarterId]>>(() => (
+    CHORD_STARTER_OPTIONS.filter(([, starter]) => {
+      if (starter === CHORD_MUTE_STARTER_ID) {
+        return muteButtonChordStarterActive;
+      }
+      return starter === 'ps' || showDualSenseEdgeRemapButtons;
+    })
+  ), [muteButtonChordStarterActive, showDualSenseEdgeRemapButtons]);
+  const chordAssignableButtonIds = useMemo<readonly ChordAssignableButtonId[]>(() => (
+    (showDualSenseEdgeRemapButtons
+      ? CHORD_BUTTON_MENU_IDS
+      : REMAP_STANDARD_TARGET_BUTTON_IDS) as readonly ChordAssignableButtonId[]
+  ), [showDualSenseEdgeRemapButtons]);
+  function chordStarterOptionsFor(currentStarter?: ChordStarterId): Array<[string, ChordStarterId]> {
+    return currentStarter === CHORD_MUTE_STARTER_ID
+      && !chordStarterOptions.some(([, starter]) => starter === CHORD_MUTE_STARTER_ID)
+      ? [...chordStarterOptions, [CHORD_STARTERS.mute.label, CHORD_MUTE_STARTER_ID]]
+      : chordStarterOptions;
+  }
+  function muteChordStarterIsInactive(starter: ChordStarterId): boolean {
+    return starter === CHORD_MUTE_STARTER_ID && !muteButtonChordStarterActive;
+  }
+  function chordButtonOptionsFor(
+    starter: ChordStarterId,
+    includeUnassigned = false
+  ): Array<[string, ChordButtonSelectValue]> {
+    const ids = chordAssignableButtonIds;
+    const options = ids
+      .filter((id) => isChordBindingAllowed(starter, id))
+      .map((id): [string, ChordButtonSelectValue] => [chordButtonLabel(id), id]);
+    return includeUnassigned
+      ? [['Choose Button', CHORD_UNASSIGNED_BUTTON], ...options]
+      : options;
+  }
+  function firstAllowedChordButton(starter: ChordStarterId): ChordAssignableButtonId | null {
+    return chordAssignableButtonIds.find((id) => isChordBindingAllowed(starter, id)) ?? null;
+  }
+  const canAddChordDraft = Boolean(defaultChordFunctionId)
+    && chordAssignments.length + chordAssignmentDraftRows.length < MAX_CHORD_ASSIGNMENTS;
+  const chordAssignmentsSubtitle = muteButtonChordStarterActive
+    ? (showDualSenseEdgeRemapButtons ? 'Pair PS, LFN, RFN, or Mute with a button.' : 'Pair PS or Mute with a button.')
+    : (showDualSenseEdgeRemapButtons ? 'Pair PS, LFN, or RFN with a button.' : 'Pair PS with a button.');
+
+  useEffect(() => {
+    const list = chordAssignmentListRef.current;
+    if (!list || activeControlTab !== 'chords') {
+      return;
+    }
+    const frame = window.requestAnimationFrame(updateChordAssignmentScrollbar);
+    const observer = new ResizeObserver(updateChordAssignmentScrollbar);
+    observer.observe(list);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [
+    activeControlTab,
+    chordAssignments.length,
+    chordAssignmentDraftRows.length
+  ]);
 
   useEffect(() => {
     if (snapshot?.status?.controllerConnected && liveControllerType && liveControllerType !== 'unknown') {
@@ -1952,6 +3098,38 @@ export function App() {
       window.localStorage.setItem(LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY, liveControllerType);
     }
   }, [liveControllerType, snapshot?.status?.controllerConnected]);
+
+  useEffect(() => {
+    if (chordFunctions.length === 0) {
+      setSelectedChordFunctionId('');
+      setChordFunctionDraft(EMPTY_CHORD_FUNCTION_DRAFT);
+      setChordAssignmentDraftRows([]);
+      return;
+    }
+    const nextSelected = chordFunctions.find((func) => func.id === selectedChordFunctionId) ?? chordFunctions[0]!;
+    if (nextSelected.id !== selectedChordFunctionId) {
+      setSelectedChordFunctionId(nextSelected.id);
+    }
+    setChordFunctionDraft(chordFunctionToDraft(nextSelected));
+  }, [chordFunctionsSignature]);
+
+  useEffect(() => {
+    setChordAssignmentDraftRows((rows) => rows
+      .map((row) => {
+        const rowStarterOptions = chordStarterOptionsFor(row.starter);
+        const starter = rowStarterOptions.some(([, option]) => option === row.starter) ? row.starter : 'ps';
+        const functionId = chordFunctions.some((func) => func.id === row.functionId)
+          ? row.functionId
+          : defaultChordFunctionId;
+        const button = row.button
+          && chordAssignableButtonIds.includes(row.button)
+          && isChordBindingAllowed(starter, row.button)
+          ? row.button
+          : null;
+        return functionId ? { ...row, starter, button, functionId } : null;
+      })
+      .filter((row): row is ChordAssignmentDraftRow => row !== null));
+  }, [chordAssignableButtonIds, chordFunctionsSignature, chordStarterOptions, defaultChordFunctionId]);
 
   function applySnapshot(next: BridgeSnapshot) {
     setSnapshot(next);
@@ -1967,6 +3145,9 @@ export function App() {
     }
     if (!micVolumeEditingRef.current) {
       setMicVolumeValue(snapMicVolume(next.settings.micVolumePercent));
+    }
+    if (!audioBufferLengthEditingRef.current) {
+      setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
     }
     const nextLightbarColor = lightbarColorFromSnapshot(next);
     setLightbarColor(nextLightbarColor);
@@ -2008,14 +3189,19 @@ export function App() {
     window.addEventListener('blur', finishWindowDrag, { once: true });
   }
 
+  const audioReactiveHapticsSource = snapshot?.settings.audioReactiveHapticsSource ?? 'system-audio';
+  const audioReactiveHapticsSourceKey = audioHapticsSourceKey(audioReactiveHapticsSource);
+
   useEffect(() => {
     let cancelled = false;
+    let receivedLiveSnapshot = false;
     window.bridge.getStatus().then((next) => {
-      if (!cancelled) {
+      if (!cancelled && !receivedLiveSnapshot) {
         applySnapshot(next);
       }
     });
     const unsubscribe = window.bridge.onSnapshot((next) => {
+      receivedLiveSnapshot = true;
       if (windowDraggingRef.current) {
         deferredSnapshotRef.current = next;
         return;
@@ -2037,16 +3223,57 @@ export function App() {
       if (notificationFocusTimerRef.current !== null) {
         window.clearTimeout(notificationFocusTimerRef.current);
       }
-      if (featureFocusTimerRef.current !== null) {
-        window.clearTimeout(featureFocusTimerRef.current);
-      }
       if (windowDragReleaseTimerRef.current !== null) {
         window.clearTimeout(windowDragReleaseTimerRef.current);
+      }
+      if (startupReadyTimerRef.current !== null) {
+        window.clearTimeout(startupReadyTimerRef.current);
       }
       window.removeEventListener('mouseup', finishWindowDrag);
       window.removeEventListener('blur', finishWindowDrag);
     };
   }, []);
+
+  useEffect(() => {
+    const controllerAudioReady = connected && controllerConnected;
+    if (!audioHapticsOpen || !controllerAudioReady) {
+      setAudioHapticsSessions([]);
+      setAudioHapticsSessionsLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    let refreshInFlight = false;
+    async function refreshSessions() {
+      if (refreshInFlight) {
+        return;
+      }
+      refreshInFlight = true;
+      setAudioHapticsSessionsLoading(true);
+      try {
+        const sessions = await window.bridge.listAudioHapticsSessions();
+        if (!cancelled) {
+          setAudioHapticsSessions(sessions);
+        }
+      } catch {
+        if (!cancelled) {
+          setAudioHapticsSessions([]);
+        }
+      } finally {
+        refreshInFlight = false;
+        if (!cancelled) {
+          setAudioHapticsSessionsLoading(false);
+        }
+      }
+    }
+
+    void refreshSessions();
+    const interval = window.setInterval(refreshSessions, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [audioHapticsOpen, audioReactiveHapticsSourceKey, connected, controllerConnected]);
 
   useEffect(() => {
     if (!showBridgeSettings && !showNotificationsMenu) {
@@ -2250,7 +3477,13 @@ export function App() {
     ? Math.min(2, batterySegmentCount)
     : -1;
   const batteryCritical = connected && !batteryCharging && batteryPercent > 0 && batteryPercent <= 20;
-  const statusTone = connected ? 'good' : snapshot?.state === 'error' || snapshot?.state === 'incompatible' ? 'bad' : 'idle';
+  const statusTone = personaTransitionActive
+    ? 'warn'
+    : connected
+      ? 'good'
+      : snapshot?.state === 'error' || snapshot?.state === 'incompatible'
+        ? 'bad'
+        : 'idle';
   const lastAck = snapshot?.diagnostics.lastAck;
   const speakerVolumeSupported = Boolean(snapshot?.status?.firmwareFlags.speakerVolumeControl);
   const lightbarSupported = Boolean(snapshot?.status?.firmwareFlags.lightbarControl);
@@ -2260,21 +3493,60 @@ export function App() {
   const usbSuspendDisconnectSupported = Boolean(snapshot?.status?.firmwareFlags.usbSuspendDisconnectControl);
   const sleepControllerSupported = Boolean(snapshot?.status?.firmwareFlags.sleepControllerControl);
   const pollingRateControlSupported = Boolean(snapshot?.status?.firmwareFlags.pollingRateControl);
+  const hostPersonaControlSupported = Boolean(snapshot?.status?.firmwareFlags.hostPersonaControl);
+  const audioBufferLengthControlSupported = Boolean(snapshot?.status?.firmwareFlags.hapticsBufferLengthControl);
+  const audioReactiveHapticsSupported = Boolean(snapshot?.status?.firmwareFlags.audioReactiveHapticsControl);
+  const supportedHostPersonaModes: HostPersonaMode[] = snapshot?.status?.supportedHostPersonaModes ?? ['dualsense'];
+  const hostPersonaOptions = HOST_PERSONA_OPTIONS.filter(([, mode]) => (
+    supportedHostPersonaModes.includes(mode) || snapshot?.settings.hostPersonaMode === mode
+  ));
+  const overviewHostPersonaMode = personaTransition?.to ?? snapshot?.settings.hostPersonaMode ?? 'dualsense';
   const hapticsEnabled = Boolean(snapshot?.settings.hapticsEnabled);
+  const audioReactiveHapticsEnabled = Boolean(snapshot?.settings.audioReactiveHapticsEnabled);
+  const audioHapticsSessionByKey = useMemo(() => {
+    const sessions = new Map<string, AudioHapticsSession>();
+    for (const session of audioHapticsSessions) {
+      sessions.set(audioHapticsSessionKey(session), session);
+    }
+    return sessions;
+  }, [audioHapticsSessions]);
+  const selectedAudioHapticsSourceDisplayName = audioHapticsSessionByKey.get(audioReactiveHapticsSourceKey)?.displayName
+    ?? audioHapticsSourceDisplayName(audioReactiveHapticsSource);
+  const audioHapticsSourceOptions = useMemo<Array<[string, string]>>(() => {
+    const options: Array<[string, string]> = [['System', 'system-audio']];
+    for (const session of audioHapticsSessions) {
+      options.push([session.displayName, audioHapticsSessionKey(session)]);
+    }
+    if (
+      audioReactiveHapticsSourceKey !== 'system-audio'
+      && !audioHapticsSessionByKey.has(audioReactiveHapticsSourceKey)
+    ) {
+      options.push([`${audioHapticsSourceDisplayName(audioReactiveHapticsSource)} unavailable`, audioReactiveHapticsSourceKey]);
+    }
+    return options;
+  }, [
+    audioHapticsSessionByKey,
+    audioHapticsSessions,
+    audioReactiveHapticsSource,
+    audioReactiveHapticsSourceKey
+  ]);
   const classicRumbleEnabled = Boolean(snapshot?.settings.classicRumbleEnabled);
+  const classicRumbleV1Enabled = Boolean(snapshot?.settings.classicRumbleV1Enabled);
   const activeHapticsFeatureEnabled = showClassicRumbleControl ? classicRumbleEnabled : hapticsEnabled;
   const speakerEnabled = Boolean(snapshot?.settings.speakerEnabled);
+  const speakerGainLevel = Math.max(1, Math.min(7, Math.round(
+    snapshot?.settings.speakerGainLevel ?? snapshot?.status?.speakerGainLevel ?? 4
+  )));
   const adaptiveTriggersEnabled = Boolean(snapshot?.settings.adaptiveTriggersEnabled);
   const lightbarEnabled = Boolean(snapshot?.settings.lightbarEnabled);
   const sleepKeybindEnabled = Boolean(snapshot?.settings.sleepKeybindEnabled);
   const controllerToastEnabled = Boolean(snapshot?.settings.notifyControllerConnection);
   const lowBatteryToastEnabled = Boolean(snapshot?.settings.notifyLowBattery);
   const notificationsEnabled = controllerToastEnabled || lowBatteryToastEnabled;
-  const controllerConnected = Boolean(snapshot?.status?.controllerConnected);
   const gameStreamActive = Boolean(snapshot?.status?.hostOutputRecent);
   const adaptiveTriggerOutputActive = Boolean(snapshot?.status?.adaptiveTriggerOutputRecent);
-  const hostAudioStatus = snapshot?.diagnostics.hostAudioStatus;
-  const headsetOutputDetected = Boolean(hostAudioStatus?.headsetPlugged);
+  const audioStatus = snapshot?.diagnostics.audioStatus;
+  const headsetOutputDetected = Boolean(audioStatus?.headsetPlugged);
   const controllerPowerSavingActive = controllerPowerSavingActiveFromSnapshot(snapshot);
   const feedbackBoostEnabled = Boolean(snapshot?.settings.feedbackBoostEnabled);
   const hapticsSliderMax = feedbackSliderMaxFromSnapshot(snapshot);
@@ -2327,50 +3599,60 @@ export function App() {
   const outputControlLabel = headsetOutputDetected ? 'Headphones' : 'Speaker';
   const outputControlLower = headsetOutputDetected ? 'headphones' : 'speaker';
   const outputPresetLower = headsetOutputDetected ? 'headphones' : 'speaker';
-  const hostAudioEnabled = Boolean(snapshot?.settings.hostEncodedAudioEnabled);
   const duplexMicEnabled = Boolean(snapshot?.settings.duplexMicEnabled);
   const audioEnabled = speakerEnabled || duplexMicEnabled;
-  const hostAudioActive = hostAudioStatus?.mode === 'host-encoded-active';
-  const hostAudioCaptureIssue = snapshot?.diagnostics.hostAudioCaptureIssue ?? null;
-  const hostAudioCaptureRetry = snapshot?.diagnostics.hostAudioCaptureRetry ?? null;
-  const hostAudioCaptureStatus = hostAudioCaptureIssue ?? hostAudioCaptureRetry;
-  const hostAudioCaptureWarning = hostAudioEnabled && Boolean(hostAudioCaptureIssue);
-  const hostAudioCaptureRetrying = hostAudioEnabled && !hostAudioCaptureWarning && Boolean(hostAudioCaptureRetry);
-  const initialHostAudioStartGrace = Date.now() - appOpenedAtRef.current < HOST_AUDIO_INITIAL_START_GRACE_MS;
-  const hostAudioStarting = hostAudioEnabled
-    && !hostAudioActive
-    && !hostAudioCaptureStatus
-    && (
-      !hostAudioStatus
-      || hostAudioStatus.fallbackReason === 'none'
-      || hostAudioStatus.fallbackReason === 'host-disabled'
-      || (initialHostAudioStartGrace && hostAudioStatus.fallbackReason === 'heartbeat-timeout')
-    );
-  const hostAudioLabel = !connected
+  const audioPathLabel = personaTransitionActive
+    ? 'Switching Mode'
+    : !connected
     ? 'Unavailable'
-    : hostAudioActive
-      ? 'Host Encoding Active'
-      : hostAudioEnabled && hostAudioCaptureStatus
-        ? hostAudioCaptureIssueLabel(hostAudioCaptureStatus.reason)
-      : hostAudioStarting
-        ? 'Starting Host Encoding'
-      : hostAudioEnabled
-        ? `Fallback: ${hostAudioStatus?.fallbackReason?.replaceAll('-', ' ') ?? 'pending'}`
-        : 'Pico Local';
-  const hostAudioTooltip = hostAudioCaptureStatus
-    ? hostAudioCaptureStatus.message || hostAudioCaptureIssueTooltip(hostAudioCaptureStatus.reason)
-    : hostAudioLabel;
-  const hostAudioTone = hostAudioActive
+    : 'Pico Local';
+  const audioPathTooltip = personaTransitionActive
+    ? 'Waiting for the controller to re-enumerate.'
+    : audioPathLabel;
+  const audioPathTone = connected && !personaTransitionActive ? 'good' : 'idle';
+  const audioBufferLengthControlDisabled = !connected
+    || !audioBufferLengthControlSupported
+    || pendingAction !== null
+    || audioBufferLengthCommitPending;
+  const audioReactiveHapticsRouteSupported = audioReactiveHapticsSupported;
+  const audioReactiveHapticsBlocked = !connected
+    || !audioReactiveHapticsSupported
+    || !audioReactiveHapticsRouteSupported
+    || !hapticsEnabled;
+  const audioReactiveHapticsControlDisabled = audioReactiveHapticsBlocked
+    || pendingAction !== null
+    || audioReactiveHapticsCommitPending;
+  const audioReactiveHapticsConfigDisabled = audioReactiveHapticsControlDisabled || !audioReactiveHapticsEnabled;
+  const audioReactiveHapticsStatusLabel = !connected
+    ? 'Unavailable'
+    : !audioReactiveHapticsSupported
+      ? 'Update Firmware'
+      : !hapticsEnabled
+        ? 'Haptics Off'
+        : audioReactiveHapticsEnabled
+          ? 'Ready'
+          : 'Off';
+  const audioReactiveHapticsStatusTone = audioReactiveHapticsEnabled
+    && hapticsEnabled
+    && audioReactiveHapticsRouteSupported
     ? 'good'
-    : connected && hostAudioEnabled && !hostAudioCaptureRetrying && (Boolean(hostAudioCaptureIssue) || !hostAudioStarting)
+    : connected && (
+        !audioReactiveHapticsRouteSupported
+        || !hapticsEnabled
+      )
       ? 'warn'
       : 'idle';
-  const duplexMicLabel = hostAudioStatus?.duplexActive
+  const audioReactiveHapticsOverrideMode = snapshot?.settings.audioReactiveHapticsMode === 'replace';
+  const audioReactiveHapticsModeBadgeLabel = audioReactiveHapticsEnabled
+    ? audioReactiveHapticsOverrideMode ? 'Override' : 'Mixed'
+    : null;
+  const audioReactiveHapticsModeTooltip = audioReactiveHapticsOverrideMode
+    ? 'Audio haptics are replacing native haptic output.'
+    : 'Audio haptics are mixed with native haptic output.';
+  const duplexMicLabel = audioStatus?.duplexActive
     ? 'Duplex Active'
-    : duplexMicEnabled && hostAudioActive
-      ? 'Mic Standby'
     : duplexMicEnabled
-      ? 'Disabled in Fallback'
+      ? 'Mic Standby'
       : 'Off';
   const speakerOutputMissing = false;
   const testHapticsUnavailable = !connected
@@ -2388,34 +3670,35 @@ export function App() {
     || lightbarCommitPending
     || testLocked
     || Boolean(snapshot?.status?.testHapticsBusy);
-  const hapticsTestReady = !testHapticsUnavailable;
-  const rumbleTestReady = !testRumbleUnavailable;
+  const hapticsStatusReady = connected
+    && hapticsEnabled
+    && !testLocked
+    && !snapshot?.status?.testHapticsBusy
+    && !snapshot?.status?.testHapticsCooldown;
+  const rumbleStatusReady = connected
+    && classicRumbleEnabled
+    && !testLocked
+    && !snapshot?.status?.testHapticsBusy;
   const hapticsStatusLabel = testLocked || snapshot?.status?.testHapticsBusy
     ? 'Testing'
       : snapshot?.status?.testHapticsCooldown
         ? 'Cooling Down'
-      : hapticsTestReady
+      : hapticsStatusReady
         ? 'Ready'
-        : connected && pendingAction !== null
-          ? 'Command Pending'
-          : 'Unavailable';
+        : 'Unavailable';
   const rumbleStatusLabel = testLocked
     ? 'Testing'
-    : rumbleTestReady
+    : rumbleStatusReady
       ? 'Ready'
-      : connected && pendingAction !== null
-        ? 'Command Pending'
-        : 'Unavailable';
-  const hapticsStatusTone = testLocked || snapshot?.status?.testHapticsBusy || hapticsTestReady
+      : 'Unavailable';
+  const hapticsStatusTone = testLocked || snapshot?.status?.testHapticsBusy || hapticsStatusReady
     ? 'good'
-    : connected && (snapshot?.status?.testHapticsCooldown || pendingAction !== null)
+    : connected && snapshot?.status?.testHapticsCooldown
       ? 'warn'
       : 'idle';
-  const rumbleStatusTone = testLocked || rumbleTestReady
+  const rumbleStatusTone = testLocked || rumbleStatusReady
     ? 'good'
-    : connected && pendingAction !== null
-      ? 'warn'
-      : 'idle';
+    : 'idle';
   const activeFeedbackTestUnavailable = showClassicRumbleControl ? testRumbleUnavailable : testHapticsUnavailable;
   const activeFeedbackStatusLabel = showClassicRumbleControl ? rumbleStatusLabel : hapticsStatusLabel;
   const activeFeedbackStatusTone = showClassicRumbleControl ? rumbleStatusTone : hapticsStatusTone;
@@ -2428,102 +3711,124 @@ export function App() {
     || speakerTestLocked
     || gameStreamActive
     || Boolean(snapshot?.status?.testHapticsBusy);
-  const speakerTestReady = !testSpeakerUnavailable && !speakerOutputMissing;
   const testMicUnavailable = !connected
-    || !hostAudioEnabled
-    || !hostAudioActive
     || !duplexMicEnabled
     || pendingAction !== null
     || micVolumeCommitPending
     || lightbarCommitPending
     || micTestLocked
     || gameStreamActive;
-  const micTestReady = !testMicUnavailable;
+  const speakerStatusReady = connected
+    && speakerVolumeSupported
+    && speakerEnabled
+    && !speakerTestLocked
+    && !speakerOutputMissing
+    && !gameStreamActive
+    && !snapshot?.status?.testHapticsBusy;
+  const micStatusReady = connected
+    && duplexMicEnabled
+    && !micTestLocked
+    && !gameStreamActive;
   const speakerStatusLabel = speakerTestLocked
     ? 'Playing'
     : connected && speakerTestError
       ? speakerTestError
     : connected && speakerOutputMissing
         ? BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE
-        : speakerTestReady
+        : speakerStatusReady
           ? 'Ready'
           : connected && gameStreamActive
             ? 'Game Audio Active'
-            : connected && pendingAction !== null
-              ? 'Command Pending'
-              : 'Unavailable';
-  const speakerStatusTone = speakerTestLocked || speakerTestReady
+            : 'Unavailable';
+  const speakerStatusTone = speakerTestLocked || speakerStatusReady
     ? 'good'
     : connected && (speakerTestError || speakerOutputMissing)
         ? 'bad'
-      : connected && (gameStreamActive || pendingAction !== null)
+      : connected && gameStreamActive
         ? 'warn'
         : 'idle';
   const micTestStatusLabel = micTestLocked
     ? 'Listening'
     : connected && micTestError
       ? micTestError
-      : micTestReady
+      : micStatusReady
         ? 'Ready'
-        : connected && !hostAudioEnabled
-          ? 'Host Encoding Off'
-          : connected && !hostAudioActive
-            ? 'Host Encoding Starting'
-            : connected && pendingAction !== null
-              ? 'Command Pending'
-              : 'Unavailable';
-  const micTestStatusTone = micTestLocked || micTestReady
+        : 'Unavailable';
+  const micTestStatusTone = micTestLocked || micStatusReady
     ? 'good'
     : connected && micTestError
       ? 'bad'
-      : connected && (hostAudioEnabled || pendingAction !== null)
-        ? 'warn'
-        : 'idle';
+      : 'idle';
   const activeAudioTestUnavailable = showMicrophoneControl ? testMicUnavailable : testSpeakerUnavailable;
   const activeAudioTestLocked = showMicrophoneControl ? micTestLocked : speakerTestLocked;
   const activeAudioTestStatusLabel = showMicrophoneControl ? micTestStatusLabel : speakerStatusLabel;
   const activeAudioTestStatusTone = showMicrophoneControl ? micTestStatusTone : speakerStatusTone;
-  const sidebarDeviceTitle = connected && controllerConnected
+  const sidebarDeviceTitle = personaTransitionActive
+    ? 'Switching Mode'
+    : connected && controllerConnected
     ? controllerName(snapshot.status?.controllerType)
     : 'Controller';
-  const sidebarDeviceStatus = connected && controllerConnected
+  const sidebarDeviceStatus = personaTransitionActive
+    ? 'Please wait'
+    : connected && controllerConnected
     ? 'Connected'
-    : 'Bridge not detected';
-  const sidebarBatteryLabel = connected && controllerConnected
+    : connected
+      ? 'Controller not connected'
+      : 'Bridge not detected';
+  const sidebarDeviceTone = personaTransitionActive
+    ? 'warn'
+    : connected && controllerConnected
+      ? 'good'
+      : connected
+        ? 'warn'
+        : snapshot?.state === 'error' || snapshot?.state === 'incompatible'
+          ? 'bad'
+          : 'idle';
+  const sidebarBatteryLabel = personaTransitionActive
+    ? 'Reconnecting'
+    : connected && controllerConnected
     ? `Battery ${batteryPercentLabel}`
     : 'Battery unavailable';
   const pollingRateLabel = POLLING_RATE_OPTIONS.find(([, mode]) => mode === snapshot?.settings.pollingRateMode)?.[0]
     .replace(' / Real-time', '')
     ?? '--';
+  const firmwareUpdateAvailable = Boolean(snapshot?.diagnostics.firmwareUpdateAvailable);
   const overviewHealthLabel = healthLabel(snapshot);
-  const overviewHealthTone = snapshot?.diagnostics.lastError
+  const overviewHealthTone = personaTransitionActive
+    ? 'warn'
+    : snapshot?.diagnostics.lastError
     ? 'bad'
+    : firmwareUpdateAvailable
+    ? 'warn'
     : connected && controllerConnected
       ? 'good'
       : connected
         ? 'warn'
         : 'idle';
-  const overviewConnectionStatus = connected && controllerConnected
+  const systemHealthTone = personaTransitionActive
+    ? 'warn'
+    : snapshot?.diagnostics.lastError
+      ? 'bad'
+      : firmwareUpdateAvailable
+        ? 'warn'
+        : 'good';
+  const overviewConnectionStatus = personaTransitionActive
+    ? 'Switching'
+    : connected && controllerConnected
     ? 'Stable'
     : connected
       ? 'Waiting'
       : 'Offline';
-  const overviewEncoderState = !connected
+  const overviewAudioPathState = !connected
     ? '--'
-    : hostAudioEnabled
-      ? 'On'
-      : 'Off';
-  const overviewEncoderDetail = !connected
+    : 'Pico Local';
+  const overviewAudioPathDetail = personaTransitionActive
+    ? 'Switching Mode'
+    : !connected
     ? '--'
-    : hostAudioActive
-      ? 'Active'
-      : hostAudioEnabled && hostAudioCaptureStatus
-        ? hostAudioCaptureIssueLabel(hostAudioCaptureStatus.reason)
-      : hostAudioStarting
-        ? 'Starting'
-      : hostAudioEnabled
-          ? `Fallback: ${hostAudioStatus?.fallbackReason?.replaceAll('-', ' ') ?? 'pending'}`
-          : 'Pico Local';
+    : audioStatus?.controllerStateReady
+      ? 'Controller Ready'
+      : 'Waiting';
   const overviewAudioOutputLabel = connected ? (headsetOutputDetected ? 'Headphones' : 'Speaker') : '--';
   const overviewSpeakerVolumeValue = `${speakerVolumeValue}%`;
   const overviewFirmwareLabel = snapshot?.status?.firmwareVersion ?? '--';
@@ -2570,19 +3875,22 @@ export function App() {
     || triggerTestLocked
     || adaptiveTriggerOutputActive
     || Boolean(snapshot?.status?.testAdaptiveTriggersBusy);
-  const triggerTestReady = !testTriggersUnavailable;
+  const triggerStatusReady = connected
+    && adaptiveTriggersSupported
+    && adaptiveTriggersEnabled
+    && !triggerTestLocked
+    && !adaptiveTriggerOutputActive
+    && !snapshot?.status?.testAdaptiveTriggersBusy;
   const triggerStatusLabel = triggerTestLocked || snapshot?.status?.testAdaptiveTriggersBusy
     ? 'Testing'
-    : triggerTestReady
+    : triggerStatusReady
       ? 'Ready'
       : connected && adaptiveTriggerOutputActive
         ? 'Game Triggers Active'
-        : connected && pendingAction !== null
-          ? 'Command Pending'
-          : 'Unavailable';
-  const triggerStatusTone = triggerTestLocked || snapshot?.status?.testAdaptiveTriggersBusy || triggerTestReady
+        : 'Unavailable';
+  const triggerStatusTone = triggerTestLocked || snapshot?.status?.testAdaptiveTriggersBusy || triggerStatusReady
     ? 'good'
-    : connected && (adaptiveTriggerOutputActive || pendingAction !== null)
+    : connected && adaptiveTriggerOutputActive
       ? 'warn'
       : 'idle';
   const lightbarStateActive = connected && lightbarSupported && lightbarEnabled;
@@ -2644,7 +3952,7 @@ export function App() {
 
     const debug = snapshot.status.audioDebug;
     const stats = snapshot.diagnostics.audioDebugStats;
-    const host = snapshot.diagnostics.hostAudioStatus;
+    const audio = snapshot.diagnostics.audioStatus;
     const lines = [
       `state=${snapshot.state}`,
       `firmware=${snapshot.status.firmwareVersion}`,
@@ -2662,33 +3970,26 @@ export function App() {
       `lastAudioRepairReportId=0x${hexByte(debug.lastHostOutputReportId)}`,
       `lastAudioRepairLength=${debug.lastHostOutputLength}`
     ];
-    if (host) {
+    if (audio) {
       lines.push(
-        `hostAudioMode=${host.mode}`,
-        `hostFallbackReason=${host.fallbackReason}`,
-        `hostRequested=${host.hostRequested ? 'true' : 'false'}`,
-        `hostHeartbeatHealthy=${host.heartbeatHealthy ? 'true' : 'false'}`,
-        `hostStreamHealthy=${host.streamHealthy ? 'true' : 'false'}`,
-        `hostGeneration=${host.streamGeneration}`,
-        `hostFramesReceived=${host.hostFramesReceived}`,
-        `hostFramesDropped=${host.hostFramesDropped}`,
-        `controllerStateReady=${host.controllerStateReady ? 'true' : 'false'}`,
-        `headsetPlugged=${host.headsetPlugged ? 'true' : 'false'}`,
-        `headsetAudioRoute=${host.headsetAudioRoute ? 'true' : 'false'}`,
-        `duplexRequested=${host.duplexRequested ? 'true' : 'false'}`,
-        `duplexActive=${host.duplexActive ? 'true' : 'false'}`,
-        `micPacketsReceived=${host.micPacketsReceived}`,
-        `micPacketsDropped=${host.micPacketsDropped}`,
-        `micDecodeSuccess=${host.micDecodeSuccess}`,
-        `micDecodeFail=${host.micDecodeFail}`,
-        `micUsbWriteSuccess=${host.micUsbWriteSuccess}`,
-        `micUsbWriteShort=${host.micUsbWriteShort}`,
-        `micUsbConcealCount=${host.micUsbConcealCount}`,
-        `micPlcCount=${host.micPlcCount}`,
-        `micLastDecodedSamples=${host.micLastDecodedSamples}`,
-        `micLastWrittenBytes=${host.micLastWrittenBytes}`,
-        `micPeakPermille=${host.micPeakPermille}`,
-        `micUsbStreaming=${host.micUsbStreaming ? 'true' : 'false'}`
+        'audioPath=pico-local',
+        `controllerStateReady=${audio.controllerStateReady ? 'true' : 'false'}`,
+        `headsetPlugged=${audio.headsetPlugged ? 'true' : 'false'}`,
+        `headsetAudioRoute=${audio.headsetAudioRoute ? 'true' : 'false'}`,
+        `duplexRequested=${audio.duplexRequested ? 'true' : 'false'}`,
+        `duplexActive=${audio.duplexActive ? 'true' : 'false'}`,
+        `micPacketsReceived=${audio.micPacketsReceived}`,
+        `micPacketsDropped=${audio.micPacketsDropped}`,
+        `micDecodeSuccess=${audio.micDecodeSuccess}`,
+        `micDecodeFail=${audio.micDecodeFail}`,
+        `micUsbWriteSuccess=${audio.micUsbWriteSuccess}`,
+        `micUsbWriteShort=${audio.micUsbWriteShort}`,
+        `micUsbConcealCount=${audio.micUsbConcealCount}`,
+        `micPlcCount=${audio.micPlcCount}`,
+        `micLastDecodedSamples=${audio.micLastDecodedSamples}`,
+        `micLastWrittenBytes=${audio.micLastWrittenBytes}`,
+        `micPeakPermille=${audio.micPeakPermille}`,
+        `micUsbStreaming=${audio.micUsbStreaming ? 'true' : 'false'}`
       );
     }
     if (stats) {
@@ -2746,6 +4047,19 @@ export function App() {
       setSnapshot(next);
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  async function runQuietAction(action: () => Promise<BridgeSnapshot>) {
+    if (!snapshot) {
+      return;
+    }
+    try {
+      const next = await action();
+      setSnapshot(next);
+    } catch {
+      const next = await window.bridge.getStatus();
+      setSnapshot(next);
     }
   }
 
@@ -2987,11 +4301,21 @@ export function App() {
     void commitSpeakerVolume(snappedValue);
   }
 
+  function setSpeakerGainLevel(level: number) {
+    if (!snapshot) {
+      return;
+    }
+    const value = Math.max(1, Math.min(7, Math.round(level)));
+    if (value === snapshot.settings.speakerGainLevel) {
+      return;
+    }
+    void runQuietAction(() => window.bridge.setSpeakerGainLevel(value));
+  }
+
   async function commitMicVolume(value = micVolumeValue) {
     if (
       !snapshot
       || snapshot.state !== 'connected'
-      || !hostAudioEnabled
       || value === snapshot.settings.micVolumePercent
       || micVolumeCommitPending
     ) {
@@ -3020,6 +4344,106 @@ export function App() {
     micVolumeEditingRef.current = true;
     setMicVolumeValue(snappedValue);
     void commitMicVolume(snappedValue);
+  }
+
+  async function commitAudioBufferLength(value = audioBufferLengthValue) {
+    const snappedValue = clampAudioBufferLength(value);
+    if (
+      !snapshot
+      || snapshot.state !== 'connected'
+      || !audioBufferLengthControlSupported
+      || snappedValue === snapshot.settings.hapticsBufferLength
+      || audioBufferLengthCommitPending
+    ) {
+      audioBufferLengthEditingRef.current = false;
+      setAudioBufferLengthValue(snappedValue);
+      return;
+    }
+
+    setAudioBufferLengthCommitPending(true);
+    audioBufferLengthEditingRef.current = true;
+    try {
+      const next = await window.bridge.setHapticsBufferLength(snappedValue);
+      setSnapshot(next);
+      setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
+    } catch {
+      const next = await window.bridge.getStatus();
+      setSnapshot(next);
+      setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
+    } finally {
+      setAudioBufferLengthCommitPending(false);
+      audioBufferLengthEditingRef.current = false;
+    }
+  }
+
+  async function commitAudioReactiveHapticsConfig(config: Partial<AudioReactiveHapticsConfig>): Promise<BridgeSnapshot | null> {
+    if (
+      !snapshot
+      || snapshot.state !== 'connected'
+      || !audioReactiveHapticsSupported
+      || !hapticsEnabled
+      || audioReactiveHapticsCommitPending
+    ) {
+      return null;
+    }
+
+    setAudioReactiveHapticsCommitPending(true);
+    try {
+      const next = await window.bridge.setAudioReactiveHapticsConfig(config);
+      applySnapshot(next);
+      return next;
+    } catch {
+      const next = await window.bridge.getStatus();
+      applySnapshot(next);
+      return next;
+    } finally {
+      setAudioReactiveHapticsCommitPending(false);
+    }
+  }
+
+  function toggleAudioReactiveHapticsEnabled() {
+    if (!snapshot) return;
+    void commitAudioReactiveHapticsConfig({
+      enabled: !snapshot.settings.audioReactiveHapticsEnabled
+    });
+  }
+
+  function setAudioReactiveHapticsMode(mode: AudioReactiveHapticsMode) {
+    if (!snapshot || mode === snapshot.settings.audioReactiveHapticsMode) return;
+    void commitAudioReactiveHapticsConfig({ mode });
+  }
+
+  function setAudioReactiveHapticsSourceValue(value: string) {
+    if (!snapshot || value === audioReactiveHapticsSourceKey) return;
+    if (value === 'system-audio') {
+      void commitAudioReactiveHapticsConfig({ source: 'system-audio' });
+      return;
+    }
+    const session = audioHapticsSessionByKey.get(value);
+    if (!session) {
+      return;
+    }
+    void commitAudioReactiveHapticsConfig({ source: audioHapticsSourceFromSession(session) });
+  }
+
+  function setAudioReactiveHapticsBassFocus(bassFocus: AudioReactiveHapticsBassFocus) {
+    if (!snapshot || bassFocus === snapshot.settings.audioReactiveHapticsBassFocus) return;
+    void commitAudioReactiveHapticsConfig({ bassFocus });
+  }
+
+  function setAudioReactiveHapticsResponse(response: AudioReactiveHapticsResponse) {
+    if (!snapshot || response === snapshot.settings.audioReactiveHapticsResponse) return;
+    void commitAudioReactiveHapticsConfig({ response });
+  }
+
+  function setAudioReactiveHapticsAttack(attack: AudioReactiveHapticsAttack) {
+    if (!snapshot || attack === snapshot.settings.audioReactiveHapticsAttack) return;
+    void commitAudioReactiveHapticsConfig({ attack });
+  }
+
+  function setAudioReactiveHapticsRelease(release: AudioReactiveHapticsRelease) {
+    if (!snapshot || release === snapshot.settings.audioReactiveHapticsRelease) return;
+    void commitAudioReactiveHapticsConfig({ release });
   }
 
   function setTriggerIntensityPreset(value: number) {
@@ -3659,6 +5083,553 @@ export function App() {
     }
   }
 
+  function commitChordConfiguration(
+    nextFunctions: ChordFunction[],
+    nextAssignments: ChordAssignment[],
+    _action = 'chords-save'
+  ) {
+    void runQuietAction(() => window.bridge.setChordConfiguration(nextFunctions, nextAssignments));
+  }
+
+  function createChordFunction() {
+    const id = `function-${Date.now().toString(36)}`;
+    const nextDraft: ChordFunctionDraft = {
+      ...EMPTY_CHORD_FUNCTION_DRAFT,
+      id,
+      name: `Function ${chordFunctions.length + 1}`
+    };
+    const nextFunction = chordFunctionFromDraft(nextDraft);
+    setSelectedChordFunctionId(id);
+    setChordFunctionDraft(chordFunctionToDraft(nextFunction));
+    commitChordConfiguration([...chordFunctions, nextFunction], chordAssignments, 'chords-create-function');
+  }
+
+  function commitChordFunctionDraft(nextDraft = chordFunctionDraft) {
+    const nextFunction = chordFunctionFromDraft(nextDraft);
+    const exists = chordFunctions.some((func) => func.id === nextFunction.id);
+    const nextFunctions = exists
+      ? chordFunctions.map((func) => (func.id === nextFunction.id ? nextFunction : func))
+      : [...chordFunctions, nextFunction];
+    setSelectedChordFunctionId(nextFunction.id);
+    commitChordConfiguration(nextFunctions, chordAssignments, `chords-function-${nextFunction.id}`);
+  }
+
+  function setChordFunctionKeyboardKey(keyboardKey: string) {
+    const nextDraft = { ...chordFunctionDraft, keyboardKey };
+    setChordFunctionDraft(nextDraft);
+    commitChordFunctionDraft(nextDraft);
+  }
+
+  function toggleChordFunctionKeyboardModifier(modifier: ChordKeyboardModifier) {
+    const enabled = chordFunctionDraft.keyboardModifiers.includes(modifier);
+    if (!enabled && chordFunctionDraft.keyboardModifiers.length >= MAX_KEYBOARD_FUNCTION_KEYS - 1) {
+      return;
+    }
+    const keyboardModifiers = enabled
+      ? chordFunctionDraft.keyboardModifiers.filter((candidate) => candidate !== modifier)
+      : CHORD_KEYBOARD_MODIFIER_OPTIONS
+        .map(([, candidate]) => candidate)
+        .filter((candidate) => (
+          candidate === modifier || chordFunctionDraft.keyboardModifiers.includes(candidate)
+        ));
+    const nextDraft = { ...chordFunctionDraft, keyboardModifiers };
+    setChordFunctionDraft(nextDraft);
+    commitChordFunctionDraft(nextDraft);
+  }
+
+  function setChordFunctionControllerAction(action: ChordControllerSettingAction) {
+    const nextDraft = { ...chordFunctionDraft, controllerAction: action };
+    setChordFunctionDraft(nextDraft);
+    commitChordFunctionDraft(nextDraft);
+  }
+
+  function setChordFunctionControllerStepPercent(stepPercent: number) {
+    const nextDraft = {
+      ...chordFunctionDraft,
+      controllerStepPercent: normalizeChordControllerSettingStepPercent(stepPercent)
+    };
+    setChordFunctionDraft(nextDraft);
+    commitChordFunctionDraft(nextDraft);
+  }
+
+  function renderChordFunctionSummary(func: ChordFunction) {
+    const notchTarget = func.type === 'controller-setting'
+      ? chordNotchTargetForAction(func.action)
+      : null;
+    const detailLabel = func.type === 'keyboard'
+      ? 'Keys'
+      : notchTarget
+        ? 'Adjustment'
+        : 'Action';
+    const detailValue = func.type === 'controller-setting' && notchTarget
+      ? chordControllerSettingAdjustmentText(func.action)
+      : chordFunctionSummary(func);
+
+    return (
+      <div className="chords-function-summary chords-function-summary-grouped">
+        <div className="chords-function-summary-header">
+          <span>Summary</span>
+          {func.type === 'controller-setting' && notchTarget ? (
+            <div className="chords-function-summary-options">
+              <label className="chords-step-selector">
+                <span>Step</span>
+                <input
+                  type="number"
+                  min={CHORD_CONTROLLER_SETTING_STEP_MIN}
+                  max={CHORD_CONTROLLER_SETTING_STEP_MAX}
+                  step={1}
+                  value={chordFunctionDraft.id === func.id ? chordFunctionDraft.controllerStepPercent : func.stepPercent}
+                  disabled={pendingAction !== null}
+                  aria-label={`${notchTarget.target.label} step percent`}
+                  onChange={(event) => {
+                    const nextValue = normalizeChordControllerSettingStepPercent(event.target.value);
+                    setChordFunctionDraft((draft) => ({ ...draft, controllerStepPercent: nextValue }));
+                  }}
+                  onBlur={(event) => {
+                    setChordFunctionControllerStepPercent(Number(event.currentTarget.value));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+                <small>%</small>
+              </label>
+              <div className="dual-selector chords-notch-direction-selector" role="group" aria-label={`${notchTarget.target.label} direction`}>
+                <button
+                  type="button"
+                  className={notchTarget.direction === 'down' ? 'active' : ''}
+                  title={`Decrease ${notchTarget.target.label}`}
+                  aria-label={`Decrease ${notchTarget.target.label}`}
+                  disabled={pendingAction !== null}
+                  onClick={() => setChordFunctionControllerAction(notchTarget.target.downAction)}
+                >
+                  <Minus size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={notchTarget.direction === 'up' ? 'active' : ''}
+                  title={`Increase ${notchTarget.target.label}`}
+                  aria-label={`Increase ${notchTarget.target.label}`}
+                  disabled={pendingAction !== null}
+                  onClick={() => setChordFunctionControllerAction(notchTarget.target.upAction)}
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="chords-function-summary-detail">
+          <div className="chords-function-summary-detail-row">
+            <span>Type</span>
+            <strong>{chordFunctionTypeLabel(func.type)}</strong>
+          </div>
+          <div className="chords-function-summary-detail-row">
+            <span>{detailLabel}</span>
+            <strong>
+              {detailValue}
+              {func.type === 'controller-setting' && notchTarget ? (
+                <em> — {func.stepPercent}% step</em>
+              ) : null}
+            </strong>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function openChordFunctionDialog(mode: ChordFunctionDialogMode) {
+    if (!selectedChordFunction) {
+      return;
+    }
+    setChordFunctionNameDraft(selectedChordFunction.name);
+    setChordFunctionDialog({ mode, functionId: selectedChordFunction.id });
+  }
+
+  function closeChordFunctionDialog() {
+    setChordFunctionDialog(null);
+    setChordFunctionNameDraft('');
+  }
+
+  function deleteChordFunction(functionId: string) {
+    const nextFunctions = chordFunctions.filter((func) => func.id !== functionId);
+    const nextAssignments = chordAssignments.filter((assignment) => assignment.functionId !== functionId);
+    const nextSelected = nextFunctions[0] ?? null;
+    setSelectedChordFunctionId(nextSelected?.id ?? '');
+    setChordFunctionDraft(chordFunctionToDraft(nextSelected));
+    setChordAssignmentDraftRows((rows) => rows.filter((row) => row.functionId !== functionId));
+    commitChordConfiguration(nextFunctions, nextAssignments, `chords-delete-function-${functionId}`);
+  }
+
+  function submitChordFunctionDialog() {
+    if (!chordFunctionDialog) {
+      return;
+    }
+    const current = chordFunctions.find((func) => func.id === chordFunctionDialog.functionId);
+    if (!current) {
+      closeChordFunctionDialog();
+      return;
+    }
+    if (chordFunctionDialog.mode === 'delete') {
+      deleteChordFunction(current.id);
+      closeChordFunctionDialog();
+      return;
+    }
+    const nextName = chordFunctionNameDraft.trim().slice(0, MAX_CHORD_FUNCTION_NAME_LENGTH);
+    if (!nextName || nextName === current.name) {
+      closeChordFunctionDialog();
+      return;
+    }
+    const nextFunction = { ...current, name: nextName };
+    const nextFunctions = chordFunctions.map((func) => (func.id === current.id ? nextFunction : func));
+    setSelectedChordFunctionId(current.id);
+    setChordFunctionDraft(chordFunctionToDraft(nextFunction));
+    commitChordConfiguration(nextFunctions, chordAssignments, `chords-rename-function-${current.id}`);
+    closeChordFunctionDialog();
+  }
+
+  function commitChordAssignment(nextAssignment: ChordAssignment, replaceAssignmentId?: string) {
+    const replacingExisting = replaceAssignmentId
+      ? chordAssignments.some((assignment) => assignment.id === replaceAssignmentId)
+      : false;
+    if (!replacingExisting && chordAssignments.length >= MAX_CHORD_ASSIGNMENTS) {
+      return;
+    }
+    const nextAssignments = replacingExisting
+      ? chordAssignments.map((assignment) => (
+        assignment.id === replaceAssignmentId ? nextAssignment : assignment
+      ))
+      : [...chordAssignments, nextAssignment];
+    commitChordConfiguration(chordFunctions, nextAssignments, `chords-assignment-${nextAssignment.id}`);
+  }
+
+  function addChordAssignmentDraft() {
+    if (!canAddChordDraft) {
+      return;
+    }
+    setChordAssignmentDraftRows((rows) => [
+      ...rows,
+      {
+        id: `draft-${Date.now().toString(36)}-${rows.length}`,
+        starter: chordStarterOptions[0]?.[1] ?? 'ps',
+        button: null,
+        functionId: defaultChordFunctionId
+      }
+    ]);
+  }
+
+  function commitChordAssignmentDraft(row: ChordAssignmentDraftRow, button: ChordAssignableButtonId) {
+    if (!row.functionId || !isChordBindingAllowed(row.starter, button)) {
+      return;
+    }
+    const nextAssignment: ChordAssignment = {
+      id: createChordAssignmentId(row.starter, button),
+      kind: 'chord',
+      starter: row.starter,
+      button,
+      functionId: row.functionId
+    };
+    setChordAssignmentDraftRows((rows) => rows.filter((draft) => draft.id !== row.id));
+    commitChordAssignment(nextAssignment);
+  }
+
+  function updateChordAssignmentDraftStarter(rowId: string, starter: ChordStarterId) {
+    setChordAssignmentDraftRows((rows) => rows.map((row) => (
+      row.id === rowId
+        ? {
+          ...row,
+          starter,
+          button: row.button && isChordBindingAllowed(starter, row.button) ? row.button : null
+        }
+        : row
+    )));
+  }
+
+  function updateChordAssignmentDraftButton(rowId: string, button: ChordButtonSelectValue) {
+    if (button === CHORD_UNASSIGNED_BUTTON) {
+      return;
+    }
+    const row = chordAssignmentDraftRows.find((draft) => draft.id === rowId);
+    if (row) {
+      commitChordAssignmentDraft(row, button);
+    }
+  }
+
+  function updateChordAssignmentDraftFunction(rowId: string, functionId: string) {
+    setChordAssignmentDraftRows((rows) => rows.map((row) => (
+      row.id === rowId ? { ...row, functionId } : row
+    )));
+  }
+
+  function deleteChordAssignmentDraft(rowId: string) {
+    setChordAssignmentDraftRows((rows) => rows.filter((row) => row.id !== rowId));
+  }
+
+  function updateChordAssignmentStarter(assignmentId: string, starter: ChordStarterId) {
+    const current = chordAssignments.find((assignment) => assignment.id === assignmentId);
+    if (!current) {
+      return;
+    }
+    const button = isChordBindingAllowed(starter, current.button)
+      ? current.button
+      : firstAllowedChordButton(starter);
+    if (!button) {
+      return;
+    }
+    commitChordAssignment({
+      ...current,
+      starter,
+      button
+    }, assignmentId);
+  }
+
+  function updateChordAssignmentButton(assignmentId: string, button: ChordButtonSelectValue) {
+    if (button === CHORD_UNASSIGNED_BUTTON) {
+      return;
+    }
+    const current = chordAssignments.find((assignment) => assignment.id === assignmentId);
+    if (!current || !isChordBindingAllowed(current.starter, button)) {
+      return;
+    }
+    commitChordAssignment({
+      ...current,
+      button
+    }, assignmentId);
+  }
+
+  function setChordAssignmentFunction(assignmentId: string, functionId: string) {
+    const current = chordAssignments.find((assignment) => assignment.id === assignmentId);
+    if (!current) {
+      return;
+    }
+    commitChordAssignment({
+      ...current,
+      functionId
+    }, assignmentId);
+  }
+
+  function deleteChordAssignment(assignmentId: string) {
+    const nextAssignments = chordAssignments.filter((assignment) => assignment.id !== assignmentId);
+    commitChordConfiguration(chordFunctions, nextAssignments, `chords-delete-assignment-${assignmentId}`);
+  }
+
+  function updateChordAssignmentScrollbar() {
+    const list = chordAssignmentListRef.current;
+    if (!list) {
+      return;
+    }
+    const maxScroll = list.scrollHeight - list.clientHeight;
+    if (maxScroll <= 1) {
+      setChordAssignmentScrollbar((current) => (
+        current.visible ? { visible: false, top: 0, height: 0 } : current
+      ));
+      return;
+    }
+    const trackHeight = list.clientHeight;
+    const height = Math.max(30, Math.round((list.clientHeight / list.scrollHeight) * trackHeight));
+    const top = Math.round((list.scrollTop / maxScroll) * (trackHeight - height));
+    setChordAssignmentScrollbar((current) => (
+      current.visible && current.top === top && current.height === height
+        ? current
+        : { visible: true, top, height }
+    ));
+  }
+
+  function startChordAssignmentScrollbarDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const list = chordAssignmentListRef.current;
+    if (!list || !chordAssignmentScrollbar.visible || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const startY = event.clientY;
+    const startScrollTop = list.scrollTop;
+    const maxScroll = list.scrollHeight - list.clientHeight;
+    const thumbTravel = list.clientHeight - chordAssignmentScrollbar.height;
+    const move = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      list.scrollTop = startScrollTop + ((moveEvent.clientY - startY) / thumbTravel) * maxScroll;
+    };
+    const finish = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+  }
+
+  function reorderChordAssignment(sourceId: string, targetId: string, placement: 'before' | 'after') {
+    if (sourceId === targetId) {
+      return;
+    }
+    const sourceIndex = chordAssignments.findIndex((assignment) => assignment.id === sourceId);
+    if (sourceIndex === -1 || !chordAssignments.some((assignment) => assignment.id === targetId)) {
+      return;
+    }
+    const nextAssignments = [...chordAssignments];
+    const [moved] = nextAssignments.splice(sourceIndex, 1);
+    if (!moved) {
+      return;
+    }
+    const targetIndex = nextAssignments.findIndex((assignment) => assignment.id === targetId);
+    if (targetIndex === -1) {
+      return;
+    }
+    nextAssignments.splice(placement === 'after' ? targetIndex + 1 : targetIndex, 0, moved);
+    commitChordConfiguration(chordFunctions, nextAssignments, `chords-reorder-assignment-${sourceId}`);
+  }
+
+  function setChordAssignmentDragDropHint(nextHint: ChordAssignmentDropHint | null) {
+    const session = chordAssignmentDragRef.current;
+    if (session) {
+      session.dropHint = nextHint;
+    }
+    setChordAssignmentDropHint((current) => (
+      current?.targetId === nextHint?.targetId && current?.placement === nextHint?.placement
+        ? current
+        : nextHint
+    ));
+  }
+
+  function createChordAssignmentDragOverlay(sourceRow: HTMLDivElement): HTMLElement {
+    const overlay = sourceRow.cloneNode(true) as HTMLElement;
+    const rect = sourceRow.getBoundingClientRect();
+    overlay.classList.add('chords-assignment-drag-overlay');
+    overlay.classList.remove('dragging', 'drop-before', 'drop-after');
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`;
+    (sourceRow.closest<HTMLElement>('.shell') ?? document.body).appendChild(overlay);
+    return overlay;
+  }
+
+  function moveChordAssignmentDragOverlay(session: ChordAssignmentDragSession, clientX: number, clientY: number) {
+    if (!session.overlay) {
+      return;
+    }
+    session.overlay.style.transform = `translate3d(${clientX - session.offsetX}px, ${clientY - session.offsetY}px, 0) scale(1.01)`;
+  }
+
+  function updateChordAssignmentDropTarget(sourceId: string, _clientX: number, clientY: number) {
+    const list = chordAssignmentListRef.current;
+    if (!list) {
+      setChordAssignmentDragDropHint(null);
+      return;
+    }
+    const rows = Array.from(
+      list.querySelectorAll<HTMLElement>('.chords-assignment-row[data-assignment-id]:not(.draft)')
+    ).filter((row) => row.dataset.assignmentId !== sourceId);
+    if (rows.length === 0) {
+      setChordAssignmentDragDropHint(null);
+      return;
+    }
+    let nearest: { targetId: string; placement: 'before' | 'after'; distance: number } | null = null;
+    for (const row of rows) {
+      const targetId = row.dataset.assignmentId;
+      if (!targetId) {
+        continue;
+      }
+      const rect = row.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const placement = clientY > centerY ? 'after' : 'before';
+      const edgeY = placement === 'after' ? rect.bottom : rect.top;
+      const distance = Math.abs(clientY - edgeY);
+      if (!nearest || distance < nearest.distance) {
+        nearest = { targetId, placement, distance };
+      }
+    }
+    setChordAssignmentDragDropHint(nearest && {
+      targetId: nearest.targetId,
+      placement: nearest.placement
+    });
+  }
+
+  function finishChordAssignmentPointerDrag(cancelled = false) {
+    const session = chordAssignmentDragRef.current;
+    if (!session) {
+      return;
+    }
+    session.cleanup();
+    session.overlay?.remove();
+    document.body.classList.remove('chords-assignment-pointer-dragging');
+    chordAssignmentDragRef.current = null;
+    setDraggedChordAssignmentId(null);
+    setChordAssignmentDropHint(null);
+    if (!cancelled && session.active && session.dropHint) {
+      reorderChordAssignment(session.id, session.dropHint.targetId, session.dropHint.placement);
+    }
+    if (session.active) {
+      window.addEventListener('click', (clickEvent) => {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+      }, { capture: true, once: true });
+    }
+  }
+
+  function startChordAssignmentPointerDrag(event: ReactPointerEvent<HTMLDivElement>, assignmentId: string) {
+    if (pendingAction !== null || event.button !== 0 || chordAssignmentDragRef.current) {
+      return;
+    }
+    const sourceRow = event.currentTarget;
+    const rect = sourceRow.getBoundingClientRect();
+    const session: ChordAssignmentDragSession = {
+      active: false,
+      id: assignmentId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      overlay: null,
+      startX: event.clientX,
+      startY: event.clientY,
+      cleanup: () => undefined,
+      dropHint: null
+    };
+    const activate = (clientX: number, clientY: number) => {
+      if (session.active) {
+        return;
+      }
+      session.active = true;
+      session.overlay = createChordAssignmentDragOverlay(sourceRow);
+      document.body.classList.add('chords-assignment-pointer-dragging');
+      setDraggedChordAssignmentId(assignmentId);
+      moveChordAssignmentDragOverlay(session, clientX, clientY);
+    };
+    const move = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - session.startX;
+      const deltaY = moveEvent.clientY - session.startY;
+      if (!session.active && Math.hypot(deltaX, deltaY) < 5) {
+        return;
+      }
+      activate(moveEvent.clientX, moveEvent.clientY);
+      moveEvent.preventDefault();
+      moveChordAssignmentDragOverlay(session, moveEvent.clientX, moveEvent.clientY);
+      updateChordAssignmentDropTarget(assignmentId, moveEvent.clientX, moveEvent.clientY);
+    };
+    const end = () => finishChordAssignmentPointerDrag(false);
+    const cancel = () => finishChordAssignmentPointerDrag(true);
+    const keyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') {
+        finishChordAssignmentPointerDrag(true);
+      }
+    };
+    session.cleanup = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('keydown', keyDown);
+    };
+    chordAssignmentDragRef.current = session;
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('keydown', keyDown);
+  }
+
   function toggleHapticsEnabled() {
     if (!snapshot) return;
     void runAction('haptics-enabled', () => window.bridge.setHapticsEnabled(!snapshot.settings.hapticsEnabled));
@@ -3671,38 +5642,47 @@ export function App() {
     ));
   }
 
+  function toggleClassicRumbleV1Enabled() {
+    if (!snapshot || classicRumbleV1CommitPending) return;
+
+    setClassicRumbleV1CommitPending(true);
+    void (async () => {
+      try {
+        const next = await window.bridge.setClassicRumbleV1Enabled(!snapshot.settings.classicRumbleV1Enabled);
+        setSnapshot(next);
+      } catch {
+        const next = await window.bridge.getStatus();
+        setSnapshot(next);
+      } finally {
+        setClassicRumbleV1CommitPending(false);
+      }
+    })();
+  }
+
   function toggleFeedbackBoostEnabled() {
-    if (!snapshot) return;
-    void runAction('feedback-boost', () => (
-      window.bridge.setFeedbackBoostEnabled(!snapshot.settings.feedbackBoostEnabled)
-    ));
+    if (!snapshot || feedbackBoostCommitPending) return;
+
+    setFeedbackBoostCommitPending(true);
+    void (async () => {
+      try {
+        const next = await window.bridge.setFeedbackBoostEnabled(!snapshot.settings.feedbackBoostEnabled);
+        setSnapshot(next);
+        setHapticsValue(displayHapticsValue(next));
+        setClassicRumbleValue(displayClassicRumbleValue(next));
+      } catch {
+        const next = await window.bridge.getStatus();
+        setSnapshot(next);
+        setHapticsValue(displayHapticsValue(next));
+        setClassicRumbleValue(displayClassicRumbleValue(next));
+      } finally {
+        setFeedbackBoostCommitPending(false);
+      }
+    })();
   }
 
   function toggleSpeakerEnabled() {
     if (!snapshot) return;
     void runAction('speaker-enabled', () => window.bridge.setSpeakerEnabled(!snapshot.settings.speakerEnabled));
-  }
-
-  function toggleHostEncodedAudioEnabled() {
-    if (!snapshot) return;
-    if (snapshot.settings.hostEncodedAudioEnabled) {
-      setHostEncodingDisableConfirmVisible(true);
-      return;
-    }
-    void runAction('host-audio-enabled', () => window.bridge.setHostEncodedAudioEnabled(true));
-  }
-
-  function closeHostEncodingDisableConfirm() {
-    setHostEncodingDisableConfirmVisible(false);
-  }
-
-  function confirmDisableHostEncoding() {
-    if (!snapshot) {
-      closeHostEncodingDisableConfirm();
-      return;
-    }
-    void runAction('host-audio-enabled', () => window.bridge.setHostEncodedAudioEnabled(false));
-    closeHostEncodingDisableConfirm();
   }
 
   function openDeviceCleanupConfirm() {
@@ -3743,6 +5723,44 @@ export function App() {
       }
       setPendingAction(null);
     }
+  }
+
+  async function runPicoFirmwareAction(
+    label: string,
+    action: () => Promise<{ ok: boolean; cancelled?: boolean; message: string }>
+  ) {
+    if (pendingAction !== null) {
+      return;
+    }
+    setPendingAction(label);
+    setPicoFirmwareMessage(null);
+    setPicoFirmwareError(null);
+    try {
+      const result = await action();
+      if (!result.cancelled) {
+        if (result.ok) {
+          setPicoFirmwareMessage(result.message);
+        } else {
+          setPicoFirmwareError(result.message);
+        }
+      }
+    } catch (error) {
+      setPicoFirmwareError(error instanceof Error ? error.message : 'Pico firmware action failed.');
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  function mountPicoBootloader() {
+    void runPicoFirmwareAction('pico-firmware-mount', () => window.bridge.mountPicoBootloader());
+  }
+
+  function flashPicoFirmware() {
+    void runPicoFirmwareAction('pico-firmware-flash', () => window.bridge.flashPicoFirmware());
+  }
+
+  function nukePicoFlash() {
+    void runPicoFirmwareAction('pico-firmware-nuke', () => window.bridge.nukePicoFlash());
   }
 
   function toggleAudioEnabled() {
@@ -3788,7 +5806,6 @@ export function App() {
     setShowNotificationsMenu(false);
     setShowBridgeSettings(true);
     setNotificationFocusTarget(null);
-    setFeatureFocusTarget(null);
     setSettingsFocusTarget(target);
     if (settingsFocusTimerRef.current !== null) {
       window.clearTimeout(settingsFocusTimerRef.current);
@@ -3803,7 +5820,6 @@ export function App() {
     setShowBridgeSettings(false);
     setShowNotificationsMenu(true);
     setSettingsFocusTarget(null);
-    setFeatureFocusTarget(null);
     setNotificationFocusTarget(target);
     if (notificationFocusTimerRef.current !== null) {
       window.clearTimeout(notificationFocusTimerRef.current);
@@ -3814,30 +5830,12 @@ export function App() {
     }, 2200);
   }
 
-  function focusFeatureControl(target: FeatureFocusTarget) {
-    if (target === 'host-encoding' && hostAudioEnabled) {
-      return;
-    }
-    setShowBridgeSettings(false);
-    setShowNotificationsMenu(false);
-    setSettingsFocusTarget(null);
-    setNotificationFocusTarget(null);
-    setFeatureFocusTarget(target);
-    setFeatureFocusPulse((pulse) => pulse + 1);
-    if (featureFocusTimerRef.current !== null) {
-      window.clearTimeout(featureFocusTimerRef.current);
-    }
-    featureFocusTimerRef.current = window.setTimeout(() => {
-      setFeatureFocusTarget(null);
-      featureFocusTimerRef.current = null;
-    }, 2200);
-  }
-
   function setMuteButtonAction(
     mode: MuteButtonMode,
     usage?: number,
     modifiers?: number,
-    behavior?: MuteKeyboardBehavior
+    behavior?: MuteKeyboardBehavior,
+    chordStarterEnabled?: boolean
   ) {
     if (!snapshot) {
       return;
@@ -3845,7 +5843,10 @@ export function App() {
     const keyUsage = usage ?? snapshot.settings.muteKeyboardUsage;
     const keyModifiers = modifiers ?? snapshot.settings.muteKeyboardModifiers;
     const keyBehavior = behavior ?? snapshot.settings.muteKeyboardBehavior;
-    void runAction('mute-button', () => window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior));
+    const keyChordStarterEnabled = chordStarterEnabled ?? snapshot.settings.muteKeyboardChordStarterEnabled;
+    void runAction('mute-button', () => (
+      window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior, keyChordStarterEnabled)
+    ));
   }
 
   function setMuteModifier(bit: number, enabled: boolean) {
@@ -3859,7 +5860,8 @@ export function App() {
       snapshot.settings.muteButtonMode,
       snapshot.settings.muteKeyboardUsage,
       nextModifiers,
-      snapshot.settings.muteKeyboardBehavior
+      snapshot.settings.muteKeyboardBehavior,
+      snapshot.settings.muteKeyboardChordStarterEnabled
     );
   }
 
@@ -3915,6 +5917,10 @@ export function App() {
     void runAction('polling-rate', () => window.bridge.setPollingRateMode(mode));
   }
 
+  function setHostPersonaMode(mode: HostPersonaMode) {
+    void runAction('host-persona', () => window.bridge.setHostPersonaMode(mode));
+  }
+
   function testNotifications() {
     void runAction('notify-test', () => window.bridge.testNotification());
   }
@@ -3924,6 +5930,8 @@ export function App() {
       return;
     }
     setShowCustomColorPicker(false);
+    setShowBridgeSettings(false);
+    setShowNotificationsMenu(false);
     setActiveControlTab(tab);
   }
 
@@ -3989,6 +5997,8 @@ export function App() {
               ariaLabel={`${label} lab profile`}
               className="trigger-lab-profile-select"
               closeOnSelect={false}
+              floatingMenu
+              suspendOutsideClose={triggerLabProfileDialog?.side === side}
               onChange={(profileId) => setTriggerLabProfile(side, profileId)}
               renderMenuFooter={() => {
                 const customProfile = triggerLabProfileIsCustom(draft.profileId);
@@ -4095,12 +6105,27 @@ export function App() {
     );
   }
 
-  if (!snapshot) {
-    return <div className="shell loading">Starting bridge companion</div>;
+  const activeTheme = snapshot?.settings.uiThemePreset ?? startupTheme;
+
+  if (!snapshot || startupVisible) {
+    return (
+      <div className="shell loading" data-theme={activeTheme}>
+        <StartupScreen ready={Boolean(snapshot)} />
+      </div>
+    );
   }
 
+  const kofiBadgeUrl = UI_THEME_KOFI_BADGES[activeTheme] ?? UI_THEME_KOFI_BADGES[DEFAULT_UI_THEME_PRESET];
+
   return (
-    <div className={`shell ${windowDragging ? 'window-dragging' : ''}`}>
+    <div
+      className={[
+        'shell',
+        windowDragging ? 'window-dragging' : '',
+        controllerControlsAvailable ? '' : 'controller-unavailable'
+      ].filter(Boolean).join(' ')}
+      data-theme={activeTheme}
+    >
       <div
         className="window-bar"
         onMouseDown={(event) => {
@@ -4116,7 +6141,7 @@ export function App() {
         }}
       >
         <span className="bridge-wordmark" aria-label="DS5 Bridge">
-          <img className="bridge-mark" src={bridgeMarkUrl} alt="" aria-hidden="true" />
+          <BridgeMark />
           <span className="bridge-wordmark-ds">DS5</span>
           <span className="bridge-wordmark-name">Bridge</span>
         </span>
@@ -4200,14 +6225,13 @@ export function App() {
       <main className="app-content">
         <section className={`hero-card status-${statusTone}`}>
           <div className="sidebar-section-label">Device</div>
-          <div className="hero-main">
+          <div className={`hero-main device-status-${sidebarDeviceTone}`}>
             <img className="controller-art" src={controllerImage} alt="" />
             <div className="status-copy">
               <div className="connection-row">
                 <strong>{sidebarDeviceTitle}</strong>
               </div>
               <div className="bridge-state compact-device-status">
-                <span className={`dot ${connected && controllerConnected ? 'good' : connected ? 'warn' : ''}`} />
                 <span>{sidebarDeviceStatus}</span>
               </div>
               <div className="battery-row compact-battery-row">
@@ -4274,6 +6298,17 @@ export function App() {
                 <SettingsIcon size={18} />
                 <span>Settings</span>
               </button>
+              <button
+                className={`sidebar-action-button ${activeControlTab === 'chords' ? 'active' : ''}`}
+                id="control-tab-chords"
+                type="button"
+                aria-controls="control-panel-chords"
+                aria-selected={activeControlTab === 'chords'}
+                onClick={() => selectControlTab('chords')}
+              >
+                <IconReplace size={18} />
+                <span>Chords</span>
+              </button>
             </div>
           </div>
         </section>
@@ -4320,19 +6355,19 @@ export function App() {
 
               <button className="overview-card" type="button" onClick={() => selectControlTab('audio')}>
                 <div className="overview-card-title">
-                  <span className="feature-icon overview-icon"><IconBinary size={20} /></span>
-                  <h3>Encoder</h3>
+                  <span className="feature-icon overview-icon"><IconBinary size={26} /></span>
+                  <h3>Audio Path</h3>
                 </div>
                 <div className="overview-fields">
                   <div>
-                    <span>Host Encoding</span>
-                    <strong className={overviewEncoderState === 'On' ? 'success-value' : ''}>
-                      {overviewEncoderState}
+                    <span>Route</span>
+                    <strong className={overviewAudioPathState === 'Pico Local' ? 'success-value' : ''}>
+                      {overviewAudioPathState}
                     </strong>
                   </div>
                   <div>
                     <span>Status</span>
-                    <strong>{overviewEncoderDetail}</strong>
+                    <strong>{overviewAudioPathDetail}</strong>
                   </div>
                 </div>
               </button>
@@ -4416,6 +6451,43 @@ export function App() {
                     <Moon size={15} />
                     {overviewSleepConfirmVisible ? 'Confirm Sleep' : 'Sleep Controller'}
                   </button>
+                </div>
+                <div className="overview-persona-grid" aria-label="Host controller persona">
+                  {HOST_PERSONA_OPTIONS.map(([label, mode]) => {
+                    const active = overviewHostPersonaMode === mode;
+                    const supported = supportedHostPersonaModes.includes(mode);
+                    const disabled = !connected
+                      || !hostPersonaControlSupported
+                      || pendingAction !== null
+                      || personaTransitionActive
+                      || (!supported && !active);
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={`overview-persona-button persona-${mode} ${active ? 'active' : ''}`}
+                        aria-pressed={active}
+                        disabled={disabled}
+                        title={`Switch to ${label} mode`}
+                        onClick={() => {
+                          if (!active) {
+                            setHostPersonaMode(mode);
+                          }
+                        }}
+                      >
+                        {mode === 'xbox' ? (
+                          <IconBrandXbox className="overview-persona-logo" aria-hidden="true" />
+                        ) : (
+                          <span
+                            className="overview-persona-logo playstation"
+                            style={{ '--overview-persona-logo-mask': `url("${playStationLogoUrl}")` } as CSSProperties}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span>{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
 
@@ -4502,7 +6574,7 @@ export function App() {
                     </div>
                     <strong>{speakerVolumeValue}%</strong>
                   </label>
-                  <label className={`overview-slider-row ${(!connected || !hostAudioEnabled || !duplexMicEnabled || micVolumeCommitPending) ? 'disabled' : ''}`}>
+                  <label className={`overview-slider-row ${(!connected || !duplexMicEnabled || micVolumeCommitPending) ? 'disabled' : ''}`}>
                     <span>Mic</span>
                     <div className="overview-range-control">
                       <input
@@ -4511,7 +6583,7 @@ export function App() {
                         max="100"
                         step={MIC_VOLUME_STEP}
                         value={micVolumeValue}
-                        disabled={!connected || !hostAudioEnabled || !duplexMicEnabled || micVolumeCommitPending}
+                        disabled={!connected || !duplexMicEnabled || micVolumeCommitPending}
                         style={{ '--range-fill': `${micVolumeValue}%` } as CSSProperties}
                         onPointerDown={() => {
                           micVolumeEditingRef.current = true;
@@ -4688,25 +6760,260 @@ export function App() {
           >
               <div className="feature-heading">
                 <div>
-                  <h2>Haptics</h2>
-                  <p>Adjust controller haptic feedback and run a quick test.</p>
+                  <h2>{audioHapticsOpen ? 'Audio Haptics' : 'Haptics'}</h2>
+                  <p>{audioHapticsOpen ? 'Turn system audio into haptic feedback.' : 'Adjust controller haptic feedback and run a quick test.'}</p>
                 </div>
-                <div className="inline-switch">
-                  <span>Enabled</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={activeHapticsFeatureEnabled}
-                    className={`switch ${activeHapticsFeatureEnabled ? 'on' : ''}`}
-                    disabled={!connected || pendingAction !== null}
-                    onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
-                  >
-                    <span />
-                  </button>
+                <div className="audio-heading-controls">
+                  <div className="inline-switch audio-haptics-switch-control">
+                    {audioReactiveHapticsModeBadgeLabel ? (
+                      <span className={`inline-state-badge audio-haptics-mode-state ${audioReactiveHapticsOverrideMode ? 'warn' : 'retry'}`}>
+                        {audioReactiveHapticsModeBadgeLabel}
+                      </span>
+                    ) : null}
+                    <span>Audio Haptics</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={audioHapticsOpen}
+                      aria-label={audioHapticsOpen ? 'Exit Audio Haptics' : 'Enter Audio Haptics'}
+                      className={`switch audio-haptics-switch ${audioHapticsOpen ? 'on' : ''}`}
+                      onClick={() => setAudioHapticsOpen((open) => !open)}
+                    >
+                      <span />
+                    </button>
+                    {audioReactiveHapticsModeBadgeLabel ? (
+                      <span className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-haptics-mode-tooltip">
+                        {audioReactiveHapticsModeTooltip}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="inline-switch">
+                    <span>Enabled</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={activeHapticsFeatureEnabled}
+                      className={`switch ${activeHapticsFeatureEnabled ? 'on' : ''}`}
+                      disabled={!controllerControlsAvailable || pendingAction !== null}
+                      onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
+                    >
+                      <span />
+                    </button>
+                  </div>
                 </div>
               </div>
+              {audioHapticsOpen ? (
+                <div className="feature-card-grid audio-haptics-grid">
+                  <section className="feature-card audio-haptics-card">
+                    <div className="feature-card-title">
+                      <button
+                        type="button"
+                        className={`feature-icon audio-haptics-enable-button icon-compact ${audioReactiveHapticsEnabled ? 'active' : ''}`}
+                        aria-pressed={audioReactiveHapticsEnabled}
+                        aria-label={audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'}
+                        title={audioReactiveHapticsStatusLabel}
+                        disabled={audioReactiveHapticsControlDisabled}
+                        onClick={toggleAudioReactiveHapticsEnabled}
+                      >
+                        <IconDeviceAudioTape size={20} />
+                      </button>
+                      <div className="title-copy">
+                        <h3>Audio Haptics</h3>
+                        <p>System audio feedback</p>
+                      </div>
+                    </div>
+                    <div className="framed-slider">
+                      <label className="slider-row">
+                        <span>0%</span>
+                        <div className="range-control">
+                          <input
+                            type="range"
+                            min="0"
+                            max={hapticsSliderMax}
+                            step={HAPTICS_STEP}
+                            value={hapticsValue}
+                            disabled={!connected || !snapshot.settings.hapticsEnabled || hapticsCommitPending}
+                            style={{ '--range-fill': `${(hapticsValue / hapticsSliderMax) * 100}%` } as CSSProperties}
+                            aria-label="Haptics gain"
+                            onPointerDown={() => {
+                              hapticsEditingRef.current = true;
+                            }}
+                            onChange={(event) => setHapticsValue(snapHapticsValue(
+                              Number(event.currentTarget.value),
+                              hapticsSliderMax
+                            ))}
+                            onPointerUp={() => void commitHapticsValue()}
+                            onKeyDown={(event) => {
+                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+                                hapticsEditingRef.current = true;
+                              }
+                            }}
+                            onKeyUp={(event) => {
+                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+                                void commitHapticsValue();
+                              }
+                            }}
+                            onBlur={() => void commitHapticsValue()}
+                          />
+                          <div className="range-ticks" aria-hidden="true">
+                            {hapticsSliderTicks.map((value) => (
+                              <span key={value} className={sliderTickClass(value, hapticsSliderMax)} />
+                            ))}
+                          </div>
+                        </div>
+                        <strong>{hapticsValue}%</strong>
+                      </label>
+                    </div>
+                    <span className="audio-haptics-slider-spacer" aria-hidden="true" />
+                    <div className="segmented-row">
+                      {HAPTICS_PRESETS.map(([label, value]) => {
+                        const presetValue = snapHapticsValue(Number(value), hapticsSliderMax);
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            className={hapticsValue === presetValue ? 'active' : ''}
+                            disabled={!connected || !snapshot.settings.hapticsEnabled || hapticsCommitPending}
+                            onClick={() => setHapticsPreset(presetValue)}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="audio-haptics-routing-stack">
+                      <label className="audio-haptics-source-field">
+                        <CustomSelect
+                          value={audioReactiveHapticsSourceKey}
+                          options={audioHapticsSourceOptions}
+                          disabled={audioReactiveHapticsConfigDisabled}
+                          className="audio-haptics-source-select"
+                          ariaLabel="Audio haptics source"
+                          renderValue={(label, value) => (
+                            <AudioHapticsSourceOption
+                              label={label}
+                              value={value}
+                              session={audioHapticsSessionByKey.get(value)}
+                              loading={audioHapticsSessionsLoading}
+                            />
+                          )}
+                          renderOption={(label, value) => (
+                            <AudioHapticsSourceOption
+                              label={label}
+                              value={value}
+                              session={audioHapticsSessionByKey.get(value)}
+                              loading={audioHapticsSessionsLoading}
+                            />
+                          )}
+                          onChange={setAudioReactiveHapticsSourceValue}
+                        />
+                      </label>
+                      <div className="dual-selector audio-haptics-mode-selector" role="tablist" aria-label="Audio haptics mode">
+                        {AUDIO_REACTIVE_HAPTICS_MODE_OPTIONS.map(([label, mode]) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="tab"
+                            aria-selected={snapshot.settings.audioReactiveHapticsMode === mode}
+                            className={snapshot.settings.audioReactiveHapticsMode === mode ? 'active' : ''}
+                            disabled={audioReactiveHapticsConfigDisabled}
+                            onClick={() => setAudioReactiveHapticsMode(mode)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                  <section className="feature-card audio-haptics-card audio-haptics-response-card">
+                    <div className="feature-card-title">
+                      <span className="feature-icon"><IconBrandDeezer size={20} /></span>
+                      <div className="title-copy">
+                        <h3>Response</h3>
+                        <p>Frequency focus and strength</p>
+                      </div>
+                    </div>
+                    <div className="audio-haptics-config-stack">
+                      <div className="audio-haptics-config-pair-row">
+                        <label>
+                          <AudioHapticsConfigLabel
+                            id="audio-haptics-bass-focus-tooltip"
+                            label="Bass Focus"
+                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.bassFocus}
+                          />
+                          <CustomSelect
+                            value={snapshot.settings.audioReactiveHapticsBassFocus}
+                            options={AUDIO_REACTIVE_HAPTICS_BASS_FOCUS_OPTIONS}
+                            disabled={audioReactiveHapticsConfigDisabled}
+                            className="audio-haptics-select"
+                            ariaLabel="Audio haptics bass focus"
+                            onChange={setAudioReactiveHapticsBassFocus}
+                          />
+                        </label>
+                        <label>
+                          <AudioHapticsConfigLabel
+                            id="audio-haptics-response-tooltip"
+                            label="Response"
+                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.response}
+                          />
+                          <CustomSelect
+                            value={snapshot.settings.audioReactiveHapticsResponse}
+                            options={AUDIO_REACTIVE_HAPTICS_RESPONSE_OPTIONS}
+                            disabled={audioReactiveHapticsConfigDisabled}
+                            className="audio-haptics-select"
+                            ariaLabel="Audio haptics response"
+                            onChange={setAudioReactiveHapticsResponse}
+                          />
+                        </label>
+                      </div>
+                      <div className="audio-haptics-config-pair-row">
+                        <label>
+                          <AudioHapticsConfigLabel
+                            id="audio-haptics-attack-tooltip"
+                            label="Ramp"
+                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.attack}
+                          />
+                          <CustomSelect
+                            value={snapshot.settings.audioReactiveHapticsAttack}
+                            options={AUDIO_REACTIVE_HAPTICS_ATTACK_OPTIONS}
+                            disabled={audioReactiveHapticsConfigDisabled}
+                            className="audio-haptics-select"
+                            ariaLabel="Audio haptics attack"
+                            onChange={setAudioReactiveHapticsAttack}
+                          />
+                        </label>
+                        <label>
+                          <AudioHapticsConfigLabel
+                            id="audio-haptics-release-tooltip"
+                            label="Fade"
+                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.release}
+                          />
+                          <CustomSelect
+                            value={snapshot.settings.audioReactiveHapticsRelease}
+                            options={AUDIO_REACTIVE_HAPTICS_RELEASE_OPTIONS}
+                            disabled={audioReactiveHapticsConfigDisabled}
+                            className="audio-haptics-select"
+                            ariaLabel="Audio haptics release"
+                            onChange={setAudioReactiveHapticsRelease}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="feature-status test-status audio-haptics-status">
+                      <span className={`status-badge ${audioReactiveHapticsStatusTone}`} title={audioReactiveHapticsStatusLabel}>
+                        <span className={`dot ${audioReactiveHapticsStatusTone}`} />
+                        <strong>{audioReactiveHapticsStatusLabel}</strong>
+                      </span>
+                      <span className={`status-badge ${audioReactiveHapticsStatusTone}`} title={audioReactiveHapticsSourceKey === 'system-audio' ? 'Using the mixed Windows output.' : 'Using the selected app audio session.'}>
+                        <span className={`dot ${audioReactiveHapticsEnabled ? audioReactiveHapticsStatusTone : 'idle'}`} />
+                        <strong>{selectedAudioHapticsSourceDisplayName}</strong>
+                      </span>
+                    </div>
+                  </section>
+                </div>
+              ) : (
               <div className="feature-card-grid">
-                <section className="feature-card">
+                <section className="feature-card preset-card">
                   <div className="feature-card-title">
                     <button
                       type="button"
@@ -4714,7 +7021,7 @@ export function App() {
                       aria-pressed={activeHapticsFeatureEnabled}
                       aria-label={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
                       title={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
-                      disabled={!connected || pendingAction !== null}
+                      disabled={!controllerControlsAvailable || pendingAction !== null}
                       onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
                     >
                       {showClassicRumbleControl ? <Vibrate size={20} /> : <Sparkles size={20} />}
@@ -4816,7 +7123,6 @@ export function App() {
                       <strong>{showClassicRumbleControl ? classicRumbleValue : hapticsValue}%</strong>
                     </label>
                   </div>
-                  <p>{showClassicRumbleControl ? 'Applies to game rumble output.' : 'Balanced feedback across both motors.'}</p>
                   <div className="segmented-row">
                     {HAPTICS_PRESETS.map(([label, value]) => {
                       const presetValue = snapHapticsValue(Number(value), hapticsSliderMax);
@@ -4855,12 +7161,31 @@ export function App() {
                       aria-checked={feedbackBoostEnabled}
                       aria-label={feedbackBoostEnabled ? 'Disable feedback boost' : 'Enable feedback boost'}
                       className={`switch ${feedbackBoostEnabled ? 'on' : ''}`}
-                      disabled={!connected || pendingAction !== null}
+                      disabled={!connected || pendingAction !== null || feedbackBoostCommitPending}
                       onClick={toggleFeedbackBoostEnabled}
                     >
                       <span />
                     </button>
                   </div>
+                  {showClassicRumbleControl ? (
+                    <div
+                      className="inline-switch feedback-boost-control haptics-rumble-v1-control"
+                      title={classicRumbleV1Enabled ? 'Classic rumble: v1 compatibility mode' : 'Classic rumble: v2 default mode'}
+                    >
+                      <span className="feedback-boost-label">v1 Rumble</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={classicRumbleV1Enabled}
+                        aria-label={classicRumbleV1Enabled ? 'Disable v1 rumble mode' : 'Enable v1 rumble mode'}
+                        className={`switch ${classicRumbleV1Enabled ? 'on' : ''}`}
+                        disabled={!connected || pendingAction !== null || classicRumbleV1CommitPending}
+                        onClick={toggleClassicRumbleV1Enabled}
+                      >
+                        <span />
+                      </button>
+                    </div>
+                  ) : null}
                 </section>
                 <section className="feature-card test-card">
                   <div className="feature-card-title">
@@ -4894,7 +7219,8 @@ export function App() {
                   </div>
                 </section>
               </div>
-              <FeatureTipsPanel tab="haptics" onSettingsFocusRequest={focusBridgeSettings} />
+              )}
+              <FeatureTipsPanel tab="haptics" onSettingsFocusRequest={focusBridgeSettings} audioHapticsOpen={audioHapticsOpen} />
           </div>
 
           <div
@@ -4907,62 +7233,49 @@ export function App() {
               <div className="feature-heading">
                 <div>
                   <h2>Audio</h2>
-                  <p>Adjust controller {outputControlLower} and microphone levels.</p>
+                  <p>{`Adjust controller ${outputControlLower} and microphone levels.`}</p>
                 </div>
-                <div className="audio-heading-controls">
-                  <div
-                    className={[
-                      'inline-switch',
-                      'host-encoding-switch',
-                      hostAudioCaptureWarning ? 'host-encoding-switch-warn' : '',
-                      featureFocusTarget === 'host-encoding' ? `feature-focus-highlight feature-focus-highlight-${featureFocusPulse % 2}` : ''
-                    ].filter(Boolean).join(' ')}
-                  >
-                    {hostAudioEnabled && hostAudioCaptureStatus ? (
-                      <span className={`host-encoding-state ${hostAudioCaptureWarning ? 'warn' : 'retry'}`}>
-                        {hostAudioCaptureIssueLabel(hostAudioCaptureStatus.reason)}
-                      </span>
-                    ) : null}
-                    <span>Host Encoding</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={hostAudioEnabled}
-                      aria-label="Enable host encoded audio"
-                      className={[
-                        'switch',
-                        hostAudioEnabled ? 'on' : '',
-                        hostAudioCaptureWarning ? 'warn' : ''
-                      ].filter(Boolean).join(' ')}
-                      disabled={!connected || pendingAction !== null}
-                      onClick={toggleHostEncodedAudioEnabled}
-                    >
-                      <span />
-                    </button>
-                    {hostAudioEnabled && hostAudioCaptureStatus ? (
-                      <span className="settings-shortcut-tooltip shortcut-glyph-tooltip host-encoding-tooltip" role="tooltip">
-                        {hostAudioTooltip}
-                      </span>
-                    ) : null}
+                <div className="audio-heading-actions">
+                  <div className="chords-field chords-inline-field audio-speaker-gain-field">
+                    <span>Speaker Gain</span>
+                    <CustomSelect
+                      value={speakerGainLevel}
+                      options={SPEAKER_GAIN_OPTIONS}
+                      disabled={!controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null}
+                      ariaLabel="Speaker gain"
+                      className="audio-speaker-gain-select"
+                      closeOnSelect={true}
+                      onChange={setSpeakerGainLevel}
+                      renderValue={(_label, value) => (
+                        <span>{value}</span>
+                      )}
+                      renderOption={(label) => (
+                        <span className="speaker-gain-option">
+                          <strong>{label}</strong>
+                        </span>
+                      )}
+                    />
                   </div>
-                  <div className="inline-switch">
-                    <span>Enabled</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={audioEnabled}
-                      aria-label="Enable audio"
-                      className={`switch ${audioEnabled ? 'on' : ''}`}
-                      disabled={!connected || pendingAction !== null}
-                      onClick={toggleAudioEnabled}
-                    >
-                      <span />
-                    </button>
+                  <div className="audio-heading-controls">
+                    <div className="inline-switch">
+                      <span>Enabled</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={audioEnabled}
+                        aria-label="Enable audio"
+                        className={`switch ${audioEnabled ? 'on' : ''}`}
+                        disabled={!controllerControlsAvailable || pendingAction !== null}
+                        onClick={toggleAudioEnabled}
+                      >
+                        <span />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
               <div className="feature-card-grid">
-                <section className="feature-card">
+                <section className="feature-card preset-card">
                   <div className="feature-card-title">
                     <button
                       type="button"
@@ -4980,8 +7293,8 @@ export function App() {
                       title={showMicrophoneControl ? duplexMicLabel : `Enable controller ${outputControlLower}`}
                       disabled={
                         showMicrophoneControl
-                          ? !connected || !hostAudioEnabled || pendingAction !== null
-                          : !connected || !speakerVolumeSupported || pendingAction !== null
+                          ? !controllerControlsAvailable || pendingAction !== null
+                          : !controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null
                       }
                       onClick={showMicrophoneControl ? toggleDuplexMicEnabled : toggleSpeakerEnabled}
                     >
@@ -5027,7 +7340,7 @@ export function App() {
                             max="100"
                             step={MIC_VOLUME_STEP}
                             value={micVolumeValue}
-                            disabled={!connected || !hostAudioEnabled || !duplexMicEnabled || micVolumeCommitPending}
+                            disabled={!connected || !duplexMicEnabled || micVolumeCommitPending}
                             style={{ '--range-fill': `${micVolumeValue}%` } as CSSProperties}
                             aria-label="Microphone level"
                             onPointerDown={() => {
@@ -5085,14 +7398,13 @@ export function App() {
                   </div>
                   {showMicrophoneControl ? (
                     <>
-                      <p>Use presets for quick microphone levels.</p>
                       <div className="segmented-row">
                         {MIC_VOLUME_PRESETS.map(([label, value]) => (
                           <button
                             key={label}
                             type="button"
                             className={micVolumeValue === value ? 'active' : ''}
-                            disabled={!connected || !hostAudioEnabled || !duplexMicEnabled || micVolumeCommitPending}
+                            disabled={!connected || !duplexMicEnabled || micVolumeCommitPending}
                             onClick={() => setMicPreset(Number(value))}
                           >
                             {label}
@@ -5114,7 +7426,6 @@ export function App() {
                     </>
                   ) : (
                     <>
-                      <p>Use presets for quick {outputPresetLower} levels.</p>
                       <div className="segmented-row">
                         {SPEAKER_VOLUME_PRESETS.map(([label, value]) => (
                           <button
@@ -5127,6 +7438,82 @@ export function App() {
                             {label}
                           </button>
                         ))}
+                      </div>
+                      <div className="audio-secondary-controls">
+                        <div
+                          className={`audio-buffer-control framed-slider ${audioBufferLengthControlDisabled ? 'disabled' : ''}`}
+                          style={{ '--range-fill': `${audioBufferPercent(audioBufferLengthValue)}%` } as CSSProperties}
+                        >
+                          <div className="audio-buffer-header">
+                            <AudioHapticsConfigLabel
+                              id="audio-buffer-length-tooltip"
+                              label="Audio Buffer Length"
+                              tooltip="Sets the DualSense audio buffer value. Lower values reduce haptic delay but increase stutter risk; higher values improve speaker stability at the cost of latency."
+                              className="audio-buffer-title"
+                            />
+                            <div className="audio-buffer-readout">
+                              <strong>{audioBufferLengthValue}</strong>
+                              <span>{audioBufferDelayLabel(audioBufferLengthValue)}</span>
+                            </div>
+                            <div
+                              className={`audio-buffer-status-icon ${audioBufferZoneTone(audioBufferLengthValue)}`}
+                              aria-label={audioBufferZoneLabel(audioBufferLengthValue)}
+                              aria-describedby="audio-buffer-zone-tooltip"
+                              tabIndex={0}
+                            >
+                              {audioBufferZoneTone(audioBufferLengthValue) === 'safe' && (
+                                <IconCircleCheck size={18} stroke={2.35} aria-hidden="true" />
+                              )}
+                              {audioBufferZoneTone(audioBufferLengthValue) === 'risky' && (
+                                <IconAlertTriangle size={18} stroke={2.35} aria-hidden="true" />
+                              )}
+                              {audioBufferZoneTone(audioBufferLengthValue) === 'stutter' && (
+                                <IconAlertHexagon size={18} stroke={2.35} aria-hidden="true" />
+                              )}
+                              <span
+                                id="audio-buffer-zone-tooltip"
+                                className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-buffer-zone-tooltip"
+                                role="tooltip"
+                              >
+                                {audioBufferZoneTooltip(audioBufferLengthValue)}
+                              </span>
+                            </div>
+                          </div>
+                          <label className="audio-slider-row audio-buffer-slider-row">
+                            <div className="range-control audio-buffer-range-control">
+                              <input
+                                type="range"
+                                min={AUDIO_BUFFER_LENGTH_MIN}
+                                max={AUDIO_BUFFER_LENGTH_MAX}
+                                step="1"
+                                value={audioBufferLengthValue}
+                                aria-label="Audio buffer length"
+                                aria-valuetext={`${audioBufferLengthValue}, ${audioBufferDelayLabel(audioBufferLengthValue)}, ${audioBufferZoneLabel(audioBufferLengthValue)}`}
+                                disabled={audioBufferLengthControlDisabled}
+                                onPointerDown={() => {
+                                  audioBufferLengthEditingRef.current = true;
+                                }}
+                                onPointerCancel={() => void commitAudioBufferLength()}
+                                onChange={(event) => {
+                                  audioBufferLengthEditingRef.current = true;
+                                  setAudioBufferLengthValue(clampAudioBufferLength(Number(event.currentTarget.value)));
+                                }}
+                                onPointerUp={() => void commitAudioBufferLength()}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+                                    audioBufferLengthEditingRef.current = true;
+                                  }
+                                }}
+                                onKeyUp={(event) => {
+                                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+                                    void commitAudioBufferLength();
+                                  }
+                                }}
+                                onBlur={() => void commitAudioBufferLength()}
+                              />
+                            </div>
+                          </label>
+                        </div>
                       </div>
                     </>
                   )}
@@ -5174,18 +7561,14 @@ export function App() {
                       <span className={`dot ${activeAudioTestStatusTone}`} />
                       <strong>{activeAudioTestStatusLabel}</strong>
                     </span>
-                    <span className={`status-badge ${hostAudioTone}`} title={hostAudioTooltip}>
-                      <span className={`dot ${hostAudioTone}`} />
-                      <strong>{hostAudioLabel}</strong>
+                    <span className={`status-badge ${audioPathTone}`} title={audioPathTooltip}>
+                      <span className={`dot ${audioPathTone}`} />
+                      <strong>{audioPathLabel}</strong>
                     </span>
                   </div>
                 </section>
               </div>
-              <FeatureTipsPanel
-                tab="audio"
-                hostEncodingTipActionable={!hostAudioEnabled}
-                onFeatureFocusRequest={focusFeatureControl}
-              />
+              <FeatureTipsPanel tab="audio" />
           </div>
 
           <div
@@ -5203,7 +7586,7 @@ export function App() {
                 <div className="triggers-heading-controls">
                   <div className="inline-switch trigger-lab-switch-control">
                     {triggerLabAnyActive ? (
-                      <span className="host-encoding-state warn trigger-lab-state">
+                      <span className="inline-state-badge warn trigger-lab-state">
                         Lab Override
                       </span>
                     ) : null}
@@ -5231,7 +7614,7 @@ export function App() {
                       role="switch"
                       aria-checked={snapshot.settings.adaptiveTriggersEnabled}
                       className={`switch ${snapshot.settings.adaptiveTriggersEnabled ? 'on' : ''}`}
-                      disabled={!connected || !adaptiveTriggersSupported || pendingAction !== null}
+                      disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
                       onClick={toggleAdaptiveTriggersEnabled}
                     >
                       <span />
@@ -5246,7 +7629,7 @@ export function App() {
                 </div>
               ) : (
               <div className="feature-card-grid">
-                <section className="feature-card">
+                <section className="feature-card preset-card">
                   <div className="feature-card-title">
                     <button
                       type="button"
@@ -5254,7 +7637,7 @@ export function App() {
                       aria-pressed={snapshot.settings.adaptiveTriggersEnabled}
                       aria-label="Enable adaptive triggers"
                       title="Enable adaptive triggers"
-                      disabled={!connected || !adaptiveTriggersSupported || pendingAction !== null}
+                      disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
                       onClick={toggleAdaptiveTriggersEnabled}
                     >
                       <IconDeviceGamepad2 size={20} />
@@ -5304,7 +7687,6 @@ export function App() {
                       <strong>{triggerEffectIntensityValue}%</strong>
                     </label>
                   </div>
-                  <p>Use presets for quick trigger levels</p>
                   <div className="segmented-row">
                     {TRIGGER_EFFECT_PRESETS.map(([label, value]) => (
                       <button
@@ -5413,7 +7795,7 @@ export function App() {
                     role="switch"
                     aria-checked={snapshot.settings.lightbarEnabled}
                     className={`switch ${snapshot.settings.lightbarEnabled ? 'on' : ''}`}
-                    disabled={!connected || !lightbarSupported || pendingAction !== null}
+                    disabled={!controllerControlsAvailable || !lightbarSupported || pendingAction !== null}
                     onClick={toggleLightbarEnabled}
                   >
                     <span />
@@ -5421,7 +7803,7 @@ export function App() {
                 </div>
               </div>
               <div className="feature-card-grid lighting-grid">
-                <section className="feature-card">
+                <section className="feature-card preset-card">
                   <div className="feature-card-title">
                     <button
                       type="button"
@@ -5429,7 +7811,7 @@ export function App() {
                       aria-pressed={snapshot.settings.lightbarEnabled}
                       aria-label="Enable lighting"
                       title="Enable lighting"
-                      disabled={!connected || !lightbarSupported || pendingAction !== null}
+                      disabled={!controllerControlsAvailable || !lightbarSupported || pendingAction !== null}
                       onClick={toggleLightbarEnabled}
                     >
                       <IconBulb size={20} />
@@ -5477,7 +7859,6 @@ export function App() {
                       <strong>{lightbarBrightnessValue}%</strong>
                     </label>
                   </div>
-                  <p>Use presets for quick light bar levels</p>
                   <div className="segmented-row">
                     {LIGHTBAR_PRESETS.map(([label, value]) => (
                       <button
@@ -5640,10 +8021,7 @@ export function App() {
               </div>
               <section className="feature-card remapping-card">
                 <div className="remapping-profile-strip">
-                  <div className="system-profile-save-status">
-                    <Check size={16} />
-                    <span>Changes Are Automatically Saved</span>
-                  </div>
+                  <ProfileSaveStatus />
                   <div className="remapping-profile-actions">
                     <button
                       type="button"
@@ -5675,7 +8053,7 @@ export function App() {
                   <svg className="remapping-callout-layer" aria-hidden="true">
                     {remapCalloutLayout && (
                       <g>
-                        {REMAP_TARGET_OPTIONS.map(([, buttonId]) => {
+                        {REMAP_STANDARD_BUTTON_IDS.map((buttonId) => {
                           const remapped = remapDraft[buttonId] !== buttonId;
                           return (
                             <g key={buttonId} className={hoveredRemapButton === buttonId || remapped ? 'active' : undefined}>
@@ -5846,6 +8224,431 @@ export function App() {
           </div>
 
           <div
+            className={`control-page chords-page ${activeControlTab === 'chords' ? 'active' : ''}`}
+            role="tabpanel"
+            id="control-panel-chords"
+            aria-labelledby="control-tab-chords"
+            aria-hidden={activeControlTab !== 'chords'}
+          >
+              <div className="feature-heading chords-heading">
+                <div>
+                  <h2>Chords</h2>
+                  <p>Assign reusable functions to controller buttons and starter chords.</p>
+                </div>
+              </div>
+
+              <div className="chords-layout">
+                <section className="feature-card chords-card chords-function-card">
+                  <div className="feature-card-title">
+                    <span className="feature-icon">
+                      <IconBooks size={24} />
+                    </span>
+                    <div className="title-copy">
+                      <h3>Function Library</h3>
+                      <p>Create actions.</p>
+                    </div>
+                  </div>
+
+                  <div className="chords-function-strip">
+                    <CustomSelect
+                      value={selectedChordFunction?.id ?? ''}
+                      options={chordFunctionOptions}
+                      disabled={pendingAction !== null || chordFunctions.length === 0}
+                      ariaLabel="Chord function"
+                      className="chords-function-select"
+                      closeOnSelect={false}
+                      suspendOutsideClose={chordFunctionDialog !== null}
+                      onChange={(value) => {
+                        const next = chordFunctions.find((func) => func.id === value) ?? null;
+                        setSelectedChordFunctionId(value);
+                        setChordFunctionDraft(chordFunctionToDraft(next));
+                      }}
+                      renderMenuFooter={() => (
+                        selectedChordFunction ? (
+                          <div className="trigger-lab-profile-actions chords-function-menu-actions">
+                            <button
+                              type="button"
+                              title="Rename"
+                              disabled={pendingAction !== null}
+                              onClick={() => {
+                                openChordFunctionDialog('rename');
+                              }}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete"
+                              disabled={pendingAction !== null}
+                              onClick={() => {
+                                openChordFunctionDialog('delete');
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : null
+                      )}
+                    />
+                    <button
+                      className="heading-icon-action chords-new-function-button"
+                      type="button"
+                      title="New Function"
+                      aria-label="New Function"
+                      disabled={pendingAction !== null}
+                      onClick={createChordFunction}
+                    >
+                      <Plus size={17} />
+                    </button>
+                  </div>
+
+                  {selectedChordFunction ? (
+                    <div className="chords-editor">
+                      <label className="chords-field chords-inline-field">
+                        <span>Type</span>
+                        <CustomSelect
+                          value={chordFunctionDraft.type}
+                          options={CHORD_FUNCTION_TYPE_OPTIONS}
+                          disabled={pendingAction !== null}
+                          ariaLabel="Chord function type"
+                          onChange={(value) => {
+                            const nextDraft = { ...chordFunctionDraft, type: value };
+                            setChordFunctionDraft(nextDraft);
+                            commitChordFunctionDraft(nextDraft);
+                          }}
+                        />
+                      </label>
+
+                      {chordFunctionDraft.type === 'keyboard' && (
+                        <div
+                          className="chords-keyboard-shortcut-builder"
+                          aria-label="Keyboard shortcut"
+                          style={{
+                            '--chords-keyboard-key-label-width': `${CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH}ch`
+                          } as CSSProperties}
+                        >
+                          <CustomSelect
+                            className="chords-keyboard-key-select"
+                            value={chordFunctionDraft.keyboardKey}
+                            options={CHORD_KEYBOARD_KEY_OPTIONS}
+                            disabled={pendingAction !== null}
+                            ariaLabel="Keyboard shortcut key"
+                            onChange={setChordFunctionKeyboardKey}
+                          />
+                          <div className="chords-keyboard-modifiers" aria-label="Keyboard shortcut modifiers">
+                            {CHORD_KEYBOARD_MODIFIER_OPTIONS.map(([label, modifier]) => {
+                              const active = chordFunctionDraft.keyboardModifiers.includes(modifier);
+                              const unavailable = !active
+                                && chordFunctionDraft.keyboardModifiers.length >= MAX_KEYBOARD_FUNCTION_KEYS - 1;
+                              return (
+                                <button
+                                  key={modifier}
+                                  type="button"
+                                  className={active ? 'active' : ''}
+                                  aria-pressed={active}
+                                  disabled={pendingAction !== null || unavailable}
+                                  onClick={() => toggleChordFunctionKeyboardModifier(modifier)}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {chordFunctionDraft.type === 'media' && (
+                        <label className="chords-field chords-inline-field">
+                          <span>Action</span>
+                          <CustomSelect
+                            value={chordFunctionDraft.mediaAction}
+                            options={CHORD_MEDIA_ACTION_OPTIONS}
+                            disabled={pendingAction !== null}
+                            ariaLabel="Chord media action"
+                            onChange={(value) => {
+                              const nextDraft = { ...chordFunctionDraft, mediaAction: value };
+                              setChordFunctionDraft(nextDraft);
+                              commitChordFunctionDraft(nextDraft);
+                            }}
+                          />
+                        </label>
+                      )}
+
+                      {chordFunctionDraft.type === 'controller-setting' && (
+                        <label className="chords-field chords-inline-field">
+                          <span>Action</span>
+                          <CustomSelect
+                            value={chordControllerSettingSelectValue(chordFunctionDraft.controllerAction)}
+                            options={CHORD_CONTROLLER_SETTING_ACTION_OPTIONS}
+                            disabled={pendingAction !== null}
+                            ariaLabel="Chord controller setting action"
+                            onChange={(value) => {
+                              const nextDraft = {
+                                ...chordFunctionDraft,
+                                controllerAction: chordControllerSettingActionFromSelectValue(
+                                  value,
+                                  chordFunctionDraft.controllerAction
+                                )
+                              };
+                              setChordFunctionDraft(nextDraft);
+                              commitChordFunctionDraft(nextDraft);
+                            }}
+                          />
+                        </label>
+                      )}
+
+                      {renderChordFunctionSummary(selectedChordFunction)}
+                    </div>
+                  ) : (
+                    <div className="chords-empty">
+                      <IconReplace size={26} />
+                      <strong>No functions yet</strong>
+                      <span>Create a function, then bind it to a button or chord.</span>
+                    </div>
+                  )}
+                </section>
+
+                <section className="feature-card chords-card chords-assignment-card">
+                  <div className="feature-card-title">
+                    <span className="feature-icon">
+                      <IconDeviceGamepad3 size={24} />
+                    </span>
+                    <div className="title-copy">
+                      <h3>Assignments</h3>
+                      <p>{chordAssignmentsSubtitle}</p>
+                    </div>
+                    {chordAssignmentConflictState.conflictCount > 0 ? (
+                      <span className="chords-conflict-badge" title="Duplicate, inactive, or shortcut-shadowed chord bindings">
+                        <strong>{chordAssignmentConflictState.conflictCount}x</strong>
+                        {chordAssignmentConflictState.conflictCount === 1 ? 'Conflict' : 'Conflicts'}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="chords-assignment-builder">
+                    <button
+                      className="heading-action chords-new-chord-button"
+                      type="button"
+                      disabled={pendingAction !== null || !canAddChordDraft}
+                      onClick={addChordAssignmentDraft}
+                    >
+                      <IconReplace size={18} />
+                      New Chord
+                    </button>
+                  </div>
+
+                  <div className="chords-assignment-scroll-region">
+                    <div
+                      className="chords-assignment-list"
+                      ref={chordAssignmentListRef}
+                      aria-label="Chord assignments"
+                      onScroll={updateChordAssignmentScrollbar}
+                    >
+                      {chordAssignments.length + chordAssignmentDraftRows.length > 0 ? (
+                        <>
+                        {chordAssignmentDraftRows.map((row) => {
+                          const func = chordFunctions.find((candidate) => candidate.id === row.functionId);
+                          const starterOptions = chordStarterOptionsFor(row.starter);
+                          const isInactiveMuteChord = muteChordStarterIsInactive(row.starter);
+                          return (
+                            <div
+                              className={[
+                                'chords-assignment-row',
+                                'draft',
+                                isInactiveMuteChord ? 'mute-starter-inactive' : ''
+                              ].filter(Boolean).join(' ')}
+                              key={row.id}
+                            >
+                              <div
+                                className="chords-assignment-binding"
+                                aria-label="New chord"
+                                title="New chord"
+                              >
+                                  <CustomSelect
+                                  value={row.starter}
+                                  options={starterOptions}
+                                  disabled={pendingAction !== null}
+                                  className="chords-inline-glyph-select chords-inline-starter-select"
+                                  floatingMenu
+                                  floatingMenuMinWidth={72}
+                                  showSelectedCheck={false}
+                                  ariaLabel="Chord starter"
+                                  renderValue={(label, value) => <ChordStarterGlyphOption label={label} value={value} />}
+                                  renderOption={(label, value) => <ChordStarterGlyphOption label={label} value={value} />}
+                                  onChange={(value) => updateChordAssignmentDraftStarter(row.id, value)}
+                                />
+                                <span className="chords-binding-connector" aria-hidden="true" />
+                                <CustomSelect
+                                  value={row.button ?? CHORD_UNASSIGNED_BUTTON}
+                                  options={chordButtonOptionsFor(row.starter, true)}
+                                  disabled={pendingAction !== null}
+                                  className="chords-inline-glyph-select chords-inline-button-select"
+                                  floatingMenu
+                                  floatingMenuMinWidth={72}
+                                  showSelectedCheck={false}
+                                  ariaLabel="Chord button"
+                                  renderValue={(label, value) => <ChordButtonGlyphOption label={label} value={value} />}
+                                  renderOption={(label, value) => <ChordButtonGlyphOption label={label} value={value} />}
+                                  onChange={(value) => updateChordAssignmentDraftButton(row.id, value)}
+                                />
+                              </div>
+                              <span className="chords-function-connector" aria-hidden="true" />
+                              <CustomSelect
+                                value={row.functionId}
+                                options={chordFunctionOptions}
+                                disabled={pendingAction !== null}
+                                className="chords-assignment-function-select"
+                                floatingMenu
+                                ariaLabel="New chord function"
+                                renderValue={(label) => (
+                                  <span className="chords-function-option">
+                                    <strong>{label}</strong>
+                                    <small>{func ? chordFunctionSummary(func) : 'Missing function'}</small>
+                                  </span>
+                                )}
+                                renderOption={(label, value) => {
+                                  const optionFunction = chordFunctions.find((candidate) => candidate.id === value);
+                                  return (
+                                    <span className="chords-function-option">
+                                      <strong>{label}</strong>
+                                      <small>{optionFunction ? chordFunctionSummary(optionFunction) : 'Missing function'}</small>
+                                    </span>
+                                  );
+                                }}
+                                onChange={(value) => updateChordAssignmentDraftFunction(row.id, value)}
+                              />
+                              <button
+                                className="heading-icon-action"
+                                type="button"
+                                title="Remove assignment"
+                                disabled={pendingAction !== null}
+                                onClick={() => deleteChordAssignmentDraft(row.id)}
+                              >
+                                <Trash2 size={17} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {chordAssignments.map((assignment, assignmentIndex) => {
+                        const func = chordFunctions.find((candidate) => candidate.id === assignment.functionId);
+                        const hasConflict = chordAssignmentConflictState.conflictKeys.has(chordAssignmentKey(assignment));
+                        const starterOptions = chordStarterOptionsFor(assignment.starter);
+                        const isInactiveMuteChord = muteChordStarterIsInactive(assignment.starter);
+                        const dropPlacement = chordAssignmentDropHint?.targetId === assignment.id
+                          ? chordAssignmentDropHint.placement
+                          : null;
+                        return (
+                          <div
+                            className={[
+                              'chords-assignment-row',
+                              hasConflict ? 'conflict' : '',
+                              isInactiveMuteChord ? 'mute-starter-inactive' : '',
+                              draggedChordAssignmentId === assignment.id ? 'dragging' : '',
+                              dropPlacement === 'before' ? 'drop-before' : '',
+                              dropPlacement === 'after' ? 'drop-after' : '',
+                              assignmentIndex === 0 && dropPlacement === 'before' ? 'drop-list-start' : ''
+                            ].filter(Boolean).join(' ')}
+                            key={assignment.id}
+                            data-assignment-id={assignment.id}
+                            onPointerDown={(event) => startChordAssignmentPointerDrag(event, assignment.id)}
+                          >
+                            <div
+                              className="chords-assignment-binding"
+                              aria-label={chordAssignmentLabel(assignment)}
+                              title={chordAssignmentLabel(assignment)}
+                            >
+                                <CustomSelect
+                                value={assignment.starter}
+                                options={starterOptions}
+                                disabled={pendingAction !== null}
+                                className="chords-inline-glyph-select chords-inline-starter-select"
+                                floatingMenu
+                                floatingMenuMinWidth={72}
+                                showSelectedCheck={false}
+                                ariaLabel={`${chordAssignmentLabel(assignment)} starter`}
+                                renderValue={(label, value) => <ChordStarterGlyphOption label={label} value={value} />}
+                                renderOption={(label, value) => <ChordStarterGlyphOption label={label} value={value} />}
+                                onChange={(value) => updateChordAssignmentStarter(assignment.id, value)}
+                              />
+                              <span className="chords-binding-connector" aria-hidden="true" />
+                              <CustomSelect
+                                value={assignment.button}
+                                options={chordButtonOptionsFor(assignment.starter)}
+                                disabled={pendingAction !== null}
+                                className="chords-inline-glyph-select chords-inline-button-select"
+                                floatingMenu
+                                floatingMenuMinWidth={72}
+                                showSelectedCheck={false}
+                                ariaLabel={`${chordAssignmentLabel(assignment)} button`}
+                                renderValue={(label, value) => <ChordButtonGlyphOption label={label} value={value} />}
+                                renderOption={(label, value) => <ChordButtonGlyphOption label={label} value={value} />}
+                                onChange={(value) => updateChordAssignmentButton(assignment.id, value)}
+                              />
+                            </div>
+                            <span className="chords-function-connector" aria-hidden="true" />
+                            <CustomSelect
+                              value={assignment.functionId}
+                              options={chordFunctionOptions}
+                              disabled={pendingAction !== null}
+                              className="chords-assignment-function-select"
+                              floatingMenu
+                              ariaLabel={`${chordAssignmentLabel(assignment)} function`}
+                              renderValue={(label) => (
+                                <span className="chords-function-option">
+                                  <strong>{label}</strong>
+                                  <small>{func ? chordFunctionSummary(func) : 'Missing function'}</small>
+                                </span>
+                              )}
+                              renderOption={(label, value) => {
+                                const optionFunction = chordFunctions.find((candidate) => candidate.id === value);
+                                return (
+                                  <span className="chords-function-option">
+                                    <strong>{label}</strong>
+                                    <small>{optionFunction ? chordFunctionSummary(optionFunction) : 'Missing function'}</small>
+                                  </span>
+                                );
+                              }}
+                              onChange={(value) => setChordAssignmentFunction(assignment.id, value)}
+                            />
+                            <button
+                              className="heading-icon-action"
+                              type="button"
+                              title="Remove assignment"
+                              disabled={pendingAction !== null}
+                              onClick={() => deleteChordAssignment(assignment.id)}
+                            >
+                              <Trash2 size={17} />
+                            </button>
+                          </div>
+                        );
+                        })}
+                        </>
+                      ) : (
+                        <div className="chords-empty chords-empty-assignments">
+                          <IconDeviceGamepad3 size={26} />
+                          <strong>No assignments</strong>
+                          <span>Use New Chord to pair a starter, button, and function.</span>
+                        </div>
+                      )}
+                    </div>
+                    {chordAssignmentScrollbar.visible ? (
+                      <div className="chords-assignment-scrollbar" aria-hidden="true">
+                        <div
+                          className="chords-assignment-scrollbar-thumb"
+                          style={{
+                            height: `${chordAssignmentScrollbar.height}px`,
+                            transform: `translateY(${chordAssignmentScrollbar.top}px)`
+                          }}
+                          onPointerDown={startChordAssignmentScrollbarDrag}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+          </div>
+
+          <div
             className={`control-page system-page ${activeControlTab === 'system' ? 'active' : ''}`}
             role="tabpanel"
             id="control-panel-system"
@@ -5890,7 +8693,7 @@ export function App() {
               <div className="feature-card-grid">
                 <section className="system-card mute-card">
                   <div className="feature-card-title system-card-heading">
-                    <span className="feature-icon system-icon icon-wide"><VolumeX size={20} /></span>
+                    <span className="feature-icon system-icon icon-wide"><MicOff size={20} /></span>
                     <div className="title-copy">
                       <h3>Mute Button</h3>
                       <p>Set controller mute behavior.</p>
@@ -5947,6 +8750,38 @@ export function App() {
                               );
                             })}
                           </div>
+                        </div>
+                        <div className="select-row">
+                          <span
+                            className="settings-menu-copy-tooltip chord-starter-label"
+                            tabIndex={0}
+                            aria-describedby="mute-chord-starter-tooltip"
+                          >
+                            Chord Starter
+                            <span
+                              id="mute-chord-starter-tooltip"
+                              className="settings-shortcut-tooltip chord-starter-tooltip"
+                              role="tooltip"
+                            >
+                              Lets Mute start a chord. When enabled, the keyboard key waits 250ms so a chord can be detected first.
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={snapshot.settings.muteKeyboardChordStarterEnabled}
+                            className={`switch ${snapshot.settings.muteKeyboardChordStarterEnabled ? 'on' : ''}`}
+                            disabled={!connected || !muteButtonActionsSupported || pendingAction !== null}
+                            onClick={() => setMuteButtonAction(
+                              'keyboard',
+                              undefined,
+                              undefined,
+                              undefined,
+                              !snapshot.settings.muteKeyboardChordStarterEnabled
+                            )}
+                          >
+                            <span />
+                          </button>
                         </div>
                       </>
                     )}
@@ -6077,10 +8912,24 @@ export function App() {
                           onChange={setPollingRateMode}
                         />
                       </div>
-                      <div className="device-row">
+                      <div className="device-row device-control-row">
+                        <span>Host Controller</span>
+                        <CustomSelect
+                          value={snapshot.settings.hostPersonaMode}
+                          disabled={!connected || !hostPersonaControlSupported || pendingAction !== null || personaTransitionActive}
+                          options={hostPersonaOptions.length > 0 ? hostPersonaOptions : HOST_PERSONA_OPTIONS.slice(0, 1)}
+                          className="host-persona-selector"
+                          ariaLabel="Host controller persona"
+                          getOptionClassName={(_, mode) => (mode === 'xbox' ? 'host-persona-platform-break' : undefined)}
+                          renderValue={(label, mode) => <HostPersonaOption label={label} value={mode} />}
+                          renderOption={(label, mode) => <HostPersonaOption label={label} value={mode} />}
+                          onChange={setHostPersonaMode}
+                        />
+                      </div>
+                      <div className="device-row device-status-row">
                         <span>Status</span>
-                        <strong className={`health-label ${snapshot.diagnostics.lastError ? 'bad' : 'good'}`}>
-                          <span className={`dot ${snapshot.diagnostics.lastError ? 'bad' : statusTone}`} />
+                        <strong className={`health-label ${systemHealthTone}`}>
+                          <span className={`dot ${systemHealthTone === 'good' ? statusTone : systemHealthTone}`} />
                           {healthLabel(snapshot)}
                         </strong>
                       </div>
@@ -6090,10 +8939,7 @@ export function App() {
               </div>
               <section className="feature-help-panel system-profile-panel" aria-label="System profiles and tips">
                 <div className="system-profile-strip">
-                  <div className="system-profile-save-status">
-                    <Check size={16} />
-                    <span>Changes Are Automatically Saved</span>
-                  </div>
+                  <ProfileSaveStatus />
                   <div className="remapping-profile-actions">
                     <button
                       type="button"
@@ -6131,54 +8977,20 @@ export function App() {
       </section>
       </main>
 
-      {hostEncodingDisableConfirmVisible && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={closeHostEncodingDisableConfirm}
-        >
-          <form
-            className="settings-menu bridge-settings-modal host-encoding-confirm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Disable host encoding"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              confirmDisableHostEncoding();
-            }}
-          >
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                <IconBinary size={16} />
-                <span>Disable Host Encoding?</span>
-              </div>
-              <button
-                className="modal-close-button"
-                type="button"
-                aria-label="Close host encoding dialog"
-                onClick={closeHostEncodingDisableConfirm}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="remap-profile-dialog-copy">
-              Host encoding helps keep controller audio smooth. Turning it off may cause audio stuttering.
-            </p>
-            <div className="remap-profile-dialog-actions">
-              <button type="button" className="secondary-action" onClick={closeHostEncodingDisableConfirm}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="primary-action danger"
-                disabled={pendingAction !== null}
-              >
-                Disable
-              </button>
-            </div>
-          </form>
-        </div>
+      {startupTutorialStep !== 'done' && (
+        <StartupTutorial
+          step={startupTutorialStep}
+          featureExampleActive={startupTutorialFeatureActive}
+          supportCountdown={startupTutorialSupportCountdown}
+          kofiBadgeUrl={kofiBadgeUrl}
+          onFeatureExampleToggle={() => setStartupTutorialFeatureActive((active) => !active)}
+          onFeatureStepComplete={() => setStartupTutorialStep('support')}
+          onSupport={() => void window.bridge.openExternal('https://ko-fi.com/sundaymoments')}
+          onFinish={() => {
+            saveStartupTutorialCompleted();
+            setStartupTutorialStep('done');
+          }}
+        />
       )}
 
       {deviceCleanupConfirmVisible && (
@@ -6256,6 +9068,70 @@ export function App() {
                 disabled={pendingAction !== null || controllerConnected}
               >
                 {pendingAction === 'device-cleanup' ? 'Running...' : 'Run Repair'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {chordFunctionDialog && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={closeChordFunctionDialog}
+        >
+          <form
+            className="settings-menu bridge-settings-modal remap-profile-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chord function"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitChordFunctionDialog();
+            }}
+          >
+            <div className="settings-menu-heading bridge-settings-modal-heading">
+              <div className="modal-heading-copy">
+                {chordFunctionDialog.mode === 'delete' ? <Trash2 size={16} /> : <Pencil size={16} />}
+                <span>
+                  {chordFunctionDialog.mode === 'delete' ? 'Delete Function' : 'Rename Function'}
+                </span>
+              </div>
+              <button
+                className="modal-close-button"
+                type="button"
+                aria-label="Close chord function dialog"
+                onClick={closeChordFunctionDialog}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {chordFunctionDialog.mode === 'delete' ? (
+              <p className="remap-profile-dialog-copy">
+                Delete {chordFunctionDialogFunction?.name ?? 'this function'}?
+              </p>
+            ) : (
+              <label className="remap-profile-name-field">
+                <span>Function Name</span>
+                <input
+                  autoFocus
+                  value={chordFunctionNameDraft}
+                  maxLength={MAX_CHORD_FUNCTION_NAME_LENGTH}
+                  onChange={(event) => setChordFunctionNameDraft(event.target.value)}
+                />
+              </label>
+            )}
+            <div className="remap-profile-dialog-actions">
+              <button type="button" className="secondary-action" onClick={closeChordFunctionDialog}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`primary-action ${chordFunctionDialog.mode === 'delete' ? 'danger' : ''}`}
+                disabled={pendingAction !== null || (chordFunctionDialog.mode !== 'delete' && chordFunctionNameDraft.trim().length === 0)}
+              >
+                {chordFunctionDialog.mode === 'delete' ? 'Delete' : 'Save'}
               </button>
             </div>
           </form>
@@ -6495,7 +9371,25 @@ export function App() {
             </div>
             <div className="bridge-settings-columns">
               <div className="bridge-settings-column">
-                <div className="settings-menu-section-label">General</div>
+                <div className="settings-menu-section-label">Appearance</div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Theme</strong>
+                  </div>
+                  <CustomSelect
+                    value={snapshot.settings.uiThemePreset}
+                    options={UI_THEME_OPTIONS}
+                    className="settings-theme-select"
+                    showSelectedCheck={false}
+                    ariaLabel="UI theme"
+                    disabled={pendingAction !== null}
+                    renderValue={(label, value) => <ThemeOption label={label} value={value} />}
+                    renderOption={(label, value) => <ThemeOption label={label} value={value} />}
+                    onChange={(value) => {
+                      void runAction('ui-theme', () => window.bridge.setUiThemePreset(value));
+                    }}
+                  />
+                </div>
                 <div className="settings-menu-row">
                   <div className="settings-menu-copy">
                     <strong>UI Scale</strong>
@@ -6512,6 +9406,7 @@ export function App() {
                     }}
                   />
                 </div>
+                <div className="settings-menu-section-label">General</div>
                 <div className="settings-menu-row">
                   <div className="settings-menu-copy">
                     <strong>Launch at Startup</strong>
@@ -6525,6 +9420,24 @@ export function App() {
                     disabled={pendingAction !== null}
                     onClick={() => void runAction('launch-at-startup', () => (
                       window.bridge.setLaunchAtStartupEnabled(!snapshot.settings.launchAtStartupEnabled)
+                    ))}
+                  >
+                    <span />
+                  </button>
+                </div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Battery Tray Icon</strong>
+                    <span>Show controller battery percentage in the tray</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapshot.settings.showBatteryPercentTrayIcon}
+                    className={`switch ${snapshot.settings.showBatteryPercentTrayIcon ? 'on' : ''}`}
+                    disabled={pendingAction !== null}
+                    onClick={() => void runAction('battery-tray-icon', () => (
+                      window.bridge.setShowBatteryPercentTrayIcon(!snapshot.settings.showBatteryPercentTrayIcon)
                     ))}
                   >
                     <span />
@@ -6593,6 +9506,51 @@ export function App() {
                     <span />
                   </button>
                 </div>
+                <div className="settings-menu-row pico-firmware-row">
+                  <div className="pico-firmware-header">
+                    <strong>Firmware</strong>
+                    <div className="pico-firmware-actions">
+                      <button
+                        type="button"
+                        className="heading-action danger"
+                        disabled={pendingAction !== null}
+                        onClick={nukePicoFlash}
+                      >
+                        <IconRadioactive size={14} />
+                        {pendingAction === 'pico-firmware-nuke' ? 'Nuking...' : 'Nuke'}
+                      </button>
+                      <div className="pico-firmware-dual-action" role="group" aria-label="Pico firmware bootloader actions">
+                        <button
+                          type="button"
+                          className="heading-action"
+                          disabled={pendingAction !== null}
+                          onClick={mountPicoBootloader}
+                        >
+                          <IconUsb size={14} />
+                          {pendingAction === 'pico-firmware-mount' ? 'Mounting...' : 'Mount'}
+                        </button>
+                        <button
+                          type="button"
+                          className="heading-action"
+                          disabled={pendingAction !== null}
+                          onClick={flashPicoFirmware}
+                        >
+                          <IconUpload size={14} />
+                          {pendingAction === 'pico-firmware-flash' ? 'Flashing...' : 'Flash'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="settings-menu-copy pico-firmware-copy">
+                    <span>Mount reboots the Pico into UF2 mode. Flash copies a selected firmware UF2. Nuke wipes flash with Pico Universal Flash Nuke.</span>
+                    {picoFirmwareMessage ? (
+                      <span className="pico-firmware-message good">{picoFirmwareMessage}</span>
+                    ) : null}
+                    {picoFirmwareError ? (
+                      <span className="pico-firmware-message bad">{picoFirmwareError}</span>
+                    ) : null}
+                  </div>
+                </div>
               </div>
               <div className="bridge-settings-column">
                 <div className="settings-menu-section-label">Power & Controller</div>
@@ -6609,6 +9567,24 @@ export function App() {
                     disabled={pendingAction !== null}
                     onClick={() => void runAction('controller-power-saving', () => (
                       window.bridge.setControllerPowerSavingEnabled(!snapshot.settings.controllerPowerSavingEnabled)
+                    ))}
+                  >
+                    <span />
+                  </button>
+                </div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Player Slot LED</strong>
+                    <span>Show the controller player indicator lights</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapshot.settings.playerLedEnabled}
+                    className={`switch ${snapshot.settings.playerLedEnabled ? 'on' : ''}`}
+                    disabled={!connected}
+                    onClick={() => void runAction('player-led', () => (
+                      window.bridge.setPlayerLedEnabled(!snapshot.settings.playerLedEnabled)
                     ))}
                   >
                     <span />
