@@ -46,6 +46,20 @@ The resulting firmware is:
 build/companion/ds5-bridge.uf2
 ```
 
+### Waveshare RP2350B-Plus-W
+
+The Waveshare RP2350B-Plus-W (USB-C, 16MB flash, RM2 wireless) wires the
+CYW43/RM2 module to different RP2350 GPIOs than the Pico 2 W, so it needs its
+own build. Add `-DWAVESHARE_RP2350B_PLUS_W_BUILD=ON` to the cmake configure
+above, or use the convenience script:
+
+```bash
+PICO_SDK_PATH=/path/to/pico-sdk ./boards/build_waveshare_rp2350b_plus_w.sh
+```
+
+The board header lives in `boards/headers/waveshare_rp2350b_plus_w.h`; it is
+not part of upstream pico-sdk.
+
 ## Companion App
 
 Install dependencies from the lockfile and run the checks:
