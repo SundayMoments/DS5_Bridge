@@ -20,6 +20,7 @@ enum class WatchdogMainLoopPhase : uint8_t {
     Companion = 13,
     InterruptAfterCompanion = 14,
     FirmwareLogFlush = 15,
+    Wake = 16,
 };
 
 struct WatchdogTelemetrySnapshot {

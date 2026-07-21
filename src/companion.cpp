@@ -17,6 +17,7 @@
 #include "pico/bootrom.h"
 #include "pico/time.h"
 #include "usb.h"
+#include "wake.h"
 
 namespace {
 
@@ -131,6 +132,7 @@ enum CommandId : uint8_t {
     CommandResetAdaptiveTriggers = 0x0E,
     CommandSetUsbSuspendDisconnectEnabled = 0x0F,
     CommandSetSleepKeybindEnabled = 0x10,
+    CommandSetWakeEnabled = 0x34,
     CommandSleepController = 0x11,
     CommandSetPollingRateMode = 0x12,
     CommandSetClassicRumbleGain = 0x13,
@@ -2279,6 +2281,26 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;
+
+        case CommandSetWakeEnabled: {
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            const bool wake_target = value == 1;
+            const bool wake_changed = wake_target != wake_is_enabled();
+            wake_set_enabled(wake_target);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            // Re-enumerate so Windows re-reads the config descriptor's REMOTE_WAKEUP
+            // bit and adds/removes the device from its wake sources (awalol parity).
+            // Only on an actual change: the app re-applies settings on every connect,
+            // so an unconditional reconnect would loop.
+            if (wake_changed) {
+                usb_request_reconnect();
+            }
+            return;
+        }
 
         case CommandSetSleepKeybindEnabled:
             if (value > 1) {

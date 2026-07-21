@@ -189,7 +189,8 @@ uint8_t descriptor_configuration[] = {
 #endif
     0x01, // bConfigurationValue: 1
     0x00, // iConfiguration: 0
-    0xC0, // bmAttributes: SELF-POWERED, NO REMOTE-WAKEUP
+    0xC0, // bmAttributes: SELF-POWERED; REMOTE-WAKEUP bit (0xE0) is patched in
+          // at runtime by tud_descriptor_configuration_cb when wake is enabled.
     0xFA, // bMaxPower: 500mA (250 * 2mA)
 
     // --- INTERFACE DESCRIPTOR (0.0): Audio Control ---
@@ -763,6 +764,15 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
         }
     }
 
+#ifdef ENABLE_WAKE_HID
+    // Advertise USB REMOTE_WAKEUP (bmAttributes 0xE0) only while wake is enabled,
+    // matching awalol/DS5Dongle. Toggling wake triggers a USB reconnect (see the
+    // CommandSetWakeEnabled handler) so Windows re-reads this and adds/removes the
+    // device from its wake sources. The keyboard interface stays present either way
+    // (it is also used for shortcuts).
+    extern bool wake_remote_wakeup_enabled(void);
+    descriptor_configuration[7] = wake_remote_wakeup_enabled() ? 0xE0 : 0xC0;
+#endif
     apply_gamepad_hid_runtime_configuration(descriptor_configuration, sizeof(descriptor_configuration));
     return descriptor_configuration;
 }

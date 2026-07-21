@@ -34,6 +34,7 @@
 #include "pico/stdio.h"
 #include "usb.h"
 #include "utils.h"
+#include "wake.h"
 #include "bsp/board_api.h"
 #include "hardware/watchdog.h"
 #include "pico/sync.h"
@@ -3716,6 +3717,9 @@ static void finish_hid_session_if_ready() {
     connection_phase = BtConnectionPhase::Ready;
     connection_phase_started_us = 0;
     cancel_hid_channel_recovery_if_ready();
+    // Wake-on-PS: the pad powers off during a real host sleep, so a
+    // reconnect while suspended is a wake request.
+    wake_on_bt_connect();
     critical_section_enter_blocking(&queue_lock);
     reset_controller_output_session_locked();
     critical_section_exit(&queue_lock);

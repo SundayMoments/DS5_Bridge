@@ -2746,6 +2746,15 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setWakeEnabled(enabled: boolean): Promise<BridgeSnapshot> {
+    // Wake state is settings-driven (no firmware status bit); persisting the
+    // setting updates the snapshot and re-applies on reconnect.
+    await this.sendSettingCommand(COMMAND_ID.SET_WAKE_ENABLED, enabled ? 1 : 0, {
+      wakeEnabled: enabled
+    });
+    return this.getSnapshot();
+  }
+
   async setSpeakerVolumeShortcutEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     await this.sendSettingCommand(COMMAND_ID.SET_SPEAKER_VOLUME_SHORTCUT_ENABLED, enabled ? 1 : 0, {
       speakerVolumeShortcutEnabled: enabled
@@ -3721,6 +3730,11 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(
       COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED,
       settings.sleepKeybindEnabled ? 1 : 0,
+      { expectSettingsRevisionChange }
+    );
+    await this.sendCommand(
+      COMMAND_ID.SET_WAKE_ENABLED,
+      settings.wakeEnabled ? 1 : 0,
       { expectSettingsRevisionChange }
     );
     await this.sendCommand(

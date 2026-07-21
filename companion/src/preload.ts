@@ -116,6 +116,9 @@ const api = {
   setSleepKeybindEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setSleepKeybindEnabled', value)
   ),
+  setWakeEnabled: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setWakeEnabled', value)
+  ),
   setSpeakerVolumeShortcutEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setSpeakerVolumeShortcutEnabled', value)
   ),

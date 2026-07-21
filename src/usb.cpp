@@ -14,6 +14,7 @@
 #include "bt.h"
 #include "host_input.h"
 #include "usb.h"
+#include "wake.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
 float volume[2] = {DEFAULT_COMPANION_SPEAKER_GAIN, 1.0f}; // 0: companion speaker gain 0-1, 1: haptics gain 0-5
@@ -253,6 +254,7 @@ extern "C" void tud_mount_cb(void) {
     usb_suspend_at_us = 0;
     usb_reconnect_grace_until_us = 0;
     host_input_note_usb_mounted();
+    wake_note_resume();
 }
 
 extern "C" void tud_umount_cb(void) {
@@ -301,11 +303,13 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
     usb_speaker_streaming = false;
     usb_mic_streaming = false;
     usb_line_streaming = false;
+    wake_note_suspend();
 }
 
 extern "C" void tud_resume_cb(void) {
     usb_host_suspended = false;
     usb_suspend_at_us = 0;
+    wake_note_resume();
 }
 
 void usb_pm_poll() {

@@ -71,6 +71,7 @@ const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   muteKeyboardBehavior: 'tap',
   muteKeyboardChordStarterEnabled: false,
   sleepKeybindEnabled: false,
+  wakeEnabled: true,
   speakerVolumeShortcutEnabled: false,
   pollingRateMode: '1000',
   hostPersonaMode: 'dualsense',
@@ -129,6 +130,7 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
   'muteKeyboardBehavior',
   'muteKeyboardChordStarterEnabled',
   'sleepKeybindEnabled',
+  'wakeEnabled',
   'speakerVolumeShortcutEnabled',
   'pollingRateMode',
   'hostPersonaMode',
@@ -181,6 +183,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   idleDisconnectTimeoutMinutes: 15,
   usbSuspendDisconnectEnabled: true,
   sleepKeybindEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
+  wakeEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.wakeEnabled,
   speakerVolumeShortcutEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumeShortcutEnabled,
   pollingRateMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.pollingRateMode,
   hostPersonaMode: 'dualsense',
@@ -369,6 +372,7 @@ export function controllerProfileSettingsFrom(settings: CompanionSettings): Cont
     muteKeyboardBehavior: settings.muteKeyboardBehavior,
     muteKeyboardChordStarterEnabled: settings.muteKeyboardChordStarterEnabled,
     sleepKeybindEnabled: settings.sleepKeybindEnabled,
+    wakeEnabled: settings.wakeEnabled,
     speakerVolumeShortcutEnabled: settings.speakerVolumeShortcutEnabled,
     pollingRateMode: settings.pollingRateMode,
     hostPersonaMode: settings.hostPersonaMode,
@@ -460,6 +464,9 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
     sleepKeybindEnabled: typeof candidate.sleepKeybindEnabled === 'boolean'
       ? candidate.sleepKeybindEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
+    wakeEnabled: typeof candidate.wakeEnabled === 'boolean'
+      ? candidate.wakeEnabled
+      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.wakeEnabled,
     speakerVolumeShortcutEnabled: typeof candidate.speakerVolumeShortcutEnabled === 'boolean'
       ? candidate.speakerVolumeShortcutEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumeShortcutEnabled,
@@ -967,6 +974,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     sleepKeybindEnabled: typeof value?.sleepKeybindEnabled === 'boolean'
       ? value.sleepKeybindEnabled
       : DEFAULT_SETTINGS.sleepKeybindEnabled,
+    wakeEnabled: typeof value?.wakeEnabled === 'boolean'
+      ? value.wakeEnabled
+      : DEFAULT_SETTINGS.wakeEnabled,
     speakerVolumeShortcutEnabled: typeof value?.speakerVolumeShortcutEnabled === 'boolean'
       ? value.speakerVolumeShortcutEnabled
       : DEFAULT_SETTINGS.speakerVolumeShortcutEnabled,

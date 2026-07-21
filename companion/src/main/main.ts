@@ -1111,6 +1111,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setSleepKeybindEnabled', (_event, value: boolean) => (
     service.setSleepKeybindEnabled(value)
   ));
+  ipcMain.handle('bridge:setWakeEnabled', (_event, value: boolean) => (
+    service.setWakeEnabled(value)
+  ));
   ipcMain.handle('bridge:setSpeakerVolumeShortcutEnabled', (_event, value: boolean) => (
     service.setSpeakerVolumeShortcutEnabled(value)
   ));
