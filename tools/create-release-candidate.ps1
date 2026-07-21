@@ -21,15 +21,12 @@ function Read-JsonFile([string] $Path) {
   return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 }
 
-function Read-FirmwareVersion([string] $CompanionSourcePath) {
-  $source = Get-Content -LiteralPath $CompanionSourcePath -Raw
-  $major = [regex]::Match($source, 'kFirmwareMajor\s*=\s*(\d+)')
-  $minor = [regex]::Match($source, 'kFirmwareMinor\s*=\s*(\d+)')
-  $patch = [regex]::Match($source, 'kFirmwarePatch\s*=\s*(\d+)')
-  if (-not ($major.Success -and $minor.Success -and $patch.Success)) {
-    throw "Unable to read firmware version from $CompanionSourcePath"
+function Read-FirmwareVersion([string] $VersionFilePath) {
+  $version = (Get-Content -LiteralPath $VersionFilePath -Raw).Trim()
+  if ($version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Unable to read firmware version from $VersionFilePath"
   }
-  return "$($major.Groups[1].Value).$($minor.Groups[1].Value).$($patch.Groups[1].Value)"
+  return $version
 }
 
 function Read-BundledFirmwareVersion([string] $BridgeServiceSourcePath) {
@@ -113,7 +110,7 @@ $installerDir = Join-Path $companionRoot 'artifacts\installer'
 $portableArtifactsDir = Join-Path $companionRoot 'artifacts'
 $companionPackage = Read-JsonFile (Join-Path $companionRoot 'package.json')
 $companionVersion = [string] $companionPackage.version
-$firmwareVersion = Read-FirmwareVersion (Join-Path $repoRoot 'src\companion.cpp')
+$firmwareVersion = Read-FirmwareVersion (Join-Path $repoRoot 'firmware-version.txt')
 $bundledFirmwareVersion = Read-BundledFirmwareVersion (Join-Path $companionRoot 'src\main\bridge-service.ts')
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $labelSuffix = if ([string]::IsNullOrWhiteSpace($Label)) { '' } else { " $($Label.Trim())" }
@@ -134,6 +131,7 @@ if ($ValidateOnly) {
   $requiredFiles = @(
     (Join-Path $repoRoot 'LICENSE'),
     (Join-Path $repoRoot 'NOTICE'),
+    (Join-Path $repoRoot 'firmware-version.txt'),
     (Join-Path $companionRoot 'package.json'),
     (Join-Path $repoRoot 'src\companion.cpp')
   )

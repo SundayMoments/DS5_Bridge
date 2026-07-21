@@ -6,7 +6,7 @@ import { _electron as electron } from 'playwright';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const outputDir = path.join(root, 'artifacts', 'ui');
-const tabs = ['Overview', 'Audio', 'Haptics', 'Triggers', 'Lighting', 'Button Remapping', 'Chords', 'System'];
+const tabs = ['Overview', 'Devices', 'Audio', 'Haptics', 'Triggers', 'Lighting', 'Button Remapping', 'Chords', 'System'];
 const remapProfileName = process.env.VISUAL_SMOKE_REMAP_PROFILE?.trim();
 
 await mkdir(outputDir, { recursive: true });
@@ -51,6 +51,8 @@ try {
   await page.waitForTimeout(300);
 
   const controlsNav = page.getByRole('tablist', { name: 'Controls' });
+  await page.getByRole('button', { name: 'Open Devices' }).click();
+  await page.locator('#control-panel-devices.active').waitFor();
 
   for (const tab of tabs) {
     if (tab === 'Chords') {

@@ -9,6 +9,7 @@
 #include "controller_output_policy.h"
 #include "controller_output_submit.h"
 #include "dualsense_output.h"
+#include "firmware_log.h"
 #include "host_input.h"
 #include "persona/host_persona.h"
 #include "pico/critical_section.h"
@@ -20,13 +21,22 @@
 
 namespace {
 
+#if !defined(DS5_FIRMWARE_VERSION_MAJOR) \
+    || !defined(DS5_FIRMWARE_VERSION_MINOR) \
+    || !defined(DS5_FIRMWARE_VERSION_PATCH)
+#error "Firmware version definitions must come from firmware-version.txt via CMake"
+#endif
+
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 16;
+constexpr uint8_t kProtocolMinor = 17;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
-constexpr uint8_t kFirmwareMajor = 1;
-constexpr uint8_t kFirmwareMinor = 6;
-constexpr uint8_t kFirmwarePatch = 3;
+static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
+static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
+static_assert(DS5_FIRMWARE_VERSION_PATCH <= 255);
+constexpr uint8_t kFirmwareMajor = DS5_FIRMWARE_VERSION_MAJOR;
+constexpr uint8_t kFirmwareMinor = DS5_FIRMWARE_VERSION_MINOR;
+constexpr uint8_t kFirmwarePatch = DS5_FIRMWARE_VERSION_PATCH;
 constexpr uint8_t kAudioReactiveHapticsModeMask = 0x7f;
 constexpr uint8_t kAudioReactiveHapticsSuppressClassicRumbleFlag = 0x80;
 constexpr uint8_t kTriangleButtonBit = 0x80;
@@ -140,8 +150,12 @@ enum CommandId : uint8_t {
     CommandSetChordBindings = 0x23,
     CommandSetPlayerLedEnabled = 0x24,
     CommandSetClassicRumbleV1 = 0x25,
+    CommandRequestControllerScan = 0x27,
+    CommandForgetControllerPairings = 0x28,
+    CommandForgetControllerPairing = 0x2E,
     CommandSetSpeakerGain = 0x32,
     CommandEnterBootloader = 0x33,
+    CommandSetLightbarRestoreEnabled = 0x36,
 };
 
 enum AckResult : uint8_t {
@@ -153,6 +167,7 @@ enum AckResult : uint8_t {
     AckUnknownCommand = 0x05,
     AckNotConnected = 0x06,
     AckBusy = 0x07,
+    AckPersistenceFailed = 0x08,
 };
 
 enum MuteButtonMode : uint8_t {
@@ -307,6 +322,9 @@ struct FeedbackTraceEvent {
 FeedbackTraceEvent feedback_trace_ring[kFeedbackTraceRingSize]{};
 uint32_t feedback_trace_next_sequence = 1;
 uint32_t feedback_trace_read_sequence = 1;
+#if DS5_DEBUG_LOGS_ENABLED
+uint32_t feedback_trace_uart_sequence = 1;
+#endif
 uint16_t feedback_trace_dropped_count = 0;
 uint8_t feedback_trace_count = 0;
 uint8_t feedback_trace_head = 0;
@@ -623,6 +641,78 @@ void append_feedback_trace_event(FeedbackTraceEvent const &event) {
         }
     }
 }
+
+#if DS5_DEBUG_LOGS_ENABLED
+void feedback_trace_uart_loop() {
+    FeedbackTraceEvent event{};
+    uint32_t skipped = 0;
+    bool available = false;
+
+    // Trace producers can run in Bluetooth/audio callbacks. Copy one record
+    // under the companion lock, then format it on the main loop so diagnostics
+    // never wait on UART or string formatting in a timing-sensitive path.
+    critical_section_enter_blocking(&companion_report_cs);
+    const uint32_t oldest_sequence =
+        feedback_trace_next_sequence - feedback_trace_count;
+    if (feedback_trace_uart_sequence < oldest_sequence) {
+        skipped = oldest_sequence - feedback_trace_uart_sequence;
+        feedback_trace_uart_sequence = oldest_sequence;
+    }
+    if (feedback_trace_uart_sequence < feedback_trace_next_sequence) {
+        const uint8_t oldest_index = static_cast<uint8_t>(
+            (
+                feedback_trace_head
+                + kFeedbackTraceRingSize
+                - feedback_trace_count
+            ) % kFeedbackTraceRingSize
+        );
+        const uint8_t ring_index = static_cast<uint8_t>(
+            (
+                oldest_index
+                + (feedback_trace_uart_sequence - oldest_sequence)
+            ) % kFeedbackTraceRingSize
+        );
+        event = feedback_trace_ring[ring_index];
+        feedback_trace_uart_sequence++;
+        available = true;
+    }
+    critical_section_exit(&companion_report_cs);
+
+    if (skipped != 0) {
+        firmware_log_printf(
+            "[FB] lost=%lu\n",
+            static_cast<unsigned long>(skipped)
+        );
+    }
+    if (!available) {
+        return;
+    }
+
+    firmware_log_printf(
+        "[FB] %lu,%lu,%u,%02x,%u,%02x,%u,%02x,%02x,%02x,"
+        "%02x,%02x,%u,%u,%u,%u,%u,%u,%u\n",
+        static_cast<unsigned long>(event.sequence),
+        static_cast<unsigned long>(event.timestamp_ms),
+        static_cast<unsigned>(event.stage),
+        static_cast<unsigned>(event.report_id),
+        static_cast<unsigned>(event.length),
+        static_cast<unsigned>(event.sequence_tag),
+        static_cast<unsigned>(event.decision),
+        static_cast<unsigned>(event.flag0),
+        static_cast<unsigned>(event.flag1),
+        static_cast<unsigned>(event.flag2),
+        static_cast<unsigned>(event.motor_right),
+        static_cast<unsigned>(event.motor_left),
+        static_cast<unsigned>(event.haptic_peak),
+        static_cast<unsigned>(event.haptic_mean),
+        static_cast<unsigned>(event.haptic_nonzero),
+        static_cast<unsigned>(event.detail0),
+        static_cast<unsigned>(event.detail1),
+        static_cast<unsigned>(event.detail2),
+        static_cast<unsigned>(event.detail3)
+    );
+}
+#endif
 #endif
 
 uint32_t uptime_seconds() {
@@ -639,6 +729,17 @@ void write_magic_and_version(uint8_t *buffer) {
     memcpy(buffer, kMagic, sizeof(kMagic));
     buffer[4] = kProtocolMajor;
     buffer[5] = kProtocolMinor;
+}
+
+void write_ascii(uint8_t *buffer, size_t length, char const *value) {
+    if (buffer == nullptr || length == 0 || value == nullptr) {
+        return;
+    }
+    size_t value_length = 0;
+    while (value_length < length && value[value_length] != '\0') {
+        value_length++;
+    }
+    memcpy(buffer, value, value_length);
 }
 
 void set_ack(uint8_t command_id, uint8_t sequence, AckResult result, uint8_t detail = 0) {
@@ -774,6 +875,7 @@ void restore_defaults() {
     reset_button_remap();
     bt_set_mute_led(false);
     lightbar_override_enabled = false;
+    bt_set_lightbar_restore_enabled(true);
     set_lightbar_color(0x00, 0x00, 0xff, 100);
     set_led_enabled(true);
     set_player_led_enabled(true);
@@ -1521,10 +1623,8 @@ void get_battery(uint8_t &battery_percent, uint8_t &raw_power_state) {
 
     const uint8_t battery = report[52] & 0x0F;
     raw_power_state = (report[52] >> 4) & 0x0F;
-    if (raw_power_state == 0x02) {
-        battery_percent = 100;
-    } else if (battery <= 10) {
-        battery_percent = battery * 10;
+    if (battery <= 10) {
+        battery_percent = static_cast<uint8_t>(battery == 10 ? 100 : battery * 10 + 5);
     }
 }
 
@@ -1604,6 +1704,32 @@ uint16_t build_ack(uint8_t *buffer, uint16_t reqlen) {
     buffer[9] = last_ack.detail;
     write_u16(buffer + 10, settings_revision);
     write_u32(buffer + 12, uptime_seconds());
+    return COMPANION_PAYLOAD_SIZE;
+}
+
+uint16_t build_device_identity(uint8_t *buffer, uint16_t reqlen) {
+    if (reqlen < COMPANION_PAYLOAD_SIZE) {
+        return 0;
+    }
+
+    memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
+    write_magic_and_version(buffer);
+    buffer[6] = 1; // Device identity schema version.
+
+    BtDeviceIdentitySnapshot identity{};
+    const bool has_identity = bt_get_device_identity(&identity);
+    buffer[7] =
+        (has_identity && identity.address_known ? 0x01 : 0x00)
+        | (has_identity && identity.link_key_known ? 0x02 : 0x00)
+        | (identity.controller_connected ? 0x04 : 0x00)
+        | (bt_pairing_active() ? 0x08 : 0x00);
+    buffer[8] = has_identity && identity.link_key_known ? identity.link_key_type : 0;
+    if (has_identity) {
+        write_ascii(buffer + 9, 18, identity.address);
+        write_ascii(buffer + 27, 24, identity.name);
+        write_u16(buffer + 51, identity.vendor_id);
+        write_u16(buffer + 53, identity.product_id);
+    }
     return COMPANION_PAYLOAD_SIZE;
 }
 
@@ -2117,6 +2243,16 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
 
+        case CommandSetLightbarRestoreEnabled:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            bt_set_lightbar_restore_enabled(value == 1);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
         case CommandSetIdleDisconnectEnabled:
             if (value > 1) {
                 set_ack(command_id, sequence, AckInvalidValue);
@@ -2278,12 +2414,60 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 set_ack(command_id, sequence, AckInvalidValue);
                 return;
             }
-            if (!bt_disconnect()) {
+            if (!bt_disconnect_with_intent(BtControllerDisconnectIntentSleep)) {
                 set_ack(command_id, sequence, AckNotConnected);
                 return;
             }
             set_ack(command_id, sequence, AckOk);
             return;
+
+        case CommandRequestControllerScan:
+            if (value != 0) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            set_ack(
+                command_id,
+                sequence,
+                bt_request_scan() ? AckOk : AckBusy
+            );
+            return;
+
+        case CommandForgetControllerPairings:
+            if (value != 0) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            set_ack(
+                command_id,
+                sequence,
+                bt_forget_pairings() ? AckOk : AckPersistenceFailed
+            );
+            return;
+
+        case CommandForgetControllerPairing:
+            if (value != 0) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            {
+                uint8_t address[6];
+                memcpy(address, buffer + 10, sizeof(address));
+                bool has_address_material = false;
+                for (uint8_t byte : address) {
+                    has_address_material = has_address_material || byte != 0;
+                }
+                if (!has_address_material) {
+                    set_ack(command_id, sequence, AckInvalidValue);
+                    return;
+                }
+                set_ack(
+                    command_id,
+                    sequence,
+                    bt_forget_pairing(address) ? AckOk : AckPersistenceFailed
+                );
+                return;
+            }
 
         case CommandTestHaptics:
             if (value != 0) {
@@ -2811,9 +2995,23 @@ void companion_init() {
     critical_section_init(&companion_report_cs);
     restore_defaults();
     set_ack(0, 0, AckOk);
+#if DS5_FEEDBACK_TRACE_ENABLED && DS5_DEBUG_LOGS_ENABLED
+    firmware_log_printf(
+        "[FB] columns=seq,t_ms,stage,report,len,tag,decision,"
+        "flag0,flag1,flag2,motor_r,motor_l,haptic_peak,haptic_mean,"
+        "haptic_nonzero,detail0,detail1,detail2,detail3\n"
+    );
+    firmware_log_printf(
+        "[FB] stages=1:host,2:bridge-in,3:bridge-out,4:bt,"
+        "5:drop,8:audio-enqueue,9:audio-drop,10:local-audio\n"
+    );
+#endif
 }
 
 void companion_loop() {
+#if DS5_FEEDBACK_TRACE_ENABLED && DS5_DEBUG_LOGS_ENABLED
+    feedback_trace_uart_loop();
+#endif
     audio_test_haptics_loop();
     classic_rumble_test_loop();
     mute_keyboard_chord_window_loop();
@@ -3094,6 +3292,8 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
 #endif
         case COMPANION_REPORT_AUDIO_STATUS:
             return build_audio_status(buffer, reqlen);
+        case COMPANION_REPORT_DEVICE_IDENTITY:
+            return build_device_identity(buffer, reqlen);
 #if DS5_TRIGGER_TRACE_ENABLED
         case COMPANION_REPORT_TRIGGER_TRACE:
             return build_trigger_trace(buffer, reqlen);

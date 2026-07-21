@@ -106,6 +106,7 @@ type StatusOverrides = {
 };
 
 const FULL_REAPPLY_COMMANDS = [
+  COMMAND_ID.SET_LIGHTBAR_RESTORE_ENABLED,
   COMMAND_ID.SET_LIGHTBAR_COLOR,
   COMMAND_ID.SET_LIGHTBAR_OVERRIDE,
   COMMAND_ID.SET_MUTE_BUTTON_ACTION,
@@ -140,6 +141,7 @@ class MockHidDevice extends EventEmitter {
   audioDebugReports: number[][] = [];
   audioStatsReports: number[][] = [];
   audioStatusReports: number[][] = [];
+  deviceIdentity = deviceIdentityReport();
   shortcutEvents: number[] = [];
   shortcutReadError: Error | null = null;
   featureReportIds: number[] = [];
@@ -198,6 +200,9 @@ class MockHidDevice extends EventEmitter {
     }
     if (reportId === REPORT_ID.AUDIO_STATUS) {
       return [...(this.audioStatusReports.shift() ?? audioStatusReport())];
+    }
+    if (reportId === REPORT_ID.DEVICE_IDENTITY) {
+      return [...this.deviceIdentity];
     }
     if (reportId === REPORT_ID.INPUT) {
       if (this.shortcutReadError) {
@@ -314,6 +319,40 @@ function statusReport(overrides: StatusOverrides = {}): number[] {
   report[49] = overrides.supportedHostPersonaModesMask ?? 0;
   report[51] = overrides.micMuted ? 1 : 0;
   report[57] = overrides.speakerGainLevel ?? 4;
+  return report;
+}
+
+function deviceIdentityReport(options: {
+  address?: string | null;
+  name?: string;
+  connected?: boolean;
+  pairingActive?: boolean;
+  linkKeyKnown?: boolean;
+  linkKeyType?: number;
+  vendorId?: number;
+  productId?: number;
+} = {}): number[] {
+  const report = new Array<number>(REPORT_LENGTH).fill(0);
+  report[0] = REPORT_ID.DEVICE_IDENTITY;
+  writeMagic(report);
+  writeVersion(report);
+  report[7] = 1;
+  const address = options.address === undefined ? 'AA:BB:CC:DD:EE:FF' : options.address;
+  report[8] = (address ? 0x01 : 0)
+    | (options.linkKeyKnown === false ? 0 : 0x02)
+    | (options.connected === false ? 0 : 0x04)
+    | (options.pairingActive ? 0x08 : 0);
+  report[9] = options.linkKeyType ?? 5;
+  if (address) {
+    [...address].forEach((value, index) => {
+      report[10 + index] = value.charCodeAt(0);
+    });
+  }
+  [...(options.name ?? 'DualSense')].forEach((value, index) => {
+    report[28 + index] = value.charCodeAt(0);
+  });
+  writeU16(report, 52, options.vendorId ?? 0x054c);
+  writeU16(report, 54, options.productId ?? 0x0ce6);
   return report;
 }
 
@@ -680,25 +719,6 @@ describe('BridgeService', () => {
   it('surfaces a compatible older bridge firmware as an available update', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
-    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 2 });
-    hidMock.state.devicesList = [companionDeviceInfo()];
-    hidMock.state.openDevices.set('companion-path', device);
-
-    await poll(service);
-
-    const snapshot = service.getSnapshot();
-    expect(snapshot.state).toBe('connected');
-    expect(snapshot.status?.firmwareVersion).toBe('1.6.2');
-    expect(snapshot.diagnostics.lastError).toBeNull();
-    expect(snapshot.diagnostics.firmwareUpdateAvailable).toEqual({
-      currentVersion: '1.6.2',
-      availableVersion: '1.6.3'
-    });
-  });
-
-  it('does not surface an available update for the bundled bridge firmware', async () => {
-    const service = serviceFixture();
-    const device = new MockHidDevice();
     device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 3 });
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
@@ -708,6 +728,25 @@ describe('BridgeService', () => {
     const snapshot = service.getSnapshot();
     expect(snapshot.state).toBe('connected');
     expect(snapshot.status?.firmwareVersion).toBe('1.6.3');
+    expect(snapshot.diagnostics.lastError).toBeNull();
+    expect(snapshot.diagnostics.firmwareUpdateAvailable).toEqual({
+      currentVersion: '1.6.3',
+      availableVersion: '1.6.4'
+    });
+  });
+
+  it('does not surface an available update for the bundled bridge firmware', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 4 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.state).toBe('connected');
+    expect(snapshot.status?.firmwareVersion).toBe('1.6.4');
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toBeNull();
   });
 
@@ -1495,6 +1534,24 @@ describe('BridgeService', () => {
     expect(snapshot.settings.playerLedEnabled).toBe(false);
   });
 
+  it('sends and stores automatic lightbar restore settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: true });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    device.sentReports = [];
+    const snapshot = await service.setLightbarRestoreEnabled(false);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_LIGHTBAR_RESTORE_ENABLED);
+    expect(command?.[9]).toBe(0);
+    expect(snapshot.settings.lightbarRestoreEnabled).toBe(false);
+  });
+
   it('sends and stores sleep keybind settings', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
@@ -2102,6 +2159,59 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SLEEP_CONTROLLER);
     expect(command?.[9]).toBe(0);
     expect(snapshot.diagnostics.lastAck?.resultCode).toBe(ACK_RESULT.OK);
+  });
+
+  it('polls controller identity as supplementary bridge diagnostics', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.deviceIdentity = deviceIdentityReport({
+      address: '11:22:33:44:55:66',
+      name: 'DualSense Edge',
+      connected: true,
+      pairingActive: true,
+      vendorId: 0x054c,
+      productId: 0x0df2
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    expect(service.getSnapshot().diagnostics.deviceIdentity).toMatchObject({
+      bluetoothAddress: '11:22:33:44:55:66',
+      controllerName: 'DualSense Edge',
+      controllerConnected: true,
+      pairingActive: true,
+      linkKeyKnown: true,
+      vendorId: 0x054c,
+      productId: 0x0df2
+    });
+    expect(device.featureReportIds).toContain(REPORT_ID.DEVICE_IDENTITY);
+  });
+
+  it('sends scan, forget-all, and address-specific forget commands', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.requestControllerScan();
+    await service.forgetControllerPairings();
+    await service.forgetControllerPairing('AA:BB:CC:DD:EE:FF');
+
+    const commands = device.sentReports.filter((report) => [
+      COMMAND_ID.REQUEST_CONTROLLER_SCAN,
+      COMMAND_ID.FORGET_CONTROLLER_PAIRINGS,
+      COMMAND_ID.FORGET_CONTROLLER_PAIRING
+    ].includes(report[7]));
+    expect(commands.map((report) => report[7])).toEqual([
+      COMMAND_ID.REQUEST_CONTROLLER_SCAN,
+      COMMAND_ID.FORGET_CONTROLLER_PAIRINGS,
+      COMMAND_ID.FORGET_CONTROLLER_PAIRING
+    ]);
+    expect(commands[2]?.slice(11, 17)).toEqual([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
   });
 
   it('sends Pico bootloader command and tolerates the expected transport drop', async () => {

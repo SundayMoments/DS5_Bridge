@@ -6,6 +6,18 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(DS5_FIRMWARE_VERSION_FILE "${CMAKE_CURRENT_LIST_DIR}/firmware-version.txt")
+file(STRINGS "${DS5_FIRMWARE_VERSION_FILE}" DS5_FIRMWARE_VERSION LIMIT_COUNT 1)
+string(STRIP "${DS5_FIRMWARE_VERSION}" DS5_FIRMWARE_VERSION)
+if(NOT DS5_FIRMWARE_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+    message(FATAL_ERROR
+        "firmware-version.txt must contain one MAJOR.MINOR.PATCH version"
+    )
+endif()
+set(DS5_FIRMWARE_VERSION_MAJOR "${CMAKE_MATCH_1}")
+set(DS5_FIRMWARE_VERSION_MINOR "${CMAKE_MATCH_2}")
+set(DS5_FIRMWARE_VERSION_PATCH "${CMAKE_MATCH_3}")
+
 # Initialise pico_sdk from installed location
 # (note this can come from environment, CMake cache etc)
 
@@ -51,6 +63,7 @@ add_executable(ds5-bridge
         src/usb_descriptors.c
         src/main.cpp
         src/button_functions.cpp
+        src/kitsune_button_gesture.cpp
         src/dualsense_input_decoder.cpp
         src/persona/host_persona.cpp
         src/persona/dualsense_persona.cpp
@@ -64,9 +77,12 @@ add_executable(ds5-bridge
         src/controller_output_state.cpp
         src/haptics_test_signal.cpp
         src/output_scheduler.cpp
+        src/ram_mem.c
         src/audio.cpp
         src/bt.cpp
         src/wake.cpp
+        src/firmware_log.cpp
+        src/watchdog_telemetry.cpp
 )
 
 # Cockos WDLResampler
@@ -106,6 +122,37 @@ add_custom_command(TARGET wdl_resampler POST_BUILD
         COMMENT "Relocating WDL_Resampler hot path to .time_critical.*"
         VERBATIM
 )
+
+# DS5Dongle-style BOOTSEL safety: the SDK multicore lockout can interrupt core 1
+# promptly only when its steady-state audio dependencies are safe around the
+# QSPI/XIP pause. Move the inter-core queue operations used by the audio loop to
+# SRAM, alongside Opus and the WDL hot path above.
+function(relocate_to_ram _suffix _renames _comment)
+    add_custom_command(TARGET ds5-bridge PRE_LINK
+            COMMAND ${CMAKE_COMMAND}
+                    "-DOBJROOT=${CMAKE_BINARY_DIR}/CMakeFiles/ds5-bridge.dir"
+                    "-DOBJCOPY=${CMAKE_OBJCOPY}"
+                    "-DSUFFIX=${_suffix}"
+                    "-DRENAMES=${_renames}"
+                    -P "${CMAKE_SOURCE_DIR}/cmake/relocate_to_ram.cmake"
+            COMMENT "${_comment}"
+            VERBATIM
+    )
+endfunction()
+
+relocate_to_ram(
+        src/common/pico_util/queue.c.o
+        ".text.queue_try_add=.time_critical.queue_try_add@.text.queue_try_remove=.time_critical.queue_try_remove"
+        "Relocating core-1 queue operations to SRAM"
+)
+
+# These strong RAM-resident definitions replace newlib's flash-backed memory
+# operations. Prevent the compiler from lowering their loops back into recursive
+# calls to the functions being defined.
+set_source_files_properties(src/ram_mem.c PROPERTIES COMPILE_OPTIONS
+        "-fno-builtin;-fno-tree-loop-distribute-patterns"
+)
+
 target_compile_options(ds5-bridge PRIVATE -fsigned-char)
 target_compile_definitions(wdl_resampler PRIVATE
         WDL_RESAMPLE_TYPE=float
@@ -126,9 +173,15 @@ target_compile_definitions(ds5-bridge PRIVATE
         # BOOTSEL polling floats QSPI CSn briefly; flash_safe_execute() must
         # park core 1 while that happens.
         PICO_FLASH_ASSUME_CORE1_SAFE=0
+        # Bound each CYW43/BTstack service pass so connection-event bursts
+        # cannot starve TinyUSB, audio, BOOTSEL, or the watchdog.
+        PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4
         WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ_VALUE}
+        DS5_FIRMWARE_VERSION_MAJOR=${DS5_FIRMWARE_VERSION_MAJOR}
+        DS5_FIRMWARE_VERSION_MINOR=${DS5_FIRMWARE_VERSION_MINOR}
+        DS5_FIRMWARE_VERSION_PATCH=${DS5_FIRMWARE_VERSION_PATCH}
 )
 # Kitsune Input intentionally enumerates as a stock DualSense only. Never turn
 # this on: DualSense Edge USB identity/descriptors are not a supported persona.
@@ -207,6 +260,8 @@ if(DS5_ENABLE_FIRMWARE_LOGS)
     target_compile_definitions(ds5-bridge PRIVATE
             DS5_ENABLE_DEBUG_LOGS
             DS5_DEBUG_LOGS_ENABLED=1
+            PICO_DEFAULT_UART_BAUD_RATE=921600
+            PICO_STACK_SIZE=4096
     )
 endif()
 
@@ -229,7 +284,7 @@ if(DS5_ENABLE_FEEDBACK_TRACE_REPORTS)
 endif()
 
 pico_set_program_name(ds5-bridge "ds5-bridge")
-pico_set_program_version(ds5-bridge "1.6.2")
+pico_set_program_version(ds5-bridge "${DS5_FIRMWARE_VERSION}")
 
 if(DS5_ENABLE_FIRMWARE_LOGS)
     pico_enable_stdio_uart(ds5-bridge 1)
@@ -248,6 +303,7 @@ target_link_libraries(ds5-bridge
         pico_multicore
         hardware_watchdog
         hardware_timer
+        pico_rand
         pico_btstack_classic
         pico_cyw43_arch_poll
         pico_btstack_cyw43
@@ -255,6 +311,15 @@ target_link_libraries(ds5-bridge
         tinyusb_board
         wdl_resampler
         opus
+)
+
+add_custom_command(TARGET ds5-bridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+                "-DNM=${CMAKE_NM}"
+                "-DELF=$<TARGET_FILE:ds5-bridge>"
+                -P "${CMAKE_SOURCE_DIR}/cmake/verify_core1_sram.cmake"
+        COMMENT "Verifying core-1 audio symbols are SRAM-resident"
+        VERBATIM
 )
 
 pico_add_extra_outputs(ds5-bridge)

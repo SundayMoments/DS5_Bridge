@@ -1,6 +1,6 @@
 {
   "name": "ds5-bridge-companion",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "private": true,
   "description": "Windows companion app for the Pico DS5 Bridge companion firmware.",
   "author": "SundayMoments",

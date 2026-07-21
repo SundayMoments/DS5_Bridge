@@ -269,7 +269,7 @@ void controller_output_state_apply_host_payload(uint8_t const *data, uint8_t len
     uint8_t update[kAudioStateSnapshotSize]{};
     std::memcpy(update, data, copy_len);
 
-    if (copy_len > kValidFlag0Offset) {
+    if (payload_uses_classic_rumble(update, copy_len)) {
         const uint8_t rumble_flags = static_cast<uint8_t>(
             update[kValidFlag0Offset] & static_cast<uint8_t>(kFlag0CompatibleVibration | kFlag0HapticsSelect)
         );
@@ -278,24 +278,22 @@ void controller_output_state_apply_host_payload(uint8_t const *data, uint8_t len
                 kFlag0CompatibleVibration | kFlag0HapticsSelect
             ))) | rumble_flags
         );
-    }
-    if (copy_len > kValidFlag2Offset) {
-        state_data[kValidFlag2Offset] = static_cast<uint8_t>(
-            (state_data[kValidFlag2Offset] & static_cast<uint8_t>(~(
-                kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
-            )))
-            | (update[kValidFlag2Offset] & static_cast<uint8_t>(
-                kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
-            ))
-        );
-    }
-
-    if (payload_uses_classic_rumble(update, copy_len) && copy_len > kMotorLeftOffset) {
+        if (copy_len > kValidFlag2Offset) {
+            state_data[kValidFlag2Offset] = static_cast<uint8_t>(
+                (state_data[kValidFlag2Offset] & static_cast<uint8_t>(~(
+                    kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
+                )))
+                | (update[kValidFlag2Offset] & static_cast<uint8_t>(
+                    kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
+                ))
+            );
+        }
         state_data[kMotorRightOffset] = update[kMotorRightOffset];
         state_data[kMotorLeftOffset] = update[kMotorLeftOffset];
-    } else if (copy_len > kMotorLeftOffset) {
-        state_data[kMotorRightOffset] = 0;
-        state_data[kMotorLeftOffset] = 0;
+    } else {
+        // Host reports are complete updates. A later 0x36 carrier must not
+        // resurrect rumble from a prior selector-bearing report.
+        controller_output_state_clear_classic_rumble();
     }
     if ((update[kValidFlag1Offset] & kFlag1ReleaseLeds) != 0) {
         state_data[kValidFlag1Offset] = static_cast<uint8_t>(

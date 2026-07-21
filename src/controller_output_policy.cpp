@@ -107,7 +107,6 @@ bool controller_output_policy_render_classic_rumble_payload(
         payload[kValidFlag2Offset] = static_cast<uint8_t>(
             payload[kValidFlag2Offset]
             | kFlag2EnableImprovedRumbleEmulation
-            | kFlag2UseRumbleNotHaptics2
         );
     }
 

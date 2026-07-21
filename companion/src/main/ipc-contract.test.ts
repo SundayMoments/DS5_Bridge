@@ -46,6 +46,12 @@ describe('IPC contract', () => {
     expect(mainSource).toContain("mainWindow.webContents.send('window:maximizedChanged', mainWindow.isMaximized())");
   });
 
+  it('allowlists every external link shown by the companion', () => {
+    expect(mainSource).toContain('/^https:\\/\\/ko-fi\\.com\\/sundaymoments\\/?$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/github\\.com\\/SundayMoments\\/?$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/discord\\.gg\\/By5jhh73wr\\/?$/i.test(url)');
+  });
+
   it('maps chord keyboard shortcuts to Windows virtual-key codes', () => {
     const keyCodeStart = bridgeServiceSource.indexOf('const VIRTUAL_KEY_CODES');
     expect(keyCodeStart).toBeGreaterThanOrEqual(0);
@@ -74,11 +80,31 @@ describe('IPC contract', () => {
     expect(bridgeServiceSource).toContain('COMMAND_ID.ENTER_BOOTLOADER');
   });
 
+  it('exposes controller scan and pairing deletion actions', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:requestControllerScan')");
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:forgetControllerPairings')");
+    expect(preloadSource).toContain(
+      "ipcRenderer.invoke('bridge:forgetControllerPairing', bluetoothAddress)"
+    );
+    expect(mainSource).toContain("ipcMain.handle('bridge:requestControllerScan'");
+    expect(mainSource).toContain("ipcMain.handle('bridge:forgetControllerPairings'");
+    expect(mainSource).toContain("ipcMain.handle('bridge:forgetControllerPairing'");
+    expect(bridgeServiceSource).toContain('async requestControllerScan(): Promise<BridgeSnapshot>');
+    expect(bridgeServiceSource).toContain('async forgetControllerPairings(): Promise<BridgeSnapshot>');
+    expect(bridgeServiceSource).toContain(
+      'async forgetControllerPairing(bluetoothAddress: string): Promise<BridgeSnapshot>'
+    );
+  });
+
   it('shows connected controller battery status in the tray tooltip', () => {
     expect(mainSource).toContain('function trayTooltipForSnapshot(snapshot: BridgeSnapshot): string');
     expect(mainSource).toContain('if (!snapshot.status?.controllerConnected)');
     expect(mainSource).toContain('return APP_NAME;');
-    expect(mainSource).toContain("`${name} \\u2014 ${snapshot.status.batteryPercent}%`");
+    expect(mainSource).toContain("`${name} \\u2014 ${batteryPercent}%`");
+    expect(mainSource).toContain("`${name} \\u2014 ${batteryPercent}% (charging)`");
+    expect(mainSource).toContain(
+      "`${name} \\u2014 ${batteryPercent}% (connected to power)`"
+    );
     expect(mainSource).toContain('updateTrayPresentation(bridgeService.getSnapshot())');
     expect(mainSource).toContain("bridgeService.on('snapshot', (snapshot) => {");
     expect(mainSource).toContain('updateTrayPresentation(snapshot);');
@@ -98,10 +124,11 @@ describe('IPC contract', () => {
     expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setShowBatteryPercentTrayIcon', value)");
     expect(mainSource).toContain("ipcMain.handle('bridge:setShowBatteryPercentTrayIcon'");
     expect(bridgeServiceSource).toContain('setShowBatteryPercentTrayIcon(enabled: boolean): BridgeSnapshot');
-    expect(mainSource).toContain('function batteryTrayIcon(percent: number, charging: boolean): Electron.NativeImage');
+    expect(mainSource).toContain('function batteryTrayIcon(');
     expect(mainSource).toContain('snapshot.settings.showBatteryPercentTrayIcon');
     expect(mainSource).toContain('TRAY_BATTERY_ICON_DISCHARGING');
-    expect(mainSource).toContain('TRAY_BATTERY_ICON_CHARGING');
-    expect(mainSource).toContain('rawPowerState === 0x01 || rawPowerState === 0x02');
+    expect(mainSource).toContain('TRAY_BATTERY_ICON_EXTERNAL_POWER');
+    expect(mainSource).toContain("if (rawPowerState === 0x01) return 'charging';");
+    expect(mainSource).toContain("if (rawPowerState === 0x02) return 'external-power';");
   });
 });

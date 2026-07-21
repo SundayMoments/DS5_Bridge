@@ -108,10 +108,8 @@ bool dualsense_decode_usb_input_report(
 
     const uint8_t battery = report[52] & 0x0f;
     next.raw_power_state = static_cast<uint8_t>((report[52] >> 4) & 0x0f);
-    if (next.raw_power_state == 0x02) {
-        next.battery_percent = 100;
-    } else if (battery <= 10) {
-        next.battery_percent = static_cast<uint8_t>(battery * 10);
+    if (battery <= 10) {
+        next.battery_percent = static_cast<uint8_t>(battery == 10 ? 100 : battery * 10 + 5);
     }
 
     next.headset_plugged = (report[53] & 0x01) != 0;

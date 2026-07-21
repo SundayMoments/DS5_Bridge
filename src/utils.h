@@ -11,9 +11,9 @@
 #include "hci_cmd.h"
 
 #if DS5_DEBUG_LOGS_ENABLED
-#include <cstdio>
-#define DS5_LOG(...) do { printf(__VA_ARGS__); } while (0)
-#define DS5_HEXDUMP(data, size) do { printf_hexdump((data), (size)); } while (0)
+#include "firmware_log.h"
+#define DS5_LOG(...) do { firmware_log_printf(__VA_ARGS__); } while (0)
+#define DS5_HEXDUMP(data, size) do { firmware_log_hexdump((data), (size)); } while (0)
 #else
 #define DS5_LOG(...) do { } while (0)
 #define DS5_HEXDUMP(data, size) do { } while (0)

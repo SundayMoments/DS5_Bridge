@@ -54,14 +54,15 @@ bool controller_output_rumble_payload_requires_immediate_send(
     }
 
     if (!controller_output_rumble_payload_uses_classic_selector(payload, len)) {
-        return state.classic_rumble_active;
+        return false;
     }
 
     const uint8_t right = payload[kMotorRightOffset];
     const uint8_t left = payload[kMotorLeftOffset];
-    const bool motors_active = (right | left) != 0;
     if (!state.classic_rumble_active) {
-        return motors_active;
+        // A selector-bearing zero is authoritative even when the local
+        // observation is idle; the physical controller may have missed STOP.
+        return true;
     }
 
     return right != state.classic_rumble_right
@@ -90,11 +91,6 @@ void controller_output_rumble_state_apply_payload(
     }
 
     if (!controller_output_rumble_payload_uses_classic_selector(payload, len)) {
-        state.classic_rumble_active = false;
-        state.classic_rumble_right = 0;
-        state.classic_rumble_left = 0;
-        state.classic_rumble_flag0 = 0;
-        state.classic_rumble_flag2 = 0;
         return;
     }
 

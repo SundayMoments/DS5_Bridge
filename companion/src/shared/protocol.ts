@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 16;
+export const PROTOCOL_MINOR = 17;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -15,7 +15,8 @@ export const REPORT_ID = {
   AUDIO_STATS: 0x06,
   AUDIO_STATUS: 0x08,
   TRIGGER_TRACE: 0x09,
-  FEEDBACK_TRACE: 0x0a
+  FEEDBACK_TRACE: 0x0a,
+  DEVICE_IDENTITY: 0x0d
 } as const;
 
 export const SHORTCUT_EVENT = {
@@ -88,8 +89,12 @@ export const COMMAND_ID = {
   SET_CHORD_BINDINGS: 0x23,
   SET_PLAYER_LED_ENABLED: 0x24,
   SET_CLASSIC_RUMBLE_V1: 0x25,
+  REQUEST_CONTROLLER_SCAN: 0x27,
+  FORGET_CONTROLLER_PAIRINGS: 0x28,
+  FORGET_CONTROLLER_PAIRING: 0x2e,
   SET_SPEAKER_GAIN: 0x32,
-  ENTER_BOOTLOADER: 0x33
+  ENTER_BOOTLOADER: 0x33,
+  SET_LIGHTBAR_RESTORE_ENABLED: 0x36
 } as const;
 
 export const ACK_RESULT = {
@@ -100,7 +105,8 @@ export const ACK_RESULT = {
   ERR_INVALID_VALUE: 0x04,
   ERR_UNKNOWN_COMMAND: 0x05,
   ERR_NOT_CONNECTED: 0x06,
-  ERR_BUSY: 0x07
+  ERR_BUSY: 0x07,
+  ERR_PERSISTENCE_FAILED: 0x08
 } as const;
 
 export type AckResultCode = typeof ACK_RESULT[keyof typeof ACK_RESULT];
@@ -476,6 +482,20 @@ export interface BridgeAckPayload {
   protocolVersion: string;
 }
 
+export interface CompanionDeviceIdentityPayload {
+  schemaVersion: number;
+  controllerConnected: boolean;
+  pairingActive: boolean;
+  addressKnown: boolean;
+  bluetoothAddress: string | null;
+  linkKeyKnown: boolean;
+  linkKeyType: number | null;
+  controllerName: string | null;
+  vendorId: number | null;
+  productId: number | null;
+  protocolVersion: string;
+}
+
 export interface AudioDebugEventPayload {
   sequence: number;
   timeUs: number;
@@ -642,6 +662,16 @@ function readU32(report: ArrayLike<number>, offset: number): number {
     | (report[offset + 2] << 16)
     | (report[offset + 3] << 24)
   ) >>> 0;
+}
+
+function readAscii(report: ArrayLike<number>, offset: number, length: number): string {
+  const chars: number[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const value = report[offset + index];
+    if (value === 0) break;
+    chars.push(value);
+  }
+  return String.fromCharCode(...chars).trim();
 }
 
 function controllerType(value: number): BridgeStatusPayload['controllerType'] {
@@ -968,6 +998,46 @@ export function parseAudioStatusReport(report: ArrayLike<number>): AudioStatusPa
   };
 }
 
+export function parseDeviceIdentityReport(
+  report: ArrayLike<number>
+): CompanionDeviceIdentityPayload {
+  assertReport(report, REPORT_ID.DEVICE_IDENTITY);
+  assertVersion(report);
+
+  const flags = report[8];
+  const address = readAscii(report, 10, 18);
+  const controllerName = readAscii(report, 28, 24);
+  const vendorId = readU16(report, 52);
+  const productId = readU16(report, 54);
+  const addressKnown = (flags & 0x01) !== 0 && address.length > 0;
+  const linkKeyKnown = (flags & 0x02) !== 0;
+  return {
+    schemaVersion: report[7],
+    controllerConnected: (flags & 0x04) !== 0,
+    pairingActive: (flags & 0x08) !== 0,
+    addressKnown,
+    bluetoothAddress: addressKnown ? address.toUpperCase() : null,
+    linkKeyKnown,
+    linkKeyType: linkKeyKnown ? report[9] : null,
+    controllerName: controllerName.length > 0 ? controllerName : null,
+    vendorId: vendorId === 0 ? null : vendorId,
+    productId: productId === 0 ? null : productId,
+    protocolVersion: `${report[5]}.${report[6]}`
+  };
+}
+
+export function bluetoothAddressPayload(address: string): number[] {
+  const parts = address.trim().split(':');
+  if (parts.length !== 6 || parts.some((part) => !/^[\da-f]{2}$/i.test(part))) {
+    throw new ProtocolError('Invalid controller Bluetooth address.', 'bad-bluetooth-address');
+  }
+  const payload = parts.map((part) => Number.parseInt(part, 16));
+  if (payload.every((value) => value === 0)) {
+    throw new ProtocolError('Invalid controller Bluetooth address.', 'bad-bluetooth-address');
+  }
+  return payload;
+}
+
 export function buildCommandReport(
   commandId: number,
   sequence: number,
@@ -1006,6 +1076,8 @@ export function ackUserMessage(result: number): string {
       return 'Controller not connected';
     case ACK_RESULT.ERR_BUSY:
       return 'Test is busy';
+    case ACK_RESULT.ERR_PERSISTENCE_FAILED:
+      return 'Firmware could not safely update persistent pairing data';
     case ACK_RESULT.ERR_INVALID_VALUE:
       return 'Invalid value';
     case ACK_RESULT.ERR_BAD_VERSION:

@@ -171,6 +171,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   lightbarColor: DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarColor,
   lightbarBrightnessPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarBrightnessPercent,
   lightbarOverrideEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.lightbarOverrideEnabled,
+  lightbarRestoreEnabled: true,
   muteButtonMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteButtonMode,
   muteKeyboardUsage: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardUsage,
   muteKeyboardModifiers: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardModifiers,
@@ -936,6 +937,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     lightbarOverrideEnabled: typeof value?.lightbarOverrideEnabled === 'boolean'
       ? value.lightbarOverrideEnabled
       : DEFAULT_SETTINGS.lightbarOverrideEnabled,
+    lightbarRestoreEnabled: typeof value?.lightbarRestoreEnabled === 'boolean'
+      ? value.lightbarRestoreEnabled
+      : DEFAULT_SETTINGS.lightbarRestoreEnabled,
     muteButtonMode: value?.muteButtonMode === 'keyboard'
       || value?.muteButtonMode === 'quiet'
       || value?.muteButtonMode === 'chord'

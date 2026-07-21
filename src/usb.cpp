@@ -5,6 +5,7 @@
 
 #include "tusb.h"
 #include "bsp/board_api.h"
+#include "hardware/watchdog.h"
 #include "pico/time.h"
 #include <algorithm>
 #include <cmath>
@@ -31,7 +32,9 @@ static bool usb_reconnect_requested = false;
 static bool usb_reconnect_connect_pending = false;
 static uint32_t usb_reconnect_at_us = 0;
 static bool usb_controller_transport_ready = false;
-static bool usb_controller_transport_disconnect_pending = false;
+static bool usb_controller_transport_transition_pending = false;
+static bool usb_controller_transport_attached = false;
+static uint32_t usb_controller_transport_disconnect_not_before_us = 0;
 static volatile bool usb_mounted = false;
 static volatile bool usb_host_suspended = false;
 static volatile uint32_t usb_suspend_at_us = 0;
@@ -49,6 +52,7 @@ uint8_t usb_hid_polling_interval_ms_value = 1;
 #define USB_RECONNECT_HOLD_US           100000
 #define USB_SUSPEND_POWEROFF_DEBOUNCE_US 3000000
 #define USB_RECONNECT_GRACE_US          5000000
+#define USB_EXPECTED_DISCONNECT_GRACE_US 1500000
 
 enum UsbAudioDebugKind : uint8_t {
     UsbAudioDebugSetInterface = 1,
@@ -70,6 +74,16 @@ static constexpr UsbAudioVolumeRange kUsbAudioVolumeRanges[3] = {
 
 static bool time_reached(uint32_t now, uint32_t target) {
     return static_cast<int32_t>(now - target) >= 0;
+}
+
+static void sleep_ms_with_watchdog(uint32_t total_ms) {
+    while (total_ms > 0) {
+        watchdog_update();
+        const uint32_t chunk_ms = std::min<uint32_t>(total_ms, 10);
+        sleep_ms(chunk_ms);
+        total_ms -= chunk_ms;
+    }
+    watchdog_update();
 }
 
 static bool reconnect_grace_active(uint32_t now) {
@@ -125,15 +139,6 @@ static void usb_reset_audio_class_state() {
     }
 }
 
-static void usb_deinit_device_stack() {
-    if (!tud_inited()) {
-        return;
-    }
-
-    tud_disconnect();
-    tusb_deinit(BOARD_TUD_RHPORT);
-}
-
 void usb_device_stack_init_disconnected() {
     const bool initialized_now = !tud_inited();
     if (!tud_inited()) {
@@ -142,20 +147,29 @@ void usb_device_stack_init_disconnected() {
             .speed = TUSB_SPEED_FULL
         };
         tusb_init(BOARD_TUD_RHPORT, &dev_init);
+        // TinyUSB connects during initialization. Detach immediately so the
+        // host never observes a half-settled controller descriptor topology.
+        tud_disconnect();
     }
     usb_mounted = false;
     usb_reset_audio_class_state();
     if (initialized_now) {
-        sleep_ms(150);
+        sleep_ms_with_watchdog(150);
     }
-    tud_disconnect();
+    if (!initialized_now) {
+        tud_disconnect();
+    }
 }
 
 static void usb_connect_controller_transport(uint32_t now) {
     (void)now;
     usb_controller_transport_ready = true;
+    if (usb_controller_transport_attached) {
+        return;
+    }
     usb_device_stack_init_disconnected();
     tud_connect();
+    usb_controller_transport_attached = true;
 }
 
 uint8_t usb_hid_polling_rate_mode() {
@@ -209,31 +223,29 @@ bool usb_line_streaming_active() {
     return usb_line_streaming;
 }
 
-void usb_handle_controller_transport_disconnect() {
+void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
     usb_reconnect_requested = false;
     usb_reconnect_connect_pending = false;
     usb_controller_transport_ready = false;
-    usb_reset_audio_class_state();
-    if (usb_bus_suspended()) {
-        usb_controller_transport_disconnect_pending = true;
-        return;
-    }
-    usb_controller_transport_disconnect_pending = false;
-    usb_mounted = false;
-    usb_deinit_device_stack();
+    usb_controller_transport_disconnect_not_before_us = expected_disconnect
+        ? time_us_32() + USB_EXPECTED_DISCONNECT_GRACE_US
+        : 0;
+    // Bluetooth callbacks only publish desired state. TinyUSB is reconciled
+    // from usb_pm_poll at the top level, so a controller loss can never tear
+    // the USB stack down from inside cyw43_arch_poll or a TinyUSB callback.
+    usb_controller_transport_transition_pending = true;
 }
 
 void usb_handle_controller_transport_ready() {
-    if (usb_controller_transport_ready) {
+    if (
+        usb_controller_transport_ready
+        && !usb_controller_transport_transition_pending
+    ) {
         return;
     }
-    usb_reset_audio_class_state();
-    usb_controller_transport_disconnect_pending = false;
-    if (usb_bus_suspended()) {
-        usb_controller_transport_ready = true;
-        return;
-    }
-    usb_connect_controller_transport(time_us_32());
+    usb_controller_transport_disconnect_not_before_us = 0;
+    usb_controller_transport_ready = true;
+    usb_controller_transport_transition_pending = true;
 }
 
 extern "C" void tud_mount_cb(void) {
@@ -247,6 +259,9 @@ extern "C" void tud_mount_cb(void) {
 
 extern "C" void tud_umount_cb(void) {
     usb_mounted = false;
+    usb_speaker_streaming = false;
+    usb_mic_streaming = false;
+    usb_line_streaming = false;
 }
 
 extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
@@ -316,10 +331,34 @@ void usb_pm_poll() {
         return;
     }
 
-    if (usb_controller_transport_disconnect_pending && !usb_controller_transport_ready) {
-        usb_controller_transport_disconnect_pending = false;
-        usb_mounted = false;
-        usb_deinit_device_stack();
+    if (usb_controller_transport_transition_pending) {
+        if (
+            !usb_controller_transport_ready
+            && usb_controller_transport_disconnect_not_before_us != 0
+            && !time_reached(now, usb_controller_transport_disconnect_not_before_us)
+        ) {
+            return;
+        }
+        usb_controller_transport_transition_pending = false;
+        usb_controller_transport_disconnect_not_before_us = 0;
+        if (usb_controller_transport_ready) {
+            if (usb_controller_transport_attached) {
+                return;
+            }
+            usb_mounted = false;
+            usb_reset_audio_class_state();
+            // The stack is initialized once before Bluetooth starts. Keep the
+            // defensive initializer for an exceptional recovery path, but it
+            // now runs only from this top-level poll, never a packet callback.
+            usb_connect_controller_transport(now);
+        } else if (usb_controller_transport_attached && tud_inited()) {
+            // A soft detach hides the emulated controller while preserving the
+            // initialized TinyUSB state used by the first connection.
+            usb_controller_transport_attached = false;
+            usb_mounted = false;
+            usb_reset_audio_class_state();
+            tud_disconnect();
+        }
         return;
     }
 

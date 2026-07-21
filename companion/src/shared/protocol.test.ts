@@ -13,6 +13,7 @@ import {
   ProtocolError,
   REMAP_BUTTON_IDS,
   REPORT_ID,
+  bluetoothAddressPayload,
   buildButtonRemapPayload,
   buildChordBindingsPayload,
   buildCommandReport,
@@ -24,6 +25,7 @@ import {
   parseAudioStatsReport,
   parseAckReport,
   parseFeedbackTraceReport,
+  parseDeviceIdentityReport,
   parseTriggerTraceReport,
   parseStatusReport,
   remapButtonIdValue
@@ -173,6 +175,49 @@ describe('companion protocol', () => {
 
     const status = parseStatusReport(report);
     expect(status.muteButtonMode).toBe('chord');
+  });
+
+  it('parses controller device identity and pairing state', () => {
+    const report = baseReport(REPORT_ID.DEVICE_IDENTITY);
+    report[7] = 1;
+    report[8] = 0x0f;
+    report[9] = 5;
+    for (const [index, value] of [...'AA:BB:CC:DD:EE:FF'].entries()) {
+      report[10 + index] = value.charCodeAt(0);
+    }
+    for (const [index, value] of [...'DualSense Edge'].entries()) {
+      report[28 + index] = value.charCodeAt(0);
+    }
+    writeU16(report, 52, 0x054c);
+    writeU16(report, 54, 0x0df2);
+
+    expect(parseDeviceIdentityReport(report)).toEqual({
+      schemaVersion: 1,
+      controllerConnected: true,
+      pairingActive: true,
+      addressKnown: true,
+      bluetoothAddress: 'AA:BB:CC:DD:EE:FF',
+      linkKeyKnown: true,
+      linkKeyType: 5,
+      controllerName: 'DualSense Edge',
+      vendorId: 0x054c,
+      productId: 0x0df2,
+      protocolVersion: `${PROTOCOL_MAJOR}.${PROTOCOL_MINOR}`
+    });
+  });
+
+  it('parses pairing identity without exposing an unknown address', () => {
+    const report = baseReport(REPORT_ID.DEVICE_IDENTITY);
+    report[7] = 1;
+    report[8] = 0x08;
+
+    expect(parseDeviceIdentityReport(report)).toMatchObject({
+      pairingActive: true,
+      addressKnown: false,
+      bluetoothAddress: null,
+      linkKeyKnown: false,
+      linkKeyType: null
+    });
   });
 
   it('encodes host persona command values', () => {
@@ -388,6 +433,35 @@ describe('companion protocol', () => {
     expect(report[8]).toBe(12);
     expect(report[9]).toBe(175);
     expect(report[10]).toBe(0);
+  });
+
+  it('encodes a canonical Bluetooth address for targeted forget', () => {
+    expect(bluetoothAddressPayload('aa:BB:0c:0D:ee:Ff')).toEqual([
+      0xaa,
+      0xbb,
+      0x0c,
+      0x0d,
+      0xee,
+      0xff
+    ]);
+    expect(() => bluetoothAddressPayload('AA:BB:CC')).toThrow(ProtocolError);
+    expect(() => bluetoothAddressPayload('00:00:00:00:00:00')).toThrow(ProtocolError);
+  });
+
+  it('builds controller management commands with stable source wire IDs', () => {
+    const scan = buildCommandReport(COMMAND_ID.REQUEST_CONTROLLER_SCAN, 20, 0);
+    const forgetAll = buildCommandReport(COMMAND_ID.FORGET_CONTROLLER_PAIRINGS, 21, 0);
+    const forgetOne = buildCommandReport(
+      COMMAND_ID.FORGET_CONTROLLER_PAIRING,
+      22,
+      0,
+      bluetoothAddressPayload('AA:BB:CC:DD:EE:FF')
+    );
+
+    expect(scan[7]).toBe(0x27);
+    expect(forgetAll[7]).toBe(0x28);
+    expect(forgetOne[7]).toBe(0x2e);
+    expect(forgetOne.slice(11, 17)).toEqual([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
   });
 
   it('can build a Pico bootloader command report for an older protocol minor', () => {

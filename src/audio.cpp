@@ -10,6 +10,7 @@
 #include "controller_output_state.h"
 #include "dualsense_output.h"
 #include "haptics_test_signal.h"
+#include "usb_audio_render_gain.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
 #endif
@@ -17,6 +18,7 @@
 #include "tusb.h"
 #include "usb.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
@@ -26,6 +28,7 @@
 #include "pico/flash.h"
 #include "pico/multicore.h"
 #include "pico/platform.h"
+#include "pico/sem.h"
 #include "pico/time.h"
 #include "pico/util/queue.h"
 
@@ -133,6 +136,8 @@ static uint8_t packetCounter = 0;
 static bool plug_headset = false;
 static bool controller_state_ready = false;
 static bool audio_initialized = false;
+static semaphore_t core1_flash_init_done;
+static std::atomic_bool core1_flash_init_succeeded{false};
 static uint32_t last_audio_us = 0;
 static bool speaker_route_active = false;
 static bool speaker_route_headset = false;
@@ -1220,17 +1225,6 @@ static int16_t mix_i16(int16_t native_sample, int16_t derived_sample) {
     return soft_clip_i16_from_float(static_cast<float>(native_sample) + static_cast<float>(derived_sample));
 }
 
-static int16_t apply_host_render_gain(int16_t sample, float host_gain) {
-    const float scaled = static_cast<float>(sample) * host_gain;
-    return static_cast<int16_t>(
-        clamp(
-            static_cast<int32_t>(scaled),
-            static_cast<int32_t>(-32768),
-            static_cast<int32_t>(32767)
-        )
-    );
-}
-
 static void process_audio_reactive_haptic_frame(
     int16_t speaker_l,
     int16_t speaker_r,
@@ -1712,10 +1706,19 @@ static bool process_usb_audio_packet() {
     // Windows sends USB Audio volume controls for this endpoint instead of pre-scaling PCM.
     const float host_render_gain = clamp(usb_host_speaker_gain, 0.0f, 1.0f);
     for (int i = 0; i < frames; i++) {
-        const int16_t speaker_l = apply_host_render_gain(raw[i * INPUT_CHANNELS], host_render_gain);
-        const int16_t speaker_r = apply_host_render_gain(raw[i * INPUT_CHANNELS + 1], host_render_gain);
-        const int16_t haptic_l = apply_host_render_gain(raw[i * INPUT_CHANNELS + 2], host_render_gain);
-        const int16_t haptic_r = apply_host_render_gain(raw[i * INPUT_CHANNELS + 3], host_render_gain);
+        const auto rendered = ds5::usb_audio::apply_host_speaker_gain(
+            {
+                .speaker_left = raw[i * INPUT_CHANNELS],
+                .speaker_right = raw[i * INPUT_CHANNELS + 1],
+                .haptic_left = raw[i * INPUT_CHANNELS + 2],
+                .haptic_right = raw[i * INPUT_CHANNELS + 3],
+            },
+            host_render_gain
+        );
+        const int16_t speaker_l = rendered.speaker_left;
+        const int16_t speaker_r = rendered.speaker_right;
+        const int16_t haptic_l = rendered.haptic_left;
+        const int16_t haptic_r = rendered.haptic_right;
         audio_buf[audio_buf_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
         audio_buf[audio_buf_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
         if (audio_buf_pos == 512 * 2) {
@@ -2072,7 +2075,7 @@ void __not_in_flash_func(audio_loop)() {
     }
 }
 
-void audio_init() {
+bool audio_init() {
 #if DS5_AUDIO_DEBUG_ENABLED
     critical_section_init(&audio_debug_cs);
     audio_debug_cs_ready = true;
@@ -2086,8 +2089,19 @@ void audio_init() {
     queue_init(&mic_decode_fifo,sizeof(mic_decode_element),HOST_MIC_QUEUE_DEPTH);
     critical_section_init(&opus_cs);
     opus_cs_ready = true;
+    sem_init(&core1_flash_init_done, 0, 1);
+    core1_flash_init_succeeded.store(false, std::memory_order_relaxed);
     multicore_launch_core1_with_stack(core1_entry,audio_core1_stack,sizeof(audio_core1_stack));
+    if (!sem_acquire_timeout_ms(&core1_flash_init_done, 250)) {
+        DS5_LOG("[Audio] Core 1 flash-safety handshake timed out\n");
+        return false;
+    }
+    if (!core1_flash_init_succeeded.load(std::memory_order_acquire)) {
+        DS5_LOG("[Audio] Core 1 flash-safety initialization failed\n");
+        return false;
+    }
     audio_initialized = true;
+    return true;
 }
 
 static OpusEncoder *encoder;
@@ -2324,8 +2338,6 @@ static bool __not_in_flash_func(core1_process_speaker)() {
 }
 
 static void __not_in_flash_func(core1_entry)() {
-    flash_safe_execute_core_init();
-
     int error = 0;
     encoder = opus_encoder_create(48000,2,OPUS_APPLICATION_AUDIO,&error);
     if (error != OPUS_OK) {
@@ -2352,6 +2364,18 @@ static void __not_in_flash_func(core1_entry)() {
     uint32_t core1_sleep_us = 0;
     uint32_t core1_speaker_us = 0;
     uint32_t core1_mic_us = 0;
+
+    // Register core 1 as an SDK flash-lockout victim only after all flash-backed
+    // setup is complete. Core 0 waits for this acknowledgement before Bluetooth
+    // can persist pairing data or sample BOOTSEL.
+    const bool flash_init_succeeded = flash_safe_execute_core_init();
+    core1_flash_init_succeeded.store(flash_init_succeeded, std::memory_order_release);
+    sem_release(&core1_flash_init_done);
+    if (!flash_init_succeeded) {
+        while (true) {
+            tight_loop_contents();
+        }
+    }
 
     while (true) {
         const uint32_t speaker_start_us = time_us_32();

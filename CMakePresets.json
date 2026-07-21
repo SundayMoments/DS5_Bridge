@@ -1,0 +1,34 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "pico2-w-debug-uart-companion-on",
+      "displayName": "Pico 2 W Debug UART (companion ON)",
+      "description": "Companion-enabled firmware with retained logging on the physical GPIO UART and no USB descriptor changes.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/diagnostics/pico2-w-debug-uart-companion-on",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DS5_DIAGNOSTICS_PRESET": "custom",
+        "ENABLE_COMPANION": "ON",
+        "ENABLE_DEBUG_LOGS": "ON",
+        "ENABLE_FEEDBACK_TRACE_REPORTS": "ON",
+        "WAVESHARE_RP2350B_PLUS_W_BUILD": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "pico2-w-debug-uart-companion-on",
+      "configurePreset": "pico2-w-debug-uart-companion-on",
+      "targets": [
+        "ds5-bridge"
+      ]
+    }
+  ]
+}

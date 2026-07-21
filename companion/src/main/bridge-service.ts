@@ -18,12 +18,14 @@ import {
   MUTE_KEYBOARD_MODIFIER_MASK,
   ProtocolError,
   ackUserMessage,
+  bluetoothAddressPayload,
   buildChordBindingsPayload,
   buildCommandReport,
   parseAckReport,
   parseAudioDebugReport,
   parseAudioStatsReport,
   parseAudioStatusReport,
+  parseDeviceIdentityReport,
   parseTriggerTraceReport,
   parseFeedbackTraceReport,
   parseStatusReport,
@@ -56,6 +58,7 @@ import type {
   TriggerTraceEventPayload,
   FeedbackTraceEventPayload,
   BridgeStatusPayload,
+  CompanionDeviceIdentityPayload,
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
@@ -106,7 +109,7 @@ const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
-const BUNDLED_FIRMWARE_VERSION = '1.6.3';
+const BUNDLED_FIRMWARE_VERSION = '1.6.4';
 const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
 const AUDIO_DEBUG_LOG_LINE_LIMIT = 300;
@@ -301,6 +304,7 @@ function emptyDiagnostics(rawDevices: HidDeviceSummary[]): BridgeDiagnostics {
     firmwareUpdateAvailable: null,
     lastPollAt: null,
     rawDevices,
+    deviceIdentity: null,
     audioDebugLogPath: null,
     audioDebugLogLines: [],
     audioDebugDroppedCount: 0,
@@ -1335,6 +1339,21 @@ export class BridgeService extends EventEmitter {
       // transfer failure does not leave controller shortcuts on the slow
       // status-poll path.
       this.shortcutFeaturePollRetryAt = Date.now() + SHORTCUT_POLL_ERROR_RETRY_MS;
+    }
+  }
+
+  private async readDeviceIdentity(): Promise<CompanionDeviceIdentityPayload | null> {
+    if (!this.device) {
+      return null;
+    }
+    try {
+      return parseDeviceIdentityReport(
+        await this.device.getFeatureReport(REPORT_ID.DEVICE_IDENTITY, REPORT_LENGTH)
+      );
+    } catch {
+      // Identity is supplementary. A transient feature-read failure must not
+      // make an otherwise healthy bridge appear disconnected.
+      return null;
     }
   }
 
@@ -2464,6 +2483,13 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setLightbarRestoreEnabled(enabled: boolean): Promise<BridgeSnapshot> {
+    await this.sendSettingCommand(COMMAND_ID.SET_LIGHTBAR_RESTORE_ENABLED, enabled ? 1 : 0, {
+      lightbarRestoreEnabled: enabled
+    });
+    return this.getSnapshot();
+  }
+
   async setIdleDisconnectEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     await this.sendSettingCommand(COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED, enabled ? 1 : 0, {
       idleDisconnectEnabled: enabled
@@ -2794,6 +2820,23 @@ export class BridgeService extends EventEmitter {
   async sleepController(): Promise<BridgeSnapshot> {
     await this.sendCommand(COMMAND_ID.SLEEP_CONTROLLER, 0, {
       throwOnCommandError: false
+    });
+    return this.getSnapshot();
+  }
+
+  async requestControllerScan(): Promise<BridgeSnapshot> {
+    await this.sendCommand(COMMAND_ID.REQUEST_CONTROLLER_SCAN, 0);
+    return this.getSnapshot();
+  }
+
+  async forgetControllerPairings(): Promise<BridgeSnapshot> {
+    await this.sendCommand(COMMAND_ID.FORGET_CONTROLLER_PAIRINGS, 0);
+    return this.getSnapshot();
+  }
+
+  async forgetControllerPairing(bluetoothAddress: string): Promise<BridgeSnapshot> {
+    await this.sendCommand(COMMAND_ID.FORGET_CONTROLLER_PAIRING, 0, {
+      extraPayload: bluetoothAddressPayload(bluetoothAddress)
     });
     return this.getSnapshot();
   }
@@ -3366,7 +3409,8 @@ export class BridgeService extends EventEmitter {
           lastError: `Firmware ${status.firmwareVersion} is too old for this companion app. Update the bridge firmware to ${MIN_SUPPORTED_FIRMWARE_VERSION} or newer.`,
           firmwareUpdateAvailable: null,
           lastPollAt: Date.now(),
-          rawDevices
+          rawDevices,
+          deviceIdentity: null
         })
       };
       this.emitSnapshot();
@@ -3384,6 +3428,7 @@ export class BridgeService extends EventEmitter {
     await this.readFeedbackTraceThrottled();
     await this.readAudioDebugThrottled(true);
     await this.readAudioStatus();
+    const deviceIdentity = await this.readDeviceIdentity();
     this.maybeEmitStatusToasts(status);
 
     const previousUptime = this.lastUptimeSeconds;
@@ -3426,7 +3471,8 @@ export class BridgeService extends EventEmitter {
         lastError: null,
         firmwareUpdateAvailable: firmwareUpdateAvailable(status.firmwareVersion),
         lastPollAt: Date.now(),
-        rawDevices
+        rawDevices,
+        deviceIdentity
       }),
       personaTransition: transition
     };
@@ -3619,6 +3665,11 @@ export class BridgeService extends EventEmitter {
   }
 
   private async applyCurrentSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
+    await this.sendCommand(
+      COMMAND_ID.SET_LIGHTBAR_RESTORE_ENABLED,
+      settings.lightbarRestoreEnabled ? 1 : 0,
+      { expectSettingsRevisionChange }
+    );
     await this.applyLightbarSettings(settings, expectSettingsRevisionChange);
     await this.sendCommand(COMMAND_ID.SET_MUTE_BUTTON_ACTION, muteButtonModeValue(settings.muteButtonMode), {
       expectSettingsRevisionChange,
@@ -3848,6 +3899,7 @@ export class BridgeService extends EventEmitter {
         lastAck: this.snapshot.diagnostics.lastAck,
         lastError: this.snapshot.diagnostics.lastError,
         firmwareUpdateAvailable: this.snapshot.diagnostics.firmwareUpdateAvailable,
+        deviceIdentity: this.snapshot.diagnostics.deviceIdentity,
         audioDebugLogPath: this.snapshot.diagnostics.audioDebugLogPath,
         audioDebugLogLineCount: this.snapshot.diagnostics.audioDebugLogLines.length,
         audioDebugLogTail: this.snapshot.diagnostics.audioDebugLogLines.at(-1) ?? null,

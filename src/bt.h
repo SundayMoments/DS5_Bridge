@@ -20,6 +20,24 @@ enum ControllerType : uint8_t {
     ControllerTypeDualSenseEdge = 2,
 };
 
+enum BtControllerDisconnectIntent : uint8_t {
+    BtControllerDisconnectIntentNone = 0,
+    BtControllerDisconnectIntentSleep = 1,
+    BtControllerDisconnectIntentIdleTimeout = 2,
+};
+
+struct BtDeviceIdentitySnapshot {
+    bool address_known;
+    bool controller_connected;
+    bool link_key_known;
+    bool pairing_active;
+    uint8_t link_key_type;
+    char address[18];
+    char name[32];
+    uint16_t vendor_id;
+    uint16_t product_id;
+};
+
 typedef void (*bt_data_callback_t)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len);
 
 int bt_init();
@@ -29,7 +47,14 @@ uint8_t bt_controller_type();
 int8_t bt_get_signal_strength();
 bool bt_has_signal_strength();
 bool bt_disconnect();
+bool bt_disconnect_with_intent(BtControllerDisconnectIntent intent);
+bool bt_expected_disconnect_pending();
 bool bt_power_off_controller();
+bool bt_request_scan();
+bool bt_forget_pairings();
+bool bt_forget_pairing(uint8_t address[6]);
+bool bt_get_device_identity(BtDeviceIdentitySnapshot *snapshot);
+bool bt_pairing_active();
 bool bt_set_idle_disconnect_timeout_minutes(uint16_t minutes);
 uint16_t bt_idle_disconnect_timeout_minutes();
 void bt_write(uint8_t* data,uint16_t len);
@@ -96,11 +121,14 @@ void bt_replay_adaptive_trigger_effect(
     bool motor_power_valid
 );
 void bt_reset_adaptive_triggers();
+void bt_set_lightbar_restore_enabled(bool enabled);
 void bt_schedule_lightbar_restore(uint32_t delay_ms);
 void bt_lightbar_loop();
 void bt_signal_strength_loop();
 void bt_inquiry_loop();
 void bt_connection_recovery_loop();
+void bt_feature_prefetch_loop();
+void bt_output_retry_loop();
 std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 void init_feature();
 void set_feature_data(uint8_t reportId, uint8_t const* data,uint16_t len);

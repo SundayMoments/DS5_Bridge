@@ -103,6 +103,9 @@ const api = {
   setPlayerLedEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setPlayerLedEnabled', value)
   ),
+  setLightbarRestoreEnabled: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setLightbarRestoreEnabled', value)
+  ),
   setIdleDisconnectEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setIdleDisconnectEnabled', value),
   setIdleDisconnectTimeoutMinutes: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setIdleDisconnectTimeoutMinutes', value)
@@ -139,6 +142,11 @@ const api = {
     ipcRenderer.invoke('bridge:setHostPersonaMode', value)
   ),
   sleepController: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:sleepController'),
+  requestControllerScan: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:requestControllerScan'),
+  forgetControllerPairings: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:forgetControllerPairings'),
+  forgetControllerPairing: (bluetoothAddress: string): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:forgetControllerPairing', bluetoothAddress)
+  ),
   mountPicoBootloader: (): Promise<PicoFirmwareActionResult> => (
     ipcRenderer.invoke('bridge:mountPicoBootloader')
   ),

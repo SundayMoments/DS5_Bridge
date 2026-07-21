@@ -82,14 +82,11 @@ jobs:
       - name: Read firmware version
         shell: pwsh
         run: |
-          $source = Get-Content src/companion.cpp -Raw
-          $major = [regex]::Match($source, 'kFirmwareMajor\s*=\s*(\d+)')
-          $minor = [regex]::Match($source, 'kFirmwareMinor\s*=\s*(\d+)')
-          $patch = [regex]::Match($source, 'kFirmwarePatch\s*=\s*(\d+)')
-          if (-not ($major.Success -and $minor.Success -and $patch.Success)) {
-            throw 'Unable to read firmware version from src/companion.cpp'
+          $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
+          if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
           }
-          "FIRMWARE_VERSION=$($major.Groups[1].Value).$($minor.Groups[1].Value).$($patch.Groups[1].Value)" >> $env:GITHUB_ENV
+          "FIRMWARE_VERSION=$firmwareVersion" >> $env:GITHUB_ENV
 
       - name: Build companion firmware
         run: |
@@ -231,14 +228,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $companionVersion = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
-          $source = Get-Content src/companion.cpp -Raw
-          $major = [regex]::Match($source, 'kFirmwareMajor\s*=\s*(\d+)')
-          $minor = [regex]::Match($source, 'kFirmwareMinor\s*=\s*(\d+)')
-          $patch = [regex]::Match($source, 'kFirmwarePatch\s*=\s*(\d+)')
-          if (-not ($major.Success -and $minor.Success -and $patch.Success)) {
-            throw 'Unable to read firmware version from src/companion.cpp'
+          $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
+          if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
           }
-          $firmwareVersion = "$($major.Groups[1].Value).$($minor.Groups[1].Value).$($patch.Groups[1].Value)"
           $commit = (git rev-parse HEAD).Trim()
           $dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain | Out-String).Trim())
           $artifactDir = Join-Path $PWD 'artifacts'

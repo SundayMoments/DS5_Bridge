@@ -5,6 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 const appSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
 const stylesSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'styles.css'), 'utf8');
+const controllerDevicesPageSource = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'ControllerDevicesPage.tsx'),
+  'utf8'
+);
 
 function extractFunction(name: string): string {
   const start = appSource.indexOf(`function ${name}`);
@@ -14,6 +18,29 @@ function extractFunction(name: string): string {
 }
 
 describe('renderer behavior guards', () => {
+  it('ports Devices as a firmware-backed controller management tab', () => {
+    expect(appSource).toContain("{ id: 'devices', label: 'Devices', Icon: IconBluetooth }");
+    expect(appSource).toContain('<ControllerDevicesPage');
+    expect(appSource).toContain('window.bridge.requestControllerScan()');
+    expect(appSource).toContain('window.bridge.forgetControllerPairings()');
+    expect(appSource).toContain('window.bridge.forgetControllerPairing(request.bluetoothAddress)');
+    expect(appSource).toContain('observeControllerDevice(');
+    expect(appSource).toContain('saveControllerDeviceCache(window.localStorage');
+    expect(controllerDevicesPageSource).toContain('id="control-panel-devices"');
+    expect(controllerDevicesPageSource).toContain('Current and last controllers.');
+    expect(controllerDevicesPageSource).toContain('className="devices-heading-copy"');
+    expect(controllerDevicesPageSource).toContain('<IconScan size={16} />');
+    expect(controllerDevicesPageSource).toContain('Forget Controllers');
+    expect(controllerDevicesPageSource).toContain('className="trusted-device-menu"');
+    expect(controllerDevicesPageSource).toContain('controller-forget-modal');
+    expect(controllerDevicesPageSource).not.toContain('ControllerProfile');
+    expect(stylesSource).toContain('.devices-page');
+    expect(stylesSource).toContain('.feature-heading.devices-heading');
+    expect(stylesSource).toContain('.devices-heading-copy');
+    expect(stylesSource).toContain('.trusted-device-card.connected');
+    expect(stylesSource).toContain('.controller-forget-modal');
+  });
+
   it('does not expose retired host encoder controls', () => {
     expect(appSource).not.toContain('toggleHost' + 'EncodedAudioEnabled');
     expect(appSource).not.toContain('setHost' + 'EncodedAudioEnabled');
@@ -85,6 +112,21 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('!controllerControlsAvailable || !lightbarSupported || pendingAction !== null');
   });
 
+  it('offers a persisted automatic lightbar restore toggle in bridge settings', () => {
+    expect(appSource).toContain('<strong>Automatic Restore</strong>');
+    expect(appSource).toContain('Reapply the saved color after games clear it');
+    expect(appSource).toContain('snapshot.settings.lightbarRestoreEnabled');
+    expect(appSource).toContain('window.bridge.setLightbarRestoreEnabled(');
+    expect(appSource.indexOf('>Lightbar</div>')).toBeLessThan(appSource.indexOf('>About</div>'));
+  });
+
+  it('links the official DS5 Bridge Discord from About', () => {
+    expect(appSource).toContain('IconBrandDiscord');
+    expect(appSource).toContain("window.bridge.openExternal('https://discord.gg/By5jhh73wr')");
+    expect(appSource).toContain('<strong>Discord</strong>');
+    expect(appSource).toContain('<span>Official DS5 Bridge Discord</span>');
+  });
+
   it('uses the device container border instead of a compact status dot', () => {
     expect(appSource).toContain('const sidebarDeviceTone =');
     expect(appSource).toContain('className={`hero-main device-status-${sidebarDeviceTone}`}');
@@ -140,6 +182,33 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('Show controller battery percentage in the tray');
     expect(appSource).toContain('snapshot.settings.showBatteryPercentTrayIcon');
     expect(appSource).toContain('window.bridge.setShowBatteryPercentTrayIcon(!snapshot.settings.showBatteryPercentTrayIcon)');
+  });
+
+  it('distinguishes active charging from connected external power', () => {
+    expect(appSource).toContain(
+      'function isChargingPowerState(rawPowerState: number | undefined): boolean {'
+    );
+    expect(appSource).toContain('return rawPowerState === 0x01;');
+    expect(appSource).toContain(
+      'function isExternalPowerState(rawPowerState: number | undefined): boolean {'
+    );
+    expect(appSource).toContain('return rawPowerState === 0x01 || rawPowerState === 0x02;');
+    expect(appSource).toContain("batteryCharging ? 'Charging' : 'Connected to power'");
+    expect(appSource).toContain('className="device-power-indicator"');
+    expect(stylesSource).toContain('.device-power-indicator');
+  });
+
+  it('uses the compact Kitsune device card as a Devices shortcut', () => {
+    expect(appSource).toContain('const sidebarControllerCard = controllerDevicesModel.cards.find(');
+    expect(appSource).toContain('aria-label="Open Devices"');
+    expect(appSource).toContain("onClick={() => selectControlTab('devices')}");
+    expect(appSource).toContain('className="device-meta-row"');
+    expect(appSource).toContain('className="device-battery-percentage"');
+    expect(appSource).not.toContain('className={`battery-icon');
+    expect(stylesSource).toContain('grid-template-columns: minmax(0, 1fr) 60px;');
+    expect(stylesSource).toContain('min-height: 70px;');
+    expect(stylesSource).toContain('.hero-main[role="button"]:focus-visible');
+    expect(stylesSource).toContain('.device-battery-meta');
   });
 
   it('keeps the haptics test button actionable instead of relabeling it as game-active', () => {

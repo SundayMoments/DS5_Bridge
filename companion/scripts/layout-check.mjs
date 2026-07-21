@@ -71,6 +71,42 @@ try {
   }
 
   const controlsNav = page.getByRole('tablist', { name: 'Controls' });
+  const sidebarSupportSpacing = await page.evaluate(() => {
+    const sidebar = document.querySelector('.hero-card');
+    const systemButton = document.querySelector('#control-tab-system');
+    const badge = document.querySelector('.sidebar-kofi-badge');
+    const footer = document.querySelector('.header-settings');
+    if (!sidebar || !systemButton || !badge || !footer) return null;
+
+    const systemIcon = systemButton.querySelector('svg');
+    const systemLabelNode = [...systemButton.childNodes].find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()
+    );
+    const systemLabelRange = systemLabelNode ? document.createRange() : null;
+    systemLabelRange?.selectNodeContents(systemLabelNode);
+    const systemContentBottom = Math.max(
+      systemIcon?.getBoundingClientRect().bottom ?? 0,
+      systemLabelRange?.getBoundingClientRect().bottom ?? 0
+    );
+    const badgeRect = badge.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    return {
+      above: badgeRect.top - systemContentBottom,
+      below: footerRect.top - badgeRect.bottom,
+      overflow: Math.max(0, sidebar.scrollHeight - sidebar.clientHeight)
+    };
+  });
+
+  if (!sidebarSupportSpacing) {
+    failures.push('Sidebar: support badge spacing targets were not found');
+  } else if (Math.abs(sidebarSupportSpacing.above - sidebarSupportSpacing.below) > tolerancePx) {
+    failures.push(
+      `Sidebar: Ko-fi badge has ${sidebarSupportSpacing.above.toFixed(2)}px above and ${sidebarSupportSpacing.below.toFixed(2)}px below`
+    );
+  }
+  if (sidebarSupportSpacing && sidebarSupportSpacing.overflow > tolerancePx) {
+    failures.push(`Sidebar: content overflowed by ${sidebarSupportSpacing.overflow.toFixed(2)}px`);
+  }
 
   const rows = [];
   const buttonRows = [];
@@ -569,6 +605,12 @@ try {
   console.table(buttonRows);
   console.table(systemTypographyRows);
   console.table(overviewControlAlignmentRows);
+  console.table(sidebarSupportSpacing ? [{
+    region: 'Ko-fi badge',
+    above: Number(sidebarSupportSpacing.above.toFixed(2)),
+    below: Number(sidebarSupportSpacing.below.toFixed(2)),
+    overflow: Number(sidebarSupportSpacing.overflow.toFixed(2))
+  }] : []);
 
   if (failures.length > 0) {
     throw new Error(`Layout check failed:\n${failures.join('\n')}`);

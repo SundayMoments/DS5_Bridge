@@ -28,7 +28,7 @@ bool usb_host_suspended_active();
 bool usb_speaker_streaming_active();
 bool usb_mic_streaming_active();
 bool usb_line_streaming_active();
-void usb_handle_controller_transport_disconnect();
+void usb_handle_controller_transport_disconnect(bool expected_disconnect = false);
 void usb_handle_controller_transport_ready();
 
 #endif //DS5_BRIDGE_USB_H

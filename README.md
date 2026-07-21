@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <strong>DS5 Bridge 1.6.3 is live.</strong><br>
+  <strong>DS5 Bridge 1.6.4 is live.</strong><br>
   This release includes controller microphone support, Audio Haptics, Trigger
   Lab, controller personas, chords, and companion firmware tools.
 </p>
@@ -36,14 +36,33 @@ controller behavior without rebuilding firmware.
    [Releases](https://github.com/SundayMoments/DS5_Bridge/releases/latest).
 2. With the Pico 2 W unplugged, hold `BOOTSEL`, then connect it to your PC.
 3. Copy the `.uf2` file onto the Pico drive that appears in Windows.
-4. Put the DualSense controller into Bluetooth pairing mode by holding `Create`
+4. Briefly press `BOOTSEL` once, then wait about one second for the Pico to open
+   its controller pairing window.
+5. Put the DualSense controller into Bluetooth pairing mode by holding `Create`
    and `PS` until the lightbar rapidly blinks blue.
-5. Wait for the controller to pair to the Pico, not directly to Windows.
-6. Install and open DS5 Bridge. The Overview page should show the connected
+6. Wait for the controller to pair to the Pico, not directly to Windows.
+7. Install and open DS5 Bridge. The Overview page should show the connected
    bridge and firmware version.
 
 Once the controller connects to the Pico, Windows sees it as a normal
 DualSense-compatible USB controller.
+
+## BOOTSEL Button Gestures
+
+After DS5 Bridge firmware is installed, the Pico's `BOOTSEL` button controls
+controller connections and firmware maintenance:
+
+| Gesture | Action |
+| --- | --- |
+| One brief press | If no controller is connected, open the controller pairing window. If a controller is connected, disconnect it while preserving its saved pairing. |
+| Two brief presses | Reboot the Pico normally. |
+| Three brief presses | Reboot into USB firmware flashing mode. The Pico appears as a drive so you can copy a `.uf2` file onto it. |
+| Hold for about 1.5 seconds | Forget all saved controller pairings, disconnect the current controller, and open a fresh pairing window. |
+
+A one- or two-press gesture is performed after the Pico waits about one second
+to make sure another press is not coming. For a new controller, briefly press
+`BOOTSEL` once, wait for the pairing window to open, then hold `Create` and `PS`
+on the controller until its lightbar rapidly blinks blue.
 
 ## Features
 
@@ -165,7 +184,8 @@ saving, LEDs, shortcuts, idle disconnect, and PC sleep disconnect.
 - For first-time flashing, hold `BOOTSEL` before plugging the Pico 2 W into the
   PC. The Pico should appear as a USB drive.
 - Pair the controller to the Pico, not Windows. Hold `Create` and `PS` until the
-  lightbar rapidly blinks blue.
+  lightbar rapidly blinks blue. If the Pico is not already searching, briefly
+  press `BOOTSEL` once and wait about one second first.
 - If audio, mic, haptics, or flashing behave oddly, try a direct USB port and a
   data-capable micro-USB cable before using a hub.
 - If controller audio sounds doubled, distorted, or too loud, restart your PC,

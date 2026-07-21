@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <iostream>
 #include <sstream>
@@ -9,13 +10,16 @@
 #include <vector>
 
 #include "controller_output_policy.h"
+#include "classic_rumble_delivery_policy.h"
 #include "controller_output_rumble_state.h"
 #include "controller_output_state.h"
 #include "controller_packet_compositor.h"
 #include "dualsense_input_decoder.h"
 #include "dualsense_output.h"
 #include "haptics_test_signal.h"
+#include "kitsune_button_gesture.h"
 #include "output_scheduler.h"
+#include "usb_audio_render_gain.h"
 #include "persona/ds4_persona.h"
 #include "persona/dualsense_persona.h"
 #include "persona/host_persona.h"
@@ -193,7 +197,7 @@ OutputSchedulerInputs scheduler_inputs() {
     return OutputSchedulerInputs{
         false,
         false,
-        0,
+        false,
         0,
         0,
     };
@@ -201,17 +205,19 @@ OutputSchedulerInputs scheduler_inputs() {
 
 OutputSchedulerConfig scheduler_config() {
     return OutputSchedulerConfig{
-        1'000,
-        2,
+        4,
+        3'000,
     };
 }
 
-void scheduler_prioritizes_audio_when_non_audio_would_delay_streaming() {
+void scheduler_prioritizes_audio_before_state_is_starved() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
-    inputs.audio_depth = 1;
     inputs.coalesced_state_available = true;
+    inputs.consecutive_audio_sends =
+        static_cast<uint8_t>(config.max_consecutive_audio_sends - 1);
+    inputs.state_age_us = config.state_max_age_us - 1;
     EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
 }
 
@@ -222,22 +228,23 @@ void scheduler_sends_coalesced_state_when_audio_is_absent() {
     EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::CoalescedState);
 }
 
-void scheduler_audio_due_on_age_backlog_or_fairness_limit() {
+void scheduler_bounds_coalesced_state_latency_during_continuous_audio() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
-    EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
+    inputs.coalesced_state_available = true;
+    inputs.consecutive_audio_sends = config.max_consecutive_audio_sends;
+    EXPECT_EQ(
+        output_scheduler_choose_interrupt_packet(inputs, config),
+        OutputSchedulerChoice::CoalescedState
+    );
 
-    inputs.audio_age_us = config.audio_max_age_us;
-    EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
-
-    inputs.audio_age_us = 0;
-    inputs.audio_depth = 2;
-    EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
-
-    inputs.audio_depth = 1;
-    inputs.consecutive_non_audio_sends = config.max_consecutive_non_audio_sends;
-    EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
+    inputs.consecutive_audio_sends = 0;
+    inputs.state_age_us = config.state_max_age_us;
+    EXPECT_EQ(
+        output_scheduler_choose_interrupt_packet(inputs, config),
+        OutputSchedulerChoice::CoalescedState
+    );
 }
 
 void packet_compositor_initializes_bluetooth_report_and_wraps_sequence() {
@@ -259,6 +266,101 @@ void packet_compositor_initializes_bluetooth_report_and_wraps_sequence() {
     controller_packet_init_bt_output_report(report.data(), int_sequence);
     EXPECT_EQ(report[1], 0xe0);
     EXPECT_EQ(int_sequence, 0x0f);
+}
+
+void scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop() {
+    auto inputs = scheduler_inputs();
+    auto config = scheduler_config();
+    inputs.audio_available = true;
+    inputs.urgent_available = true;
+
+    EXPECT_EQ(
+        output_scheduler_choose_interrupt_packet(inputs, config),
+        OutputSchedulerChoice::AudioStream
+    );
+    EXPECT_TRUE(output_scheduler_classic_rumble_can_bypass_audio(
+        true,
+        false,
+        0,
+        0
+    ));
+    EXPECT_FALSE(output_scheduler_classic_rumble_can_bypass_audio(
+        true,
+        false,
+        0,
+        1
+    ));
+    EXPECT_TRUE(output_scheduler_classic_rumble_can_bypass_audio(
+        true,
+        true,
+        0,
+        1
+    ));
+    EXPECT_FALSE(output_scheduler_classic_rumble_can_bypass_audio(
+        true,
+        true,
+        1,
+        1
+    ));
+}
+
+void classic_rumble_delivery_is_bounded_and_protects_managed_stop() {
+    using ds5::classic_rumble::AdmissionResult;
+    using ds5::classic_rumble::DeliveryKind;
+    struct Packet {
+        uint8_t id;
+        DeliveryKind kind;
+    };
+    auto kind_of = [](Packet const &packet) {
+        return packet.kind;
+    };
+    std::deque<Packet> queue{
+        {1, DeliveryKind::HostPassthrough},
+        {2, DeliveryKind::ManagedStop},
+        {3, DeliveryKind::HostPassthrough},
+    };
+
+    EXPECT_EQ(
+        ds5::classic_rumble::enqueue_with_soft_cap(
+            queue,
+            Packet{4, DeliveryKind::HostPassthrough},
+            3,
+            8,
+            kind_of
+        ),
+        AdmissionResult::Enqueued
+    );
+    EXPECT_EQ(queue.size(), 3u);
+    EXPECT_EQ(queue[0].id, 2);
+    EXPECT_EQ(queue[2].id, 4);
+
+    ds5::classic_rumble::requeue_failed_front(
+        queue,
+        Packet{5, DeliveryKind::ManagedStop}
+    );
+    EXPECT_EQ(queue.front().id, 5);
+    EXPECT_EQ(ds5::classic_rumble::retry_delay_us(1), 5'000u);
+    EXPECT_EQ(ds5::classic_rumble::retry_delay_us(5), 80'000u);
+    EXPECT_FALSE(ds5::classic_rumble::retry_requires_fail_closed(7));
+    EXPECT_TRUE(ds5::classic_rumble::retry_requires_fail_closed(8));
+}
+
+void usb_host_speaker_gain_does_not_attenuate_native_haptics() {
+    const ds5::usb_audio::NativeRenderFrame input{
+        .speaker_left = 20000,
+        .speaker_right = -12000,
+        .haptic_left = 7000,
+        .haptic_right = -5000,
+    };
+    const auto full = ds5::usb_audio::apply_host_speaker_gain(input, 1.0f);
+    const auto quiet = ds5::usb_audio::apply_host_speaker_gain(input, 0.1f);
+
+    EXPECT_EQ(full.speaker_left, 20000);
+    EXPECT_EQ(full.speaker_right, -12000);
+    EXPECT_EQ(quiet.speaker_left, 2000);
+    EXPECT_EQ(quiet.speaker_right, -1200);
+    EXPECT_EQ(quiet.haptic_left, full.haptic_left);
+    EXPECT_EQ(quiet.haptic_right, full.haptic_right);
 }
 
 void classic_rumble_gain_clamps_rounds_and_touches_motor_payloads() {
@@ -774,12 +876,12 @@ void rumble_state_machine_sends_real_stops_immediately() {
         static_cast<uint16_t>(payload.size())
     );
     EXPECT_FALSE(state.classic_rumble_active);
-    EXPECT_FALSE(controller_output_rumble_payload_requires_immediate_send(
+    EXPECT_TRUE(controller_output_rumble_payload_requires_immediate_send(
         state,
         payload.data(),
         static_cast<uint16_t>(payload.size())
     ));
-    EXPECT_TRUE(controller_output_rumble_payload_is_redundant(
+    EXPECT_FALSE(controller_output_rumble_payload_is_redundant(
         state,
         payload.data(),
         static_cast<uint16_t>(payload.size())
@@ -802,7 +904,7 @@ void rumble_state_machine_sends_real_stops_immediately() {
     EXPECT_TRUE(state.classic_rumble_active);
 
     payload = empty_payload();
-    EXPECT_TRUE(controller_output_rumble_payload_requires_immediate_send(
+    EXPECT_FALSE(controller_output_rumble_payload_requires_immediate_send(
         state,
         payload.data(),
         static_cast<uint16_t>(payload.size())
@@ -812,7 +914,7 @@ void rumble_state_machine_sends_real_stops_immediately() {
         payload.data(),
         static_cast<uint16_t>(payload.size())
     );
-    EXPECT_FALSE(state.classic_rumble_active);
+    EXPECT_TRUE(state.classic_rumble_active);
 
     payload = empty_payload();
     payload[kValidFlag0Offset] = kFlag0HapticsSelect;
@@ -828,7 +930,7 @@ void rumble_state_machine_sends_real_stops_immediately() {
     payload = empty_payload();
     payload[kValidFlag0Offset] = kFlag0RightTriggerEffect;
     std::fill_n(payload.data() + kTriggerEffectRightOffset, kTriggerEffectSize, 0x31);
-    EXPECT_TRUE(controller_output_rumble_payload_requires_immediate_send(
+    EXPECT_FALSE(controller_output_rumble_payload_requires_immediate_send(
         state,
         payload.data(),
         static_cast<uint16_t>(payload.size())
@@ -838,7 +940,7 @@ void rumble_state_machine_sends_real_stops_immediately() {
         payload.data(),
         static_cast<uint16_t>(payload.size())
     );
-    EXPECT_FALSE(state.classic_rumble_active);
+    EXPECT_TRUE(state.classic_rumble_active);
 }
 
 void haptics_test_signal_matches_original_main_packet_flip_pattern() {
@@ -914,7 +1016,7 @@ void dualsense_decoder_extracts_normalized_controller_state() {
     EXPECT_TRUE(state.home);
     EXPECT_TRUE(state.touchpad);
     EXPECT_TRUE(state.edge_left_paddle);
-    EXPECT_EQ(state.battery_percent, 70);
+    EXPECT_EQ(state.battery_percent, 75);
     EXPECT_TRUE(state.headset_plugged);
     EXPECT_TRUE(state.microphone_muted);
     EXPECT_TRUE(state.motion_valid);
@@ -935,6 +1037,64 @@ void dualsense_decoder_extracts_normalized_controller_state() {
     EXPECT_EQ(state.touch_points[1].y, 0);
     EXPECT_EQ(state.dualsense_report_len, kDualSenseUsbInputReportSize);
     EXPECT_EQ(state.dualsense_report[7], report[7]);
+}
+
+void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
+    auto report = sample_dualsense_input_report();
+    BridgeControllerState state{};
+
+    report[52] = 0x18;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 85);
+    EXPECT_EQ(state.raw_power_state, 1);
+
+    report[52] = 0x28;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 85);
+    EXPECT_EQ(state.raw_power_state, 2);
+
+    report[52] = 0x2a;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 100);
+    EXPECT_EQ(state.raw_power_state, 2);
+
+    report[52] = 0x2f;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 2);
+}
+
+void bootsel_gesture_policy_emits_click_double_triple_and_hold() {
+    kitsune::ButtonGesture gesture({5, 3, 4});
+
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::Click);
+
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::DoubleClick);
+
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::TripleClick);
+
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::Hold);
+    EXPECT_EQ(gesture.update(true), kitsune::ButtonGestureEvent::None);
+    EXPECT_EQ(gesture.update(false), kitsune::ButtonGestureEvent::ReleaseAfterHold);
 }
 
 void dualsense_persona_preserves_native_report_bytes() {
@@ -991,7 +1151,7 @@ void xusb360_rumble_decodes_to_ds5_classic_rumble_payload() {
     EXPECT_TRUE((payload[kValidFlag0Offset] & kFlag0HapticsSelect) != 0);
     EXPECT_FALSE((payload[kValidFlag0Offset] & kFlag0CompatibleVibration) != 0);
     EXPECT_TRUE((payload[kValidFlag2Offset] & kFlag2EnableImprovedRumbleEmulation) != 0);
-    EXPECT_TRUE((payload[kValidFlag2Offset] & kFlag2UseRumbleNotHaptics2) != 0);
+    EXPECT_FALSE((payload[kValidFlag2Offset] & kFlag2UseRumbleNotHaptics2) != 0);
     EXPECT_EQ(payload[kMotorLeftOffset], 0x90);
     EXPECT_EQ(payload[kMotorRightOffset], 0x30);
 }
@@ -1080,7 +1240,7 @@ void ds4_output_decodes_to_ds5_rumble_and_lightbar_payload() {
     EXPECT_TRUE((payload[kValidFlag0Offset] & kFlag0HapticsSelect) != 0);
     EXPECT_FALSE((payload[kValidFlag0Offset] & kFlag0CompatibleVibration) != 0);
     EXPECT_TRUE((payload[kValidFlag2Offset] & kFlag2EnableImprovedRumbleEmulation) != 0);
-    EXPECT_TRUE((payload[kValidFlag2Offset] & kFlag2UseRumbleNotHaptics2) != 0);
+    EXPECT_FALSE((payload[kValidFlag2Offset] & kFlag2UseRumbleNotHaptics2) != 0);
     EXPECT_TRUE((payload[kValidFlag1Offset] & kFlag1LightbarControlEnable) != 0);
     EXPECT_EQ(payload[kMotorRightOffset], 0x12);
     EXPECT_EQ(payload[kMotorLeftOffset], 0xfe);
@@ -1183,10 +1343,13 @@ struct TestCase {
 };
 
 std::vector<TestCase> tests{
-    {"scheduler prioritizes audio when non-audio would delay streaming", scheduler_prioritizes_audio_when_non_audio_would_delay_streaming},
+    {"scheduler prioritizes audio before state is starved", scheduler_prioritizes_audio_before_state_is_starved},
     {"scheduler sends coalesced state when audio is absent", scheduler_sends_coalesced_state_when_audio_is_absent},
-    {"scheduler audio due on age backlog or fairness limit", scheduler_audio_due_on_age_backlog_or_fairness_limit},
+    {"scheduler bounds coalesced state latency during continuous audio", scheduler_bounds_coalesced_state_latency_during_continuous_audio},
+    {"scheduler alternates rumble with audio and prioritizes one stop", scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop},
+    {"classic rumble delivery is bounded and protects managed stop", classic_rumble_delivery_is_bounded_and_protects_managed_stop},
     {"packet compositor initializes bluetooth report and wraps sequence", packet_compositor_initializes_bluetooth_report_and_wraps_sequence},
+    {"usb host speaker gain does not attenuate native haptics", usb_host_speaker_gain_does_not_attenuate_native_haptics},
     {"classic rumble gain clamps rounds and touches motor payloads", classic_rumble_gain_clamps_rounds_and_touches_motor_payloads},
     {"audio haptics replace tracks state without suppressing classic rumble", audio_haptics_replace_tracks_state_without_suppressing_classic_rumble},
     {"speaker sanitizer strips host amp flags and zeroes only controlled fields", speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields},
@@ -1211,6 +1374,8 @@ std::vector<TestCase> tests{
     {"haptics test signal drives left and right actuators opposite phase", haptics_test_signal_drives_left_and_right_actuators_opposite_phase},
     {"haptics test signal allows carrier paced packets without wall clock gap", haptics_test_signal_allows_carrier_paced_packets_without_wall_clock_gap},
     {"dualsense decoder extracts normalized controller state", dualsense_decoder_extracts_normalized_controller_state},
+    {"dualsense decoder preserves valid battery bucket across power states", dualsense_decoder_preserves_valid_battery_bucket_across_power_states},
+    {"bootsel gesture policy emits click double triple and hold", bootsel_gesture_policy_emits_click_double_triple_and_hold},
     {"dualsense persona preserves native report bytes", dualsense_persona_preserves_native_report_bytes},
     {"xusb360 persona maps standard gamepad fields", xusb360_persona_maps_standard_gamepad_fields},
     {"xusb360 rumble decodes to ds5 classic rumble payload", xusb360_rumble_decodes_to_ds5_classic_rumble_payload},

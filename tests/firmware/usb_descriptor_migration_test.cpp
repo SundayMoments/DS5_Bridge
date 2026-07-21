@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -463,17 +464,22 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
 
     const std::string disconnect_block = extract_between(
         usb_cpp,
-        "void usb_handle_controller_transport_disconnect() {",
+        "void usb_handle_controller_transport_disconnect(bool expected_disconnect) {",
         "\n}\n\nvoid usb_handle_controller_transport_ready()"
     );
-    const auto disconnect_suspend = disconnect_block.find("usb_bus_suspended()");
-    const auto disconnect_deinit = disconnect_block.find("usb_deinit_device_stack();");
     if (
-        disconnect_suspend == std::string::npos
-        || disconnect_deinit == std::string::npos
-        || disconnect_deinit < disconnect_suspend
+        disconnect_block.find("usb_controller_transport_ready = false;")
+            == std::string::npos
+        || disconnect_block.find("USB_EXPECTED_DISCONNECT_GRACE_US")
+            == std::string::npos
+        || disconnect_block.find("usb_controller_transport_transition_pending = true;")
+            == std::string::npos
+        || disconnect_block.find("tud_disconnect") != std::string::npos
+        || disconnect_block.find("tusb_deinit") != std::string::npos
     ) {
-        throw std::runtime_error("Controller disconnect must defer USB deinit while the host is suspended");
+        throw std::runtime_error(
+            "Controller disconnect callbacks must only publish deferred USB desired state"
+        );
     }
 
     const std::string ready_block = extract_between(
@@ -481,14 +487,41 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
         "void usb_handle_controller_transport_ready() {",
         "\n}\n\nextern \"C\" void tud_mount_cb(void) {"
     );
-    const auto ready_suspend = ready_block.find("usb_bus_suspended()");
-    const auto ready_connect = ready_block.find("usb_connect_controller_transport");
     if (
-        ready_suspend == std::string::npos
-        || ready_connect == std::string::npos
-        || ready_connect < ready_suspend
+        ready_block.find("usb_controller_transport_ready = true;")
+            == std::string::npos
+        || ready_block.find("usb_controller_transport_transition_pending = true;")
+            == std::string::npos
+        || ready_block.find("tud_connect") != std::string::npos
+        || ready_block.find("tusb_init") != std::string::npos
     ) {
-        throw std::runtime_error("Controller reconnect must not re-enumerate USB while the host is suspended");
+        throw std::runtime_error(
+            "Controller ready callbacks must defer every TinyUSB lifecycle mutation"
+        );
+    }
+
+    const auto stack_init = usb_cpp.find("tusb_init(BOARD_TUD_RHPORT, &dev_init);");
+    const auto initial_detach = usb_cpp.find("tud_disconnect();", stack_init);
+    const auto initial_wait = usb_cpp.find("sleep_ms_with_watchdog(150);", stack_init);
+    if (
+        stack_init == std::string::npos
+        || initial_detach == std::string::npos
+        || initial_wait == std::string::npos
+        || !(stack_init < initial_detach && initial_detach < initial_wait)
+        || pm_poll.find("if (usb_controller_transport_transition_pending)")
+            == std::string::npos
+        || pm_poll.find("usb_controller_transport_disconnect_not_before_us")
+            == std::string::npos
+        || pm_poll.find("usb_connect_controller_transport(now);")
+            == std::string::npos
+        || pm_poll.find("usb_controller_transport_attached = false;")
+            == std::string::npos
+        || pm_poll.find("tud_disconnect();") == std::string::npos
+        || usb_cpp.find("tusb_deinit") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "USB PM poll must reconcile soft attach/detach without deinitializing TinyUSB"
+        );
     }
 
     if (usb_h.find("bool usb_host_suspended_active();") == std::string::npos) {
@@ -501,14 +534,15 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
         "\n        }\n\n        case GAP_EVENT_RSSI_MEASUREMENT:"
     );
     const auto suspended_query = hci_disconnect.find("usb_host_suspended_active()");
-    const auto watchdog = hci_disconnect.find("watchdog_reboot");
     if (
         suspended_query == std::string::npos
         || hci_disconnect.find("keeping USB on bus") == std::string::npos
-        || watchdog == std::string::npos
-        || watchdog < suspended_query
+        || hci_disconnect.find("keeping Pico alive") == std::string::npos
+        || hci_disconnect.find("watchdog_reboot") != std::string::npos
     ) {
-        throw std::runtime_error("BT disconnect must avoid rebooting while the USB host is suspended");
+        throw std::runtime_error(
+            "Normal controller disconnects must keep the Pico alive, including while USB is suspended"
+        );
     }
 }
 
@@ -700,6 +734,1088 @@ void assert_mic_pass_through_defaults_to_enabled(std::filesystem::path const &ro
     }
 }
 
+void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &root) {
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+
+    const std::string init_block = extract_between(
+        bt_cpp,
+        "int bt_init() {",
+        "\n}\n\nstatic void hci_packet_handler"
+    );
+    if (
+        init_block.find("gap_set_link_supervision_timeout(CLASSIC_LINK_SUPERVISION_TIMEOUT_SLOTS);")
+            == std::string::npos
+        || init_block.find("gap_ssp_set_auto_accept(false);") == std::string::npos
+        || init_block.find("hci_set_master_slave_policy(HCI_ROLE_MASTER);") == std::string::npos
+        || init_block.find("gap_register_classic_connection_filter(&classic_connection_filter);")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Bluetooth init must install the Kitsune reconnect timing, role, and ACL admission policy");
+    }
+
+    const std::string working_block = extract_between(
+        bt_cpp,
+        "case BTSTACK_EVENT_STATE:",
+        "\n        case HCI_EVENT_INQUIRY_RESULT:"
+    );
+    const auto page_activity = working_block.find("gap_set_page_scan_activity(0x0012, 0x0012);");
+    const auto page_type = working_block.find("gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);");
+    const auto pairing_recovery =
+        working_block.find("recover_pairing_transaction_on_boot();");
+    const auto stored_key = working_block.find("stored_link_key_present = bt_has_stored_link_key();");
+    const auto passive_scan = working_block.find("restore_passive_reconnect_scan();");
+    const auto first_pair = working_block.find("(void)bt_request_scan();");
+    if (
+        page_activity == std::string::npos
+        || page_type == std::string::npos
+        || pairing_recovery == std::string::npos
+        || stored_key == std::string::npos
+        || passive_scan == std::string::npos
+        || first_pair == std::string::npos
+        || page_activity > page_type
+        || page_type > pairing_recovery
+        || pairing_recovery > stored_key
+    ) {
+        throw std::runtime_error("Bluetooth page-scan tuning must be applied after HCI reset before passive reconnect or first pairing");
+    }
+
+    const std::string inquiry_block = extract_between(
+        bt_cpp,
+        "static void start_inquiry_if_needed() {",
+        "\n}\n\nstatic void update_inquiry_led"
+    );
+    if (
+        inquiry_block.find("!pairing_window_active") == std::string::npos
+        || inquiry_block.find("gap_connectable_control(0);") == std::string::npos
+        || inquiry_block.find("gap_discoverable_control(0);") == std::string::npos
+        || inquiry_block.find("gap_set_bondable_mode(1);") == std::string::npos
+        || inquiry_block.find("gap_inquiry_start(PAIRING_INQUIRY_LENGTH_UNITS)")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Controller discovery must remain an explicit, outbound-only pairing window");
+    }
+
+    const std::string filter_block = extract_between(
+        bt_cpp,
+        "static bool classic_acl_connection_allowed",
+        "\n}\n\nstatic int classic_connection_filter"
+    );
+    if (
+        filter_block.find("gap_get_link_key_for_bd_addr") == std::string::npos
+        || filter_block.find("Rejecting unknown controller") == std::string::npos
+        || filter_block.find("Rejecting incoming page") == std::string::npos
+    ) {
+        throw std::runtime_error("Passive page scan must admit only a stored controller outside explicit pairing");
+    }
+
+    if (
+        bt_cpp.find("#define PAIRING_WINDOW_US 30000000u") == std::string::npos
+        || bt_cpp.find("#define PAIRING_INQUIRY_LENGTH_UNITS 24u") == std::string::npos
+        || bt_cpp.find("#define CLASSIC_LINK_SUPERVISION_TIMEOUT_SLOTS 3200u") == std::string::npos
+        || bt_cpp.find("HCI_SEND_CMD_LOGGED(&hci_accept_connection_request") != std::string::npos
+        || bt_h.find("bool bt_request_scan();") == std::string::npos
+    ) {
+        throw std::runtime_error("Bluetooth pairing window, link-loss timing, or BTstack-owned incoming ACL policy regressed");
+    }
+
+    const std::string inquiry_loop = extract_between(
+        bt_cpp,
+        "void bt_inquiry_loop() {",
+        "\n}\n\nint bt_init()"
+    );
+    const std::string connection_complete = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_CONNECTION_COMPLETE: {",
+        "\n        case HCI_EVENT_LINK_KEY_REQUEST:"
+    );
+    const std::string disconnect = extract_between(
+        bt_cpp,
+        "bool bt_disconnect_with_intent",
+        "\n}\n\nbool bt_disconnect()"
+    );
+    const std::string explicit_pairing = extract_between(
+        bt_cpp,
+        "case GAP_EVENT_INQUIRY_COMPLETE:",
+        "\n        case HCI_EVENT_COMMAND_STATUS:"
+    );
+    const auto transaction_stage =
+        explicit_pairing.find("stage_pairing_transaction(");
+    const auto prior_key_drop =
+        explicit_pairing.find("gap_drop_link_key_for_bd_addr(current_device_addr);");
+    const auto create_connection =
+        explicit_pairing.find("&hci_create_connection");
+    if (
+        bt_cpp.find("static void service_acl_connection_cancel()") == std::string::npos
+        || bt_cpp.find("hci_send_cmd(&hci_create_connection_cancel, current_device_addr)")
+            == std::string::npos
+        || bt_cpp.find("hci_event_inquiry_result_get_page_scan_repetition_mode(packet)")
+            == std::string::npos
+        || bt_cpp.find("hci_event_inquiry_result_with_rssi_get_clock_offset(packet)")
+            == std::string::npos
+        || bt_cpp.find("hci_event_extended_inquiry_response_get_clock_offset(packet)")
+            == std::string::npos
+        || bt_cpp.find("(current_device_clock_offset & 0x7FFFu) | 0x8000u")
+            == std::string::npos
+        || bt_cpp.find("current_device_page_scan_repetition_mode,\n                    0,\n                    valid_clock_offset")
+            == std::string::npos
+        || bt_cpp.find("#define BT_PAIRING_TRANSACTION_TLV_TAG 0x50545832u")
+            == std::string::npos
+        || bt_cpp.find("static bool recover_pairing_transaction_on_boot()")
+            == std::string::npos
+        || transaction_stage == std::string::npos
+        || prior_key_drop == std::string::npos
+        || create_connection == std::string::npos
+        || !(transaction_stage < prior_key_drop && prior_key_drop < create_connection)
+        || inquiry_loop.find("acl_connection_cancel_requested = true;") == std::string::npos
+        || inquiry_loop.find("acl_disconnect_on_completion = true;") == std::string::npos
+        || inquiry_loop.find("clear_acl_connection_pending();\n        fail_pending_connection_attempt();")
+            != std::string::npos
+        || connection_complete.find("if (acl_disconnect_on_completion)") == std::string::npos
+        || connection_complete.find(
+            "ACL completed after cancellation; disconnect before security setup"
+        ) == std::string::npos
+        || connection_complete.find(
+            "restore_uncommitted_pairing_key(\"ACL connection failure\")"
+        ) == std::string::npos
+        || bt_cpp.find(
+            "restore_uncommitted_pairing_key(\"ACL command rejection\")"
+        ) == std::string::npos
+        || bt_cpp.find(
+            "\"disconnect before replacement key commit\""
+        ) == std::string::npos
+        || disconnect.find("connection_phase == BtConnectionPhase::Disconnecting")
+            == std::string::npos
+        || disconnect.find("&& acl_handle != HCI_CON_HANDLE_INVALID") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Pending ACL and disconnect transactions must retain ownership until their terminal events"
+        );
+    }
+
+    const std::string signal_strength_loop = extract_between(
+        bt_cpp,
+        "void bt_signal_strength_loop() {",
+        "\n}\n\nbool bt_disconnect_with_intent"
+    );
+    const auto input_activity = bt_cpp.find(
+        "const bool meaningful_input_activity ="
+    );
+    const auto idle_disconnect = bt_cpp.find(
+        "// Inactivity detection.",
+        input_activity
+    );
+    if (
+        bt_cpp.find("RSSI_POLL_INTERVAL_US") != std::string::npos
+        || bt_cpp.find("#define RSSI_INPUT_IDLE_GRACE_US 5000000ull")
+            == std::string::npos
+        || bt_cpp.find("#define RSSI_REQUEST_COOLDOWN_US 10000000ull")
+            == std::string::npos
+        || signal_strength_loop.find("bt_rssi_idle_epoch_armed")
+            == std::string::npos
+        || signal_strength_loop.find("audio_recent()") == std::string::npos
+        || signal_strength_loop.find("usb_speaker_streaming_active()")
+            == std::string::npos
+        || signal_strength_loop.find("gap_read_rssi(acl_handle)")
+            == std::string::npos
+        || input_activity == std::string::npos
+        || idle_disconnect == std::string::npos
+        || input_activity > idle_disconnect
+        || bt_cpp.find("arm_signal_strength_idle_epoch(now_us);")
+            == std::string::npos
+        || bt_cpp.find("uint64_t inactive_time = 0;")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "RSSI sampling must remain input-idle, audio-safe, and bounded per idle epoch"
+        );
+    }
+
+    const std::string link_key_notification = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_LINK_KEY_NOTIFICATION: {",
+        "\n        case HCI_EVENT_AUTHENTICATION_COMPLETE:"
+    );
+    const std::string finish_hid = extract_between(
+        bt_cpp,
+        "static void finish_hid_session_if_ready() {",
+        "\n}\n\nstatic void l2cap_packet_handler"
+    );
+    const auto transaction_accept =
+        link_key_notification.find("mark_pairing_transaction_key_accepted(addr)");
+    const auto pairing_policy_commit =
+        link_key_notification.find("finalize_pairing_policy_for_addr(addr)");
+    const auto transaction_discard =
+        link_key_notification.find("discard_pairing_transaction()");
+    if (
+        bt_cpp.find("static bool persist_notified_link_key(")
+            == std::string::npos
+        || bt_cpp.find("gap_store_link_key_for_bd_addr(addr, notified_key, effective_type);")
+            == std::string::npos
+        || bt_cpp.find("memcmp(stored_key, notified_key, LINK_KEY_LEN) == 0")
+            == std::string::npos
+        || bt_cpp.find("gap_drop_link_key_for_bd_addr(addr);")
+            == std::string::npos
+        || bt_cpp.find("gap_store_link_key_for_bd_addr(addr, prior_key, prior_type);")
+            == std::string::npos
+        || bt_cpp.find("const bool update_authorized =")
+            == std::string::npos
+        || bt_cpp.find("notified_type == CHANGED_COMBINATION_KEY")
+            == std::string::npos
+        || bt_cpp.find("&& existing_link_is_secured")
+            == std::string::npos
+        || link_key_notification.find("current_link_key_persisted =")
+            == std::string::npos
+        || link_key_notification.find("finish_hid_session_if_ready();")
+            == std::string::npos
+        || transaction_accept == std::string::npos
+        || pairing_policy_commit == std::string::npos
+        || transaction_discard == std::string::npos
+        || !(transaction_accept < pairing_policy_commit
+            && pairing_policy_commit < transaction_discard)
+        || finish_hid.find("pairing_link_key_required && !current_link_key_persisted")
+            == std::string::npos
+        || finish_hid.find("wait for durable link key before publishing controller")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Bluetooth pairing must transactionally replace and byte-verify its durable link key before publishing HID"
+        );
+    }
+}
+
+void assert_firmware_version_has_one_canonical_source(
+    std::filesystem::path const &root
+) {
+    auto firmware_version = read_text(root / "firmware-version.txt");
+    while (!firmware_version.empty() && std::isspace(
+        static_cast<unsigned char>(firmware_version.back())
+    )) {
+        firmware_version.pop_back();
+    }
+    if (!std::regex_match(firmware_version, std::regex(R"(\d+\.\d+\.\d+)"))) {
+        throw std::runtime_error(
+            "firmware-version.txt must contain one semantic firmware version"
+        );
+    }
+
+    const auto cmake = read_text(root / "CMakeLists.txt");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const auto bridge_service =
+        read_text(root / "companion" / "src" / "main" / "bridge-service.ts");
+    const auto release_script =
+        read_text(root / "tools" / "create-release-candidate.ps1");
+    const auto release_workflow =
+        read_text(root / ".github" / "workflows" / "release.yml");
+    std::smatch bundled_match;
+    const bool bundled_found = std::regex_search(
+        bridge_service,
+        bundled_match,
+        std::regex(R"(BUNDLED_FIRMWARE_VERSION\s*=\s*'(\d+\.\d+\.\d+)')")
+    );
+
+    if (
+        cmake.find(
+            "pico_set_program_version(ds5-bridge \"${DS5_FIRMWARE_VERSION}\")"
+        ) == std::string::npos
+        || cmake.find(
+            "DS5_FIRMWARE_VERSION_MAJOR=${DS5_FIRMWARE_VERSION_MAJOR}"
+        ) == std::string::npos
+        || companion_cpp.find(
+            "kFirmwareMajor = DS5_FIRMWARE_VERSION_MAJOR"
+        ) == std::string::npos
+        || companion_cpp.find(
+            "kFirmwareMinor = DS5_FIRMWARE_VERSION_MINOR"
+        ) == std::string::npos
+        || companion_cpp.find(
+            "kFirmwarePatch = DS5_FIRMWARE_VERSION_PATCH"
+        ) == std::string::npos
+        || release_script.find(
+            "Read-FirmwareVersion (Join-Path $repoRoot 'firmware-version.txt')"
+        ) == std::string::npos
+        || release_workflow.find(
+            "(Get-Content firmware-version.txt -Raw).Trim()"
+        ) == std::string::npos
+        || !bundled_found
+        || bundled_match[1].str() != firmware_version
+    ) {
+        throw std::runtime_error(
+            "CMake, firmware reports, and release validation must share firmware-version.txt"
+        );
+    }
+}
+
+void assert_bluetooth_device_management_policy(std::filesystem::path const &root) {
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+
+    const std::string working_block = extract_between(
+        bt_cpp,
+        "case BTSTACK_EVENT_STATE:",
+        "\n        case HCI_EVENT_INQUIRY_RESULT:"
+    );
+    const auto blacklist_load = working_block.find("bt_blacklist_load();");
+    const auto link_key_load =
+        working_block.find("stored_link_key_present = bt_has_stored_link_key();");
+    if (
+        bt_cpp.find("#include \"btstack_tlv.h\"") == std::string::npos
+        || bt_cpp.find("#define BT_BLACKLIST_TLV_TAG 0x424C434Bu")
+            == std::string::npos
+        || bt_cpp.find("static bool bt_blacklist_persist()")
+            == std::string::npos
+        || bt_cpp.find("tlv->store_tag(") == std::string::npos
+        || bt_cpp.find("memcmp(verified_addrs, cleared_controller_addrs, bytes) == 0")
+            == std::string::npos
+        || blacklist_load == std::string::npos
+        || link_key_load == std::string::npos
+        || blacklist_load > link_key_load
+    ) {
+        throw std::runtime_error(
+            "Forgotten-controller policy must load and byte-verify its durable TLV state before reconnect"
+        );
+    }
+
+    const std::string filter_block = extract_between(
+        bt_cpp,
+        "static bool classic_acl_connection_allowed",
+        "\n}\n\nstatic int classic_connection_filter"
+    );
+    const auto blacklist_check = filter_block.find("bt_blacklist_contains(addr)");
+    const auto stored_key_check = filter_block.find("gap_get_link_key_for_bd_addr");
+    const std::string connection_complete = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_CONNECTION_COMPLETE: {",
+        "\n        case HCI_EVENT_LINK_KEY_REQUEST:"
+    );
+    const std::string link_key_request = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_LINK_KEY_REQUEST: {",
+        "\n        case HCI_EVENT_USER_CONFIRMATION_REQUEST:"
+    );
+    if (
+        blacklist_check == std::string::npos
+        || stored_key_check == std::string::npos
+        || blacklist_check > stored_key_check
+        || connection_complete.find("Late connection from blacklisted")
+            == std::string::npos
+        || connection_complete.find("gap_disconnect(handle)")
+            == std::string::npos
+        || link_key_request.find("!bt_blacklist_contains(addr)")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Forgotten controllers must be rejected at admission, late completion, and stale key lookup"
+        );
+    }
+
+    const std::string forget_all = extract_between(
+        bt_cpp,
+        "bool bt_forget_pairings() {",
+        "\n}\n\nbool bt_forget_pairing("
+    );
+    const auto forget_all_cancel =
+        forget_all.find("cancel_pairing_transaction_before_forget(true, nullptr)");
+    const auto forget_all_capture = forget_all.find("bt_blacklist_add_stored_link_keys()");
+    const auto forget_all_persist = forget_all.find("bt_blacklist_persist()");
+    const auto forget_all_drop = forget_all.find("gap_delete_all_link_keys();");
+    const std::string forget_one = extract_between(
+        bt_cpp,
+        "bool bt_forget_pairing(uint8_t address[6])",
+        "\n}\n\nbool bt_set_idle_disconnect_timeout_minutes"
+    );
+    const auto forget_one_cancel =
+        forget_one.find("cancel_pairing_transaction_before_forget(false, addr)");
+    const auto forget_one_add = forget_one.find("bt_blacklist_add_unique(addr)");
+    const auto forget_one_persist = forget_one.find("bt_blacklist_persist()");
+    const auto forget_one_drop = forget_one.find("gap_drop_link_key_for_bd_addr(addr);");
+    if (
+        forget_all_cancel == std::string::npos
+        || forget_all_capture == std::string::npos
+        || forget_all_persist == std::string::npos
+        || forget_all_drop == std::string::npos
+        || !(forget_all_capture < forget_all_persist
+            && forget_all_persist < forget_all_cancel
+            && forget_all_cancel < forget_all_drop)
+        || forget_one_cancel == std::string::npos
+        || forget_one_add == std::string::npos
+        || forget_one_persist == std::string::npos
+        || forget_one_drop == std::string::npos
+        || !(forget_one_add < forget_one_persist
+            && forget_one_persist < forget_one_cancel
+            && forget_one_cancel < forget_one_drop)
+    ) {
+        throw std::runtime_error(
+            "Forget-one and forget-all must durably blacklist addresses before deleting link keys"
+        );
+    }
+
+    const std::string finish_hid = extract_between(
+        bt_cpp,
+        "static void finish_hid_session_if_ready() {",
+        "\n}\n\nstatic void l2cap_packet_handler"
+    );
+    const auto durable_key_gate =
+        finish_hid.find("pairing_link_key_required && !current_link_key_persisted");
+    const auto blacklist_clear = finish_hid.find("bt_blacklist_remove(current_device_addr)");
+    const auto publish_ready =
+        finish_hid.find("connection_phase = BtConnectionPhase::Ready;");
+    if (
+        durable_key_gate == std::string::npos
+        || blacklist_clear == std::string::npos
+        || publish_ready == std::string::npos
+        || !(durable_key_gate < blacklist_clear && blacklist_clear < publish_ready)
+        || bt_h.find("struct BtDeviceIdentitySnapshot") == std::string::npos
+        || bt_h.find("bool bt_get_device_identity(BtDeviceIdentitySnapshot *snapshot);")
+            == std::string::npos
+        || bt_h.find("bool bt_forget_pairing(uint8_t address[6]);")
+            == std::string::npos
+        || bt_h.find("bool bt_pairing_active();") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Explicit durable re-pairing must clear the blacklist before publishing identity and HID readiness"
+        );
+    }
+}
+
+void assert_companion_device_management_contract(std::filesystem::path const &root) {
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const auto companion_h = read_text(root / "src" / "companion.h");
+    const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
+
+    if (
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 17;")
+            == std::string::npos
+        || protocol_ts.find("export const PROTOCOL_MINOR = 17;")
+            == std::string::npos
+        || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
+            == std::string::npos
+        || protocol_ts.find("DEVICE_IDENTITY: 0x0d")
+            == std::string::npos
+        || companion_cpp.find("CommandRequestControllerScan = 0x27")
+            == std::string::npos
+        || companion_cpp.find("CommandForgetControllerPairings = 0x28")
+            == std::string::npos
+        || companion_cpp.find("CommandForgetControllerPairing = 0x2E")
+            == std::string::npos
+        || protocol_ts.find("REQUEST_CONTROLLER_SCAN: 0x27")
+            == std::string::npos
+        || protocol_ts.find("FORGET_CONTROLLER_PAIRINGS: 0x28")
+            == std::string::npos
+        || protocol_ts.find("FORGET_CONTROLLER_PAIRING: 0x2e")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Firmware and companion controller-management protocol identifiers must remain in parity"
+        );
+    }
+
+    const std::string identity = extract_between(
+        companion_cpp,
+        "uint16_t build_device_identity",
+        "\n}\n\nuint16_t build_shortcut_event"
+    );
+    if (
+        identity.find("bt_get_device_identity(&identity)") == std::string::npos
+        || identity.find("bt_pairing_active() ? 0x08") == std::string::npos
+        || identity.find("write_ascii(buffer + 9, 18, identity.address);")
+            == std::string::npos
+        || identity.find("write_ascii(buffer + 27, 24, identity.name);")
+            == std::string::npos
+        || identity.find("write_u16(buffer + 51, identity.vendor_id);")
+            == std::string::npos
+        || identity.find("write_u16(buffer + 53, identity.product_id);")
+            == std::string::npos
+        || protocol_ts.find("export function parseDeviceIdentityReport")
+            == std::string::npos
+        || protocol_ts.find("const address = readAscii(report, 10, 18);")
+            == std::string::npos
+        || protocol_ts.find("const controllerName = readAscii(report, 28, 24);")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Device identity report layout must remain byte-for-byte aligned across firmware and TypeScript"
+        );
+    }
+
+    const std::string commands = extract_between(
+        companion_cpp,
+        "void handle_command",
+        "\n}\n\nbool shortcut_setting_enabled"
+    );
+    if (
+        commands.find("case CommandRequestControllerScan:")
+            == std::string::npos
+        || commands.find("bt_request_scan() ? AckOk : AckBusy")
+            == std::string::npos
+        || commands.find("case CommandForgetControllerPairings:")
+            == std::string::npos
+        || commands.find("bt_forget_pairings() ? AckOk : AckPersistenceFailed")
+            == std::string::npos
+        || commands.find("case CommandForgetControllerPairing:")
+            == std::string::npos
+        || commands.find("memcpy(address, buffer + 10, sizeof(address));")
+            == std::string::npos
+        || commands.find("bt_forget_pairing(address) ? AckOk : AckPersistenceFailed")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Companion controller-management commands must validate and report persistent mutation failures"
+        );
+    }
+}
+
+void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path const &root) {
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+
+    const std::string recovery_block = extract_between(
+        bt_cpp,
+        "void bt_connection_recovery_loop() {",
+        "\n}\n\nvoid bt_inquiry_loop"
+    );
+    if (
+        recovery_block.find("ENCRYPTION_COMPLETION_TIMEOUT_US") == std::string::npos
+        || recovery_block.find("SECURITY_PHASE_TIMEOUT_US") == std::string::npos
+        || recovery_block.find("HID_REMOTE_INTERRUPT_FOLLOWUP_TIMEOUT_US")
+            == std::string::npos
+        || recovery_block.find("current_hid_opening_timeout_us()")
+            == std::string::npos
+        || recovery_block.find("hid_connection_initiator == HidConnectionInitiator::Remote")
+            == std::string::npos
+        || recovery_block.find("hid_control_pending_cid != 0 || hid_interrupt_pending_cid != 0")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Bluetooth recovery must bound security/encryption and preserve HID channel initiator ownership");
+    }
+
+    const std::string init_feature = extract_between(
+        bt_cpp,
+        "void init_feature() {",
+        "\n}\n"
+    );
+    const auto edge_probe = init_feature.find("schedule_feature_prefetch(0x70, 64);");
+    const auto informational_probe = init_feature.find("schedule_feature_prefetch(0x09, 20);");
+    const std::string control_data = extract_between(
+        bt_cpp,
+        "} else if (channel == hid_control_cid) {",
+        "\n        } else {"
+    );
+    if (
+        edge_probe == std::string::npos
+        || informational_probe == std::string::npos
+        || edge_probe > informational_probe
+        || control_data.find("const bool edge_type_response =")
+            == std::string::npos
+        || control_data.find("controller_type == ControllerTypeDualSense")
+            == std::string::npos
+        || control_data.find(
+            "Late controller type response upgraded controller to DualSense Edge"
+        ) == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Initial feature pacing must prioritize Edge detection and accept a delayed authoritative reply"
+        );
+    }
+
+    const std::string incoming_block = extract_between(
+        bt_cpp,
+        "case L2CAP_EVENT_INCOMING_CONNECTION:",
+        "\n        case L2CAP_EVENT_CHANNEL_CLOSED:"
+    );
+    if (
+        incoming_block.find("current_link_security_ready(handle)") == std::string::npos
+        || incoming_block.find("hid_connection_initiator = HidConnectionInitiator::Remote;")
+            == std::string::npos
+        || incoming_block.find("hid_control_pending_cid = local_cid;") == std::string::npos
+        || incoming_block.find("hid_control_ready || hid_control_pending_cid != 0")
+            == std::string::npos
+        || incoming_block.find("hid_interrupt_pending_cid = local_cid;")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Incoming HID Control must retain remote ownership through the pending Interrupt boundary");
+    }
+
+    const std::string command_status_block = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_COMMAND_STATUS:",
+        "\n        case HCI_EVENT_COMMAND_COMPLETE:"
+    );
+    if (
+        command_status_block.find("HCI_OPCODE_HCI_SET_CONNECTION_ENCRYPTION")
+            == std::string::npos
+        || command_status_block.find("encryption_command_generation = connection_generation;")
+            == std::string::npos
+        || command_status_block.find("encryption_command_accepted_at_us = time_us_32();")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Accepted Set Connection Encryption commands must be tied to the active ACL generation");
+    }
+
+    if (
+        bt_cpp.find("#define ENCRYPTION_COMPLETION_TIMEOUT_US 2500000u") == std::string::npos
+        || bt_cpp.find("#define HID_REMOTE_INITIATION_GRACE_US 500000u") == std::string::npos
+        || bt_cpp.find("#define HID_REMOTE_INTERRUPT_FOLLOWUP_TIMEOUT_US 1000000u")
+            == std::string::npos
+        || bt_cpp.find("case HCI_EVENT_ENCRYPTION_CHANGE_V2:") == std::string::npos
+        || bt_cpp.find("case GAP_EVENT_SECURITY_LEVEL:") == std::string::npos
+        || bt_cpp.find("gap_request_security_level(handle, LEVEL_2);") == std::string::npos
+        || bt_cpp.find("gap_disconnect(acl_handle)") == std::string::npos
+        || bt_cpp.find("HCI_SEND_CMD_LOGGED(&hci_disconnect") != std::string::npos
+        || bt_cpp.find("HCI_SEND_CMD_LOGGED(&hci_set_connection_encryption") != std::string::npos
+    ) {
+        throw std::runtime_error("Bluetooth security must use GAP-owned setup and generation-safe stalled-encryption recovery");
+    }
+}
+
+void assert_dualsense_feature_startup_is_paced(std::filesystem::path const &root) {
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+    const auto main_cpp = read_text(root / "src" / "main.cpp");
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+
+    const std::string prefetch_loop = extract_between(
+        bt_cpp,
+        "void bt_feature_prefetch_loop() {",
+        "\n}\n\nvoid bt_inquiry_loop"
+    );
+    const std::string init_feature_block = extract_between(
+        bt_cpp,
+        "void init_feature() {",
+        "\n}"
+    );
+    if (
+        bt_cpp.find("#define FEATURE_PREFETCH_SPACING_US 5000u") == std::string::npos
+        || bt_h.find("void bt_feature_prefetch_loop();") == std::string::npos
+        || init_feature_block.find("schedule_feature_prefetch(0x09, 20);")
+            == std::string::npos
+        || init_feature_block.find("schedule_feature_prefetch(0x70, 64);")
+            == std::string::npos
+        || init_feature_block.find("get_feature_data(") != std::string::npos
+        || prefetch_loop.find("get_feature_data(request.report_id, request.len)")
+            == std::string::npos
+        || prefetch_loop.find("FEATURE_PREFETCH_SPACING_US") == std::string::npos
+        || main_cpp.find("bt_feature_prefetch_loop();") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense startup feature requests must be paced from the main loop"
+        );
+    }
+
+    const std::string watchdog_sleep = extract_between(
+        usb_cpp,
+        "static void sleep_ms_with_watchdog",
+        "\n}\n\nstatic bool reconnect_grace_active"
+    );
+    if (
+        watchdog_sleep.find("watchdog_update();") == std::string::npos
+        || watchdog_sleep.find("std::min<uint32_t>(total_ms, 10)") == std::string::npos
+        || usb_cpp.find("sleep_ms_with_watchdog(150);") == std::string::npos
+        || main_cpp.find("bt_feature_prefetch_loop();") == std::string::npos
+        || main_cpp.find("watchdog_update();") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Feature startup and USB initialization must remain watchdog-safe"
+        );
+    }
+}
+
+void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root) {
+    const auto cmake = read_text(root / "CMakeLists.txt");
+    const auto audio_cpp = read_text(root / "src" / "audio.cpp");
+    const auto audio_h = read_text(root / "src" / "audio.h");
+    const auto ram_mem_c = read_text(root / "src" / "ram_mem.c");
+    const auto relocate_cmake = read_text(root / "cmake" / "relocate_to_ram.cmake");
+    const auto verify_cmake = read_text(root / "cmake" / "verify_core1_sram.cmake");
+    const auto main_cpp = read_text(root / "src" / "main.cpp");
+
+    if (
+        cmake.find("src/ram_mem.c") == std::string::npos
+        || cmake.find(".text.queue_try_add=.time_critical.queue_try_add")
+            == std::string::npos
+        || cmake.find(".text.queue_try_remove=.time_critical.queue_try_remove")
+            == std::string::npos
+        || cmake.find("verify_core1_sram.cmake") == std::string::npos
+        || cmake.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4")
+            == std::string::npos
+        || cmake.find("PICO_FLASH_ASSUME_CORE1_SAFE=0") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Firmware build must bound CYW43 event bursts and retain multicore flash safety"
+        );
+    }
+
+    const auto core1_entry = audio_cpp.find("static void __not_in_flash_func(core1_entry)() {");
+    const auto decoder_ready = audio_cpp.find("mic_decoder = opus_decoder_create(", core1_entry);
+    const auto flash_ready = audio_cpp.find(
+        "const bool flash_init_succeeded = flash_safe_execute_core_init();",
+        core1_entry
+    );
+    const auto service_loop = audio_cpp.find("    while (true) {", flash_ready);
+    if (
+        audio_h.find("bool audio_init();") == std::string::npos
+        || audio_cpp.find("std::atomic_bool core1_flash_init_succeeded") == std::string::npos
+        || audio_cpp.find("sem_acquire_timeout_ms(&core1_flash_init_done, 250)")
+            == std::string::npos
+        || audio_cpp.find("sem_release(&core1_flash_init_done);") == std::string::npos
+        || audio_cpp.find("core1_flash_safety_poll();") != std::string::npos
+        || audio_cpp.find("#include \"core1_flash_safety.h\"") != std::string::npos
+        || core1_entry == std::string::npos
+        || decoder_ready == std::string::npos
+        || flash_ready == std::string::npos
+        || service_loop == std::string::npos
+        || !(decoder_ready < flash_ready && flash_ready < service_loop)
+        || ram_mem_c.find("__not_in_flash_func(memcpy)") == std::string::npos
+        || ram_mem_c.find("__not_in_flash_func(memset)") == std::string::npos
+        || ram_mem_c.find("__not_in_flash_func(memmove)") == std::string::npos
+        || relocate_cmake.find("--rename-section") == std::string::npos
+        || verify_cmake.find("\"_ZL11core1_entryv\"") == std::string::npos
+        || verify_cmake.find("\"queue_try_add\"") == std::string::npos
+        || verify_cmake.find("\"queue_try_remove\"") == std::string::npos
+        || verify_cmake.find("\"memcpy\"") == std::string::npos
+        || verify_cmake.find("\"memset\"") == std::string::npos
+        || verify_cmake.find("\"memmove\"") == std::string::npos
+        || verify_cmake.find("0x20000000") == std::string::npos
+        || verify_cmake.find("0x20082000") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Core 1 must register the SDK lockout victim after its complete steady-state audio chain is SRAM-resident"
+        );
+    }
+
+    const auto audio_init = main_cpp.find("if (!audio_init())");
+    const auto bt_init = main_cpp.find("bt_init();", audio_init);
+    const auto watchdog_start = main_cpp.find("watchdog_enable(1000, true);", bt_init);
+    const auto first_poll = main_cpp.find("cyw43_arch_poll();", watchdog_start);
+    const auto first_poll_feed = main_cpp.find("watchdog_update();", first_poll);
+    const auto next_usb_phase = main_cpp.find("tud_task();", first_poll);
+    const auto button_check = main_cpp.find("button_check();", first_poll_feed);
+    const std::string reboot_branch = extract_between(
+        main_cpp,
+        "if (watchdog_enable_caused_reboot()) {",
+        "\n    } else {"
+    );
+    if (
+        audio_init == std::string::npos
+        || bt_init == std::string::npos
+        || watchdog_start == std::string::npos
+        || !(audio_init < bt_init && bt_init < watchdog_start)
+        || first_poll == std::string::npos
+        || first_poll_feed == std::string::npos
+        || next_usb_phase == std::string::npos
+        || first_poll_feed > next_usb_phase
+        || button_check == std::string::npos
+        || main_cpp.find("if (!audio_recent())", first_poll_feed) != std::string::npos
+        || reboot_branch.find("sleep_ms(") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Main-loop phases must remain watchdog-fed and BOOTSEL polling must remain available during active audio"
+        );
+    }
+}
+
+void assert_bootsel_gestures_and_intentional_disconnects(std::filesystem::path const &root) {
+    const auto button_cpp = read_text(root / "src" / "button_functions.cpp");
+    const auto gesture_h = read_text(root / "src" / "kitsune_button_gesture.h");
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+
+    const std::string dispatch = extract_between(
+        button_cpp,
+        "static void button_dispatch",
+        "\n}\n\nvoid button_check"
+    );
+    if (
+        button_cpp.find("BUTTON_FLASH_SAFE_TIMEOUT_MS = 100") == std::string::npos
+        || button_cpp.find("static kitsune::ButtonGesture button_gesture")
+            == std::string::npos
+        || button_cpp.find("10, // ~1000 ms allowed between clicks")
+            == std::string::npos
+        || button_cpp.find("button_gesture.update(pressed)") == std::string::npos
+        || gesture_h.find("ReleaseAfterHold") == std::string::npos
+        || button_cpp.find(
+            "const bool sample_succeeded = button_read_bootsel(pressed)"
+        ) == std::string::npos
+        || button_cpp.find("if (!sample_succeeded)") == std::string::npos
+        || button_cpp.find("[BTN] sampler samples=%lu failures=%lu")
+            == std::string::npos
+        || dispatch.find("bt_is_controller_connected()") == std::string::npos
+        || dispatch.find(
+            "bt_disconnect_with_intent(BtControllerDisconnectIntentSleep)"
+        ) == std::string::npos
+        || dispatch.find("bt_request_scan()") == std::string::npos
+        || dispatch.find("watchdog_reboot(0, 0, 0)") == std::string::npos
+        || dispatch.find("reset_usb_boot(0, 0)") == std::string::npos
+        || dispatch.find("bt_forget_pairings()") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "BOOTSEL must implement safe click, reboot, flashing, and forget-pairing gestures"
+        );
+    }
+
+    const std::string disconnect = extract_between(
+        bt_cpp,
+        "bool bt_disconnect_with_intent",
+        "\n}\n\nbool bt_disconnect()"
+    );
+    const std::string recovery = extract_between(
+        bt_cpp,
+        "static void service_disconnect_recovery",
+        "\n}\n\nvoid bt_connection_recovery_loop"
+    );
+    const std::string hci_disconnect = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_DISCONNECTION_COMPLETE: {",
+        "\n        }\n\n        case GAP_EVENT_RSSI_MEASUREMENT:"
+    );
+    if (
+        bt_h.find("BtControllerDisconnectIntentSleep = 1") == std::string::npos
+        || bt_h.find("bool bt_forget_pairings();") == std::string::npos
+        || disconnect.find("controller_disconnect_intent = intent;") == std::string::npos
+        || disconnect.find("gap_disconnect(acl_handle)") == std::string::npos
+        || disconnect.find("DISCONNECT_RETRY_EVENT_TIMEOUT_US") == std::string::npos
+        || recovery.find("DISCONNECT_RETRY_MAX_ATTEMPTS") == std::string::npos
+        || recovery.find("hci_send_cmd(&hci_disconnect") == std::string::npos
+        || hci_disconnect.find("usb_handle_controller_transport_disconnect(expected_disconnect)")
+            == std::string::npos
+        || hci_disconnect.find("keeping Pico alive") == std::string::npos
+        || bt_cpp.find(
+            "bt_disconnect_with_intent(BtControllerDisconnectIntentIdleTimeout)"
+        ) == std::string::npos
+        || companion_cpp.find(
+            "bt_disconnect_with_intent(BtControllerDisconnectIntentSleep)"
+        ) == std::string::npos
+        || usb_cpp.find("#define USB_EXPECTED_DISCONNECT_GRACE_US 1500000")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Intentional disconnects must preserve pairing, retry bounded teardown, and keep the bridge alive"
+        );
+    }
+}
+
+void assert_host_rumble_passes_through_with_bounded_delivery(
+    std::filesystem::path const &root
+) {
+    const auto main_cpp = read_text(root / "src" / "main.cpp");
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+    const auto scheduler_cpp = read_text(root / "src" / "output_scheduler.cpp");
+    const auto delivery_policy = read_text(
+        root / "src" / "classic_rumble_delivery_policy.h"
+    );
+
+    const std::string submit = extract_between(
+        main_cpp,
+        "void controller_output_submit_usb_payload",
+        "\n}\n\nuint8_t interrupt_in_data"
+    );
+    const auto gain = submit.find(
+        "controller_output_policy_apply_classic_rumble_gain_payload"
+    );
+    const auto write = submit.find("bt_write_classified_output");
+    const auto cache = submit.find("audio_set_state_data");
+    if (
+        gain == std::string::npos
+        || write == std::string::npos
+        || cache == std::string::npos
+        || gain > write
+        || write > cache
+        || submit.find("if (!bt_write_classified_output") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Host rumble gain must be applied once before pass-through admission, with audio cache publication gated on acceptance"
+        );
+    }
+
+    const std::string classified = extract_between(
+        bt_cpp,
+        "bool bt_write_classified_output",
+        "\n}\n\nbool bt_write_audio_stream"
+    );
+    if (
+        classified.find("OutputReasonHostPassthrough") == std::string::npos
+        || classified.find("enqueue_urgent_output") == std::string::npos
+        || classified.find("apply_classic_rumble_gain") != std::string::npos
+        || classified.find("strip_redundant_classic_rumble_from_output")
+            != std::string::npos
+        || classified.find("split_state_from_mixed_output") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Normal host/persona reports must stay complete pass-through packets without inferred START/STOP rewriting"
+        );
+    }
+
+    const std::string enqueue = extract_between(
+        bt_cpp,
+        "static bool enqueue_urgent_output",
+        "\n}\n\nstatic bool make_control_packet"
+    );
+    const std::string retry = extract_between(
+        bt_cpp,
+        "static bool requeue_managed_rumble_on_send_failure",
+        "\n}\n\nstatic void finish_hid_session_if_ready"
+    );
+    if (
+        enqueue.find("enqueue_with_soft_cap") == std::string::npos
+        || enqueue.find("URGENT_SEND_QUEUE_HARD_MAX_DEPTH") == std::string::npos
+        || retry.find("retry_delay_us") == std::string::npos
+        || retry.find("retry_requires_fail_closed") == std::string::npos
+        || retry.find("requeue_failed_front") == std::string::npos
+        || delivery_policy.find("DeliveryKind::ManagedStop") == std::string::npos
+        || delivery_policy.find("return is_terminal_stop(kind);") == std::string::npos
+        || scheduler_cpp.find("output_scheduler_classic_rumble_can_bypass_audio")
+            == std::string::npos
+        || bt_h.find("void bt_output_retry_loop();") == std::string::npos
+        || main_cpp.find("bt_output_retry_loop();") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Managed rumble STOP delivery must remain bounded, retryable, and fair to native audio"
+        );
+    }
+
+    const std::string select_output = extract_between(
+        bt_cpp,
+        "static bool select_next_output_packet_locked(output_packet &packet, uint32_t now) {",
+        "\n}\n\nstatic bool select_next_control_packet_locked"
+    );
+    const std::string enqueue_state = extract_between(
+        bt_cpp,
+        "static bool enqueue_state_output(uint8_t *data, uint16_t len, uint8_t reason) {",
+        "\n}\n\nstatic bool enqueue_feedback_state_output"
+    );
+    if (
+        bt_cpp.find("#define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4")
+            == std::string::npos
+        || bt_cpp.find("#define OUTPUT_STATE_MAX_AGE_US 3000")
+            == std::string::npos
+        || select_output.find("consecutive_audio_sends")
+            == std::string::npos
+        || select_output.find("state_age_us")
+            == std::string::npos
+        || scheduler_cpp.find("const bool state_starved")
+            == std::string::npos
+        || scheduler_cpp.find(
+            "return OutputSchedulerChoice::CoalescedState;"
+        ) == std::string::npos
+        || bt_cpp.find("state_send_blocked_by_audio_locked")
+            != std::string::npos
+        || enqueue_state.find("request_can_send_if_needed(true);")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Companion feedback must receive a bounded scheduler turn during continuous audio"
+        );
+    }
+}
+
+void assert_companion_trigger_tests_survive_continuous_audio(
+    std::filesystem::path const &root
+) {
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const std::string state_submit = extract_between(
+        bt_cpp,
+        "static void queue_adaptive_trigger_state_report",
+        "\n}\n\nstatic void reset_lightbar_setup"
+    );
+    const std::string standard_test = extract_between(
+        bt_cpp,
+        "void bt_set_adaptive_trigger_effect",
+        "\n}\n\nstatic void set_custom_trigger_effect"
+    );
+    const std::string custom_test = extract_between(
+        bt_cpp,
+        "void bt_set_custom_adaptive_trigger_effects",
+        "\n}\n\nvoid bt_set_custom_adaptive_trigger_effect("
+    );
+
+    if (
+        state_submit.find("DS_OUTPUT_VALID_FLAG1_MOTOR_POWER_LEVEL_ENABLE")
+            == std::string::npos
+        || state_submit.find("audio_set_adaptive_trigger_state")
+            == std::string::npos
+        || state_submit.find("enqueue_feedback_state_output")
+            == std::string::npos
+        || standard_test.find("adaptive_trigger_motor_power_for_intensity")
+            == std::string::npos
+        || standard_test.find("queue_adaptive_trigger_state_report")
+            == std::string::npos
+        || standard_test.find("bt_write(") != std::string::npos
+        || custom_test.find("queue_adaptive_trigger_state_report(report, 0)")
+            == std::string::npos
+        || custom_test.find("bt_write(") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Companion trigger tests must update the audio-carried output state and use the bounded feedback queue"
+        );
+    }
+}
+
+void assert_lightbar_restore_can_be_disabled(
+    std::filesystem::path const &root
+) {
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const std::string setter = extract_between(
+        bt_cpp,
+        "void bt_set_lightbar_restore_enabled",
+        "\n}\n\nvoid bt_schedule_lightbar_restore"
+    );
+    const std::string scheduler = extract_between(
+        bt_cpp,
+        "void bt_schedule_lightbar_restore",
+        "\n}\n\nvoid bt_lightbar_loop"
+    );
+    const std::string loop = extract_between(
+        bt_cpp,
+        "void bt_lightbar_loop",
+        "\n}\n\nvoid bt_signal_strength_loop"
+    );
+
+    if (
+        bt_h.find("void bt_set_lightbar_restore_enabled(bool enabled);")
+            == std::string::npos
+        || setter.find("lightbar_restore_enabled = enabled;")
+            == std::string::npos
+        || setter.find("lightbar_restore_pending = false;")
+            == std::string::npos
+        || scheduler.find("!lightbar_restore_enabled")
+            == std::string::npos
+        || loop.find("!lightbar_restore_enabled")
+            == std::string::npos
+        || companion_cpp.find("CommandSetLightbarRestoreEnabled = 0x36")
+            == std::string::npos
+        || companion_cpp.find("bt_set_lightbar_restore_enabled(value == 1);")
+            == std::string::npos
+        || companion_cpp.find("bt_set_lightbar_restore_enabled(true);")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Automatic lightbar restore must be runtime-toggleable, cancel pending work when disabled, and default on"
+        );
+    }
+}
+
+void assert_dualsense_battery_buckets_preserve_power_state(
+    std::filesystem::path const &root
+) {
+    const auto decoder = read_text(root / "src" / "dualsense_input_decoder.cpp");
+    const auto companion = read_text(root / "src" / "companion.cpp");
+    constexpr auto midpoint_formula = "battery == 10 ? 100 : battery * 10 + 5";
+
+    if (
+        decoder.find(midpoint_formula) == std::string::npos
+        || companion.find(midpoint_formula) == std::string::npos
+        || decoder.find("raw_power_state == 0x02") != std::string::npos
+        || companion.find("raw_power_state == 0x02") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense battery buckets must map to midpoint percentages independently of charging or external-power state"
+        );
+    }
+}
+
 } // namespace
 
 int main() {
@@ -718,6 +1834,18 @@ int main() {
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);
+        assert_bluetooth_pairing_and_reconnect_policy(source_root);
+        assert_firmware_version_has_one_canonical_source(source_root);
+        assert_bluetooth_device_management_policy(source_root);
+        assert_companion_device_management_contract(source_root);
+        assert_bluetooth_hid_recovery_and_encryption_watchdog(source_root);
+        assert_dualsense_feature_startup_is_paced(source_root);
+        assert_watchdog_and_bootsel_flash_safety(source_root);
+        assert_bootsel_gestures_and_intentional_disconnects(source_root);
+        assert_host_rumble_passes_through_with_bounded_delivery(source_root);
+        assert_companion_trigger_tests_survive_continuous_audio(source_root);
+        assert_lightbar_restore_can_be_disabled(source_root);
+        assert_dualsense_battery_buckets_preserve_power_state(source_root);
 
         if (bcd_device != kExpectedUsbDeviceRevision) {
             std::cerr << "USB bcdDevice changed unexpectedly. Expected 0x" << std::hex

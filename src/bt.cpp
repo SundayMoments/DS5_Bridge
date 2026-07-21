@@ -9,12 +9,14 @@
 
 #include "bt.h"
 
+#include <deque>
 #include <queue>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "audio.h"
+#include "classic_rumble_delivery_policy.h"
 #include "controller_packet_compositor.h"
 #include "controller_output_policy.h"
 #include "controller_output_rumble_state.h"
@@ -24,6 +26,7 @@
 #include "companion.h"
 #endif
 #include "btstack_event.h"
+#include "btstack_tlv.h"
 #include "controller_report.h"
 #include "gap.h"
 #include "l2cap.h"
@@ -83,13 +86,19 @@
 #define DS_TRIGGER_TARGET_RIGHT 2
 #define AUDIO_SEND_QUEUE_MAX_DEPTH 4
 #define URGENT_SEND_QUEUE_MAX_DEPTH 16
-#define OUTPUT_AUDIO_MAX_AGE_US 3000
-#define OUTPUT_MAX_CONSECUTIVE_NON_AUDIO_SENDS 1
+#define URGENT_SEND_QUEUE_HARD_MAX_DEPTH 64
+#define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4
+#define OUTPUT_STATE_MAX_AGE_US 3000
 #define CONTROL_SEND_QUEUE_MAX_DEPTH 8
 #define CONTROL_SEND_HEADSET_AUDIO_SAFE_WINDOW_US 6000
 #define CONTROL_SEND_HEADSET_AUDIO_IDLE_US 20000
-#define CYW43_POWER_CYCLE_HOLD_MS 750
+#define FEATURE_PREFETCH_MAX_REQUESTS 16
+#define FEATURE_PREFETCH_SPACING_US 5000u
 #define CONTROLLER_DISCONNECT_REBOOT_DELAY_MS 25
+#define DISCONNECT_RETRY_DELAY_US 250000u
+#define DISCONNECT_RETRY_EVENT_TIMEOUT_US 1000000u
+#define DISCONNECT_RETRY_MAX_ATTEMPTS 3u
+#define CLASSIC_LINK_SUPERVISION_TIMEOUT_SLOTS 3200u
 #define DEFAULT_IDLE_DISCONNECT_TIMEOUT_MINUTES 15
 #define MIN_IDLE_DISCONNECT_TIMEOUT_MINUTES 1
 #define MAX_IDLE_DISCONNECT_TIMEOUT_MINUTES 120
@@ -112,12 +121,34 @@
 #define OUTPUT_PAYLOAD_LIGHTBAR_RED_OFFSET 44
 #define OUTPUT_PAYLOAD_LIGHTBAR_GREEN_OFFSET 45
 #define OUTPUT_PAYLOAD_LIGHTBAR_BLUE_OFFSET 46
-#define RSSI_POLL_INTERVAL_US 2000000u
-#define RSSI_REQUEST_TIMEOUT_US 1000000u
+#define RSSI_INPUT_IDLE_GRACE_US 5000000ull
+#define RSSI_REQUEST_COOLDOWN_US 10000000ull
+#define RSSI_REQUEST_TIMEOUT_US 1000000ull
+#define RSSI_RETRIES_PER_IDLE_EPOCH 1u
 #define INQUIRY_RETRY_DELAY_US 2000000u
+#define PAIRING_WINDOW_US 30000000u
+#define PAIRING_ACTIVE_ATTEMPT_EXTENSION_US 12000000u
+#define PAIRING_INQUIRY_LENGTH_UNITS 24u
+#define INQUIRY_LED_BLINK_INTERVAL_US 250000u
+#define AUTHENTICATION_PIN_OR_KEY_MISSING 0x06u
 #define ACL_CONNECTION_PENDING_TIMEOUT_US 10000000u
-#define HID_CHANNEL_RECOVERY_DELAY_US 2000000u
-#define HID_CHANNEL_RECOVERY_MAX_ATTEMPTS 5
+#define HID_CHANNEL_RECOVERY_DELAY_US 250000u
+#define HID_REMOTE_INITIATION_GRACE_US 500000u
+#define HID_CHANNEL_RECOVERY_MAX_ATTEMPTS 16
+#define ENCRYPTION_COMPLETION_TIMEOUT_US 2500000u
+#define SECURITY_PHASE_TIMEOUT_US 8000000u
+#define HID_OPENING_PHASE_TIMEOUT_US 8000000u
+#define HID_REMOTE_INTERRUPT_OPEN_TIMEOUT_US 10000000u
+#define HID_REMOTE_INTERRUPT_FOLLOWUP_TIMEOUT_US 1000000u
+#define AUTHENTICATION_COLLISION_RETRY_DELAY_US 250000u
+#define AUTHENTICATION_COLLISION_MAX_RETRIES 3u
+#define AUTHENTICATION_LMP_TRANSACTION_COLLISION 0x23u
+#define AUTHENTICATION_DIFFERENT_TRANSACTION_COLLISION 0x2au
+#define BT_BLACKLIST_TLV_TAG 0x424C434Bu // ASCII 'BLCK'
+#define BT_PAIRING_TRANSACTION_TLV_TAG 0x50545832u // ASCII 'PTX2'
+#define BT_PAIRING_TRANSACTION_VERSION 2u
+#define BT_PAIRING_TRANSACTION_FLAG_PRIOR_KEY 0x01u
+#define BT_PAIRING_TRANSACTION_SIZE (3u + BD_ADDR_LEN + LINK_KEY_LEN + 1u)
 
 #define HCI_SEND_CMD_LOGGED(cmd, ...) do { \
     const uint8_t err = hci_send_cmd((cmd), ##__VA_ARGS__); \
@@ -129,6 +160,7 @@
 using std::unordered_map;
 using std::vector;
 using std::queue;
+using std::deque;
 
 enum OutputPacketClass : uint8_t {
     OutputPacketUrgent = 1,
@@ -145,7 +177,23 @@ enum OutputClassificationReason : uint8_t {
     OutputReasonCriticalPayload = 5,
     OutputReasonStateNoop = 6,
     OutputReasonClassicRumbleImmediate = 7,
+    OutputReasonHostPassthrough = 8,
+    OutputReasonClassicRumbleManagedStop = 9,
 };
+
+static ds5::classic_rumble::DeliveryKind classic_rumble_delivery_kind(uint8_t reason) {
+    using ds5::classic_rumble::DeliveryKind;
+    switch (reason) {
+        case OutputReasonHostPassthrough:
+            return DeliveryKind::HostPassthrough;
+        case OutputReasonClassicRumbleImmediate:
+            return DeliveryKind::ManagedActive;
+        case OutputReasonClassicRumbleManagedStop:
+            return DeliveryKind::ManagedStop;
+        default:
+            return DeliveryKind::Other;
+    }
+}
 
 enum BtAudioDebugKind : uint8_t {
     BtAudioDebugLateAudio = 1,
@@ -172,12 +220,29 @@ enum OutputTraceTransform : uint8_t {
     OutputTraceTransformState = 0x20,
 };
 
+enum class BtConnectionPhase : uint8_t {
+    Listening = 0,
+    Connecting,
+    Securing,
+    HidOpening,
+    Ready,
+    Disconnecting,
+};
+
+enum class HidConnectionInitiator : uint8_t {
+    None = 0,
+    Local,
+    Remote,
+};
+
 struct output_packet {
     vector<uint8_t> data;
     uint32_t enqueue_time_us;
+    uint32_t ready_at_us;
     uint8_t packet_class;
     uint8_t report_id;
     uint8_t reason;
+    uint8_t retry_count;
     uint8_t trace_detail0;
     uint8_t trace_detail1;
     uint8_t trace_detail2;
@@ -189,6 +254,11 @@ struct control_packet {
     uint32_t enqueue_time_us;
     uint8_t report_id;
     bool coalescible;
+};
+
+struct feature_prefetch_request {
+    uint8_t report_id;
+    uint16_t len;
 };
 
 struct output_scheduler_counters {
@@ -209,19 +279,39 @@ struct output_scheduler_counters {
     uint32_t bt_send_gap_max_us;
 };
 
+enum class pairing_transaction_state : uint8_t {
+    AwaitingKey = 1,
+    KeyAccepted = 2,
+};
+
+struct pairing_transaction {
+    bool valid;
+    pairing_transaction_state state;
+    bool prior_key_valid;
+    bd_addr_t addr;
+    link_key_t prior_key;
+    link_key_type_t prior_type;
+};
+
 static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
+static int classic_connection_filter(bd_addr_t addr, hci_link_type_t link_type);
 static bool build_interrupt_output_packet(uint8_t *data, uint16_t len, vector<uint8_t> &packet);
 static bool enqueue_urgent_output(uint8_t *data, uint16_t len, uint8_t reason);
 static bool enqueue_state_output(uint8_t *data, uint16_t len, uint8_t reason);
 static bool enqueue_feedback_state_output(uint8_t *data, uint16_t len, uint8_t reason);
+static bool enqueue_classic_rumble_immediate_or_state_output(
+    uint8_t *data,
+    uint16_t len,
+    uint8_t reason
+);
 static bool enqueue_control_packet(uint8_t const *data, uint16_t len, bool coalescible);
 static bool select_next_control_packet_locked(control_packet &packet, uint32_t now);
 static void request_can_send_if_needed(bool should_request_send);
 static void request_control_can_send_if_needed(bool should_request_send);
 static bool headset_audio_send_window_closed_locked(uint32_t now);
-static bool state_send_blocked_by_audio_locked(uint32_t now);
 static void request_control_if_audio_window_open_locked(uint32_t now, bool &should_request_control);
+static void finish_hid_session_if_ready();
 static void init_state_report(uint8_t *report);
 static bool select_next_output_packet_locked(output_packet &packet, uint32_t now);
 static bool audio_output_route_protected();
@@ -238,27 +328,73 @@ static bd_addr_t current_device_addr;
 static bool device_found = false; // Outbound inquiry target found; do not set for incoming ACL requests.
 static bool new_pair = false; // Only newly paired devices create channels; auto-reconnect uses the services.
 static bool inquiry_active = false;
+static bool inquiry_retry_scheduled = false;
 static uint32_t inquiry_retry_at_us = 0;
+static bool pairing_window_active = false;
+static uint32_t pairing_window_deadline_us = 0;
+static bool inquiry_led_on = false;
+static uint32_t inquiry_led_last_toggle_us = 0;
+static bool stored_link_key_present = false;
+static bd_addr_t cleared_controller_addrs[NVM_NUM_LINK_KEYS];
+static int cleared_controller_addr_count = 0;
 static bool acl_connection_pending = false;
 static uint32_t acl_connection_pending_at_us = 0;
+static bool acl_connection_outbound = false;
+static bool acl_connection_cancel_requested = false;
+static bool acl_connection_cancel_sent = false;
+static bool acl_disconnect_on_completion = false;
+static uint8_t current_device_page_scan_repetition_mode = 0;
+static uint16_t current_device_clock_offset = 0;
+static bool pairing_authorized_session = false;
+static bool pairing_link_key_required = false;
+static bool current_link_key_persisted = false;
+static bool pairing_transaction_recovery_failed = false;
 static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
 static uint16_t hid_control_cid;
 static uint16_t hid_interrupt_cid;
+static uint16_t hid_control_pending_cid;
+static uint16_t hid_interrupt_pending_cid;
 static bt_data_callback_t bt_data_callback = nullptr;
 static uint8_t controller_type = ControllerTypeUnknown;
 static bool controller_type_check_pending = false;
 static bool hid_control_ready = false;
 static bool hid_interrupt_ready = false;
+static HidConnectionInitiator hid_connection_initiator = HidConnectionInitiator::None;
+static uint32_t hid_control_opened_at_us = 0;
 static bool hid_channel_recovery_pending = false;
 static uint32_t hid_channel_recovery_at_us = 0;
 static uint8_t hid_channel_recovery_attempts = 0;
+static BtConnectionPhase connection_phase = BtConnectionPhase::Listening;
+static uint32_t connection_generation = 0;
+static uint32_t connection_phase_started_us = 0;
+static bool encryption_completion_pending = false;
+static hci_con_handle_t encryption_command_handle = HCI_CON_HANDLE_INVALID;
+static uint32_t encryption_command_generation = 0;
+static uint32_t encryption_command_accepted_at_us = 0;
+static bool authentication_retry_pending = false;
+static uint8_t authentication_retry_attempts = 0;
+static uint32_t authentication_retry_at_us = 0;
+static bool disconnect_retry_requested = false;
+static bool disconnect_retry_waiting = false;
+static uint8_t disconnect_retry_attempts = 0;
+static uint32_t disconnect_retry_at_us = 0;
+static BtControllerDisconnectIntent controller_disconnect_intent =
+    BtControllerDisconnectIntentNone;
 static int8_t bt_rssi = 0;
 static bool bt_rssi_known = false;
 static bool bt_rssi_request_pending = false;
-static uint32_t bt_rssi_last_request_us = 0;
+static bool bt_rssi_idle_epoch_armed = false;
+static uint8_t bt_rssi_retries_remaining = 0;
+static uint64_t bt_rssi_idle_epoch = 0;
+static uint64_t bt_rssi_pending_epoch = 0;
+static uint64_t bt_rssi_last_activity_us = 0;
+static uint64_t bt_rssi_last_request_us = 0;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
-static bool feature_prefetch_active = false;
-static queue<output_packet> urgent_queue;
+static feature_prefetch_request feature_prefetch_queue[FEATURE_PREFETCH_MAX_REQUESTS]{};
+static uint8_t feature_prefetch_count = 0;
+static uint8_t feature_prefetch_index = 0;
+static uint32_t feature_prefetch_next_us = 0;
+static deque<output_packet> urgent_queue;
 static queue<output_packet> audio_queue;
 static vector<control_packet> control_queue;
 static uint8_t state_pending_report[DS_OUTPUT_REPORT_BT_SIZE];
@@ -270,14 +406,18 @@ static uint32_t last_bt_send_us = 0;
 static uint32_t last_audio_0x36_send_us = 0;
 static uint32_t non_audio_reports_since_audio = 0;
 static uint8_t consecutive_non_audio_sends = 0;
+static uint8_t consecutive_audio_sends = 0;
+static uint8_t consecutive_classic_rumble_stop_sends = 0;
+static bool interrupt_can_send_event_requested = false;
 static critical_section_t queue_lock;
-uint32_t inactive_time = 0; // Tracks long controller inactivity.
+uint64_t inactive_time = 0; // Tracks long controller inactivity without 32-bit timer wrap.
 static uint16_t idle_disconnect_timeout_minutes = DEFAULT_IDLE_DISCONNECT_TIMEOUT_MINUTES;
 static uint8_t saved_lightbar_red = 0xff;
 static uint8_t saved_lightbar_green = 0xd7;
 static uint8_t saved_lightbar_blue = 0x00;
 static uint8_t saved_lightbar_brightness = 100;
 static bool player_led_enabled = true;
+static bool lightbar_restore_enabled = true;
 static bool lightbar_restore_pending = false;
 static uint32_t lightbar_restore_at_us = 0;
 static uint8_t state_report_seq = 0;
@@ -299,6 +439,10 @@ static void clear_packet_queue(queue<output_packet> &packets) {
     }
 }
 
+static void clear_packet_queue(deque<output_packet> &packets) {
+    packets.clear();
+}
+
 static bool control_pending_locked() {
     return !control_queue.empty();
 }
@@ -310,6 +454,9 @@ static void clear_output_queues_locked() {
     state_pending = false;
     memset(state_pending_report, 0, sizeof(state_pending_report));
     consecutive_non_audio_sends = 0;
+    consecutive_audio_sends = 0;
+    consecutive_classic_rumble_stop_sends = 0;
+    interrupt_can_send_event_requested = false;
     non_audio_reports_since_audio = 0;
     last_bt_send_us = 0;
     last_audio_0x36_send_us = 0;
@@ -332,18 +479,6 @@ static bool output_pending_locked() {
     return !urgent_queue.empty() || !audio_queue.empty() || state_pending;
 }
 
-static void power_down_cyw43_for_reboot() {
-#ifdef CYW43_PIN_RFSW_VDD
-    cyw43_hal_pin_config(CYW43_PIN_RFSW_VDD, CYW43_HAL_PIN_MODE_OUTPUT, CYW43_HAL_PIN_PULL_NONE, 0);
-    cyw43_hal_pin_low(CYW43_PIN_RFSW_VDD);
-#endif
-#ifdef CYW43_PIN_WL_REG_ON
-    cyw43_hal_pin_config(CYW43_PIN_WL_REG_ON, CYW43_HAL_PIN_MODE_OUTPUT, CYW43_HAL_PIN_PULL_NONE, 0);
-    cyw43_hal_pin_low(CYW43_PIN_WL_REG_ON);
-#endif
-    sleep_ms(CYW43_POWER_CYCLE_HOLD_MS);
-}
-
 static void update_queue_depth_counters_locked() {
     output_counters.audio_queue_depth = static_cast<uint32_t>(audio_queue.size());
     update_max_u32(output_counters.audio_queue_max_depth, output_counters.audio_queue_depth);
@@ -357,29 +492,847 @@ static bool bt_time_reached(uint32_t now, uint32_t target) {
     return static_cast<int32_t>(now - target) >= 0;
 }
 
+static void clear_feature_prefetch_queue() {
+    feature_prefetch_count = 0;
+    feature_prefetch_index = 0;
+    feature_prefetch_next_us = 0;
+}
+
+static void schedule_feature_prefetch(uint8_t report_id, uint16_t len) {
+    if (feature_prefetch_count >= FEATURE_PREFETCH_MAX_REQUESTS) {
+        DS5_LOG("[L2CAP] Feature prefetch queue full, dropping report 0x%02X\n", report_id);
+        return;
+    }
+    feature_prefetch_queue[feature_prefetch_count++] = feature_prefetch_request{
+        report_id,
+        len
+    };
+}
+
+static void clear_encryption_completion() {
+    encryption_completion_pending = false;
+    encryption_command_handle = HCI_CON_HANDLE_INVALID;
+    encryption_command_generation = 0;
+    encryption_command_accepted_at_us = 0;
+}
+
+static void clear_authentication_retry() {
+    authentication_retry_pending = false;
+    authentication_retry_attempts = 0;
+    authentication_retry_at_us = 0;
+}
+
+static void note_connection_phase_started() {
+    connection_phase_started_us = time_us_32();
+}
+
+static void reset_signal_strength_session() {
+    bt_rssi = 0;
+    bt_rssi_known = false;
+    bt_rssi_request_pending = false;
+    bt_rssi_idle_epoch_armed = false;
+    bt_rssi_retries_remaining = 0;
+    bt_rssi_idle_epoch = 0;
+    bt_rssi_pending_epoch = 0;
+    bt_rssi_last_activity_us = 0;
+    bt_rssi_last_request_us = 0;
+}
+
+static void arm_signal_strength_idle_epoch(uint64_t now_us) {
+    bt_rssi_idle_epoch++;
+    if (bt_rssi_idle_epoch == 0) {
+        bt_rssi_idle_epoch = 1;
+    }
+    bt_rssi_last_activity_us = now_us;
+    bt_rssi_idle_epoch_armed = true;
+    bt_rssi_retries_remaining = RSSI_RETRIES_PER_IDLE_EPOCH;
+}
+
+static bool begin_connection_attempt() {
+    if (connection_phase != BtConnectionPhase::Listening) {
+        return false;
+    }
+    if (pairing_transaction_recovery_failed) {
+        return false;
+    }
+    controller_disconnect_intent = BtControllerDisconnectIntentNone;
+    pairing_authorized_session = false;
+    pairing_link_key_required = false;
+    current_link_key_persisted = false;
+    connection_phase = BtConnectionPhase::Connecting;
+    connection_generation++;
+    if (connection_generation == 0) {
+        connection_generation++;
+    }
+    connection_phase_started_us = time_us_32();
+    clear_encryption_completion();
+    clear_authentication_retry();
+    return true;
+}
+
+static bool connection_handle_is_current(hci_con_handle_t handle) {
+    return handle != HCI_CON_HANDLE_INVALID && handle == acl_handle;
+}
+
+static bool note_acl_connected(hci_con_handle_t handle) {
+    if (
+        connection_phase != BtConnectionPhase::Connecting
+        || handle == HCI_CON_HANDLE_INVALID
+    ) {
+        return false;
+    }
+    acl_handle = handle;
+    connection_phase = BtConnectionPhase::Securing;
+    note_connection_phase_started();
+    clear_encryption_completion();
+    return true;
+}
+
+static void fail_pending_connection_attempt() {
+    if (
+        connection_phase == BtConnectionPhase::Connecting
+        && acl_handle == HCI_CON_HANDLE_INVALID
+    ) {
+        connection_phase = BtConnectionPhase::Listening;
+        connection_phase_started_us = 0;
+        pairing_authorized_session = false;
+        pairing_link_key_required = false;
+        current_link_key_persisted = false;
+        clear_encryption_completion();
+        clear_authentication_retry();
+    }
+}
+
+static bool begin_hid_opening(hci_con_handle_t handle) {
+    if (!connection_handle_is_current(handle)) {
+        return false;
+    }
+    if (connection_phase == BtConnectionPhase::HidOpening) {
+        return true;
+    }
+    if (connection_phase != BtConnectionPhase::Securing) {
+        return false;
+    }
+    connection_phase = BtConnectionPhase::HidOpening;
+    note_connection_phase_started();
+    clear_encryption_completion();
+    return true;
+}
+
+static bool begin_connection_disconnect() {
+    if (acl_handle == HCI_CON_HANDLE_INVALID) {
+        return false;
+    }
+    if (connection_phase == BtConnectionPhase::Disconnecting) {
+        return true;
+    }
+    connection_phase = BtConnectionPhase::Disconnecting;
+    note_connection_phase_started();
+    clear_encryption_completion();
+    clear_authentication_retry();
+    return true;
+}
+
+static void reset_connection_session() {
+    connection_phase = BtConnectionPhase::Listening;
+    connection_phase_started_us = 0;
+    pairing_authorized_session = false;
+    pairing_link_key_required = false;
+    current_link_key_persisted = false;
+    clear_encryption_completion();
+    clear_authentication_retry();
+}
+
+static bool current_link_security_ready(hci_con_handle_t handle) {
+    return connection_handle_is_current(handle)
+        && gap_security_level(handle) >= LEVEL_2;
+}
+
 static void clear_acl_connection_pending() {
     acl_connection_pending = false;
     acl_connection_pending_at_us = 0;
+    acl_connection_cancel_requested = false;
+    acl_connection_cancel_sent = false;
 }
 
 static void mark_acl_connection_pending() {
     acl_connection_pending = true;
     acl_connection_pending_at_us = time_us_32();
+    acl_connection_cancel_requested = false;
+    acl_connection_cancel_sent = false;
 }
 
 static void clear_outbound_inquiry_target() {
     device_found = false;
     new_pair = false;
+    current_device_page_scan_repetition_mode = 0;
+    current_device_clock_offset = 0;
+}
+
+static bool bt_has_stored_link_key() {
+    btstack_link_key_iterator_t iterator;
+    if (!gap_link_key_iterator_init(&iterator)) {
+        return false;
+    }
+
+    bd_addr_t addr;
+    link_key_t key;
+    link_key_type_t type;
+    const bool has_key = gap_link_key_iterator_get_next(&iterator, addr, key, &type);
+    gap_link_key_iterator_done(&iterator);
+    return has_key;
+}
+
+static bool bt_blacklist_persist() {
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        DS5_LOG("[BLACKLIST] No TLV instance available, not persisting\n");
+        return false;
+    }
+
+    if (cleared_controller_addr_count == 0) {
+        tlv->delete_tag(tlv_context, BT_BLACKLIST_TLV_TAG);
+        const bool deleted =
+            tlv->get_tag(tlv_context, BT_BLACKLIST_TLV_TAG, nullptr, 0) == 0;
+        DS5_LOG("[BLACKLIST] Empty, deleted from flash verified=%u\n", deleted ? 1u : 0u);
+        return deleted;
+    }
+
+    const uint32_t bytes =
+        static_cast<uint32_t>(cleared_controller_addr_count) * sizeof(bd_addr_t);
+    const int rc = tlv->store_tag(
+        tlv_context,
+        BT_BLACKLIST_TLV_TAG,
+        reinterpret_cast<const uint8_t *>(cleared_controller_addrs),
+        bytes
+    );
+    bd_addr_t verified_addrs[NVM_NUM_LINK_KEYS]{};
+    const int verified_len = tlv->get_tag(
+        tlv_context,
+        BT_BLACKLIST_TLV_TAG,
+        reinterpret_cast<uint8_t *>(verified_addrs),
+        sizeof(verified_addrs)
+    );
+    const bool verified =
+        rc == 0
+        && verified_len == static_cast<int>(bytes)
+        && memcmp(verified_addrs, cleared_controller_addrs, bytes) == 0;
+    DS5_LOG(
+        "[BLACKLIST] Persisted %d entries (%lu bytes), rc=%d verified=%u\n",
+        cleared_controller_addr_count,
+        static_cast<unsigned long>(bytes),
+        rc,
+        verified ? 1u : 0u
+    );
+    return verified;
+}
+
+static void bt_blacklist_load() {
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        cleared_controller_addr_count = 0;
+        return;
+    }
+
+    const int len = tlv->get_tag(
+        tlv_context,
+        BT_BLACKLIST_TLV_TAG,
+        reinterpret_cast<uint8_t *>(cleared_controller_addrs),
+        sizeof(cleared_controller_addrs)
+    );
+    if (len <= 0 || (len % static_cast<int>(sizeof(bd_addr_t))) != 0) {
+        cleared_controller_addr_count = 0;
+        DS5_LOG("[BLACKLIST] No persisted entries\n");
+        return;
+    }
+
+    cleared_controller_addr_count = len / static_cast<int>(sizeof(bd_addr_t));
+    if (cleared_controller_addr_count > NVM_NUM_LINK_KEYS) {
+        cleared_controller_addr_count = NVM_NUM_LINK_KEYS;
+    }
+    DS5_LOG("[BLACKLIST] Loaded %d entries from flash\n", cleared_controller_addr_count);
+}
+
+static bool bt_blacklist_contains(bd_addr_t addr) {
+    for (int i = 0; i < cleared_controller_addr_count; i++) {
+        if (bd_addr_cmp(addr, cleared_controller_addrs[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool bt_blacklist_add_unique(bd_addr_t addr) {
+    if (bt_blacklist_contains(addr)) {
+        return true;
+    }
+    if (cleared_controller_addr_count >= NVM_NUM_LINK_KEYS) {
+        DS5_LOG("[BLACKLIST] Full, cannot add %s\n", bd_addr_to_str(addr));
+        return false;
+    }
+    bd_addr_copy(cleared_controller_addrs[cleared_controller_addr_count++], addr);
+    DS5_LOG("[BLACKLIST] Added %s\n", bd_addr_to_str(addr));
+    return true;
+}
+
+static bool bt_blacklist_remove(bd_addr_t addr) {
+    for (int i = 0; i < cleared_controller_addr_count; i++) {
+        if (bd_addr_cmp(addr, cleared_controller_addrs[i]) != 0) {
+            continue;
+        }
+
+        bd_addr_t previous_addrs[NVM_NUM_LINK_KEYS]{};
+        const int previous_count = cleared_controller_addr_count;
+        memcpy(previous_addrs, cleared_controller_addrs, sizeof(previous_addrs));
+        for (int j = i; j < cleared_controller_addr_count - 1; j++) {
+            bd_addr_copy(cleared_controller_addrs[j], cleared_controller_addrs[j + 1]);
+        }
+        cleared_controller_addr_count--;
+        memset(cleared_controller_addrs[cleared_controller_addr_count], 0, sizeof(bd_addr_t));
+        if (!bt_blacklist_persist()) {
+            memcpy(cleared_controller_addrs, previous_addrs, sizeof(previous_addrs));
+            cleared_controller_addr_count = previous_count;
+            DS5_LOG(
+                "[BLACKLIST] Failed durable removal for %s; keep policy fail-closed\n",
+                bd_addr_to_str(addr)
+            );
+            return false;
+        }
+        DS5_LOG(
+            "[BLACKLIST] Durably removed %s after explicit pairing, %d remaining\n",
+            bd_addr_to_str(addr),
+            cleared_controller_addr_count
+        );
+        return true;
+    }
+    return true;
+}
+
+static bool link_key_material_is_valid(uint8_t const *key, link_key_type_t type) {
+    if (type == INVALID_LINK_KEY || gap_security_level_for_link_key_type(type) < LEVEL_2) {
+        return false;
+    }
+    for (uint8_t i = 0; i < LINK_KEY_LEN; ++i) {
+        if (key[i] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool pairing_transaction_equal(
+    pairing_transaction const &left,
+    pairing_transaction const &right
+) {
+    return left.valid == right.valid
+        && left.state == right.state
+        && left.prior_key_valid == right.prior_key_valid
+        && bd_addr_cmp(left.addr, right.addr) == 0
+        && (!left.prior_key_valid || (
+            memcmp(left.prior_key, right.prior_key, LINK_KEY_LEN) == 0
+            && left.prior_type == right.prior_type
+        ));
+}
+
+static bool pairing_transaction_storage_status(bool &present) {
+    present = false;
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        return false;
+    }
+    present =
+        tlv->get_tag(tlv_context, BT_PAIRING_TRANSACTION_TLV_TAG, nullptr, 0) > 0;
+    return true;
+}
+
+static bool read_pairing_transaction(pairing_transaction &transaction) {
+    transaction = {};
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        return false;
+    }
+
+    uint8_t record[BT_PAIRING_TRANSACTION_SIZE]{};
+    const int len = tlv->get_tag(
+        tlv_context,
+        BT_PAIRING_TRANSACTION_TLV_TAG,
+        record,
+        sizeof(record)
+    );
+    if (
+        len != static_cast<int>(sizeof(record))
+        || record[0] != BT_PAIRING_TRANSACTION_VERSION
+        || (record[2] & ~BT_PAIRING_TRANSACTION_FLAG_PRIOR_KEY) != 0
+    ) {
+        return false;
+    }
+    if (
+        record[1] != static_cast<uint8_t>(pairing_transaction_state::AwaitingKey)
+        && record[1] != static_cast<uint8_t>(pairing_transaction_state::KeyAccepted)
+    ) {
+        return false;
+    }
+
+    transaction.state = static_cast<pairing_transaction_state>(record[1]);
+    transaction.prior_key_valid =
+        (record[2] & BT_PAIRING_TRANSACTION_FLAG_PRIOR_KEY) != 0;
+    bd_addr_copy(transaction.addr, &record[3]);
+    memcpy(transaction.prior_key, &record[3 + BD_ADDR_LEN], LINK_KEY_LEN);
+    transaction.prior_type = static_cast<link_key_type_t>(
+        record[3 + BD_ADDR_LEN + LINK_KEY_LEN]
+    );
+    if (
+        transaction.prior_key_valid
+        && !link_key_material_is_valid(transaction.prior_key, transaction.prior_type)
+    ) {
+        return false;
+    }
+    transaction.valid = true;
+    return true;
+}
+
+static bool write_pairing_transaction(pairing_transaction const &transaction) {
+    if (!transaction.valid) {
+        return false;
+    }
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        return false;
+    }
+
+    uint8_t record[BT_PAIRING_TRANSACTION_SIZE]{};
+    record[0] = BT_PAIRING_TRANSACTION_VERSION;
+    record[1] = static_cast<uint8_t>(transaction.state);
+    record[2] =
+        transaction.prior_key_valid ? BT_PAIRING_TRANSACTION_FLAG_PRIOR_KEY : 0;
+    memcpy(&record[3], transaction.addr, BD_ADDR_LEN);
+    if (transaction.prior_key_valid) {
+        memcpy(&record[3 + BD_ADDR_LEN], transaction.prior_key, LINK_KEY_LEN);
+        record[3 + BD_ADDR_LEN + LINK_KEY_LEN] =
+            static_cast<uint8_t>(transaction.prior_type);
+    }
+    if (
+        tlv->store_tag(
+            tlv_context,
+            BT_PAIRING_TRANSACTION_TLV_TAG,
+            record,
+            sizeof(record)
+        ) != 0
+    ) {
+        return false;
+    }
+
+    pairing_transaction verified{};
+    return read_pairing_transaction(verified)
+        && pairing_transaction_equal(verified, transaction);
+}
+
+static bool discard_pairing_transaction() {
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        return false;
+    }
+    tlv->delete_tag(tlv_context, BT_PAIRING_TRANSACTION_TLV_TAG);
+    return tlv->get_tag(
+        tlv_context,
+        BT_PAIRING_TRANSACTION_TLV_TAG,
+        nullptr,
+        0
+    ) == 0;
+}
+
+static bool stage_pairing_transaction(
+    bd_addr_t addr,
+    uint8_t const *prior_key,
+    link_key_type_t prior_type
+) {
+    bool transaction_present = false;
+    if (
+        !pairing_transaction_storage_status(transaction_present)
+        || transaction_present
+    ) {
+        DS5_LOG("[HCI] Refuse to overwrite unfinished pairing transaction\n");
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+
+    pairing_transaction transaction{};
+    transaction.valid = true;
+    transaction.state = pairing_transaction_state::AwaitingKey;
+    transaction.prior_key_valid =
+        prior_key != nullptr && link_key_material_is_valid(prior_key, prior_type);
+    bd_addr_copy(transaction.addr, addr);
+    if (transaction.prior_key_valid) {
+        memcpy(transaction.prior_key, prior_key, LINK_KEY_LEN);
+        transaction.prior_type = prior_type;
+    }
+    const bool staged = write_pairing_transaction(transaction);
+    pairing_transaction_recovery_failed = !staged;
+    return staged;
+}
+
+static bool mark_pairing_transaction_key_accepted(bd_addr_t addr) {
+    pairing_transaction transaction{};
+    if (
+        !read_pairing_transaction(transaction)
+        || bd_addr_cmp(transaction.addr, addr) != 0
+    ) {
+        return false;
+    }
+    transaction.state = pairing_transaction_state::KeyAccepted;
+    return write_pairing_transaction(transaction);
+}
+
+static bool restore_uncommitted_pairing_key(char const *reason) {
+    bool transaction_present = false;
+    if (!pairing_transaction_storage_status(transaction_present)) {
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+    if (!transaction_present) {
+        pairing_transaction_recovery_failed = false;
+        return true;
+    }
+
+    pairing_transaction transaction{};
+    if (!read_pairing_transaction(transaction)) {
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+    if (transaction.state == pairing_transaction_state::KeyAccepted) {
+        if (
+            !bt_blacklist_remove(transaction.addr)
+            || !discard_pairing_transaction()
+        ) {
+            pairing_transaction_recovery_failed = true;
+            return false;
+        }
+        stored_link_key_present = bt_has_stored_link_key();
+        pairing_transaction_recovery_failed = false;
+        return true;
+    }
+
+    link_key_t stored_key;
+    link_key_type_t stored_type;
+    const bool has_current_key = gap_get_link_key_for_bd_addr(
+        transaction.addr,
+        stored_key,
+        &stored_type
+    );
+    if (transaction.prior_key_valid) {
+        const bool prior_is_current =
+            has_current_key
+            && memcmp(stored_key, transaction.prior_key, LINK_KEY_LEN) == 0
+            && stored_type == transaction.prior_type;
+        if (!prior_is_current) {
+            if (has_current_key) {
+                gap_drop_link_key_for_bd_addr(transaction.addr);
+            }
+            gap_store_link_key_for_bd_addr(
+                transaction.addr,
+                transaction.prior_key,
+                transaction.prior_type
+            );
+        }
+        if (
+            !gap_get_link_key_for_bd_addr(transaction.addr, stored_key, &stored_type)
+            || memcmp(stored_key, transaction.prior_key, LINK_KEY_LEN) != 0
+            || stored_type != transaction.prior_type
+        ) {
+            DS5_LOG("[HCI] Failed to restore prior pairing key during %s\n", reason);
+            pairing_transaction_recovery_failed = true;
+            return false;
+        }
+        DS5_LOG("[HCI] Restored prior pairing key after %s\n", reason);
+    } else {
+        if (has_current_key) {
+            gap_drop_link_key_for_bd_addr(transaction.addr);
+        }
+        if (gap_get_link_key_for_bd_addr(transaction.addr, stored_key, &stored_type)) {
+            DS5_LOG("[HCI] Failed to clear partial pairing key during %s\n", reason);
+            pairing_transaction_recovery_failed = true;
+            return false;
+        }
+    }
+
+    stored_link_key_present = bt_has_stored_link_key();
+    if (!discard_pairing_transaction()) {
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+    pairing_transaction_recovery_failed = false;
+    return true;
+}
+
+static bool finalize_pairing_policy_for_addr(bd_addr_t addr) {
+    return bt_blacklist_remove(addr);
+}
+
+static bool recover_pairing_transaction_on_boot() {
+    bool transaction_present = false;
+    if (!pairing_transaction_storage_status(transaction_present)) {
+        return false;
+    }
+    if (!transaction_present) {
+        pairing_transaction_recovery_failed = false;
+        return true;
+    }
+
+    pairing_transaction transaction{};
+    if (!read_pairing_transaction(transaction)) {
+        return false;
+    }
+
+    link_key_t stored_key;
+    link_key_type_t stored_type;
+    const bool has_current_key = gap_get_link_key_for_bd_addr(
+        transaction.addr,
+        stored_key,
+        &stored_type
+    );
+    if (transaction.state == pairing_transaction_state::KeyAccepted) {
+        if (
+            !has_current_key
+            || !link_key_material_is_valid(stored_key, stored_type)
+        ) {
+            return false;
+        }
+        DS5_LOG(
+            "[HCI] Resume accepted pairing policy commit for %s\n",
+            bd_addr_to_str(transaction.addr)
+        );
+        if (!finalize_pairing_policy_for_addr(transaction.addr)) {
+            return false;
+        }
+    } else if (transaction.prior_key_valid) {
+        const bool prior_is_current =
+            has_current_key
+            && memcmp(stored_key, transaction.prior_key, LINK_KEY_LEN) == 0
+            && stored_type == transaction.prior_type;
+        if (!prior_is_current) {
+            if (has_current_key) {
+                gap_drop_link_key_for_bd_addr(transaction.addr);
+            }
+            gap_store_link_key_for_bd_addr(
+                transaction.addr,
+                transaction.prior_key,
+                transaction.prior_type
+            );
+        }
+        if (
+            !gap_get_link_key_for_bd_addr(transaction.addr, stored_key, &stored_type)
+            || memcmp(stored_key, transaction.prior_key, LINK_KEY_LEN) != 0
+            || stored_type != transaction.prior_type
+        ) {
+            return false;
+        }
+        DS5_LOG("[HCI] Boot restored prior pairing key\n");
+    } else {
+        if (has_current_key) {
+            gap_drop_link_key_for_bd_addr(transaction.addr);
+        }
+        if (gap_get_link_key_for_bd_addr(transaction.addr, stored_key, &stored_type)) {
+            return false;
+        }
+    }
+
+    stored_link_key_present = bt_has_stored_link_key();
+    return discard_pairing_transaction();
+}
+
+static bool cancel_pairing_transaction_before_forget(
+    bool forget_all,
+    uint8_t const *target_addr
+) {
+    bool transaction_present = false;
+    if (!pairing_transaction_storage_status(transaction_present)) {
+        return false;
+    }
+    if (!transaction_present) {
+        pairing_transaction_recovery_failed = false;
+        return true;
+    }
+
+    pairing_transaction transaction{};
+    const bool transaction_readable = read_pairing_transaction(transaction);
+    if (!transaction_readable && !forget_all) {
+        return false;
+    }
+    if (
+        transaction_readable
+        && !forget_all
+        && target_addr != nullptr
+        && bd_addr_cmp(transaction.addr, target_addr) != 0
+    ) {
+        return true;
+    }
+    const bool discarded = discard_pairing_transaction();
+    if (discarded) {
+        pairing_transaction_recovery_failed = false;
+    }
+    return discarded;
+}
+
+static bool bt_blacklist_add_stored_link_keys() {
+    btstack_link_key_iterator_t iterator;
+    if (!gap_link_key_iterator_init(&iterator)) {
+        return false;
+    }
+
+    bool added = true;
+    bd_addr_t addr;
+    link_key_t key;
+    link_key_type_t type;
+    while (gap_link_key_iterator_get_next(&iterator, addr, key, &type)) {
+        added = bt_blacklist_add_unique(addr) && added;
+    }
+    gap_link_key_iterator_done(&iterator);
+    return added;
+}
+
+static bool bt_current_address_known() {
+    return bt_is_controller_connected()
+        || device_found
+        || acl_connection_pending
+        || acl_handle != HCI_CON_HANDLE_INVALID;
+}
+
+static bool persist_notified_link_key(
+    uint8_t const *packet,
+    bd_addr_t addr,
+    bool explicit_pairing_session,
+    bool existing_link_is_secured
+) {
+    link_key_t notified_key;
+    memcpy(notified_key, packet + 8, LINK_KEY_LEN);
+
+    link_key_t stored_key;
+    link_key_type_t stored_type;
+    const bool had_stored_key =
+        gap_get_link_key_for_bd_addr(addr, stored_key, &stored_type);
+    const link_key_type_t notified_type =
+        static_cast<link_key_type_t>(packet[24]);
+    const link_key_type_t effective_type =
+        notified_type == CHANGED_COMBINATION_KEY
+        ? (had_stored_key ? stored_type : INVALID_LINK_KEY)
+        : notified_type;
+    const bool update_authorized =
+        explicit_pairing_session
+        || (
+            had_stored_key
+            && notified_type == CHANGED_COMBINATION_KEY
+            && existing_link_is_secured
+        );
+
+    bool key_has_material = false;
+    for (uint8_t byte : notified_key) {
+        key_has_material = key_has_material || byte != 0;
+    }
+    if (
+        !update_authorized
+        || !key_has_material
+        || effective_type == INVALID_LINK_KEY
+    ) {
+        return false;
+    }
+
+    const bool stored_matches =
+        had_stored_key
+        && memcmp(stored_key, notified_key, LINK_KEY_LEN) == 0
+        && stored_type == effective_type;
+    if (stored_matches) {
+        return true;
+    }
+
+    link_key_t prior_key;
+    link_key_type_t prior_type = INVALID_LINK_KEY;
+    if (had_stored_key) {
+        memcpy(prior_key, stored_key, LINK_KEY_LEN);
+        prior_type = stored_type;
+    }
+    gap_store_link_key_for_bd_addr(addr, notified_key, effective_type);
+    const bool persisted =
+        gap_get_link_key_for_bd_addr(addr, stored_key, &stored_type)
+        && memcmp(stored_key, notified_key, LINK_KEY_LEN) == 0
+        && stored_type == effective_type;
+    if (persisted) {
+        return true;
+    }
+
+    // Fail closed. A first-time partial write must not enable passive scan on
+    // reboot, while a failed rotation should restore the previously verified
+    // key instead of stranding an otherwise valid bond.
+    gap_drop_link_key_for_bd_addr(addr);
+    if (had_stored_key) {
+        gap_store_link_key_for_bd_addr(addr, prior_key, prior_type);
+    }
+    return false;
+}
+
+static void restore_passive_reconnect_scan() {
+    const bool reconnect_allowed = stored_link_key_present
+        && !pairing_transaction_recovery_failed
+        && !pairing_window_active
+        && !inquiry_active
+        && !acl_connection_pending
+        && acl_handle == HCI_CON_HANDLE_INVALID;
+    gap_connectable_control(reconnect_allowed ? 1 : 0);
+    gap_discoverable_control(0);
+    gap_set_bondable_mode(
+        pairing_window_active && !pairing_transaction_recovery_failed ? 1 : 0
+    );
+}
+
+static void stop_inquiry_led() {
+    if (inquiry_led_on) {
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
+    }
+    inquiry_led_on = false;
+    inquiry_led_last_toggle_us = 0;
+}
+
+static void close_pairing_window(bool stop_inquiry) {
+    pairing_window_active = false;
+    pairing_window_deadline_us = 0;
+    inquiry_retry_scheduled = false;
+    inquiry_retry_at_us = 0;
+    if (stop_inquiry && inquiry_active) {
+        gap_inquiry_stop();
+    }
+    inquiry_active = false;
+    stop_inquiry_led();
+    restore_passive_reconnect_scan();
 }
 
 static void schedule_inquiry_retry(uint32_t delay_us = INQUIRY_RETRY_DELAY_US) {
     inquiry_active = false;
+    if (!pairing_window_active || pairing_transaction_recovery_failed) {
+        inquiry_retry_scheduled = false;
+        inquiry_retry_at_us = 0;
+        restore_passive_reconnect_scan();
+        return;
+    }
+    inquiry_retry_scheduled = true;
     inquiry_retry_at_us = time_us_32() + delay_us;
 }
 
 static void start_inquiry_if_needed() {
     if (
-        inquiry_active
+        !pairing_window_active
+        || pairing_transaction_recovery_failed
+        || inquiry_active
         || device_found
         || acl_connection_pending
         || acl_handle != HCI_CON_HANDLE_INVALID
@@ -388,10 +1341,92 @@ static void start_inquiry_if_needed() {
     }
 
     DS5_LOG("[HCI] Start inquiry\n");
-    gap_connectable_control(1);
-    gap_discoverable_control(1);
-    gap_inquiry_start(30);
-    inquiry_active = true;
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
+    gap_set_bondable_mode(1);
+    const int status = gap_inquiry_start(PAIRING_INQUIRY_LENGTH_UNITS);
+    if (status == ERROR_CODE_SUCCESS) {
+        inquiry_active = true;
+        inquiry_retry_scheduled = false;
+        inquiry_retry_at_us = 0;
+        return;
+    }
+    DS5_LOG("[HCI] Inquiry start deferred status=0x%02X\n", status);
+    schedule_inquiry_retry();
+}
+
+static void update_inquiry_led(uint32_t now) {
+    if (!pairing_window_active || !inquiry_active || mute[0]) {
+        stop_inquiry_led();
+        return;
+    }
+    if (
+        inquiry_led_last_toggle_us == 0
+        || bt_time_reached(now, inquiry_led_last_toggle_us + INQUIRY_LED_BLINK_INTERVAL_US)
+    ) {
+        inquiry_led_last_toggle_us = now;
+        inquiry_led_on = !inquiry_led_on;
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, inquiry_led_on);
+    }
+}
+
+static bool classic_acl_connection_allowed(bd_addr_t addr, bool log_reject) {
+    if (connection_phase != BtConnectionPhase::Listening) {
+        if (log_reject) {
+            DS5_LOG("[HCI] Rejecting controller %s while connection phase=%u is busy\n",
+                    bd_addr_to_str(addr),
+                    static_cast<unsigned int>(connection_phase));
+        }
+        return false;
+    }
+    if (pairing_transaction_recovery_failed) {
+        if (log_reject) {
+            DS5_LOG(
+                "[HCI] Rejecting controller %s while pairing recovery is incomplete\n",
+                bd_addr_to_str(addr)
+            );
+        }
+        return false;
+    }
+    if (
+        acl_connection_pending
+        || acl_handle != HCI_CON_HANDLE_INVALID
+        || (device_found && bd_addr_cmp(addr, current_device_addr) != 0)
+    ) {
+        if (log_reject) {
+            DS5_LOG("[HCI] Rejecting controller %s while another Classic transaction owns the radio\n",
+                    bd_addr_to_str(addr));
+        }
+        return false;
+    }
+    if (pairing_window_active) {
+        if (log_reject) {
+            DS5_LOG("[HCI] Rejecting incoming page from %s while outbound pairing owns the radio\n",
+                    bd_addr_to_str(addr));
+        }
+        return false;
+    }
+    if (bt_blacklist_contains(addr)) {
+        if (log_reject) {
+            DS5_LOG(
+                "[HCI] Rejecting cleared controller %s until an explicit scan is requested\n",
+                bd_addr_to_str(addr)
+            );
+        }
+        return false;
+    }
+
+    link_key_t key;
+    link_key_type_t type;
+    const bool known_controller = gap_get_link_key_for_bd_addr(addr, key, &type);
+    if (!known_controller && log_reject) {
+        DS5_LOG("[HCI] Rejecting unknown controller %s outside pairing window\n", bd_addr_to_str(addr));
+    }
+    return known_controller;
+}
+
+static int classic_connection_filter(bd_addr_t addr, hci_link_type_t link_type) {
+    return link_type == HCI_LINK_TYPE_ACL && classic_acl_connection_allowed(addr, true);
 }
 
 static uint8_t clamp_output_trace_u8(uint32_t value) {
@@ -460,6 +1495,10 @@ bool bt_is_controller_connected() {
     return hid_interrupt_ready;
 }
 
+bool bt_expected_disconnect_pending() {
+    return controller_disconnect_intent != BtControllerDisconnectIntentNone;
+}
+
 uint8_t bt_controller_type() {
     return controller_type;
 }
@@ -470,6 +1509,51 @@ int8_t bt_get_signal_strength() {
 
 bool bt_has_signal_strength() {
     return bt_rssi_known;
+}
+
+bool bt_pairing_active() {
+    return pairing_window_active;
+}
+
+bool bt_get_device_identity(BtDeviceIdentitySnapshot *snapshot) {
+    if (snapshot == nullptr) {
+        return false;
+    }
+
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->address_known = bt_current_address_known();
+    snapshot->controller_connected = bt_is_controller_connected();
+    snapshot->pairing_active = pairing_window_active;
+    if (!snapshot->address_known) {
+        return false;
+    }
+
+    strncpy(snapshot->address, bd_addr_to_str(current_device_addr), sizeof(snapshot->address) - 1);
+    snapshot->address[sizeof(snapshot->address) - 1] = '\0';
+    switch (controller_type) {
+        case ControllerTypeDualSense:
+            strncpy(snapshot->name, "DualSense", sizeof(snapshot->name) - 1);
+            snapshot->vendor_id = 0x054c;
+            snapshot->product_id = 0x0ce6;
+            break;
+        case ControllerTypeDualSenseEdge:
+            strncpy(snapshot->name, "DualSense Edge", sizeof(snapshot->name) - 1);
+            snapshot->vendor_id = 0x054c;
+            snapshot->product_id = 0x0df2;
+            break;
+        default:
+            strncpy(snapshot->name, "Controller", sizeof(snapshot->name) - 1);
+            break;
+    }
+    snapshot->name[sizeof(snapshot->name) - 1] = '\0';
+
+    link_key_t link_key;
+    link_key_type_t link_key_type;
+    snapshot->link_key_known =
+        gap_get_link_key_for_bd_addr(current_device_addr, link_key, &link_key_type);
+    snapshot->link_key_type =
+        snapshot->link_key_known ? static_cast<uint8_t>(link_key_type) : 0;
+    return true;
 }
 
 void bt_set_classic_rumble_gain(uint16_t gain_percent) {
@@ -521,7 +1605,12 @@ void bt_set_classic_rumble_output(uint8_t right, uint8_t left) {
     uint8_t report[DS_OUTPUT_REPORT_BT_SIZE];
     init_state_report(report);
     controller_output_policy_render_classic_rumble_payload(report + 3, DS_OUTPUT_REPORT_COMMON_SIZE, right, left);
-    if (bt_write_classified_output(report, sizeof(report))) {
+    apply_classic_rumble_gain(report, sizeof(report));
+    if (enqueue_classic_rumble_immediate_or_state_output(
+            report,
+            sizeof(report),
+            OutputReasonStateOnly
+        )) {
         controller_output_state_apply_host_payload(report + 3, DS_OUTPUT_REPORT_COMMON_SIZE);
     }
 }
@@ -633,6 +1722,30 @@ static void set_trigger_vibration(uint8_t *trigger, uint8_t position, uint8_t am
     trigger[9] = frequency;
 }
 
+static uint8_t adaptive_trigger_motor_power_for_intensity(uint8_t intensity_percent) {
+    if (intensity_percent == 0 || intensity_percent >= 100) {
+        return 0;
+    }
+    const uint8_t clamped = intensity_percent > 100 ? 100 : intensity_percent;
+    const uint8_t reduction = static_cast<uint8_t>(((100 - clamped) * 8 + 50) / 100);
+    return std::min<uint8_t>(reduction, 7);
+}
+
+static void queue_adaptive_trigger_state_report(uint8_t *report, uint8_t motor_power) {
+    uint8_t *payload = report + 3;
+    payload[OUTPUT_PAYLOAD_VALID_FLAG1_OFFSET] |= DS_OUTPUT_VALID_FLAG1_MOTOR_POWER_LEVEL_ENABLE;
+    payload[OUTPUT_PAYLOAD_TRIGGER_POWER_OFFSET] = motor_power;
+    audio_set_adaptive_trigger_state(
+        payload + DS_TRIGGER_EFFECT_RIGHT_OFFSET,
+        (payload[OUTPUT_PAYLOAD_VALID_FLAG0_OFFSET] & DS_OUTPUT_VALID_FLAG0_RIGHT_TRIGGER_EFFECT) != 0,
+        payload + DS_TRIGGER_EFFECT_LEFT_OFFSET,
+        (payload[OUTPUT_PAYLOAD_VALID_FLAG0_OFFSET] & DS_OUTPUT_VALID_FLAG0_LEFT_TRIGGER_EFFECT) != 0,
+        motor_power,
+        true
+    );
+    enqueue_feedback_state_output(report, DS_OUTPUT_REPORT_BT_SIZE, OutputReasonStateOnly);
+}
+
 static void reset_lightbar_setup() {
     if (hid_interrupt_cid == 0) {
         return;
@@ -677,7 +1790,10 @@ void bt_set_adaptive_trigger_effect(uint8_t mode, uint8_t intensity_percent, uin
     if (target == DS_TRIGGER_TARGET_RIGHT || target == DS_TRIGGER_TARGET_BOTH) {
         apply_effect(right_trigger);
     }
-    bt_write(report, sizeof(report));
+    queue_adaptive_trigger_state_report(
+        report,
+        adaptive_trigger_motor_power_for_intensity(intensity_percent)
+    );
 }
 
 static void set_custom_trigger_effect(
@@ -734,7 +1850,7 @@ void bt_set_custom_adaptive_trigger_effects(
         ? set_custom_trigger_effect(left_trigger, left_mode, left_start_percent, left_wall_percent, left_force_percent)
         : set_trigger_off(left_trigger);
 
-    bt_write(report, sizeof(report));
+    queue_adaptive_trigger_state_report(report, 0);
 }
 
 void bt_set_custom_adaptive_trigger_effect(
@@ -970,8 +2086,16 @@ void bt_refresh_speaker_output() {
     }
 }
 
+void bt_set_lightbar_restore_enabled(bool enabled) {
+    lightbar_restore_enabled = enabled;
+    if (!enabled) {
+        lightbar_restore_pending = false;
+        lightbar_restore_at_us = 0;
+    }
+}
+
 void bt_schedule_lightbar_restore(uint32_t delay_ms) {
-    if (hid_interrupt_cid == 0) {
+    if (!lightbar_restore_enabled || hid_interrupt_cid == 0) {
         return;
     }
 
@@ -980,7 +2104,7 @@ void bt_schedule_lightbar_restore(uint32_t delay_ms) {
 }
 
 void bt_lightbar_loop() {
-    if (!lightbar_restore_pending || hid_interrupt_cid == 0) {
+    if (!lightbar_restore_enabled || !lightbar_restore_pending || hid_interrupt_cid == 0) {
         return;
     }
 
@@ -998,39 +2122,91 @@ void bt_lightbar_loop() {
 
 void bt_signal_strength_loop() {
     if (acl_handle == HCI_CON_HANDLE_INVALID || hid_interrupt_cid == 0) {
-        bt_rssi = 0;
-        bt_rssi_known = false;
-        bt_rssi_request_pending = false;
-        bt_rssi_last_request_us = 0;
+        reset_signal_strength_session();
         return;
     }
 
-    const uint32_t now = time_us_32();
+    const uint64_t now = time_us_64();
     if (bt_rssi_request_pending) {
-        if (packet_age_us(now, bt_rssi_last_request_us) < RSSI_REQUEST_TIMEOUT_US) {
+        if (now - bt_rssi_last_request_us < RSSI_REQUEST_TIMEOUT_US) {
             return;
         }
         bt_rssi_request_pending = false;
+        if (bt_rssi_pending_epoch == bt_rssi_idle_epoch) {
+            if (bt_rssi_retries_remaining > 0) {
+                bt_rssi_retries_remaining--;
+                bt_rssi_idle_epoch_armed = true;
+            } else {
+                bt_rssi_idle_epoch_armed = false;
+            }
+        }
     }
 
-    if (bt_rssi_last_request_us != 0 && packet_age_us(now, bt_rssi_last_request_us) < RSSI_POLL_INTERVAL_US) {
+    if (
+        !bt_rssi_idle_epoch_armed
+        || audio_recent()
+        || usb_speaker_streaming_active()
+        || now - bt_rssi_last_activity_us < RSSI_INPUT_IDLE_GRACE_US
+        || (
+            bt_rssi_last_request_us != 0
+            && now - bt_rssi_last_request_us < RSSI_REQUEST_COOLDOWN_US
+        )
+    ) {
         return;
     }
 
-    if (gap_read_rssi(acl_handle) != 0) {
-        bt_rssi_request_pending = true;
-        bt_rssi_last_request_us = now;
+    const bool queued = gap_read_rssi(acl_handle) != 0;
+    bt_rssi_last_request_us = now;
+    bt_rssi_pending_epoch = bt_rssi_idle_epoch;
+    bt_rssi_request_pending = queued;
+    bt_rssi_idle_epoch_armed = false;
+    if (!queued) {
+        bt_rssi_retries_remaining = 0;
     }
 }
 
-bool bt_disconnect() {
+bool bt_disconnect_with_intent(BtControllerDisconnectIntent intent) {
     if (acl_handle == HCI_CON_HANDLE_INVALID) {
         return false;
     }
+    if (connection_phase == BtConnectionPhase::Disconnecting) {
+        return true;
+    }
+    if (!begin_connection_disconnect()) {
+        return false;
+    }
+    controller_disconnect_intent = intent;
+    disconnect_retry_requested = false;
+    disconnect_retry_waiting = false;
+    disconnect_retry_attempts = 0;
+    disconnect_retry_at_us = 0;
 
-    // 0x13 = remote user terminated connection
-    HCI_SEND_CMD_LOGGED(&hci_disconnect, acl_handle, 0x13);
-    return true;
+    // Let BTstack own its SEND_DISCONNECT/SENT_DISCONNECT state transition.
+    // Sending hci_disconnect directly leaves its ACL bookkeeping stale.
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
+    gap_set_bondable_mode(0);
+    const uint8_t status = gap_disconnect(acl_handle);
+    if (status == ERROR_CODE_SUCCESS || status == ERROR_CODE_COMMAND_DISALLOWED) {
+        // The no-connection GAP path may complete synchronously. Only arm the
+        // terminal-event timeout while this exact session still owns teardown.
+        if (
+            connection_phase == BtConnectionPhase::Disconnecting
+            && acl_handle != HCI_CON_HANDLE_INVALID
+        ) {
+            disconnect_retry_waiting = true;
+            disconnect_retry_at_us = time_us_32() + DISCONNECT_RETRY_EVENT_TIMEOUT_US;
+        }
+        return true;
+    }
+    DS5_LOG("[HCI] GAP disconnect failed handle=0x%04X status=0x%02X\n", acl_handle, status);
+    disconnect_retry_requested = true;
+    disconnect_retry_at_us = time_us_32() + DISCONNECT_RETRY_DELAY_US;
+    return false;
+}
+
+bool bt_disconnect() {
+    return bt_disconnect_with_intent(BtControllerDisconnectIntentNone);
 }
 
 bool bt_power_off_controller() {
@@ -1056,6 +2232,133 @@ bool bt_power_off_controller() {
     return true;
 }
 
+bool bt_request_scan() {
+    if (pairing_transaction_recovery_failed) {
+        if (!recover_pairing_transaction_on_boot()) {
+            DS5_LOG("[HCI] Pairing transaction recovery still incomplete; scan denied\n");
+            restore_passive_reconnect_scan();
+            return false;
+        }
+        pairing_transaction_recovery_failed = false;
+        stored_link_key_present = bt_has_stored_link_key();
+    }
+
+    const uint32_t now = time_us_32();
+    pairing_window_active = true;
+    pairing_window_deadline_us = now + PAIRING_WINDOW_US;
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
+    gap_set_bondable_mode(1);
+    DS5_LOG("[HCI] Controller pairing window requested\n");
+
+    if (acl_handle != HCI_CON_HANDLE_INVALID || hid_interrupt_ready) {
+        // Companion pairing while connected means "disconnect and pair".
+        // The disconnection-complete path schedules inquiry because the
+        // pairing window is already open.
+        (void)bt_disconnect();
+        return true;
+    }
+
+    inquiry_retry_scheduled = true;
+    inquiry_retry_at_us = now;
+    return true;
+}
+
+bool bt_forget_pairings() {
+    DS5_LOG("[HCI] Forget controller pairings requested\n");
+    bool transaction_present = false;
+    if (!pairing_transaction_storage_status(transaction_present)) {
+        DS5_LOG("[HCI] Forget all aborted: pairing transaction storage unavailable\n");
+        return false;
+    }
+    pairing_transaction transaction{};
+    const bool transaction_readable =
+        transaction_present && read_pairing_transaction(transaction);
+    bd_addr_t previous_addrs[NVM_NUM_LINK_KEYS]{};
+    const int previous_count = cleared_controller_addr_count;
+    memcpy(previous_addrs, cleared_controller_addrs, sizeof(previous_addrs));
+
+    if (
+        !bt_blacklist_add_stored_link_keys()
+        || (
+            transaction_readable
+            && !bt_blacklist_add_unique(transaction.addr)
+        )
+        || (bt_current_address_known() && !bt_blacklist_add_unique(current_device_addr))
+        || !bt_blacklist_persist()
+    ) {
+        memcpy(cleared_controller_addrs, previous_addrs, sizeof(previous_addrs));
+        cleared_controller_addr_count = previous_count;
+        DS5_LOG("[BLACKLIST] Forget all aborted: durable blacklist update failed\n");
+        return false;
+    }
+    if (!cancel_pairing_transaction_before_forget(true, nullptr)) {
+        // Keep the durable blacklist additions fail-closed. No link key is
+        // deleted until the transaction record is also durably removed.
+        DS5_LOG("[HCI] Forget all aborted: pairing transaction cancellation was not durable\n");
+        return false;
+    }
+
+    gap_delete_all_link_keys();
+    pairing_transaction_recovery_failed = false;
+    stored_link_key_present = false;
+    current_link_key_persisted = false;
+    feature_data.clear();
+    clear_feature_prefetch_queue();
+
+    return bt_request_scan();
+}
+
+bool bt_forget_pairing(uint8_t address[6]) {
+    if (address == nullptr) {
+        return false;
+    }
+    bool has_address_material = false;
+    for (size_t i = 0; i < sizeof(bd_addr_t); i++) {
+        has_address_material = has_address_material || address[i] != 0;
+    }
+    if (!has_address_material) {
+        return false;
+    }
+
+    bd_addr_t addr;
+    memcpy(addr, address, sizeof(addr));
+    DS5_LOG("[HCI] Forget controller pairing requested for %s\n", bd_addr_to_str(addr));
+
+    bd_addr_t previous_addrs[NVM_NUM_LINK_KEYS]{};
+    const int previous_count = cleared_controller_addr_count;
+    memcpy(previous_addrs, cleared_controller_addrs, sizeof(previous_addrs));
+    if (!bt_blacklist_add_unique(addr) || !bt_blacklist_persist()) {
+        memcpy(cleared_controller_addrs, previous_addrs, sizeof(previous_addrs));
+        cleared_controller_addr_count = previous_count;
+        DS5_LOG("[BLACKLIST] Targeted forget aborted: durable blacklist update failed\n");
+        return false;
+    }
+    if (!cancel_pairing_transaction_before_forget(false, addr)) {
+        // The durable blacklist remains intentional fail-closed state. Do not
+        // delete the key until the transaction record is durably settled.
+        DS5_LOG("[HCI] Targeted forget aborted: pairing transaction cancellation was not durable\n");
+        return false;
+    }
+
+    const bool targets_current_session =
+        bt_current_address_known() && bd_addr_cmp(current_device_addr, addr) == 0;
+    gap_drop_link_key_for_bd_addr(addr);
+    stored_link_key_present = bt_has_stored_link_key();
+    if (targets_current_session) {
+        current_link_key_persisted = false;
+        feature_data.clear();
+        clear_feature_prefetch_queue();
+        if (acl_handle != HCI_CON_HANDLE_INVALID || hid_interrupt_ready) {
+            (void)bt_disconnect();
+        }
+    }
+    if (!stored_link_key_present) {
+        return bt_request_scan();
+    }
+    return true;
+}
+
 bool bt_set_idle_disconnect_timeout_minutes(uint16_t minutes) {
     if (
         minutes < MIN_IDLE_DISCONNECT_TIMEOUT_MINUTES
@@ -1064,7 +2367,7 @@ bool bt_set_idle_disconnect_timeout_minutes(uint16_t minutes) {
         return false;
     }
     idle_disconnect_timeout_minutes = minutes;
-    inactive_time = time_us_32();
+    inactive_time = time_us_64();
     return true;
 }
 
@@ -1084,27 +2387,63 @@ void bt_l2cap_init() {
 }
 
 static void open_next_hid_channel_if_needed() {
-    if (acl_handle == HCI_CON_HANDLE_INVALID) {
+    if (
+        acl_handle == HCI_CON_HANDLE_INVALID
+        || connection_phase != BtConnectionPhase::HidOpening
+        || hid_connection_initiator == HidConnectionInitiator::Remote
+    ) {
         return;
     }
 
-    if (!hid_control_ready && hid_control_cid == 0) {
+    if (
+        !hid_control_ready
+        && hid_control_cid == 0
+        && hid_control_pending_cid == 0
+    ) {
+        hid_connection_initiator = HidConnectionInitiator::Local;
         DS5_LOG("[L2CAP] Open missing HID Control channel\n");
-        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_CONTROL, MTU_CONTROL,
-                             &hid_control_cid);
+        const uint8_t status = l2cap_create_channel(
+            l2cap_packet_handler,
+            current_device_addr,
+            PSM_HID_CONTROL,
+            MTU_CONTROL,
+            &hid_control_pending_cid
+        );
+        if (status != ERROR_CODE_SUCCESS) {
+            hid_control_pending_cid = 0;
+            hid_connection_initiator = HidConnectionInitiator::None;
+            DS5_LOG("[L2CAP] HID Control open deferred status=0x%02X\n", status);
+        }
         return;
     }
 
-    if (!hid_interrupt_ready && hid_interrupt_cid == 0) {
+    if (
+        hid_connection_initiator == HidConnectionInitiator::Local
+        && hid_control_ready
+        && !hid_interrupt_ready
+        && hid_interrupt_cid == 0
+        && hid_interrupt_pending_cid == 0
+    ) {
         DS5_LOG("[L2CAP] Open missing HID Interrupt channel\n");
-        l2cap_create_channel(l2cap_packet_handler, current_device_addr, PSM_HID_INTERRUPT, MTU_INTERRUPT,
-                             &hid_interrupt_cid);
+        const uint8_t status = l2cap_create_channel(
+            l2cap_packet_handler,
+            current_device_addr,
+            PSM_HID_INTERRUPT,
+            MTU_INTERRUPT,
+            &hid_interrupt_pending_cid
+        );
+        if (status != ERROR_CODE_SUCCESS) {
+            hid_interrupt_pending_cid = 0;
+            DS5_LOG("[L2CAP] HID Interrupt open deferred status=0x%02X\n", status);
+        }
     }
 }
 
-static void schedule_hid_channel_recovery() {
+static void schedule_hid_channel_recovery(
+    uint32_t delay_us = HID_CHANNEL_RECOVERY_DELAY_US
+) {
     hid_channel_recovery_pending = true;
-    hid_channel_recovery_at_us = time_us_32() + HID_CHANNEL_RECOVERY_DELAY_US;
+    hid_channel_recovery_at_us = time_us_32() + delay_us;
 }
 
 static void cancel_hid_channel_recovery_if_ready() {
@@ -1114,16 +2453,138 @@ static void cancel_hid_channel_recovery_if_ready() {
     }
 }
 
-void bt_connection_recovery_loop() {
-    if (!hid_channel_recovery_pending || acl_handle == HCI_CON_HANDLE_INVALID) {
+static uint32_t current_hid_opening_timeout_us() {
+    if (
+        hid_connection_initiator == HidConnectionInitiator::Remote
+        && hid_control_ready
+        && !hid_interrupt_ready
+    ) {
+        return HID_REMOTE_INTERRUPT_OPEN_TIMEOUT_US;
+    }
+    return HID_OPENING_PHASE_TIMEOUT_US;
+}
+
+static void service_disconnect_recovery(uint32_t now) {
+    if (
+        disconnect_retry_waiting
+        && bt_time_reached(now, disconnect_retry_at_us)
+    ) {
+        disconnect_retry_waiting = false;
+        disconnect_retry_requested = true;
+    }
+    if (!disconnect_retry_requested) {
         return;
     }
-    if (static_cast<int32_t>(time_us_32() - hid_channel_recovery_at_us) < 0) {
+    if (disconnect_retry_attempts >= DISCONNECT_RETRY_MAX_ATTEMPTS) {
+        disconnect_retry_requested = false;
+        DS5_LOG("[HCI] Disconnect retry exhausted; reboot for bounded transport recovery\n");
+        watchdog_reboot(0, 0, CONTROLLER_DISCONNECT_REBOOT_DELAY_MS);
+        return;
+    }
+    if (!bt_time_reached(now, disconnect_retry_at_us) || !hci_can_send_command_packet_now()) {
+        return;
+    }
+
+    const uint8_t status = hci_send_cmd(&hci_disconnect, acl_handle, 0x13);
+    if (status == ERROR_CODE_SUCCESS) {
+        disconnect_retry_attempts++;
+        disconnect_retry_requested = false;
+        disconnect_retry_waiting = true;
+        disconnect_retry_at_us = now + DISCONNECT_RETRY_EVENT_TIMEOUT_US;
+        DS5_LOG("[HCI] Disconnect retry sent attempt=%u\n", disconnect_retry_attempts);
+    } else {
+        disconnect_retry_at_us = now + DISCONNECT_RETRY_DELAY_US;
+    }
+}
+
+void bt_connection_recovery_loop() {
+    if (acl_handle == HCI_CON_HANDLE_INVALID) {
+        return;
+    }
+
+    const uint32_t now = time_us_32();
+    if (connection_phase == BtConnectionPhase::Disconnecting) {
+        service_disconnect_recovery(now);
+        return;
+    }
+    if (
+        authentication_retry_pending
+        && bt_time_reached(now, authentication_retry_at_us)
+    ) {
+        authentication_retry_pending = false;
+        DS5_LOG("[HCI] Retry GAP security level 2 attempt=%u\n", authentication_retry_attempts);
+        gap_request_security_level(acl_handle, LEVEL_2);
+    }
+
+    if (
+        encryption_completion_pending
+        && encryption_command_generation == connection_generation
+        && encryption_command_handle == acl_handle
+        && static_cast<uint32_t>(now - encryption_command_accepted_at_us)
+            >= ENCRYPTION_COMPLETION_TIMEOUT_US
+    ) {
+        DS5_LOG("[HCI] Encryption completion stalled; recycle ACL and preserve pairing\n");
+        clear_encryption_completion();
+        bt_disconnect();
+        return;
+    }
+
+    if (
+        connection_phase == BtConnectionPhase::Securing
+        && connection_phase_started_us != 0
+        && static_cast<uint32_t>(now - connection_phase_started_us)
+            >= SECURITY_PHASE_TIMEOUT_US
+    ) {
+        DS5_LOG("[HCI] Security phase timed out; recycle ACL and preserve pairing\n");
+        bt_disconnect();
+        return;
+    }
+
+    if (
+        connection_phase == BtConnectionPhase::HidOpening
+        && hid_connection_initiator == HidConnectionInitiator::Remote
+        && hid_control_ready
+        && !hid_interrupt_ready
+        && hid_control_opened_at_us != 0
+        && static_cast<uint32_t>(now - hid_control_opened_at_us)
+            >= HID_REMOTE_INTERRUPT_FOLLOWUP_TIMEOUT_US
+    ) {
+        DS5_LOG("[L2CAP] Controller-owned HID Interrupt follow-up timed out; retry ACL\n");
+        bt_disconnect();
+        return;
+    }
+
+    if (
+        connection_phase == BtConnectionPhase::HidOpening
+        && connection_phase_started_us != 0
+        && static_cast<uint32_t>(now - connection_phase_started_us)
+            >= current_hid_opening_timeout_us()
+    ) {
+        DS5_LOG("[L2CAP] HID opening phase timed out; recycle ACL\n");
+        bt_disconnect();
+        return;
+    }
+
+    if (!hid_channel_recovery_pending) {
+        return;
+    }
+    if (!bt_time_reached(now, hid_channel_recovery_at_us)) {
         return;
     }
     if (hid_control_ready && hid_interrupt_ready) {
         hid_channel_recovery_pending = false;
         hid_channel_recovery_attempts = 0;
+        return;
+    }
+    if (hid_connection_initiator == HidConnectionInitiator::Remote) {
+        // The endpoint that opened Control owns the matching Interrupt open.
+        // Never collide with it by creating a symmetric local transaction.
+        hid_channel_recovery_pending = false;
+        hid_channel_recovery_attempts = 0;
+        return;
+    }
+    if (hid_control_pending_cid != 0 || hid_interrupt_pending_cid != 0) {
+        schedule_hid_channel_recovery();
         return;
     }
     if (hid_channel_recovery_attempts >= HID_CHANNEL_RECOVERY_MAX_ATTEMPTS) {
@@ -1141,17 +2602,107 @@ void bt_connection_recovery_loop() {
     schedule_hid_channel_recovery();
 }
 
-void bt_inquiry_loop() {
+void bt_feature_prefetch_loop() {
+    if (feature_prefetch_index >= feature_prefetch_count) {
+        clear_feature_prefetch_queue();
+        return;
+    }
+    if (hid_control_cid == 0 || connection_phase != BtConnectionPhase::Ready) {
+        clear_feature_prefetch_queue();
+        return;
+    }
+
     const uint32_t now = time_us_32();
+    if (feature_prefetch_next_us != 0 && !bt_time_reached(now, feature_prefetch_next_us)) {
+        return;
+    }
+
+    const feature_prefetch_request request = feature_prefetch_queue[feature_prefetch_index++];
+    (void)get_feature_data(request.report_id, request.len);
+    feature_prefetch_next_us = time_us_32() + FEATURE_PREFETCH_SPACING_US;
+}
+
+static void service_acl_connection_cancel() {
+    if (
+        !acl_connection_cancel_requested
+        || acl_connection_cancel_sent
+        || !acl_connection_outbound
+        || !acl_connection_pending
+        || !hci_can_send_command_packet_now()
+    ) {
+        return;
+    }
+
+    const uint8_t status = hci_send_cmd(&hci_create_connection_cancel, current_device_addr);
+    if (status == ERROR_CODE_SUCCESS) {
+        acl_connection_cancel_sent = true;
+        DS5_LOG("[HCI] Classic create-connection cancel sent; drain completion\n");
+    }
+}
+
+void bt_output_retry_loop() {
+    if (
+        hid_interrupt_cid == 0
+        || connection_phase == BtConnectionPhase::Disconnecting
+    ) {
+        return;
+    }
+
+    bool retry_ready = false;
+    const uint32_t now = time_us_32();
+    critical_section_enter_blocking(&queue_lock);
+    retry_ready = !urgent_queue.empty()
+        && bt_time_reached(now, urgent_queue.front().ready_at_us);
+    critical_section_exit(&queue_lock);
+    request_can_send_if_needed(retry_ready);
+}
+
+void bt_inquiry_loop() {
+    service_acl_connection_cancel();
+
+    const uint32_t now = time_us_32();
+    if (
+        pairing_window_active
+        && bt_time_reached(now, pairing_window_deadline_us)
+    ) {
+        if (
+            device_found
+            || acl_connection_pending
+            || acl_handle != HCI_CON_HANDLE_INVALID
+        ) {
+            pairing_window_deadline_us = now + PAIRING_ACTIVE_ATTEMPT_EXTENSION_US;
+            DS5_LOG("[HCI] Pairing discovery window elapsed; preserve active attempt\n");
+        } else {
+            DS5_LOG("[HCI] Pairing window elapsed\n");
+            close_pairing_window(true);
+            return;
+        }
+    }
+
     if (
         acl_connection_pending
         && acl_handle == HCI_CON_HANDLE_INVALID
         && bt_time_reached(now, acl_connection_pending_at_us + ACL_CONNECTION_PENDING_TIMEOUT_US)
     ) {
-        DS5_LOG("[HCI] ACL connection pending timed out, restart inquiry\n");
-        clear_outbound_inquiry_target();
-        clear_acl_connection_pending();
-        schedule_inquiry_retry(0);
+        if (acl_connection_outbound && !acl_connection_cancel_requested) {
+            // Retain ownership until CONNECTION_COMPLETE drains the cancelled
+            // transaction. Releasing it early allows a late result to consume
+            // a newer connection generation.
+            DS5_LOG("[HCI] ACL connection pending timed out; request cancel and drain\n");
+            acl_connection_cancel_requested = true;
+            acl_disconnect_on_completion = true;
+            acl_connection_pending_at_us = now;
+        } else if (!acl_connection_outbound) {
+            DS5_LOG("[HCI] Incoming ACL pending timed out; reset bounded transport recovery\n");
+            watchdog_reboot(0, 0, CONTROLLER_DISCONNECT_REBOOT_DELAY_MS);
+        } else if (acl_connection_cancel_sent) {
+            DS5_LOG("[HCI] ACL cancellation did not complete; reset bounded transport recovery\n");
+            watchdog_reboot(0, 0, CONTROLLER_DISCONNECT_REBOOT_DELAY_MS);
+        } else {
+            // The cancel command is waiting for HCI command credit. Keep the
+            // current generation owned and allow the next poll to submit it.
+            acl_connection_pending_at_us = now;
+        }
     }
 
     if (
@@ -1160,33 +2711,90 @@ void bt_inquiry_loop() {
         || acl_connection_pending
         || acl_handle != HCI_CON_HANDLE_INVALID
     ) {
+        update_inquiry_led(now);
         return;
     }
 
-    if (inquiry_retry_at_us == 0 || bt_time_reached(now, inquiry_retry_at_us)) {
+    if (
+        pairing_window_active
+        && inquiry_retry_scheduled
+        && bt_time_reached(now, inquiry_retry_at_us)
+    ) {
         start_inquiry_if_needed();
     }
+    update_inquiry_led(now);
 }
 
 int bt_init() {
     critical_section_init(&queue_lock);
 
     bt_l2cap_init();
+    gap_set_link_supervision_timeout(CLASSIC_LINK_SUPERVISION_TIMEOUT_SLOTS);
 
     // SSP (Secure Simple Pairing)
     gap_ssp_set_enable(true);
     gap_secure_connections_enable(true);
     gap_ssp_set_io_capability(SSP_IO_CAPABILITY_DISPLAY_YES_NO);
     gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+    gap_ssp_set_auto_accept(false);
+    gap_set_bondable_mode(0);
 
-    gap_connectable_control(1);
-    gap_discoverable_control(1);
+    hci_set_master_slave_policy(HCI_ROLE_MASTER);
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
+    gap_register_classic_connection_filter(&classic_connection_filter);
 
     hci_event_callback_registration.callback = &hci_packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
     hci_power_control(HCI_POWER_ON);
     return 0;
+}
+
+static void begin_hid_channel_negotiation(hci_con_handle_t handle) {
+    if (!current_link_security_ready(handle)) {
+        DS5_LOG("[L2CAP] Refuse HID negotiation before GAP LEVEL_2 handle=0x%04X\n", handle);
+        return;
+    }
+    if (!begin_hid_opening(handle)) {
+        return;
+    }
+
+    // DualSense normally opens HID Control immediately after SSP. Give it the
+    // first turn; local recovery claims ownership only after this grace period.
+    schedule_hid_channel_recovery(HID_REMOTE_INITIATION_GRACE_US);
+    DS5_LOG("[L2CAP] Security ready; await controller-owned HID open\n");
+}
+
+static void handle_encryption_change(
+    hci_con_handle_t handle,
+    uint8_t status,
+    uint8_t enabled
+) {
+    if (!connection_handle_is_current(handle)) {
+        DS5_LOG("[HCI] Ignoring stale encryption event handle=0x%04X\n", handle);
+        return;
+    }
+    clear_encryption_completion();
+    if (connection_phase == BtConnectionPhase::Disconnecting) {
+        return;
+    }
+
+    DS5_LOG("[HCI] Encryption change handle=0x%04X status=0x%02X enabled=%u\n",
+            handle,
+            status,
+            enabled);
+    if (status == ERROR_CODE_SUCCESS && enabled) {
+        if (current_link_security_ready(handle)) {
+            begin_hid_channel_negotiation(handle);
+        } else {
+            DS5_LOG("[HCI] Encryption enabled; wait for GAP LEVEL_2 validation\n");
+        }
+        return;
+    }
+
+    DS5_LOG("[HCI] Encryption failed; recycle incomplete ACL and preserve pairing\n");
+    bt_disconnect();
 }
 
 static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
@@ -1200,8 +2808,28 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             DS5_LOG("[BT] State: %u\n", state);
             if (state == HCI_STATE_WORKING) {
                 DS5_LOG("[BT] Stack ready\n");
-                schedule_inquiry_retry(0);
-                start_inquiry_if_needed();
+                // HCI power-on rebuilds BTstack's pending Classic task mask.
+                // Apply fast interlaced page scan tuning after that reset.
+                gap_set_page_scan_activity(0x0012, 0x0012); // 11.25 ms
+                gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);
+                bt_blacklist_load();
+                pairing_transaction_recovery_failed =
+                    !recover_pairing_transaction_on_boot();
+                if (pairing_transaction_recovery_failed) {
+                    DS5_LOG(
+                        "[HCI] Pairing transaction recovery failed; remain fail-closed\n"
+                    );
+                }
+                stored_link_key_present = bt_has_stored_link_key();
+                if (pairing_transaction_recovery_failed) {
+                    restore_passive_reconnect_scan();
+                } else if (stored_link_key_present) {
+                    DS5_LOG("[BT] Stored controller found; staying in passive page scan\n");
+                    restore_passive_reconnect_scan();
+                } else {
+                    DS5_LOG("[BT] No stored controller; starting initial pairing window\n");
+                    (void)bt_request_scan();
+                }
             }
             break;
         }
@@ -1210,26 +2838,44 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
         case HCI_EVENT_EXTENDED_INQUIRY_RESPONSE: {
             bd_addr_t addr;
             uint32_t cod;
+            uint8_t page_scan_repetition_mode;
+            uint16_t clock_offset;
 
             if (event_type == HCI_EVENT_INQUIRY_RESULT) {
                 cod = hci_event_inquiry_result_get_class_of_device(packet);
                 hci_event_inquiry_result_get_bd_addr(packet, addr);
+                page_scan_repetition_mode =
+                    hci_event_inquiry_result_get_page_scan_repetition_mode(packet);
+                clock_offset =
+                    hci_event_inquiry_result_get_clock_offset(packet);
             } else if (event_type == HCI_EVENT_INQUIRY_RESULT_WITH_RSSI) {
                 cod = hci_event_inquiry_result_with_rssi_get_class_of_device(packet);
                 hci_event_inquiry_result_with_rssi_get_bd_addr(packet, addr);
+                page_scan_repetition_mode =
+                    hci_event_inquiry_result_with_rssi_get_page_scan_repetition_mode(packet);
+                clock_offset =
+                    hci_event_inquiry_result_with_rssi_get_clock_offset(packet);
             } else {
                 cod = hci_event_extended_inquiry_response_get_class_of_device(packet);
                 hci_event_extended_inquiry_response_get_bd_addr(packet, addr);
+                page_scan_repetition_mode =
+                    hci_event_extended_inquiry_response_get_page_scan_repetition_mode(packet);
+                clock_offset =
+                    hci_event_extended_inquiry_response_get_clock_offset(packet);
             }
 
             // CoD 0x002508 = Gamepad (Major: Peripheral, Minor: Gamepad)
             if (
                 (cod & 0x000F00) == 0x000500
+                && pairing_window_active
+                && !device_found
                 && !acl_connection_pending
                 && acl_handle == HCI_CON_HANDLE_INVALID
             ) {
                 DS5_LOG("[HCI] Gamepad found: %s (CoD: 0x%06x)\n", bd_addr_to_str(addr), (unsigned int) cod);
                 bd_addr_copy(current_device_addr, addr);
+                current_device_page_scan_repetition_mode = page_scan_repetition_mode;
+                current_device_clock_offset = clock_offset;
                 device_found = true;
                 inquiry_active = false;
                 gap_inquiry_stop();
@@ -1241,14 +2887,105 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
         case HCI_EVENT_INQUIRY_COMPLETE: {
             DS5_LOG("[HCI] Inquiry complete\n");
             inquiry_active = false;
+            stop_inquiry_led();
             if (device_found && !acl_connection_pending && acl_handle == HCI_CON_HANDLE_INVALID) {
+                if (!begin_connection_attempt()) {
+                    DS5_LOG("[HCI] Pairing target ignored because another connection owns the transport\n");
+                    break;
+                }
                 DS5_LOG("[HCI] Connecting to %s...\n", bd_addr_to_str(current_device_addr));
                 new_pair = true;
+                link_key_t prior_key;
+                link_key_type_t prior_key_type = INVALID_LINK_KEY;
+                const bool had_prior_key = gap_get_link_key_for_bd_addr(
+                    current_device_addr,
+                    prior_key,
+                    &prior_key_type
+                );
+                if (
+                    !stage_pairing_transaction(
+                        current_device_addr,
+                        had_prior_key ? prior_key : nullptr,
+                        prior_key_type
+                    )
+                ) {
+                    DS5_LOG(
+                        "[HCI] Refuse explicit pairing because its durable transaction could not be staged\n"
+                    );
+                    clear_outbound_inquiry_target();
+                    fail_pending_connection_attempt();
+                    schedule_inquiry_retry();
+                    break;
+                }
+                pairing_authorized_session = true;
+                pairing_link_key_required = true;
+                current_link_key_persisted = false;
+                if (had_prior_key) {
+                    // Explicit pairing authorizes replacement of this target's
+                    // key only. The durable transaction restores it if no new
+                    // key is accepted.
+                    gap_drop_link_key_for_bd_addr(current_device_addr);
+                    link_key_t remaining_key;
+                    link_key_type_t remaining_type;
+                    if (
+                        gap_get_link_key_for_bd_addr(
+                            current_device_addr,
+                            remaining_key,
+                            &remaining_type
+                        )
+                    ) {
+                        DS5_LOG(
+                            "[HCI] Refuse explicit re-pair because prior bond could not be removed\n"
+                        );
+                        (void)restore_uncommitted_pairing_key(
+                            "failed prior bond removal"
+                        );
+                        clear_outbound_inquiry_target();
+                        fail_pending_connection_attempt();
+                        schedule_inquiry_retry();
+                        break;
+                    }
+                    stored_link_key_present = bt_has_stored_link_key();
+                    DS5_LOG("[HCI] Dropped target's prior link key for explicit re-pair\n");
+                }
+                acl_connection_outbound = true;
+                acl_disconnect_on_completion = false;
                 mark_acl_connection_pending();
-                HCI_SEND_CMD_LOGGED(&hci_create_connection, current_device_addr,
-                             hci_usable_acl_packet_types(), 0, 0, 0, 1);
-            } else if (!device_found && !acl_connection_pending && acl_handle == HCI_CON_HANDLE_INVALID) {
+                const uint16_t valid_clock_offset =
+                    (current_device_clock_offset & 0x7FFFu) | 0x8000u;
+                const uint8_t create_status = hci_send_cmd(
+                    &hci_create_connection,
+                    current_device_addr,
+                    hci_usable_acl_packet_types(),
+                    current_device_page_scan_repetition_mode,
+                    0,
+                    valid_clock_offset,
+                    1
+                );
+                if (create_status != ERROR_CODE_SUCCESS) {
+                    DS5_LOG(
+                        "[HCI] Classic create-connection submission failed status=0x%02X\n",
+                        create_status
+                    );
+                    (void)restore_uncommitted_pairing_key(
+                        "HCI create-connection submission failure"
+                    );
+                    clear_outbound_inquiry_target();
+                    clear_acl_connection_pending();
+                    acl_connection_outbound = false;
+                    acl_disconnect_on_completion = false;
+                    fail_pending_connection_attempt();
+                    schedule_inquiry_retry();
+                }
+            } else if (
+                pairing_window_active
+                && !device_found
+                && !acl_connection_pending
+                && acl_handle == HCI_CON_HANDLE_INVALID
+            ) {
                 schedule_inquiry_retry();
+            } else {
+                restore_passive_reconnect_scan();
             }
             break;
         }
@@ -1260,10 +2997,44 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                 (opcode == HCI_OPCODE_HCI_CREATE_CONNECTION || opcode == HCI_OPCODE_HCI_ACCEPT_CONNECTION_REQUEST)
                 && status != ERROR_CODE_SUCCESS
             ) {
+                (void)restore_uncommitted_pairing_key("ACL command rejection");
                 clear_outbound_inquiry_target();
                 clear_acl_connection_pending();
+                acl_connection_outbound = false;
+                acl_disconnect_on_completion = false;
+                fail_pending_connection_attempt();
                 DS5_LOG("[HCI] ACL connection command rejected, restart inquiry\n");
-                schedule_inquiry_retry();
+                if (pairing_window_active) {
+                    schedule_inquiry_retry();
+                } else {
+                    restore_passive_reconnect_scan();
+                }
+            }
+            if (
+                opcode == HCI_OPCODE_HCI_SET_CONNECTION_ENCRYPTION
+                && connection_phase == BtConnectionPhase::Securing
+                && acl_handle != HCI_CON_HANDLE_INVALID
+            ) {
+                if (status == ERROR_CODE_SUCCESS) {
+                    if (!encryption_completion_pending) {
+                        encryption_completion_pending = true;
+                        encryption_command_handle = acl_handle;
+                        encryption_command_generation = connection_generation;
+                        encryption_command_accepted_at_us = time_us_32();
+                    }
+                } else {
+                    DS5_LOG("[HCI] Encryption command rejected; recycle incomplete ACL\n");
+                    bt_disconnect();
+                }
+            }
+            if (
+                opcode == HCI_OPCODE_HCI_DISCONNECT
+                && connection_phase == BtConnectionPhase::Disconnecting
+                && status != ERROR_CODE_SUCCESS
+            ) {
+                disconnect_retry_waiting = false;
+                disconnect_retry_requested = true;
+                disconnect_retry_at_us = time_us_32() + DISCONNECT_RETRY_DELAY_US;
             }
             break;
         }
@@ -1279,22 +3050,64 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             const uint8_t status = hci_event_connection_complete_get_status(packet);
             if (status == 0) {
                 const hci_con_handle_t handle = hci_event_connection_complete_get_connection_handle(packet);
-                acl_handle = handle;
-                bt_rssi = 0;
-                bt_rssi_known = false;
-                bt_rssi_request_pending = false;
-                bt_rssi_last_request_us = 0;
+                bd_addr_t conn_addr;
+                hci_event_connection_complete_get_bd_addr(packet, conn_addr);
+                if (
+                    !pairing_authorized_session
+                    && !pairing_window_active
+                    && bt_blacklist_contains(conn_addr)
+                ) {
+                    DS5_LOG(
+                        "[HCI] Late connection from blacklisted %s on handle=0x%04X; disconnecting\n",
+                        bd_addr_to_str(conn_addr),
+                        handle
+                    );
+                    if (note_acl_connected(handle)) {
+                        bd_addr_copy(current_device_addr, conn_addr);
+                        clear_outbound_inquiry_target();
+                        clear_acl_connection_pending();
+                        acl_disconnect_on_completion = false;
+                        (void)bt_disconnect();
+                    } else {
+                        (void)gap_disconnect(handle);
+                    }
+                    break;
+                }
+                if (!note_acl_connected(handle)) {
+                    DS5_LOG("[HCI] Ignoring stale/duplicate ACL connection handle=0x%04X\n", handle);
+                    gap_disconnect(handle);
+                    break;
+                }
+                reset_signal_strength_session();
                 clear_acl_connection_pending();
                 device_found = false;
-                hci_event_connection_complete_get_bd_addr(packet, current_device_addr);
+                bd_addr_copy(current_device_addr, conn_addr);
+                gap_connectable_control(0);
+                gap_discoverable_control(0);
                 DS5_LOG("[HCI] ACL connected handle=0x%04X\n", handle);
-                DS5_LOG("[HCI] Request authentication on handle=0x%04X\n", handle);
-                HCI_SEND_CMD_LOGGED(&hci_authentication_requested, handle);
+                if (acl_disconnect_on_completion) {
+                    acl_disconnect_on_completion = false;
+                    acl_connection_outbound = false;
+                    DS5_LOG("[HCI] ACL completed after cancellation; disconnect before security setup\n");
+                    bt_disconnect();
+                    break;
+                }
+                acl_connection_outbound = false;
+                DS5_LOG("[HCI] Request GAP security level 2 on handle=0x%04X\n", handle);
+                gap_request_security_level(handle, LEVEL_2);
             } else {
+                (void)restore_uncommitted_pairing_key("ACL connection failure");
                 clear_outbound_inquiry_target();
                 clear_acl_connection_pending();
+                acl_connection_outbound = false;
+                acl_disconnect_on_completion = false;
+                fail_pending_connection_attempt();
                 DS5_LOG("[HCI] ACL connect failed status=0x%02X, restart inquiry\n", status);
-                schedule_inquiry_retry();
+                if (pairing_window_active) {
+                    schedule_inquiry_retry();
+                } else {
+                    restore_passive_reconnect_scan();
+                }
             }
             break;
         }
@@ -1304,7 +3117,9 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             hci_event_link_key_request_get_bd_addr(packet, addr);
             link_key_t link_key;
             link_key_type_t link_key_type;
-            bool link = gap_get_link_key_for_bd_addr(addr, link_key, &link_key_type);
+            bool link = !pairing_transaction_recovery_failed
+                && !bt_blacklist_contains(addr)
+                && gap_get_link_key_for_bd_addr(addr, link_key, &link_key_type);
             if (link) {
                 DS5_LOG("[HCI] Link key request from %s, reply stored key type=%u\n", bd_addr_to_str(addr),
                        (unsigned int) link_key_type);
@@ -1319,46 +3134,179 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
         case HCI_EVENT_USER_CONFIRMATION_REQUEST: {
             bd_addr_t addr;
             hci_event_user_confirmation_request_get_bd_addr(packet, addr);
-            DS5_LOG("[HCI] User confirmation request from %s, accept\n", bd_addr_to_str(addr));
-            HCI_SEND_CMD_LOGGED(&hci_user_confirmation_request_reply, addr);
+            const bool authorized = new_pair
+                && pairing_window_active
+                && bd_addr_cmp(addr, current_device_addr) == 0;
+            const int response = authorized
+                ? gap_ssp_confirmation_response(addr)
+                : gap_ssp_confirmation_negative(addr);
+            DS5_LOG("[HCI] User confirmation request from %s %s status=0x%02X\n",
+                    bd_addr_to_str(addr),
+                    authorized ? "accepted" : "rejected",
+                    response);
             break;
         }
 
         case HCI_EVENT_PIN_CODE_REQUEST: {
             bd_addr_t addr;
             hci_event_pin_code_request_get_bd_addr(packet, addr);
-            DS5_LOG("[HCI] Legacy pin request from %s, reply 0000\n", bd_addr_to_str(addr));
-            gap_pin_code_response(addr, "0000");
+            const bool authorized = new_pair
+                && pairing_window_active
+                && bd_addr_cmp(addr, current_device_addr) == 0;
+            const int response = authorized
+                ? gap_pin_code_response(addr, "0000")
+                : gap_pin_code_negative(addr);
+            DS5_LOG("[HCI] Legacy pin request from %s %s status=0x%02X\n",
+                    bd_addr_to_str(addr),
+                    authorized ? "accepted" : "rejected",
+                    response);
+            break;
+        }
+
+        case HCI_EVENT_LINK_KEY_NOTIFICATION: {
+            bd_addr_t addr;
+            hci_event_link_key_request_get_bd_addr(packet, addr);
+            const bool current_controller =
+                bd_addr_cmp(addr, current_device_addr) == 0
+                && connection_phase != BtConnectionPhase::Listening
+                && connection_phase != BtConnectionPhase::Disconnecting;
+            if (!current_controller) {
+                DS5_LOG("[HCI] Ignore link key notification from unowned controller %s\n",
+                        bd_addr_to_str(addr));
+                break;
+            }
+
+            current_link_key_persisted = persist_notified_link_key(
+                packet,
+                addr,
+                pairing_authorized_session,
+                current_link_security_ready(acl_handle)
+            );
+            stored_link_key_present = bt_has_stored_link_key();
+            if (!current_link_key_persisted) {
+                DS5_LOG("[HCI] Reject non-durable or unauthorized link key for %s\n",
+                        bd_addr_to_str(addr));
+                (void)restore_uncommitted_pairing_key(
+                    "link key persistence failure"
+                );
+                stored_link_key_present = bt_has_stored_link_key();
+                bt_disconnect();
+                break;
+            }
+
+            if (pairing_authorized_session) {
+                if (!mark_pairing_transaction_key_accepted(addr)) {
+                    DS5_LOG(
+                        "[HCI] Replacement key durable but transaction acceptance could not be recorded\n"
+                    );
+                    (void)restore_uncommitted_pairing_key(
+                        "pairing transaction acceptance failure"
+                    );
+                    stored_link_key_present = bt_has_stored_link_key();
+                    bt_disconnect();
+                    break;
+                }
+                if (!finalize_pairing_policy_for_addr(addr)) {
+                    DS5_LOG(
+                        "[HCI] Replacement key durable but pairing policy commit failed\n"
+                    );
+                    pairing_transaction_recovery_failed = true;
+                    bt_disconnect();
+                    break;
+                }
+                if (!discard_pairing_transaction()) {
+                    // The accepted key and policy are durable. Boot recovery
+                    // can safely repeat the idempotent policy commit.
+                    DS5_LOG(
+                        "[HCI] Pairing policy committed; transaction cleanup deferred to boot\n"
+                    );
+                }
+            }
+
+            pairing_link_key_required = false;
+            gap_discoverable_control(0);
+            gap_set_bondable_mode(0);
+            DS5_LOG("[HCI] Link key persisted for %s\n", bd_addr_to_str(addr));
+            finish_hid_session_if_ready();
             break;
         }
 
         case HCI_EVENT_AUTHENTICATION_COMPLETE: {
             const uint8_t status = hci_event_authentication_complete_get_status(packet);
             const hci_con_handle_t handle = hci_event_authentication_complete_get_connection_handle(packet);
+            if (!connection_handle_is_current(handle)) {
+                DS5_LOG("[HCI] Ignoring stale authentication event handle=0x%04X status=0x%02X\n",
+                        handle,
+                        status);
+                break;
+            }
+            if (connection_phase == BtConnectionPhase::Disconnecting) {
+                break;
+            }
             DS5_LOG("[HCI] Authentication complete handle=0x%04X status=0x%02X\n", handle, status);
             if (status != ERROR_CODE_SUCCESS) {
-                DS5_LOG("[HCI] Authentication failed, drop stored key for %s\n", bd_addr_to_str(current_device_addr));
-                gap_drop_link_key_for_bd_addr(current_device_addr);
+                if (
+                    (
+                        status == AUTHENTICATION_LMP_TRANSACTION_COLLISION
+                        || status == AUTHENTICATION_DIFFERENT_TRANSACTION_COLLISION
+                    )
+                    && authentication_retry_attempts < AUTHENTICATION_COLLISION_MAX_RETRIES
+                ) {
+                    authentication_retry_attempts++;
+                    authentication_retry_pending = true;
+                    authentication_retry_at_us = time_us_32()
+                        + AUTHENTICATION_COLLISION_RETRY_DELAY_US * authentication_retry_attempts;
+                    DS5_LOG("[HCI] Authentication collision; retry same ACL attempt=%u\n",
+                            authentication_retry_attempts);
+                    break;
+                }
+                if (status == AUTHENTICATION_PIN_OR_KEY_MISSING) {
+                    DS5_LOG("[HCI] Remote reports missing key; drop stale key for %s\n",
+                            bd_addr_to_str(current_device_addr));
+                    gap_drop_link_key_for_bd_addr(current_device_addr);
+                    stored_link_key_present = bt_has_stored_link_key();
+                } else {
+                    DS5_LOG("[HCI] Transient authentication failure; preserve stored pairing\n");
+                }
                 clear_outbound_inquiry_target();
                 clear_acl_connection_pending();
-                schedule_inquiry_retry();
+                bt_disconnect();
             } else {
-                HCI_SEND_CMD_LOGGED(&hci_set_connection_encryption, handle, 1);
+                clear_authentication_retry();
             }
             break;
         }
 
         case HCI_EVENT_ENCRYPTION_CHANGE: {
-            const uint8_t status = hci_event_encryption_change_get_status(packet);
-            const hci_con_handle_t handle = hci_event_encryption_change_get_connection_handle(packet);
-            const uint8_t enabled = hci_event_encryption_change_get_encryption_enabled(packet);
-            DS5_LOG("[HCI] Encryption change handle=0x%04X status=0x%02X enabled=%u\n", handle, status, enabled);
-            if (status == ERROR_CODE_SUCCESS && enabled) {
-                DS5_LOG("[L2CAP] Open HID channels\n");
-                schedule_hid_channel_recovery();
-                if (new_pair) {
-                    open_next_hid_channel_if_needed();
-                }
+            handle_encryption_change(
+                hci_event_encryption_change_get_connection_handle(packet),
+                hci_event_encryption_change_get_status(packet),
+                hci_event_encryption_change_get_encryption_enabled(packet)
+            );
+            break;
+        }
+
+        case HCI_EVENT_ENCRYPTION_CHANGE_V2: {
+            handle_encryption_change(
+                hci_event_encryption_change_v2_get_connection_handle(packet),
+                hci_event_encryption_change_v2_get_status(packet),
+                hci_event_encryption_change_v2_get_encryption_enabled(packet)
+            );
+            break;
+        }
+
+        case GAP_EVENT_SECURITY_LEVEL: {
+            const hci_con_handle_t handle = gap_event_security_level_get_handle(packet);
+            const gap_security_level_t level = static_cast<gap_security_level_t>(
+                gap_event_security_level_get_security_level(packet)
+            );
+            if (!connection_handle_is_current(handle)) {
+                break;
+            }
+            DS5_LOG("[HCI] GAP security level handle=0x%04X level=%u\n", handle, level);
+            if (level >= LEVEL_2) {
+                clear_encryption_completion();
+                begin_hid_channel_negotiation(handle);
             }
             break;
         }
@@ -1368,38 +3316,95 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             hci_event_connection_request_get_bd_addr(packet, addr);
             const uint32_t cod = hci_event_connection_request_get_class_of_device(packet);
             DS5_LOG("[HCI] Incoming ACL request from %s cod=0x%06x\n", bd_addr_to_str(addr), (unsigned int) cod);
-            if ((cod & 0x000F00) == 0x000500) {
+            if (classic_acl_connection_allowed(addr, false)) {
+                if (!begin_connection_attempt()) {
+                    break;
+                }
                 bd_addr_copy(current_device_addr, addr);
                 clear_outbound_inquiry_target();
+                link_key_t existing_key;
+                link_key_type_t existing_key_type;
+                current_link_key_persisted = gap_get_link_key_for_bd_addr(
+                    current_device_addr,
+                    existing_key,
+                    &existing_key_type
+                );
+                pairing_authorized_session = false;
+                pairing_link_key_required = !current_link_key_persisted;
+                acl_connection_outbound = false;
+                acl_disconnect_on_completion = false;
                 mark_acl_connection_pending();
                 inquiry_active = false;
-                gap_inquiry_stop();
-                HCI_SEND_CMD_LOGGED(&hci_accept_connection_request, addr, 0x01);
             }
             break;
         }
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
+            const uint8_t status = hci_event_disconnection_complete_get_status(packet);
+            const hci_con_handle_t disconnected_handle =
+                hci_event_disconnection_complete_get_connection_handle(packet);
+            if (
+                status != ERROR_CODE_SUCCESS
+                && connection_handle_is_current(disconnected_handle)
+                && connection_phase == BtConnectionPhase::Disconnecting
+            ) {
+                disconnect_retry_waiting = false;
+                disconnect_retry_requested = true;
+                disconnect_retry_at_us = time_us_32() + DISCONNECT_RETRY_DELAY_US;
+                DS5_LOG("[HCI] Disconnect completion failed handle=0x%04X status=0x%02X; retry queued\n",
+                        disconnected_handle,
+                        status);
+                break;
+            }
+            if (
+                status != ERROR_CODE_SUCCESS
+                || !connection_handle_is_current(disconnected_handle)
+            ) {
+                DS5_LOG("[HCI] Ignore stale disconnection status=0x%02X handle=0x%04X\n",
+                        status,
+                        disconnected_handle);
+                break;
+            }
+            const BtControllerDisconnectIntent disconnect_intent =
+                controller_disconnect_intent;
+            const bool expected_disconnect =
+                disconnect_intent != BtControllerDisconnectIntentNone;
             const bool host_suspended = usb_host_suspended_active();
-            usb_handle_controller_transport_disconnect();
+            if (
+                !restore_uncommitted_pairing_key(
+                    "disconnect before replacement key commit"
+                )
+            ) {
+                DS5_LOG(
+                    "[HCI] Pairing rollback incomplete; reconnect remains fail-closed\n"
+                );
+            }
+            usb_handle_controller_transport_disconnect(expected_disconnect);
             reset_controller_input_report_cache();
-            gap_connectable_control(1);
-            gap_discoverable_control(1);
             const uint8_t reason = hci_event_disconnection_complete_get_reason(packet);
             clear_outbound_inquiry_target();
             clear_acl_connection_pending();
+            acl_connection_outbound = false;
+            acl_disconnect_on_completion = false;
             inquiry_active = false;
+            disconnect_retry_requested = false;
+            disconnect_retry_waiting = false;
+            disconnect_retry_attempts = 0;
+            disconnect_retry_at_us = 0;
             acl_handle = HCI_CON_HANDLE_INVALID;
-            bt_rssi = 0;
-            bt_rssi_known = false;
-            bt_rssi_request_pending = false;
-            bt_rssi_last_request_us = 0;
+            reset_connection_session();
+            reset_signal_strength_session();
             hid_control_cid = 0;
             hid_interrupt_cid = 0;
+            hid_control_pending_cid = 0;
+            hid_interrupt_pending_cid = 0;
             hid_control_ready = false;
             hid_interrupt_ready = false;
+            hid_connection_initiator = HidConnectionInitiator::None;
+            hid_control_opened_at_us = 0;
             audio_handle_controller_disconnect();
             feature_data.clear();
+            clear_feature_prefetch_queue();
             controller_type = ControllerTypeUnknown;
             controller_type_check_pending = false;
             hid_channel_recovery_pending = false;
@@ -1408,13 +3413,24 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             reset_controller_output_session_locked();
             critical_section_exit(&queue_lock);
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
+            stored_link_key_present = bt_has_stored_link_key();
+            if (pairing_window_active) {
+                schedule_inquiry_retry();
+            } else {
+                restore_passive_reconnect_scan();
+            }
+            controller_disconnect_intent = BtControllerDisconnectIntentNone;
             if (host_suspended) {
                 DS5_LOG("[HCI] Disconnected reason=0x%02X while USB host suspended; keeping USB on bus\n", reason);
                 break;
             }
-            DS5_LOG("[HCI] Disconnected reason=0x%02X, power-cycle CYW43 then reboot Pico\n", reason);
-            power_down_cyw43_for_reboot();
-            watchdog_reboot(0, 0, CONTROLLER_DISCONNECT_REBOOT_DELAY_MS);
+            if (expected_disconnect) {
+                DS5_LOG("[HCI] Expected controller disconnect intent=%u reason=0x%02X; keeping Pico alive\n",
+                        static_cast<unsigned int>(disconnect_intent),
+                        reason);
+                break;
+            }
+            DS5_LOG("[HCI] Controller disconnected reason=0x%02X; keeping Pico alive for reconnect\n", reason);
             break;
         }
 
@@ -1424,6 +3440,10 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                 bt_rssi = static_cast<int8_t>(gap_event_rssi_measurement_get_rssi(packet));
                 bt_rssi_known = true;
                 bt_rssi_request_pending = false;
+                if (bt_rssi_pending_epoch == bt_rssi_idle_epoch) {
+                    bt_rssi_idle_epoch_armed = false;
+                }
+                bt_rssi_pending_epoch = 0;
             }
             break;
         }
@@ -1436,6 +3456,16 @@ static void note_output_packet_sent(const output_packet &packet, uint32_t now) {
         update_max_u32(output_counters.bt_send_gap_max_us, packet_age_us(now, last_bt_send_us));
     }
     last_bt_send_us = now;
+
+    if (ds5::classic_rumble::is_terminal_stop(
+            classic_rumble_delivery_kind(packet.reason)
+        )) {
+        if (consecutive_classic_rumble_stop_sends != 0xff) {
+            consecutive_classic_rumble_stop_sends++;
+        }
+    } else {
+        consecutive_classic_rumble_stop_sends = 0;
+    }
 
     if (packet.packet_class == OutputPacketAudio) {
         update_max_u32(output_counters.audio_0x36_max_age_us, age_us);
@@ -1462,6 +3492,9 @@ static void note_output_packet_sent(const output_packet &packet, uint32_t now) {
         output_counters.audio_0x36_sent_count++;
         output_counters.consecutive_state_sends = 0;
         consecutive_non_audio_sends = 0;
+        if (consecutive_audio_sends != 0xff) {
+            consecutive_audio_sends++;
+        }
         return;
     }
 
@@ -1485,6 +3518,7 @@ static void note_output_packet_sent(const output_packet &packet, uint32_t now) {
     if (consecutive_non_audio_sends < 255) {
         consecutive_non_audio_sends++;
     }
+    consecutive_audio_sends = 0;
 }
 
 static bool select_next_output_packet_locked(output_packet &packet, uint32_t now) {
@@ -1492,29 +3526,47 @@ static bool select_next_output_packet_locked(output_packet &packet, uint32_t now
         return false;
     }
 
+    const bool urgent_queued = !urgent_queue.empty();
+    const bool urgent_ready = urgent_queued
+        && bt_time_reached(now, urgent_queue.front().ready_at_us);
+    const auto urgent_delivery_kind = urgent_queued
+        ? classic_rumble_delivery_kind(urgent_queue.front().reason)
+        : ds5::classic_rumble::DeliveryKind::Other;
+
     uint8_t trace_critical_depth = 0;
     uint8_t trace_audio_depth = 0;
     uint8_t trace_route_flags = 0;
     output_trace_queue_details_locked(trace_critical_depth, trace_audio_depth, trace_route_flags);
 
-    if (!urgent_queue.empty()) {
+    if (
+        urgent_ready
+        && (
+            !ds5::classic_rumble::is_classic_rumble(urgent_delivery_kind)
+            || output_scheduler_classic_rumble_can_bypass_audio(
+                !audio_queue.empty(),
+                ds5::classic_rumble::is_terminal_stop(urgent_delivery_kind),
+                consecutive_classic_rumble_stop_sends,
+                consecutive_non_audio_sends
+            )
+        )
+    ) {
         packet = std::move(urgent_queue.front());
-        urgent_queue.pop();
+        urgent_queue.pop_front();
     } else {
         const bool audio_available = !audio_queue.empty();
-        const uint32_t audio_age_us = audio_available
-            ? packet_age_us(now, audio_queue.front().enqueue_time_us)
+        const uint32_t state_age_us = state_pending
+            ? packet_age_us(now, state_pending_since_us)
             : 0;
         const OutputSchedulerInputs scheduler_inputs{
             audio_available,
-            state_pending,
-            audio_age_us,
-            static_cast<uint32_t>(audio_queue.size()),
-            consecutive_non_audio_sends
+            urgent_ready,
+            state_pending && !urgent_queued,
+            consecutive_audio_sends,
+            state_age_us
         };
         constexpr OutputSchedulerConfig scheduler_config{
-            OUTPUT_AUDIO_MAX_AGE_US,
-            OUTPUT_MAX_CONSECUTIVE_NON_AUDIO_SENDS
+            OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS,
+            OUTPUT_STATE_MAX_AGE_US
         };
 
         const OutputSchedulerChoice choice = output_scheduler_choose_interrupt_packet(
@@ -1525,10 +3577,10 @@ static bool select_next_output_packet_locked(output_packet &packet, uint32_t now
         if (choice == OutputSchedulerChoice::AudioStream) {
             packet = std::move(audio_queue.front());
             audio_queue.pop();
+        } else if (choice == OutputSchedulerChoice::Urgent) {
+            packet = std::move(urgent_queue.front());
+            urgent_queue.pop_front();
         } else if (choice == OutputSchedulerChoice::CoalescedState) {
-            if (state_send_blocked_by_audio_locked(now)) {
-                return false;
-            }
             uint8_t report[DS_OUTPUT_REPORT_BT_SIZE];
             memcpy(report, state_pending_report, sizeof(report));
             if (!build_interrupt_output_packet(report, sizeof(report), packet.data)) {
@@ -1553,7 +3605,6 @@ static bool select_next_output_packet_locked(output_packet &packet, uint32_t now
         trace_audio_depth,
         trace_route_flags
     );
-    note_output_packet_sent(packet, now);
     update_queue_depth_counters_locked();
     return true;
 }
@@ -1595,6 +3646,102 @@ static uint64_t idle_disconnect_timeout_us() {
     return static_cast<uint64_t>(idle_disconnect_timeout_minutes) * 60ULL * 1000ULL * 1000ULL;
 }
 
+static bool requeue_managed_rumble_on_send_failure(
+    output_packet &&packet,
+    uint32_t now
+) {
+    const auto delivery_kind = classic_rumble_delivery_kind(packet.reason);
+    if (
+        packet.packet_class != OutputPacketUrgent
+        || !ds5::classic_rumble::tracks_delivery_state(delivery_kind)
+        || hid_interrupt_cid == 0
+    ) {
+        return false;
+    }
+
+    if (packet.retry_count != 0xff) {
+        packet.retry_count++;
+    }
+    if (ds5::classic_rumble::retry_requires_fail_closed(packet.retry_count)) {
+        DS5_LOG("[L2CAP] Managed rumble retry exhausted; disconnect HID\n");
+        (void)bt_disconnect();
+        critical_section_enter_blocking(&queue_lock);
+        clear_output_queues_locked();
+        critical_section_exit(&queue_lock);
+        return false;
+    }
+
+    packet.ready_at_us = now
+        + ds5::classic_rumble::retry_delay_us(packet.retry_count);
+    critical_section_enter_blocking(&queue_lock);
+    if (urgent_queue.size() >= URGENT_SEND_QUEUE_HARD_MAX_DEPTH) {
+        critical_section_exit(&queue_lock);
+        DS5_LOG("[L2CAP] Managed rumble retry reserve exhausted; disconnect HID\n");
+        (void)bt_disconnect();
+        critical_section_enter_blocking(&queue_lock);
+        clear_output_queues_locked();
+        critical_section_exit(&queue_lock);
+        return false;
+    }
+    ds5::classic_rumble::requeue_failed_front(
+        urgent_queue,
+        std::move(packet)
+    );
+    critical_section_exit(&queue_lock);
+    return true;
+}
+
+static void finish_hid_session_if_ready() {
+    if (!hid_control_ready || !hid_interrupt_ready) {
+        return;
+    }
+    if (pairing_link_key_required && !current_link_key_persisted) {
+        DS5_LOG("[HCI] HID ready; wait for durable link key before publishing controller\n");
+        return;
+    }
+    if (connection_phase == BtConnectionPhase::Ready) {
+        return;
+    }
+    if (connection_phase != BtConnectionPhase::HidOpening) {
+        return;
+    }
+    if (
+        pairing_authorized_session
+        && !bt_blacklist_remove(current_device_addr)
+    ) {
+        DS5_LOG("[BLACKLIST] Explicit pairing policy commit failed; disconnect controller\n");
+        (void)bt_disconnect();
+        return;
+    }
+
+    connection_phase = BtConnectionPhase::Ready;
+    connection_phase_started_us = 0;
+    cancel_hid_channel_recovery_if_ready();
+    // Wake-on-PS: the pad powers off during a real host sleep, so a
+    // reconnect while suspended is a wake request.
+    wake_on_bt_connect();
+    critical_section_enter_blocking(&queue_lock);
+    reset_controller_output_session_locked();
+    critical_section_exit(&queue_lock);
+
+    if (!mute[0]) {
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+    }
+    gap_connectable_control(0);
+    gap_discoverable_control(0);
+    gap_set_bondable_mode(0);
+    close_pairing_window(false);
+    const uint64_t now_us = time_us_64();
+    inactive_time = now_us;
+    arm_signal_strength_idle_epoch(now_us);
+
+    DS5_LOG("Init DualSense\n");
+    init_feature();
+    reset_lightbar_setup();
+    bt_set_lightbar_color(0x00, 0x00, 0xff, 100);
+    bt_schedule_lightbar_restore(250);
+}
+
 static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     (void) channel;
 
@@ -1604,20 +3751,30 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
             // DS5_HEXDUMP(packet, size);
             bt_data_callback(INTERRUPT, packet, size);
 
+            const uint64_t now_us = time_us_64();
+            const bool meaningful_input_activity =
+                controller_input_report_is_active(packet, size);
+            if (meaningful_input_activity) {
+                inactive_time = now_us;
+                arm_signal_strength_idle_epoch(now_us);
+            }
+
             // Inactivity detection.
             if (mute[1]) { // Microphone mute is enabled.
                 return;
             }
-            if (controller_input_report_is_active(packet, size)) {
-                inactive_time = time_us_32();
-            } else if (static_cast<uint64_t>(time_us_32() - inactive_time) > idle_disconnect_timeout_us()) {
+            if (!meaningful_input_activity && now_us - inactive_time > idle_disconnect_timeout_us()) {
                 DS5_LOG("disconnect when inactive\n");
-                inactive_time = time_us_32();
-                bt_disconnect();
+                inactive_time = now_us;
+                bt_disconnect_with_intent(BtControllerDisconnectIntentIdleTimeout);
             }
         } else if (channel == hid_control_cid) {
+            const bool edge_type_response =
+                size > 1
+                && packet[0] == 0xA3
+                && packet[1] == 0x70;
             if (controller_type_check_pending) {
-                if (size > 1 && packet[0] == 0xA3 && packet[1] == 0x70) {
+                if (edge_type_response) {
                     controller_type = ControllerTypeDualSenseEdge;
                     controller_type_check_pending = false;
                     DS5_LOG("[L2CAP] Connected controller detected as DualSense Edge\n");
@@ -1628,6 +3785,15 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                     DS5_LOG("[L2CAP] Connected controller detected as DualSense\n");
                     usb_handle_controller_transport_ready();
                 }
+            } else if (
+                edge_type_response
+                && controller_type == ControllerTypeDualSense
+            ) {
+                // The initial USB persona intentionally remains base DualSense,
+                // but a delayed 0x70 reply must still upgrade Edge-specific
+                // input handling after the fallback has already published.
+                controller_type = ControllerTypeDualSenseEdge;
+                DS5_LOG("[L2CAP] Late controller type response upgraded controller to DualSense Edge\n");
             }
             if (size >= 2 && packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
@@ -1651,86 +3817,156 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
         case L2CAP_EVENT_CHANNEL_OPENED: {
             const uint8_t status = l2cap_event_channel_opened_get_status(packet);
             const uint16_t local_cid = l2cap_event_channel_opened_get_local_cid(packet);
-            if (status == 0) {
-                const uint16_t psm = l2cap_event_channel_opened_get_psm(packet);
-                if (psm == PSM_HID_CONTROL) {
-                    DS5_LOG("[L2CAP] HID Control opened cid=0x%04X\n", local_cid);
-                    hid_control_cid = local_cid;
-                    hid_control_ready = true;
-                    hid_channel_recovery_attempts = 0;
-                    cancel_hid_channel_recovery_if_ready();
-                } else if (psm == PSM_HID_INTERRUPT) {
-                    DS5_LOG("[L2CAP] HID Interrupt opened cid=0x%04X\n", local_cid);
-                    hid_interrupt_cid = local_cid;
-                    hid_interrupt_ready = true;
-                    hid_channel_recovery_attempts = 0;
-                    cancel_hid_channel_recovery_if_ready();
-                    // Wake-on-PS: the pad powers off during a real host sleep, so a
-                    // reconnect while suspended is a wake request.
-                    wake_on_bt_connect();
-                    critical_section_enter_blocking(&queue_lock);
-                    reset_controller_output_session_locked();
-                    critical_section_exit(&queue_lock);
-
-                    if (!mute[0]) {
-                        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
-                    }
-                    gap_connectable_control(0);
-                    gap_discoverable_control(0);
-                    inactive_time = time_us_32();
-
-                    DS5_LOG("Init DualSense\n");
-
-                    init_feature();
-                    reset_lightbar_setup();
-                    bt_set_lightbar_color(0x00, 0x00, 0xff, 100);
-                    bt_schedule_lightbar_restore(250);
-
-                } else {
-                    DS5_LOG("[L2CAP] Unknown Channel psm: 0x%02X", psm);
+            const uint16_t psm = l2cap_event_channel_opened_get_psm(packet);
+            const hci_con_handle_t handle = l2cap_event_channel_opened_get_handle(packet);
+            if (!connection_handle_is_current(handle)) {
+                DS5_LOG("[L2CAP] Ignore stale channel open handle=0x%04X cid=0x%04X\n",
+                        handle,
+                        local_cid);
+                if (status == ERROR_CODE_SUCCESS) {
+                    l2cap_disconnect(local_cid);
                 }
-
-                /*if (hid_control_cid != 0 && hid_interrupt_cid != 0) {
-                    DS5_LOG("[L2CAP] HID channels ready, request CAN_SEND_NOW for SET_PROTOCOL\n");
-                    l2cap_request_can_send_now_event(hid_control_cid);
-                }*/
-            } else {
-                const uint16_t psm = l2cap_event_channel_opened_get_psm(packet);
-                hid_control_cid = 0;
-                hid_interrupt_cid = 0;
-                hid_control_ready = false;
-                hid_interrupt_ready = false;
-                hid_channel_recovery_pending = false;
-                hid_channel_recovery_attempts = 0;
-                clear_outbound_inquiry_target();
-                DS5_LOG("[L2CAP] Open failed psm=0x%04X status=0x%02X\n", psm, status);
-                bt_disconnect();
+                break;
             }
+
+            uint16_t *pending_cid = nullptr;
+            if (psm == PSM_HID_CONTROL) {
+                pending_cid = &hid_control_pending_cid;
+            } else if (psm == PSM_HID_INTERRUPT) {
+                pending_cid = &hid_interrupt_pending_cid;
+            }
+            if (pending_cid == nullptr || *pending_cid != local_cid) {
+                DS5_LOG("[L2CAP] Ignore duplicate/unowned channel open psm=0x%04X cid=0x%04X\n",
+                        psm,
+                        local_cid);
+                if (status == ERROR_CODE_SUCCESS) {
+                    l2cap_disconnect(local_cid);
+                }
+                break;
+            }
+            *pending_cid = 0;
+
+            if (status != ERROR_CODE_SUCCESS) {
+                if (
+                    psm == PSM_HID_CONTROL
+                    && hid_connection_initiator == HidConnectionInitiator::Local
+                ) {
+                    hid_connection_initiator = HidConnectionInitiator::None;
+                }
+                DS5_LOG("[L2CAP] Open failed psm=0x%04X cid=0x%04X status=0x%02X; retry\n",
+                        psm,
+                        local_cid,
+                        status);
+                schedule_hid_channel_recovery();
+                break;
+            }
+
+            if (psm == PSM_HID_CONTROL) {
+                DS5_LOG("[L2CAP] HID Control opened cid=0x%04X\n", local_cid);
+                hid_control_cid = local_cid;
+                hid_control_ready = true;
+                hid_control_opened_at_us = time_us_32();
+                note_connection_phase_started();
+                hid_channel_recovery_attempts = 0;
+                if (hid_connection_initiator == HidConnectionInitiator::Remote) {
+                    DS5_LOG("[L2CAP] Controller opened HID Control; await controller-owned Interrupt\n");
+                    hid_channel_recovery_pending = false;
+                } else {
+                    schedule_hid_channel_recovery();
+                }
+            } else {
+                DS5_LOG("[L2CAP] HID Interrupt opened cid=0x%04X\n", local_cid);
+                hid_interrupt_cid = local_cid;
+                hid_interrupt_ready = true;
+                hid_control_opened_at_us = 0;
+                note_connection_phase_started();
+                hid_channel_recovery_attempts = 0;
+            }
+            finish_hid_session_if_ready();
             break;
         }
 
         case L2CAP_EVENT_INCOMING_CONNECTION: {
             const uint16_t local_cid = l2cap_event_incoming_connection_get_local_cid(packet);
             const uint16_t psm = l2cap_event_incoming_connection_get_psm(packet);
-            DS5_LOG("[L2CAP] Incoming connection psm=0x%04X cid=0x%04X\n", psm, local_cid);
+            const hci_con_handle_t handle = l2cap_event_incoming_connection_get_handle(packet);
+            DS5_LOG("[L2CAP] Incoming connection handle=0x%04X psm=0x%04X cid=0x%04X\n",
+                    handle,
+                    psm,
+                    local_cid);
+            if (!current_link_security_ready(handle) || !begin_hid_opening(handle)) {
+                DS5_LOG("[L2CAP] Decline unowned incoming HID channel\n");
+                l2cap_decline_connection(local_cid);
+                break;
+            }
+            if (psm == PSM_HID_CONTROL) {
+                if (hid_control_cid != 0 || hid_control_pending_cid != 0) {
+                    DS5_LOG("[L2CAP] Decline duplicate HID Control channel\n");
+                    l2cap_decline_connection(local_cid);
+                    break;
+                }
+                hid_connection_initiator = HidConnectionInitiator::Remote;
+                hid_channel_recovery_pending = false;
+                hid_channel_recovery_attempts = 0;
+                hid_control_pending_cid = local_cid;
+            } else if (psm == PSM_HID_INTERRUPT) {
+                const bool control_owned = hid_control_ready || hid_control_pending_cid != 0;
+                if (!control_owned || hid_interrupt_cid != 0 || hid_interrupt_pending_cid != 0) {
+                    DS5_LOG("[L2CAP] Decline out-of-order/duplicate HID Interrupt channel\n");
+                    l2cap_decline_connection(local_cid);
+                    break;
+                }
+                hid_interrupt_pending_cid = local_cid;
+            } else {
+                DS5_LOG("[L2CAP] Decline unsupported PSM=0x%04X\n", psm);
+                l2cap_decline_connection(local_cid);
+                break;
+            }
             l2cap_accept_connection(local_cid);
             break;
         }
 
         case L2CAP_EVENT_CHANNEL_CLOSED: {
             const uint16_t local_cid = l2cap_event_channel_closed_get_local_cid(packet);
+            bool owned_channel = true;
             if (local_cid == hid_control_cid) {
                 hid_control_cid = 0;
                 hid_control_ready = false;
+                hid_control_opened_at_us = 0;
+                if (hid_connection_initiator == HidConnectionInitiator::Local) {
+                    hid_connection_initiator = HidConnectionInitiator::None;
+                }
                 DS5_LOG("[L2CAP] HID Control closed cid=0x%04X\n", local_cid);
             } else if (local_cid == hid_interrupt_cid) {
                 hid_interrupt_cid = 0;
                 hid_interrupt_ready = false;
                 DS5_LOG("[L2CAP] HID Interrupt closed cid=0x%04X\n", local_cid);
+            } else if (local_cid == hid_control_pending_cid) {
+                hid_control_pending_cid = 0;
+                if (hid_connection_initiator == HidConnectionInitiator::Local) {
+                    hid_connection_initiator = HidConnectionInitiator::None;
+                }
+                DS5_LOG("[L2CAP] Pending HID Control closed cid=0x%04X\n", local_cid);
+            } else if (local_cid == hid_interrupt_pending_cid) {
+                hid_interrupt_pending_cid = 0;
+                DS5_LOG("[L2CAP] Pending HID Interrupt closed cid=0x%04X\n", local_cid);
             } else {
-                DS5_LOG("[L2CAP] Channel closed cid=0x%04X\n", local_cid);
+                owned_channel = false;
+                DS5_LOG("[L2CAP] Ignore stale channel close cid=0x%04X\n", local_cid);
             }
-            if (hid_control_cid == 0 && hid_interrupt_cid == 0) {
+            if (!owned_channel) {
+                break;
+            }
+            if (connection_phase == BtConnectionPhase::Ready) {
+                connection_phase = BtConnectionPhase::HidOpening;
+                note_connection_phase_started();
+            }
+            if (
+                hid_control_cid == 0
+                && hid_interrupt_cid == 0
+                && hid_control_pending_cid == 0
+                && hid_interrupt_pending_cid == 0
+            ) {
                 bt_disconnect();
             } else {
                 schedule_hid_channel_recovery();
@@ -1740,6 +3976,9 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
 
         case L2CAP_EVENT_CAN_SEND_NOW: {
             // DS5_LOG("[L2CAP] L2CAP_EVENT_CAN_SEND_NOW\n");
+            if (connection_phase == BtConnectionPhase::Disconnecting) {
+                break;
+            }
             const uint16_t local_cid = l2cap_event_can_send_now_get_local_cid(packet);
             if (local_cid == hid_control_cid) {
                 control_packet next_packet{};
@@ -1767,6 +4006,7 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
             if (local_cid != hid_interrupt_cid) {
                 break;
             }
+            interrupt_can_send_event_requested = false;
 
             output_packet next_packet{};
             const uint32_t now = time_us_32();
@@ -1775,7 +4015,7 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                 critical_section_exit(&queue_lock);
                 break;
             }
-            const bool has_more = output_pending_locked();
+            bool has_more = output_pending_locked();
             bool should_request_control = false;
             request_control_if_audio_window_open_locked(now, should_request_control);
             critical_section_exit(&queue_lock);
@@ -1783,7 +4023,18 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
             uint8_t status = l2cap_send(hid_interrupt_cid, next_packet.data.data(), next_packet.data.size());
             if (status != 0) {
                 DS5_LOG("[L2CAP] Interrupt Error, Status: 0x%02X\n", status);
+                if (requeue_managed_rumble_on_send_failure(std::move(next_packet), now)) {
+                    // The failed transition remains at the head until its
+                    // bounded backoff expires. Audio may continue meanwhile.
+                    critical_section_enter_blocking(&queue_lock);
+                    has_more = !audio_queue.empty() || state_pending;
+                    critical_section_exit(&queue_lock);
+                }
             } else if (!next_packet.data.empty()) {
+                critical_section_enter_blocking(&queue_lock);
+                note_output_packet_sent(next_packet, time_us_32());
+                has_more = has_more || output_pending_locked();
+                critical_section_exit(&queue_lock);
 #ifdef ENABLE_COMPANION
                 companion_note_trigger_trace_report(
                     CompanionTriggerTraceBt,
@@ -1803,9 +4054,7 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                 );
 #endif
             }
-            if (has_more) {
-                l2cap_request_can_send_now_event(hid_interrupt_cid);
-            }
+            request_can_send_if_needed(has_more);
             request_control_can_send_if_needed(should_request_control);
             break;
         }
@@ -1829,10 +4078,17 @@ static void request_can_send_if_needed(bool should_request_send) {
     if (!should_request_send) {
         return;
     }
+    if (connection_phase == BtConnectionPhase::Disconnecting) {
+        return;
+    }
     if (hid_interrupt_cid == 0) {
         DS5_LOG("[L2CAP output] Warning: hid_interrupt_cid 0\n");
         return;
     }
+    if (interrupt_can_send_event_requested) {
+        return;
+    }
+    interrupt_can_send_event_requested = true;
     l2cap_request_can_send_now_event(hid_interrupt_cid);
 }
 
@@ -1863,18 +4119,6 @@ static bool headset_audio_send_window_closed_locked(uint32_t now) {
         && elapsed_us < CONTROL_SEND_HEADSET_AUDIO_IDLE_US;
 }
 
-static bool state_send_blocked_by_audio_locked(uint32_t now) {
-    if (!speaker_output_enabled || !audio_queue.empty()) {
-        return false;
-    }
-    if (last_audio_0x36_send_us == 0) {
-        return false;
-    }
-
-    const uint32_t elapsed_us = packet_age_us(now, last_audio_0x36_send_us);
-    return elapsed_us < CONTROL_SEND_HEADSET_AUDIO_IDLE_US;
-}
-
 static void request_control_if_audio_window_open_locked(uint32_t now, bool &should_request_control) {
     should_request_control = control_pending_locked() && !headset_audio_send_window_closed_locked(now);
 }
@@ -1893,9 +4137,11 @@ static bool make_output_packet(
         return false;
     }
     packet.enqueue_time_us = time_us_32();
+    packet.ready_at_us = packet.enqueue_time_us;
     packet.packet_class = packet_class;
     packet.report_id = len > 0 ? data[0] : 0;
     packet.reason = reason;
+    packet.retry_count = 0;
     return true;
 }
 
@@ -1906,16 +4152,40 @@ static bool enqueue_urgent_output(uint8_t *data, uint16_t len, uint8_t reason) {
     }
 
     bool should_request_send = false;
+    bool hard_limit_reached = false;
     critical_section_enter_blocking(&queue_lock);
     should_request_send = !output_pending_locked();
-    if (reason == OutputReasonClassicRumbleImmediate) {
+    const auto admission = ds5::classic_rumble::enqueue_with_soft_cap(
+        urgent_queue,
+        std::move(packet),
+        URGENT_SEND_QUEUE_MAX_DEPTH,
+        URGENT_SEND_QUEUE_HARD_MAX_DEPTH,
+        [](output_packet const &queued) {
+            return classic_rumble_delivery_kind(queued.reason);
+        }
+    );
+    hard_limit_reached =
+        admission == ds5::classic_rumble::AdmissionResult::HardCapReached;
+    const bool enqueued =
+        admission == ds5::classic_rumble::AdmissionResult::Enqueued;
+    if (enqueued && ds5::classic_rumble::is_classic_rumble(
+            classic_rumble_delivery_kind(reason)
+        )) {
+        // Existing 0x36 carriers must not overwrite the newly admitted host
+        // or managed rumble command with an older cached snapshot.
         mirror_pending_classic_rumble_locked(data, len);
     }
-    while (urgent_queue.size() >= URGENT_SEND_QUEUE_MAX_DEPTH) {
-        urgent_queue.pop();
-    }
-    urgent_queue.push(std::move(packet));
     critical_section_exit(&queue_lock);
+    if (!enqueued) {
+        if (
+            hard_limit_reached
+            && reason == OutputReasonClassicRumbleManagedStop
+        ) {
+            DS5_LOG("[L2CAP] Managed rumble STOP reserve exhausted; disconnect HID\n");
+            (void)bt_disconnect();
+        }
+        return false;
+    }
     request_can_send_if_needed(should_request_send);
     return true;
 }
@@ -2161,7 +4431,8 @@ static void mirror_pending_classic_rumble_locked(uint8_t const *data, uint16_t l
     if (state_pending) {
         (void)mirror_classic_rumble_in_report(state_pending_report, sizeof(state_pending_report), data, len);
     }
-    mirror_packet_queue_classic_rumble_locked(urgent_queue, data, len);
+    // Complete host reports already queued in the urgent lane are immutable.
+    // Only cached state carriers are refreshed to avoid stale-rumble replay.
     mirror_packet_queue_classic_rumble_locked(audio_queue, data, len);
 }
 
@@ -2391,7 +4662,17 @@ static bool output_report_is_classic_rumble_transition(uint8_t const *data, uint
 
 static bool enqueue_classic_rumble_immediate_or_state_output(uint8_t *data, uint16_t len, uint8_t reason) {
     if (output_report_is_classic_rumble_transition(data, len)) {
-        if (!enqueue_urgent_output(data, len, OutputReasonClassicRumbleImmediate)) {
+        uint8_t const *payload = nullptr;
+        uint16_t payload_len = 0;
+        const bool managed_stop =
+            output_report_payload(data, len, payload, payload_len)
+            && payload_len > OUTPUT_PAYLOAD_MOTOR_LEFT_OFFSET
+            && (payload[OUTPUT_PAYLOAD_MOTOR_RIGHT_OFFSET]
+                | payload[OUTPUT_PAYLOAD_MOTOR_LEFT_OFFSET]) == 0;
+        const uint8_t transition_reason = managed_stop
+            ? OutputReasonClassicRumbleManagedStop
+            : OutputReasonClassicRumbleImmediate;
+        if (!enqueue_urgent_output(data, len, transition_reason)) {
             return false;
         }
         remember_classic_rumble_state_from_output(data, len);
@@ -2660,13 +4941,11 @@ static bool enqueue_state_output(uint8_t *data, uint16_t len, uint8_t reason) {
         return false;
     }
     const uint32_t now = time_us_32();
-    bool should_request_send = false;
     critical_section_enter_blocking(&queue_lock);
     merge_state_output_locked(data, len, now, reason);
-    should_request_send = !state_send_blocked_by_audio_locked(now);
     update_queue_depth_counters_locked();
     critical_section_exit(&queue_lock);
-    request_can_send_if_needed(should_request_send);
+    request_can_send_if_needed(true);
     return true;
 }
 
@@ -2680,9 +4959,13 @@ void bt_write(uint8_t *data, uint16_t len) {
 
 bool bt_write_classified_output(uint8_t *data, uint16_t len) {
     output_counters.normal_0x31_rx_count++;
-    bt_sanitize_host_speaker_amp_ownership(data, len);
-    bt_sanitize_host_mic_ownership(data, len);
-    apply_classic_rumble_gain(data, len);
+    uint8_t *payload = nullptr;
+    uint16_t payload_len = 0;
+    if (!output_report_payload(data, len, payload, payload_len)) {
+        return false;
+    }
+    apply_player_led_policy_to_payload(payload, payload_len);
+
     uint8_t trace_critical_depth = 0;
     uint8_t trace_audio_depth = 0;
     uint8_t trace_route_flags = 0;
@@ -2700,84 +4983,37 @@ bool bt_write_classified_output(uint8_t *data, uint16_t len) {
         0
     );
 #endif
-    const bool audio_protected = audio_output_route_protected();
-    const bool classic_rumble_transition = output_report_is_classic_rumble_transition(data, len);
-    const bool stripped_redundant_classic_rumble =
-        !classic_rumble_transition && strip_redundant_classic_rumble_from_output(data, len);
-    if (speaker_output_enabled && audio_protected && !classic_rumble_transition) {
-        const uint8_t reason = classify_output_report(data, len);
-        uint8_t trace_transform_flags = OutputTraceTransformAudioProtected;
-        if (stripped_redundant_classic_rumble) {
-            trace_transform_flags |= OutputTraceTransformStrippedZeroRumble;
-        }
-        if (output_report_has_feedback_state_flags(data, len)) {
-            trace_transform_flags |= OutputTraceTransformFeedbackState;
-        }
-        if (output_report_has_state_flags(data, len)) {
-            trace_transform_flags |= OutputTraceTransformState;
-        }
-#ifdef ENABLE_COMPANION
-        companion_note_trigger_trace_report(CompanionTriggerTraceBridgeOut, data, len, reason);
-        companion_note_feedback_trace_report(
-            CompanionFeedbackTraceBridgeOut,
-            data,
-            len,
-            reason,
-            trace_critical_depth,
-            trace_audio_depth,
-            trace_route_flags,
-            trace_transform_flags
-        );
-#endif
-        return true;
-    }
-    const bool split_state = split_state_from_mixed_output(data, len);
-    const uint8_t reason = classify_output_report(data, len);
-    uint8_t trace_transform_flags = 0;
-    if (split_state) {
-        trace_transform_flags |= OutputTraceTransformSplitState;
-    }
-    if (audio_protected) {
-        trace_transform_flags |= OutputTraceTransformAudioProtected;
-    }
-    if (classic_rumble_transition) {
-        trace_transform_flags |= OutputTraceTransformClassicRumble;
-    }
-    if (stripped_redundant_classic_rumble) {
-        trace_transform_flags |= OutputTraceTransformStrippedZeroRumble;
-    }
-    if (output_report_has_feedback_state_flags(data, len)) {
-        trace_transform_flags |= OutputTraceTransformFeedbackState;
-    }
-    if (output_report_has_state_flags(data, len)) {
-        trace_transform_flags |= OutputTraceTransformState;
+    // Normal host/persona output remains one complete pass-through report.
+    // Configured ownership sanitizers and rumble gain are applied by the
+    // caller before admission; this transport does not infer START/STOP or
+    // split composite trigger, LED, audio, and rumble updates.
+    const bool enqueued = enqueue_urgent_output(
+        data,
+        len,
+        OutputReasonHostPassthrough
+    );
+    if (enqueued) {
+        classic_rumble_state = ControllerOutputRumbleStateMachine{};
     }
 #ifdef ENABLE_COMPANION
-    companion_note_trigger_trace_report(CompanionTriggerTraceBridgeOut, data, len, reason);
+    companion_note_trigger_trace_report(
+        CompanionTriggerTraceBridgeOut,
+        data,
+        len,
+        OutputReasonHostPassthrough
+    );
     companion_note_feedback_trace_report(
         CompanionFeedbackTraceBridgeOut,
         data,
         len,
-        reason,
+        OutputReasonHostPassthrough,
         trace_critical_depth,
         trace_audio_depth,
         trace_route_flags,
-        trace_transform_flags
+        OutputTraceTransformClassicRumble
     );
 #endif
-    if (reason == OutputReasonStateNoop) {
-        if (!classic_rumble_transition) {
-            return true;
-        }
-        return enqueue_classic_rumble_immediate_or_state_output(data, len, OutputReasonClassicRumbleImmediate);
-    }
-    if (reason != OutputReasonStateOnly) {
-        if (output_report_has_state_flags(data, len)) {
-            return enqueue_classic_rumble_immediate_or_state_output(data, len, OutputReasonStateOnly);
-        }
-        return true;
-    }
-    return enqueue_classic_rumble_immediate_or_state_output(data, len, reason);
+    return enqueued;
 }
 
 bool bt_write_audio_stream(uint8_t *data, uint16_t len) {
@@ -2791,7 +5027,9 @@ bool bt_write_audio_stream(uint8_t *data, uint16_t len) {
     uint8_t trace_audio_depth = 0;
     uint8_t trace_route_flags = 0;
     critical_section_enter_blocking(&queue_lock);
-    should_request_send = !output_pending_locked();
+    // Audio must remain runnable while a failed managed rumble transition is
+    // waiting for its bounded retry deadline.
+    should_request_send = true;
     while (audio_queue.size() >= AUDIO_SEND_QUEUE_MAX_DEPTH) {
 #ifdef ENABLE_COMPANION
         if (!audio_queue.front().data.empty()) {
@@ -2849,6 +5087,7 @@ void bt_reset_output_debug_stats() {
     last_audio_0x36_send_us = 0;
     non_audio_reports_since_audio = 0;
     consecutive_non_audio_sends = 0;
+    consecutive_audio_sends = 0;
     update_queue_depth_counters_locked();
     critical_section_exit(&queue_lock);
 }
@@ -2917,12 +5156,12 @@ void set_feature_data(uint8_t reportId, uint8_t const* data,uint16_t len) {
 
 void init_feature() {
     controller_type = ControllerTypeUnknown;
-    feature_prefetch_active = true;
-    get_feature_data(0x09, 20);
-    get_feature_data(0x20, 64);
-    get_feature_data(0x22, 64);
-    get_feature_data(0x05, 41);
+    clear_feature_prefetch_queue();
     controller_type_check_pending = true;
-    get_feature_data(0x70, 64);
-    feature_prefetch_active = false;
+    schedule_feature_prefetch(0x70, 64);
+    schedule_feature_prefetch(0x09, 20);
+    schedule_feature_prefetch(0x20, 64);
+    schedule_feature_prefetch(0x22, 64);
+    schedule_feature_prefetch(0x05, 41);
+    feature_prefetch_next_us = time_us_32();
 }

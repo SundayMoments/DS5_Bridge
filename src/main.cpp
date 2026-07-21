@@ -20,14 +20,17 @@
 #include "controller_report.h"
 #include "dualsense_input_decoder.h"
 #include "dualsense_output.h"
+#include "firmware_log.h"
 #include "persona/ds4_persona.h"
 #include "persona/dualsense_persona.h"
 #include "persona/host_persona.h"
 #include "persona/xusb360_usb.h"
+#include "watchdog_telemetry.h"
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
 #include "pico/cyw43_arch.h"
+#include "pico/stdlib.h"
 #include "pico/time.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
@@ -48,6 +51,13 @@ enum HidDebugKind : uint8_t {
 
 static uint32_t last_input_debug_us = 0;
 static uint8_t input_debug_burst_remaining = 0;
+
+#define RUN_MAIN_PHASE(phase_id, block) \
+    do { \
+        watchdog_telemetry_note_phase(phase_id); \
+        block \
+        watchdog_update(); \
+    } while (0)
 
 static void note_usb_input_report(uint8_t const *report, uint16_t len) {
 #if !DS5_AUDIO_DEBUG_ENABLED
@@ -126,12 +136,28 @@ void controller_output_submit_usb_payload(uint8_t const *payload, uint16_t paylo
             companion_note_host_output_report(forwardedHostReport, forwardedLen);
         }
     }
+#endif
+
+    // Apply configured ownership overrides before the one complete report is
+    // admitted. Classic-rumble gain is the sole normal rumble transform.
+    controller_output_policy_sanitize_host_lightbar_payload(
+        outputData + 3,
+        payloadLen,
+        lightbarOverride
+    );
+    bt_sanitize_host_speaker_amp_ownership(outputData, sizeof(outputData));
+    bt_sanitize_host_mic_ownership(outputData, sizeof(outputData));
+    controller_output_policy_apply_classic_rumble_gain_payload(
+        outputData + 3,
+        payloadLen
+    );
+
     uint8_t audioStateData[sizeof(outputData) - 3]{};
     if (payloadLen > 0) {
         memcpy(audioStateData, outputData + 3, payloadLen);
     }
-    // 0x36 carries an audio-state snapshot while speaker streaming. Strip
-    // game LEDs only when the companion lightbar override is explicitly on.
+    // A later 0x36 carrier mirrors the same accepted motor strength while
+    // retaining bridge-owned speaker, microphone, and lightbar fields.
     controller_output_policy_sanitize_host_lightbar_payload(
         audioStateData,
         payloadLen,
@@ -139,25 +165,12 @@ void controller_output_submit_usb_payload(uint8_t const *payload, uint16_t paylo
     );
     controller_output_policy_sanitize_host_speaker_amp_payload(audioStateData, payloadLen);
     controller_output_policy_sanitize_host_mic_payload(audioStateData, payloadLen);
-    controller_output_policy_apply_classic_rumble_gain_payload(audioStateData, payloadLen);
-    audio_set_state_data(audioStateData, static_cast<uint8_t>(payloadLen));
-#else
-    uint8_t audioStateData[sizeof(outputData) - 3]{};
-    if (payloadLen > 0) {
-        memcpy(audioStateData, outputData + 3, payloadLen);
+
+    if (!bt_write_classified_output(outputData, sizeof(outputData))) {
+        // Do not publish rejected output into future audio carriers.
+        return;
     }
-    controller_output_policy_sanitize_host_lightbar_payload(audioStateData, payloadLen, false);
-    controller_output_policy_sanitize_host_speaker_amp_payload(audioStateData, payloadLen);
-    controller_output_policy_sanitize_host_mic_payload(audioStateData, payloadLen);
-    controller_output_policy_apply_classic_rumble_gain_payload(audioStateData, payloadLen);
     audio_set_state_data(audioStateData, static_cast<uint8_t>(payloadLen));
-#endif
-    // Keep app-controlled lighting authoritative when override is active.
-    controller_output_policy_sanitize_host_lightbar_payload(outputData + 3, payloadLen, lightbarOverride);
-    controller_output_policy_sanitize_host_mic_report(outputData, sizeof(outputData));
-    // Haptics gain is applied to audio samples. Output report motor
-    // bytes are classic rumble and must follow the rumble setting.
-    bt_write_classified_output(outputData, sizeof(outputData));
     if (hostClearsLeds && !lightbarOverride) {
         bt_schedule_lightbar_restore(HOST_LIGHTBAR_RESTORE_DELAY_MS);
     }
@@ -551,8 +564,24 @@ int main() {
 #endif
 
     board_init();
+    watchdog_telemetry_boot_capture();
+    firmware_log_init();
     usb_device_stack_init_disconnected();
+#if DS5_DEBUG_LOGS_ENABLED
+    // TinyUSB's board_init() configures its UART at 115200. Reinitialize stdio
+    // after the custom USB stack so diagnostic builds use the configured baud.
+    stdio_init_all();
+#endif
     board_init_after_tusb();
+    firmware_log_init_btstack_sink();
+
+    // CYW43 initialization also initializes BTstack's flash-backed TLV store.
+    // Core 1 must already be servicing cooperative XIP pause requests before
+    // that store can erase, repair, or write its bank header safely.
+    if (!audio_init()) {
+        DS5_LOG("Failed to initialize core 1 flash safety\n");
+        return 1;
+    }
 
     if (cyw43_arch_init()) {
         DS5_LOG("Failed to initialize CYW43\n");
@@ -560,17 +589,21 @@ int main() {
     }
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
-    if (watchdog_caused_reboot()) {
+    if (watchdog_enable_caused_reboot()) {
         DS5_LOG("Rebooted by Watchdog!\n");
-        // Blink the LED three times after a crash reboot.
-        for (int i = 0;i < 6;i++) {
-            if (i % 2 == 0) {
-                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
-            }else {
-                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
-            }
-            sleep_ms(500);
-        }
+        WatchdogTelemetrySnapshot watchdog_snapshot{};
+        watchdog_telemetry_snapshot(&watchdog_snapshot);
+        DS5_LOG(
+            "[Watchdog] retained phase=%s(%u) valid=%u sequence=%lu "
+            "enteredAtMs=%lu\n",
+            watchdog_telemetry_phase_name(watchdog_snapshot.prior_phase),
+            static_cast<unsigned int>(watchdog_snapshot.prior_phase),
+            watchdog_snapshot.prior_snapshot_valid ? 1u : 0u,
+            static_cast<unsigned long>(watchdog_snapshot.prior_sequence),
+            static_cast<unsigned long>(
+                watchdog_snapshot.prior_phase_entered_at_ms
+            )
+        );
     } else {
         DS5_LOG("Clean boot\n");
     }
@@ -584,27 +617,70 @@ int main() {
     bt_init();
     bt_register_data_callback(on_bt_data);
 
-    audio_init();
     wake_init();
 
     watchdog_enable(1000, true);
 
     while (1) {
         watchdog_update();
+        watchdog_telemetry_note_phase(WatchdogMainLoopPhase::Cyw43);
         cyw43_arch_poll();
-        tud_task();
-        interrupt_loop();
-        usb_pm_poll();
-        wake_task();
-        audio_loop();
-        button_check();
-        bt_lightbar_loop();
-        bt_signal_strength_loop();
-        bt_inquiry_loop();
-        bt_connection_recovery_loop();
+        watchdog_update();
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
+            tud_task();
+        });
+        RUN_MAIN_PHASE(
+            WatchdogMainLoopPhase::FirmwareLogFlush,
+            {
+                firmware_log_flush_live();
+            }
+        );
+        RUN_MAIN_PHASE(
+            WatchdogMainLoopPhase::InterruptBeforeAudio,
+            {
+                interrupt_loop();
+            }
+        );
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::UsbPower, {
+            usb_pm_poll();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Wake, {
+            wake_task();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Audio, {
+            audio_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Button, {
+            button_check();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Lightbar, {
+            bt_lightbar_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Rssi, {
+            bt_signal_strength_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Inquiry, {
+            bt_inquiry_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::ConnectionRecovery, {
+            bt_connection_recovery_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::FeaturePrefetch, {
+            bt_feature_prefetch_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::OutputRetry, {
+            bt_output_retry_loop();
+        });
 #ifdef ENABLE_COMPANION
-        companion_loop();
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Companion, {
+            companion_loop();
+        });
 #endif
-        interrupt_loop();
+        RUN_MAIN_PHASE(
+            WatchdogMainLoopPhase::InterruptAfterCompanion,
+            {
+                interrupt_loop();
+            }
+        );
     }
 }

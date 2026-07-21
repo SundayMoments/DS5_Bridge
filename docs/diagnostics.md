@@ -40,6 +40,82 @@ ENABLE_COMPANION_DEBUG
 
 Firmware defaults and aliases live in `src/debug_config.h`.
 
+## Persistent Physical UART Logs
+
+The physical UART remains available when the Pico is powered but its USB device
+does not enumerate. That makes it the preferred path for diagnosing descriptor,
+TinyUSB, Bluetooth, watchdog, and early companion-interface failures. The
+firmware stream uses `921600` baud, 8 data bits, no parity, one stop bit, and no
+flow control.
+
+Wire a 3.3 V USB-to-UART adapter as follows:
+
+| Pico 2 W | USB-to-UART adapter | Required |
+| --- | --- | --- |
+| GPIO0 / UART TX, physical pin 1 | RXD | Yes |
+| GND, for example physical pin 3 | GND | Yes |
+| GPIO1 / UART RX, physical pin 2 | TXD | No; reserved for future interactive diagnostics |
+
+Do not connect the adapter's 5 V or VCC pin. Power the Pico normally over USB
+and use 3.3 V UART logic.
+
+Build the companion-enabled diagnostic firmware without changing the Pico's USB
+descriptors:
+
+```powershell
+cmake --preset pico2-w-debug-uart-companion-on
+cmake --build --preset pico2-w-debug-uart-companion-on
+```
+
+Flash this artifact through BOOTSEL:
+
+```text
+build/diagnostics/pico2-w-debug-uart-companion-on/ds5-bridge.uf2
+```
+
+This preset also enables the feedback trace and drains it asynchronously through
+the retained UART logger. Rumble and haptic records use compact CSV-style lines:
+
+```text
+[FB] seq,t_ms,stage,report,len,tag,decision,flag0,flag1,flag2,motor_r,motor_l,haptic_peak,haptic_mean,haptic_nonzero,detail0,detail1,detail2,detail3
+```
+
+Stage values are printed in a legend at boot: host input, bridge input/output,
+Bluetooth send, drop, audio enqueue/drop, and locally generated audio haptics.
+`[FB] lost=N` means the diagnostic consumer fell behind the firmware trace ring;
+it is an explicit trace loss marker rather than a controller-output drop.
+
+The normal release build compiles firmware logging out, so an attached UART
+adapter receives no bytes until diagnostic firmware is flashed.
+
+Install the per-user Windows collector and start it immediately:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\pico-uart-logger.ps1 install
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\pico-uart-logger.ps1 status
+```
+
+The collector auto-detects the CH343 adapter, reconnects across Pico or adapter
+resets, starts at Windows sign-in, and writes raw rotating logs under:
+
+```text
+%LOCALAPPDATA%\DS5 Bridge\logs\pico-uart
+```
+
+Files rotate at 32 MiB. Logs are retained for 30 days with a 512 MiB total cap.
+The current file and last received-byte time are recorded in `status.json`.
+Use these commands to control the background collector:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\pico-uart-logger.ps1 stop
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\pico-uart-logger.ps1 start
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\pico-uart-logger.ps1 uninstall
+```
+
+Only one process can own a COM port. Stop the collector before opening the same
+adapter in another serial terminal. Uninstalling the task preserves existing
+logs.
+
 ## Companion Runtime
 
 Launch the companion with one high-level runtime preset:

@@ -424,6 +424,18 @@ describe('SettingsStore', () => {
     expect(persistedSettings(userDataPath).speakerGainLevel).toBe(6);
   });
 
+  it('persists automatic lightbar restore as a global setting', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    const updated = store.update({ lightbarRestoreEnabled: false });
+
+    expect(updated.lightbarRestoreEnabled).toBe(false);
+    expect(updated.controllerProfiles[0]?.settings).not.toHaveProperty('lightbarRestoreEnabled');
+    expect(persistedSettings(userDataPath).lightbarRestoreEnabled).toBe(false);
+    expect(new SettingsStore(userDataPath).get().lightbarRestoreEnabled).toBe(false);
+  });
+
   it('clamps haptics buffer length to the firmware-safe range', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);
