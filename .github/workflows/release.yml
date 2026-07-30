@@ -4,11 +4,27 @@ on:
   release:
     types:
       - published
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Existing release tag to build and upload assets for
+        required: true
+        type: string
+      build_version:
+        description: Optional prerelease version embedded in companion and artifact names
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       tag_name:
         description: Release tag to build and upload assets for
         required: true
+        type: string
+      build_version:
+        description: Optional prerelease version, for example 1.7.0-beta.1
+        required: false
+        default: ''
         type: string
 
 env:
@@ -82,12 +98,25 @@ jobs:
 
       - name: Read firmware version
         shell: pwsh
+        env:
+          BUILD_VERSION: ${{ inputs.build_version }}
         run: |
           $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
           if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
           }
+          $assetVersion = $firmwareVersion
+          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_VERSION)) {
+            if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+              throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
+            }
+            if (-not $env:BUILD_VERSION.StartsWith("$firmwareVersion-beta.")) {
+              throw "build_version must be based on firmware version $firmwareVersion"
+            }
+            $assetVersion = $env:BUILD_VERSION
+          }
           "FIRMWARE_VERSION=$firmwareVersion" >> $env:GITHUB_ENV
+          "RELEASE_ASSET_VERSION=$assetVersion" >> $env:GITHUB_ENV
 
       - name: Build companion firmware
         run: |
@@ -97,7 +126,7 @@ jobs:
             -DENABLE_COMPANION=ON
           cmake --build build/companion --target ds5-bridge
           mkdir -p artifacts
-          cp build/companion/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-v${FIRMWARE_VERSION}.uf2"
+          cp build/companion/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-v${RELEASE_ASSET_VERSION}.uf2"
 
       - name: Build companion firmware (Waveshare RP2350B-Plus-W)
         run: |
@@ -107,7 +136,7 @@ jobs:
             -DENABLE_COMPANION=ON \
             -DWAVESHARE_RP2350B_PLUS_W_BUILD=ON
           cmake --build build/waveshare --target ds5-bridge
-          cp build/waveshare/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-Waveshare-v${FIRMWARE_VERSION}.uf2"
+          cp build/waveshare/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-Waveshare-v${RELEASE_ASSET_VERSION}.uf2"
 
       - name: Upload firmware to release
         env:
@@ -173,6 +202,25 @@ jobs:
         working-directory: companion
         run: npm ci
 
+      - name: Apply companion prerelease version
+        if: inputs.build_version != ''
+        working-directory: companion
+        shell: pwsh
+        env:
+          BUILD_VERSION: ${{ inputs.build_version }}
+        run: |
+          $packageVersion = [string] (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+            throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
+          }
+          if (-not $env:BUILD_VERSION.StartsWith("$packageVersion-beta.")) {
+            throw "build_version must be based on companion version $packageVersion"
+          }
+          npm version $env:BUILD_VERSION --no-git-tag-version --allow-same-version
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to apply companion prerelease version.'
+          }
+
       - name: Build portable companion package
         working-directory: companion
         run: npm run package:win
@@ -231,12 +279,25 @@ jobs:
 
       - name: Stage release metadata
         shell: pwsh
+        env:
+          BUILD_VERSION: ${{ inputs.build_version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $companionVersion = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
           $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
           if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
+          }
+          $assetVersion = $firmwareVersion
+          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_VERSION)) {
+            if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+              throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
+            }
+            if (-not $env:BUILD_VERSION.StartsWith("$firmwareVersion-beta.")) {
+              throw "build_version must be based on firmware version $firmwareVersion"
+            }
+            $assetVersion = $env:BUILD_VERSION
+            $companionVersion = $env:BUILD_VERSION
           }
           $commit = (git rev-parse HEAD).Trim()
           $dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain | Out-String).Trim())
@@ -263,8 +324,8 @@ jobs:
             firmwareVersion = $firmwareVersion
             companionVersion = $companionVersion
             artifacts = @(
-              "DS5-Bridge-Firmware-v$firmwareVersion.uf2",
-              "DS5-Bridge-Firmware-Waveshare-v$firmwareVersion.uf2",
+              "DS5-Bridge-Firmware-v$assetVersion.uf2",
+              "DS5-Bridge-Firmware-Waveshare-v$assetVersion.uf2",
               "DS5-Bridge-Companion-Setup-v$companionVersion.exe",
               "DS5-Bridge-Companion-Portable-v$companionVersion-win32-x64.zip"
             )
