@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const appSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
 const stylesSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'styles.css'), 'utf8');
+const rendererEntrySource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
 const controllerDevicesPageSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'ControllerDevicesPage.tsx'),
   'utf8'
@@ -18,6 +19,11 @@ function extractFunction(name: string): string {
 }
 
 describe('renderer behavior guards', () => {
+  it('self-hosts the Inter variable font', () => {
+    expect(rendererEntrySource).toContain("import '@fontsource-variable/inter/standard.css';");
+    expect(stylesSource).toContain('font-family: "Inter Variable", Inter, ui-sans-serif');
+  });
+
   it('ports Devices as a firmware-backed controller management tab', () => {
     expect(appSource).toContain("{ id: 'devices', label: 'Devices', Icon: IconBluetooth }");
     expect(appSource).toContain('<ControllerDevicesPage');

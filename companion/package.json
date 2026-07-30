@@ -109,6 +109,7 @@
     "node-hid": "^3.2.0"
   },
   "devDependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
     "@tabler/icons-react": "^3.44.0",
     "@types/node": "^25.0.3",
     "@types/node-hid": "^1.3.4",
