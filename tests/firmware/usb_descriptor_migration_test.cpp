@@ -1424,6 +1424,7 @@ void assert_dualsense_feature_startup_is_paced(std::filesystem::path const &root
 void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root) {
     const auto cmake = read_text(root / "CMakeLists.txt");
     const auto audio_cpp = read_text(root / "src" / "audio.cpp");
+    const auto audio_exact_queue_h = read_text(root / "src" / "audio_exact_queue.h");
     const auto audio_h = read_text(root / "src" / "audio.h");
     const auto ram_mem_c = read_text(root / "src" / "ram_mem.c");
     const auto relocate_cmake = read_text(root / "cmake" / "relocate_to_ram.cmake");
@@ -1433,9 +1434,37 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
     if (
         cmake.find("src/ram_mem.c") == std::string::npos
         || cmake.find(".text.queue_try_add=.time_critical.queue_try_add")
-            == std::string::npos
+            != std::string::npos
         || cmake.find(".text.queue_try_remove=.time_critical.queue_try_remove")
+            != std::string::npos
+        || cmake.find(".text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset")
             == std::string::npos
+        || cmake.find("\"-DOBJDUMP=${CMAKE_OBJDUMP}\"") == std::string::npos
+        || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 79120)")
+            == std::string::npos
+        || cmake.find("set(DS5_MIN_POST_STARTUP_HEAP_BYTES 8192)")
+            == std::string::npos
+        || cmake.find("\"-DMIN_HEAP_BYTES=${DS5_MIN_RUNTIME_HEAP_BYTES}\"")
+            == std::string::npos
+        || cmake.find(
+            "\"-DKNOWN_STARTUP_HEAP_BYTES=${DS5_KNOWN_STARTUP_HEAP_BYTES}\""
+        ) == std::string::npos
+        || audio_cpp.find("AUDIO_CORE1_STACK_WORDS = 7000") == std::string::npos
+        || audio_cpp.find("AUDIO_CORE1_STACK_GUARD_WORDS = 64") == std::string::npos
+        || audio_cpp.find("audio_core1_stack_init_watermark();") == std::string::npos
+        || audio_cpp.find("audio_core1_stack_poll(now);") == std::string::npos
+        || audio_cpp.find("ExactAudioQueue<audio_raw_element, 2> audio_fifo")
+            == std::string::npos
+        || audio_cpp.find("ExactAudioQueue<mic_packet_element, HOST_MIC_QUEUE_DEPTH> mic_fifo")
+            == std::string::npos
+        || audio_cpp.find("if (!did_speaker && !did_mic)") == std::string::npos
+        || audio_cpp.find("sleep_us(10);") == std::string::npos
+        || audio_exact_queue_h.find("T storage_[Capacity]{};") == std::string::npos
+        || audio_exact_queue_h.find("critical_section_init_with_lock_num(")
+            == std::string::npos
+        || audio_exact_queue_h.find("next_striped_spin_lock_num()")
+            == std::string::npos
+        || audio_exact_queue_h.find("count_ == Capacity") == std::string::npos
         || cmake.find("verify_core1_sram.cmake") == std::string::npos
         || cmake.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4")
             == std::string::npos
@@ -1470,9 +1499,16 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         || ram_mem_c.find("__not_in_flash_func(memset)") == std::string::npos
         || ram_mem_c.find("__not_in_flash_func(memmove)") == std::string::npos
         || relocate_cmake.find("--rename-section") == std::string::npos
+        || relocate_cmake.find("destination_section_index") == std::string::npos
         || verify_cmake.find("\"_ZL11core1_entryv\"") == std::string::npos
-        || verify_cmake.find("\"queue_try_add\"") == std::string::npos
-        || verify_cmake.find("\"queue_try_remove\"") == std::string::npos
+        || verify_cmake.find("\"_ZL22audio_core1_stack_pollm\"") == std::string::npos
+        || verify_cmake.find("\"crc32_lookup_table\"") == std::string::npos
+        || verify_cmake.find("\"queue_try_add\"") != std::string::npos
+        || verify_cmake.find("\"queue_try_remove\"") != std::string::npos
+        || verify_cmake.find(
+            "foreach(required_value NM ELF MIN_HEAP_BYTES KNOWN_STARTUP_HEAP_BYTES)"
+        ) == std::string::npos
+        || verify_cmake.find("post_startup_heap_bytes") == std::string::npos
         || verify_cmake.find("\"memcpy\"") == std::string::npos
         || verify_cmake.find("\"memset\"") == std::string::npos
         || verify_cmake.find("\"memmove\"") == std::string::npos

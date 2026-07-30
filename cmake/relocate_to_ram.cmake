@@ -1,7 +1,7 @@
 # Relocate selected function sections from one compiled object into the Pico
 # SDK's .time_critical SRAM region. Adapted from awalol/DS5Dongle (MIT).
 
-foreach(required_value OBJROOT OBJCOPY SUFFIX RENAMES)
+foreach(required_value OBJROOT OBJCOPY OBJDUMP SUFFIX RENAMES)
     if(NOT DEFINED ${required_value})
         message(FATAL_ERROR
                 "relocate_to_ram: missing required -D${required_value}"
@@ -33,18 +33,50 @@ if(NOT matching_object)
     )
 endif()
 
+execute_process(
+        COMMAND "${OBJDUMP}" -h "${matching_object}"
+        RESULT_VARIABLE objdump_result
+        OUTPUT_VARIABLE section_table
+        ERROR_VARIABLE objdump_error
+)
+if(NOT objdump_result EQUAL 0)
+    message(FATAL_ERROR
+            "relocate_to_ram: objdump failed (rc=${objdump_result}) on ${matching_object}: ${objdump_error}"
+    )
+endif()
+
 string(REPLACE "@" ";" section_renames "${RENAMES}")
 set(objcopy_arguments "")
 foreach(section_rename ${section_renames})
-    list(APPEND objcopy_arguments --rename-section "${section_rename}")
+    string(REPLACE "=" ";" rename_parts "${section_rename}")
+    list(LENGTH rename_parts rename_part_count)
+    if(NOT rename_part_count EQUAL 2)
+        message(FATAL_ERROR
+                "relocate_to_ram: invalid section rename '${section_rename}'"
+        )
+    endif()
+    list(GET rename_parts 0 source_section)
+    list(GET rename_parts 1 destination_section)
+    string(FIND "${section_table}" " ${source_section} " source_section_index)
+    string(FIND "${section_table}" " ${destination_section} " destination_section_index)
+    if(NOT source_section_index EQUAL -1)
+        list(APPEND objcopy_arguments --rename-section "${section_rename}")
+    elseif(destination_section_index EQUAL -1)
+        message(FATAL_ERROR
+                "relocate_to_ram: '${matching_object}' contains neither '${source_section}' nor '${destination_section}'"
+        )
+    endif()
 endforeach()
 
-execute_process(
-        COMMAND "${OBJCOPY}" ${objcopy_arguments} "${matching_object}"
-        RESULT_VARIABLE result
-)
-if(NOT result EQUAL 0)
-    message(FATAL_ERROR
-            "relocate_to_ram: objcopy failed (rc=${result}) on ${matching_object}"
+if(objcopy_arguments)
+    execute_process(
+            COMMAND "${OBJCOPY}" ${objcopy_arguments} "${matching_object}"
+            RESULT_VARIABLE objcopy_result
+            ERROR_VARIABLE objcopy_error
     )
+    if(NOT objcopy_result EQUAL 0)
+        message(FATAL_ERROR
+                "relocate_to_ram: objcopy failed (rc=${objcopy_result}) on ${matching_object}: ${objcopy_error}"
+        )
+    endif()
 endif()

@@ -26,6 +26,8 @@
 #ifndef TUSB_CONFIG_H_
 #define TUSB_CONFIG_H_
 
+#include "pico/platform/sections.h"
+
 #ifdef __cplusplus
  extern "C" {
 #endif
