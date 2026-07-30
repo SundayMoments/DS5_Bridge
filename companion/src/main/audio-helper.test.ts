@@ -53,6 +53,7 @@ vi.mock('node:fs', () => ({
 
 import {
   AudioHapticsSessionMonitor,
+  getDefaultRenderEndpointStatus,
   MicKeepaliveEngine,
   playBridgeHapticsTestPattern,
   playBridgeSpeakerTestTone,
@@ -66,6 +67,30 @@ beforeEach(() => {
   childProcessMock.spawn.mockClear();
   fsMock.existsSync.mockClear();
   fsMock.existsSync.mockReturnValue(true);
+});
+
+describe('Windows host endpoint enumeration', () => {
+  it('uses the longer endpoint timeout without changing the general command timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      fsMock.existsSync.mockImplementation((candidate) => String(candidate).endsWith('.exe'));
+      const request = getDefaultRenderEndpointStatus();
+      const rejection = expect(request).rejects.toThrow(
+        'Audio helper command timed out after 8000ms.'
+      );
+      const helper = childProcessMock.processes[0]!;
+
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(helper.killed).toBe(false);
+      await vi.advanceTimersByTimeAsync(5499);
+      expect(helper.killed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejection;
+      expect(helper.kill).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('SystemAudioHapticsEngine app source', () => {

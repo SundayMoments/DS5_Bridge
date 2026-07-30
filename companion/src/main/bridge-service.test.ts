@@ -834,6 +834,56 @@ describe('BridgeService', () => {
     expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length * 2);
   });
 
+  it('reapplies settings and restarts audio haptics after reconnecting in the same companion session', async () => {
+    const service = serviceFixture({ audioReactiveHapticsEnabled: true });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => undefined);
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start: typeof start;
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+    };
+    internals.systemAudioHapticsEngine = {
+      start,
+      stop,
+      isActive: () => false
+    };
+
+    await poll(service);
+    await flushReapply();
+    expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length);
+    expect(start).toHaveBeenCalledOnce();
+
+    device.status = statusReport({
+      controllerConnected: false,
+      settingsRevision: device.settingsRevision,
+      uptimeSeconds: 31
+    });
+    await poll(service);
+    await poll(service);
+
+    device.status = statusReport({
+      controllerConnected: true,
+      settingsRevision: device.settingsRevision,
+      uptimeSeconds: 32
+    });
+    await poll(service);
+    await flushReapply();
+    await poll(service);
+    await flushReapply();
+
+    expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length * 2);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
   it('starts saved audio haptics after startup settings reapply', async () => {
     const appSource = {
       kind: 'app-session' as const,

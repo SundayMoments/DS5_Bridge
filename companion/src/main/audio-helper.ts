@@ -52,6 +52,7 @@ const HELPER_CAPTURE_UNAVAILABLE_PREFIX = 'status: capture-unavailable';
 const HELPER_START_TIMEOUT_MS = 8000;
 const HELPER_TEST_TONE_TIMEOUT_MS = 10000;
 const HELPER_COMMAND_TIMEOUT_MS = 2500;
+const HELPER_ENDPOINT_ENUMERATION_TIMEOUT_MS = 8000;
 const HELPER_SESSION_MONITOR_START_TIMEOUT_MS = 3000;
 const HELPER_SESSION_MONITOR_STOP_TIMEOUT_MS = 500;
 const HELPER_STDERR_MAX_CHARS = 8192;
@@ -679,12 +680,15 @@ function buildSystemAudioHapticsHelperEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-async function runAudioHelperCommand(args: string[]): Promise<{ stdout: string; stderr: string }> {
+async function runAudioHelperCommand(
+  args: string[],
+  timeoutMs = HELPER_COMMAND_TIMEOUT_MS
+): Promise<{ stdout: string; stderr: string }> {
   const commands = resolveAudioHelperCommands(args);
   let lastError: Error | null = null;
   for (const command of commands) {
     try {
-      return await runAudioHelperCommandOnce(command.command, command.args);
+      return await runAudioHelperCommandOnce(command.command, command.args, timeoutMs);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
     }
@@ -692,7 +696,11 @@ async function runAudioHelperCommand(args: string[]): Promise<{ stdout: string; 
   throw lastError ?? new Error('Audio helper command failed.');
 }
 
-function runAudioHelperCommandOnce(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function runAudioHelperCommandOnce(
+  command: string,
+  args: string[],
+  timeoutMs: number
+): Promise<{ stdout: string; stderr: string }> {
   const helper = spawn(command, args, {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe']
@@ -718,8 +726,8 @@ function runAudioHelperCommandOnce(command: string, args: string[]): Promise<{ s
       }
     };
     const timeout = setTimeout(() => {
-      finish(new Error(`Audio helper command timed out after ${HELPER_COMMAND_TIMEOUT_MS}ms.`));
-    }, HELPER_COMMAND_TIMEOUT_MS);
+      finish(new Error(`Audio helper command timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
 
     helper.stdout.on('data', (chunk: Buffer) => {
       stdout = (stdout + chunk.toString('utf8')).slice(-HELPER_STDERR_MAX_CHARS);
@@ -937,7 +945,10 @@ export async function playBridgeHapticsTestPattern(
 }
 
 export async function getDefaultRenderEndpointStatus(): Promise<DefaultRenderEndpointStatus> {
-  const result = await runAudioHelperCommand(['--default-render-status', ...bridgeTargetArgs()]);
+  const result = await runAudioHelperCommand(
+    ['--default-render-status', ...bridgeTargetArgs()],
+    HELPER_ENDPOINT_ENUMERATION_TIMEOUT_MS
+  );
   return parseDefaultRenderEndpointStatus(result.stdout);
 }
 
@@ -947,7 +958,7 @@ export async function setDefaultRenderBridgeEndpoint(mode: HostPersonaMode): Pro
     '--bridge-persona',
     mode,
     ...bridgeTargetArgs()
-  ]);
+  ], HELPER_ENDPOINT_ENUMERATION_TIMEOUT_MS);
 }
 
 export class MicKeepaliveEngine extends EventEmitter {

@@ -1249,10 +1249,12 @@ export class BridgeService extends EventEmitter {
   private sessionKey: string | null = null;
   private sessionPath: string | null = null;
   private reappliedSessionKey: string | null = null;
+  private controllerConnected = false;
   private controllerConnectedSince = 0;
   private reapplyAttempt = 0;
   private nextReapplyAt = 0;
-  private reapplyActive = false;
+  private reapplyGeneration = 0;
+  private activeReapplyGeneration: number | null = null;
   private pollPausedUntil = 0;
   private readonly audioDebugLogPath: string | null = null;
   private firmwareLogPath: string | null = null;
@@ -3642,11 +3644,16 @@ export class BridgeService extends EventEmitter {
     await this.syncControllerPowerSavingState(settings);
 
     if (status.controllerConnected) {
+      this.controllerConnected = true;
       if (this.controllerConnectedSince === 0) {
         this.controllerConnectedSince = Date.now();
       }
       void this.reapplySettingsUntilSettled();
     } else {
+      if (this.controllerConnected) {
+        this.resetStartupReapplyState();
+      }
+      this.controllerConnected = false;
       this.controllerConnectedSince = 0;
       this.reapplyAttempt = 0;
       this.nextReapplyAt = 0;
@@ -3784,14 +3791,16 @@ export class BridgeService extends EventEmitter {
   }
 
   private resetStartupReapplyState(): void {
+    this.reapplyGeneration += 1;
     this.reappliedSessionKey = null;
+    this.controllerConnected = false;
     this.controllerConnectedSince = 0;
     this.reapplyAttempt = 0;
     this.nextReapplyAt = 0;
   }
 
   private async reapplySettingsUntilSettled(): Promise<void> {
-    if (!this.sessionKey || this.reapplyActive || this.reappliedSessionKey === this.sessionKey) {
+    if (!this.sessionKey || this.activeReapplyGeneration !== null || this.reappliedSessionKey === this.sessionKey) {
       return;
     }
     const now = Date.now();
@@ -3803,21 +3812,39 @@ export class BridgeService extends EventEmitter {
       return;
     }
 
-    this.reapplyActive = true;
+    const generation = this.reapplyGeneration;
+    this.activeReapplyGeneration = generation;
     let reapplied = false;
     try {
       const settings = this.settingsStore.get();
       await this.applyCurrentSettings(settings, this.reapplyAttempt === 0);
+      if (generation !== this.reapplyGeneration) {
+        return;
+      }
       this.reappliedSessionKey = this.sessionKey;
       reapplied = true;
     } catch (error) {
+      if (generation !== this.reapplyGeneration) {
+        return;
+      }
+      const retryDelay = STARTUP_REAPPLY_RETRY_DELAYS_MS[
+        Math.min(this.reapplyAttempt, STARTUP_REAPPLY_RETRY_DELAYS_MS.length - 1)
+      ] ?? 0;
+      this.reapplyAttempt += 1;
+      this.nextReapplyAt = Date.now() + retryDelay;
       this.publishError(error);
     } finally {
-      this.reapplyActive = false;
+      if (this.activeReapplyGeneration === generation) {
+        this.activeReapplyGeneration = null;
+      }
     }
-    if (reapplied) {
+    if (reapplied && generation === this.reapplyGeneration) {
       await this.updateSystemAudioHapticsEngine();
     }
+  }
+
+  private get reapplyActive(): boolean {
+    return this.activeReapplyGeneration !== null;
   }
 
   private async applyCurrentSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
@@ -4236,7 +4263,7 @@ export class BridgeService extends EventEmitter {
     this.lastUptimeSeconds = null;
     this.sessionKey = null;
     this.sessionPath = null;
-    this.reapplyActive = false;
+    this.activeReapplyGeneration = null;
     this.noteControllerUnavailableForToasts();
     this.lowBatteryToastActive = false;
     this.resetStartupReapplyState();
