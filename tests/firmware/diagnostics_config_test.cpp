@@ -142,8 +142,31 @@ int main() {
         );
         require_contains(
             firmware_log,
-            "uart_write_blocking(",
-            "Diagnostic logs must stream directly to physical UART"
+            "kFirmwareLogUartSlotCount = 8",
+            "Live UART diagnostics must use a bounded queue"
+        );
+        require_contains(
+            firmware_log,
+            "dma_claim_unused_channel(false)",
+            "Live UART diagnostics must use a non-blocking DMA channel"
+        );
+        require_contains(
+            firmware_log,
+            "Diagnostic overload must lose live UART output",
+            "UART overload must drop output instead of delaying firmware work"
+        );
+        if (
+            firmware_log.find("uart_write_blocking(") != std::string::npos
+            || firmware_log.find("uart_putc_raw(") != std::string::npos
+        ) {
+            throw std::runtime_error(
+                "Firmware logging must never synchronously wait on physical UART"
+            );
+        }
+        require_contains(
+            cmake,
+            "target_link_libraries(ds5-bridge hardware_dma)",
+            "UART diagnostic builds must link the DMA driver"
         );
         require_contains(
             firmware_log,

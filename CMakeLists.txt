@@ -394,6 +394,7 @@ endif()
 message(STATUS "DS5 diagnostics: preset=${DS5_DIAGNOSTICS_PRESET}; logs=${DS5_ENABLE_FIRMWARE_LOGS}; audio=${DS5_ENABLE_AUDIO_DEBUG_REPORTS}; trigger=${DS5_ENABLE_TRIGGER_TRACE_REPORTS}; feedback=${DS5_ENABLE_FEEDBACK_TRACE_REPORTS}")
 
 if(DS5_ENABLE_FIRMWARE_LOGS)
+    target_link_libraries(ds5-bridge hardware_dma)
     target_compile_definitions(ds5-bridge PRIVATE
             DS5_ENABLE_DEBUG_LOGS
             DS5_DEBUG_LOGS_ENABLED=1

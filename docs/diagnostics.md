@@ -48,6 +48,11 @@ TinyUSB, Bluetooth, watchdog, and early companion-interface failures. The
 firmware stream uses `921600` baud, 8 data bits, no parity, one stop bit, and no
 flow control.
 
+Live UART output uses a bounded DMA queue, so firmware never waits for the wire
+to transmit a diagnostic line. If the live queue fills, that UART copy is
+dropped instead of delaying input, Bluetooth, or audio work; the independent
+8 KiB SRAM history remains available to the companion app.
+
 Wire a 3.3 V USB-to-UART adapter as follows:
 
 | Pico 2 W | USB-to-UART adapter | Required |

@@ -1,11 +1,15 @@
 #include "firmware_log.h"
 
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 
+#include "hardware/dma.h"
 #include "hardware/uart.h"
 #include "hci_dump.h"
 #include "pico/critical_section.h"
+#include "pico/platform.h"
 
 namespace {
 
@@ -13,11 +17,34 @@ bool firmware_log_ready = false;
 
 #if DS5_DEBUG_LOGS_ENABLED
 constexpr std::size_t kFirmwareLogRingSize = 8 * 1024;
+constexpr std::size_t kFirmwareLogUartSlotCount = 8;
+constexpr std::size_t kFirmwareLogUartSlotCapacity = 256;
+
+enum FirmwareLogUartSlotState : uint32_t {
+    FirmwareLogUartSlotEmpty = 0,
+    FirmwareLogUartSlotWriting = 1,
+    FirmwareLogUartSlotReady = 2,
+};
+
+struct FirmwareLogUartSlot {
+    std::atomic<uint32_t> state{FirmwareLogUartSlotEmpty};
+    uint16_t length = 0;
+    char bytes[kFirmwareLogUartSlotCapacity]{};
+};
+
+static_assert(std::atomic<uint32_t>::is_always_lock_free);
+
 alignas(4) uint8_t firmware_log_ring[kFirmwareLogRingSize]{};
 critical_section_t firmware_log_ring_cs;
 uint32_t firmware_log_write_sequence = 0;
 uint32_t firmware_log_read_sequence = 0;
 uint32_t firmware_log_dropped_bytes = 0;
+FirmwareLogUartSlot firmware_log_uart_slots[kFirmwareLogUartSlotCount]{};
+std::atomic<uint32_t> firmware_log_uart_next_slot{0};
+std::atomic<uint32_t> firmware_log_uart_pending_slots{0};
+uint32_t firmware_log_uart_dma_cursor = 0;
+int firmware_log_uart_active_slot = -1;
+int firmware_log_uart_dma_channel = -1;
 
 void retain_log_bytes(const char *text, std::size_t length) {
     critical_section_enter_blocking(&firmware_log_ring_cs);
@@ -33,20 +60,122 @@ void retain_log_bytes(const char *text, std::size_t length) {
     critical_section_exit(&firmware_log_ring_cs);
 }
 
+FirmwareLogUartSlot *claim_uart_slot() {
+    const uint32_t start = firmware_log_uart_next_slot.fetch_add(
+        1,
+        std::memory_order_relaxed
+    );
+    for (std::size_t attempt = 0; attempt < kFirmwareLogUartSlotCount; attempt++) {
+        auto &slot = firmware_log_uart_slots[
+            (static_cast<std::size_t>(start) + attempt) % kFirmwareLogUartSlotCount
+        ];
+        uint32_t expected = FirmwareLogUartSlotEmpty;
+        if (slot.state.compare_exchange_strong(
+            expected,
+            FirmwareLogUartSlotWriting,
+            std::memory_order_acquire,
+            std::memory_order_relaxed
+        )) {
+            return &slot;
+        }
+    }
+    return nullptr;
+}
+
+void release_uart_slot(FirmwareLogUartSlot &slot) {
+    slot.length = 0;
+    slot.state.store(FirmwareLogUartSlotEmpty, std::memory_order_release);
+}
+
+void commit_uart_slot(FirmwareLogUartSlot &slot, std::size_t length) {
+    slot.length = static_cast<uint16_t>(length);
+    slot.state.store(FirmwareLogUartSlotReady, std::memory_order_release);
+    firmware_log_uart_pending_slots.fetch_add(1, std::memory_order_release);
+}
+
+void __not_in_flash_func(queue_live_uart_bytes)(const char *text, std::size_t length) {
+    FirmwareLogUartSlot *slot = claim_uart_slot();
+    if (slot == nullptr) {
+        // Diagnostic overload must lose live UART output, never an audio or
+        // input deadline. The companion-readable SRAM history is independent.
+        return;
+    }
+    const std::size_t captured = length < kFirmwareLogUartSlotCapacity
+        ? length
+        : kFirmwareLogUartSlotCapacity;
+    std::memcpy(slot->bytes, text, captured);
+    commit_uart_slot(*slot, captured);
+}
+
 void write_log_bytes(const char *text, int length) {
     if (!firmware_log_ready || text == nullptr || length <= 0) {
         return;
     }
 
-    retain_log_bytes(text, static_cast<std::size_t>(length));
+    const std::size_t captured = static_cast<std::size_t>(length);
+    retain_log_bytes(text, captured);
+    queue_live_uart_bytes(text, captured);
+}
 
-    // Keep the dedicated physical COM UART as the live diagnostic sink. The
-    // companion report independently drains the retained SRAM copy.
-    uart_write_blocking(
-        uart_default,
-        reinterpret_cast<const uint8_t *>(text),
-        static_cast<size_t>(length)
+void initialize_uart_dma() {
+    firmware_log_uart_dma_channel = dma_claim_unused_channel(false);
+    if (firmware_log_uart_dma_channel < 0) {
+        return;
+    }
+    dma_channel_config config = dma_channel_get_default_config(
+        static_cast<uint>(firmware_log_uart_dma_channel)
     );
+    channel_config_set_transfer_data_size(&config, DMA_SIZE_8);
+    channel_config_set_read_increment(&config, true);
+    channel_config_set_write_increment(&config, false);
+    channel_config_set_dreq(&config, uart_get_dreq(uart_default, true));
+    dma_channel_configure(
+        static_cast<uint>(firmware_log_uart_dma_channel),
+        &config,
+        &uart_get_hw(uart_default)->dr,
+        nullptr,
+        0,
+        false
+    );
+}
+
+void __not_in_flash_func(service_uart_dma)() {
+    if (firmware_log_uart_dma_channel < 0) {
+        return;
+    }
+
+    const uint channel = static_cast<uint>(firmware_log_uart_dma_channel);
+    if (firmware_log_uart_active_slot >= 0) {
+        if (dma_channel_is_busy(channel)) {
+            return;
+        }
+        auto &completed = firmware_log_uart_slots[
+            static_cast<std::size_t>(firmware_log_uart_active_slot)
+        ];
+        release_uart_slot(completed);
+        firmware_log_uart_pending_slots.fetch_sub(1, std::memory_order_release);
+        firmware_log_uart_dma_cursor =
+            (static_cast<uint32_t>(firmware_log_uart_active_slot) + 1u)
+            % static_cast<uint32_t>(kFirmwareLogUartSlotCount);
+        firmware_log_uart_active_slot = -1;
+    }
+
+    if (firmware_log_uart_pending_slots.load(std::memory_order_acquire) == 0) {
+        return;
+    }
+    for (std::size_t attempt = 0; attempt < kFirmwareLogUartSlotCount; attempt++) {
+        const std::size_t index =
+            (static_cast<std::size_t>(firmware_log_uart_dma_cursor) + attempt)
+            % kFirmwareLogUartSlotCount;
+        auto &slot = firmware_log_uart_slots[index];
+        if (slot.state.load(std::memory_order_acquire) != FirmwareLogUartSlotReady) {
+            continue;
+        }
+        firmware_log_uart_active_slot = static_cast<int>(index);
+        dma_channel_set_read_addr(channel, slot.bytes, false);
+        dma_channel_set_trans_count(channel, slot.length, true);
+        return;
+    }
 }
 
 void firmware_log_hci_reset() {
@@ -106,11 +235,12 @@ void firmware_log_init() {
 
 #if DS5_DEBUG_LOGS_ENABLED
     critical_section_init(&firmware_log_ring_cs);
+    initialize_uart_dma();
 #endif
     firmware_log_ready = true;
 #if DS5_DEBUG_LOGS_ENABLED
     firmware_log_printf(
-        "\n[FirmwareLog] physical UART and 8192-byte SRAM ring ready baud=921600\n"
+        "\n[FirmwareLog] DMA UART and 8192-byte SRAM ring ready baud=921600\n"
     );
 #endif
 }
@@ -205,7 +335,10 @@ void firmware_log_init_btstack_sink() {
 #endif
 }
 
-void firmware_log_flush_live() {
-    // Direct physical-COM streaming has no buffered state to flush. The SRAM
-    // ring is drained on demand through the companion feature report.
+#if DS5_DEBUG_LOGS_ENABLED
+void __not_in_flash_func(firmware_log_flush_live)() {
+    service_uart_dma();
 }
+#else
+void firmware_log_flush_live() {}
+#endif
