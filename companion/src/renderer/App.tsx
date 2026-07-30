@@ -151,7 +151,16 @@ import {
   type ControllerDeviceRenameDialog
 } from './ControllerDevicesPage';
 
-type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio' | 'interleave' | 'triggers' | 'lighting' | 'remapping' | 'chords' | 'system';
+type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio-haptics' | 'audio' | 'interleave' | 'triggers' | 'trigger-lab' | 'lighting' | 'remapping' | 'chords' | 'system';
+type SidebarControlTab = Exclude<ControlTab, 'interleave'>;
+type ControlTabDefinition = Readonly<{ id: SidebarControlTab; label: string; Icon: TablerIcon }>;
+type ControlTabGroupId = 'controller' | 'input' | 'labs' | 'tools';
+type ControlTabGroupDefinition = Readonly<{
+  id: ControlTabGroupId;
+  label: string;
+  Icon: TablerIcon;
+  tabs: readonly ControlTabDefinition[];
+}>;
 type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type ControllerType = BridgeStatusPayload['controllerType'];
 type KnownControllerType = Exclude<ControllerType, 'unknown'>;
@@ -758,16 +767,68 @@ const REMAP_EDGE_LINE_POINTS: Record<DualSenseEdgeRemapButtonId, [[number, numbe
   lfn: [[227.5, 368.88], [227.68, 296.98]],
   rfn: [[370.46, 368.88], [370.64, 296.98]]
 };
-const CONTROL_TABS: Array<{ id: ControlTab; label: string; Icon: TablerIcon }> = [
-  { id: 'overview', label: 'Overview', Icon: IconLayoutDashboard },
-  { id: 'devices', label: 'Devices', Icon: IconBluetooth },
-  { id: 'audio', label: 'Audio', Icon: IconVolume },
-  { id: 'haptics', label: 'Haptics', Icon: Sparkles },
-  { id: 'triggers', label: 'Triggers', Icon: IconDeviceGamepad2 },
-  { id: 'lighting', label: 'Lighting', Icon: IconBulb },
-  { id: 'remapping', label: 'Button Remapping', Icon: IconDeviceGamepad3 },
-  { id: 'system', label: 'System', Icon: IconCpu }
+const CONTROL_TAB_DEFINITIONS: Record<SidebarControlTab, ControlTabDefinition> = {
+  overview: { id: 'overview', label: 'Overview', Icon: IconLayoutDashboard },
+  devices: { id: 'devices', label: 'Devices', Icon: IconBluetooth },
+  audio: { id: 'audio', label: 'Audio', Icon: IconVolume },
+  haptics: { id: 'haptics', label: 'Haptics', Icon: Sparkles },
+  'audio-haptics': { id: 'audio-haptics', label: 'Audio Haptics', Icon: IconDeviceAudioTape },
+  triggers: { id: 'triggers', label: 'Adaptive Triggers', Icon: IconDeviceGamepad2 },
+  'trigger-lab': { id: 'trigger-lab', label: 'Trigger Lab', Icon: IconFlask2 },
+  lighting: { id: 'lighting', label: 'Lighting', Icon: IconBulb },
+  remapping: { id: 'remapping', label: 'Button Remapping', Icon: IconDeviceGamepad3 },
+  chords: { id: 'chords', label: 'Chords', Icon: IconReplace },
+  system: { id: 'system', label: 'System', Icon: IconCpu }
+};
+
+const CONTROL_TAB_GROUPS: readonly ControlTabGroupDefinition[] = [
+  {
+    id: 'controller',
+    label: 'Controller',
+    Icon: IconDeviceGamepad3,
+    tabs: [
+      CONTROL_TAB_DEFINITIONS.devices,
+      CONTROL_TAB_DEFINITIONS.audio,
+      CONTROL_TAB_DEFINITIONS.haptics,
+      CONTROL_TAB_DEFINITIONS.triggers,
+      CONTROL_TAB_DEFINITIONS.lighting
+    ]
+  },
+  {
+    id: 'input',
+    label: 'Input',
+    Icon: IconReplace,
+    tabs: [
+      CONTROL_TAB_DEFINITIONS.remapping,
+      CONTROL_TAB_DEFINITIONS.chords
+    ]
+  },
+  {
+    id: 'labs',
+    label: 'Labs',
+    Icon: IconFlask2,
+    tabs: [
+      CONTROL_TAB_DEFINITIONS['audio-haptics'],
+      CONTROL_TAB_DEFINITIONS['trigger-lab']
+    ]
+  },
+  {
+    id: 'tools',
+    label: 'Tools',
+    Icon: IconTool,
+    tabs: [CONTROL_TAB_DEFINITIONS.system]
+  }
 ];
+
+function controlTabGroupFor(tab: ControlTab): ControlTabGroupDefinition | null {
+  return CONTROL_TAB_GROUPS.find(({ tabs }) => tabs.some(({ id }) => id === tab)) ?? null;
+}
+
+function controlPanelIdFor(tab: SidebarControlTab): string {
+  if (tab === 'audio-haptics') return 'control-panel-haptics';
+  if (tab === 'trigger-lab') return 'control-panel-triggers';
+  return `control-panel-${tab}`;
+}
 
 function profileDisplayName(name: string | undefined, id: string): string {
   const trimmed = typeof name === 'string' ? name.trim() : '';
@@ -2815,6 +2876,7 @@ export function App() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
+  const [openControlGroupId, setOpenControlGroupId] = useState<ControlTabGroupId | null>(null);
   const [hapticsValue, setHapticsValue] = useState(100);
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
@@ -2845,8 +2907,8 @@ export function App() {
     triggerLabInitialStateRef.current = loadTriggerLabInitialState();
   }
   const triggerLabInitialState = triggerLabInitialStateRef.current;
-  const [triggerLabOpen, setTriggerLabOpen] = useState(false);
-  const [audioHapticsOpen, setAudioHapticsOpen] = useState(false);
+  const triggerLabOpen = activeControlTab === 'trigger-lab';
+  const audioHapticsOpen = activeControlTab === 'audio-haptics';
   const [audioHapticsSessions, setAudioHapticsSessions] = useState<AudioHapticsSession[]>([]);
   const [audioHapticsSessionsLoading, setAudioHapticsSessionsLoading] = useState(false);
   const [triggerLabLinked, setTriggerLabLinked] = useState(triggerLabInitialState.linked);
@@ -6277,6 +6339,10 @@ export function App() {
   }
 
   function selectControlTab(tab: ControlTab) {
+    const group = controlTabGroupFor(tab);
+    if (group) {
+      setOpenControlGroupId(group.id);
+    }
     if (tab === activeControlTab) {
       return;
     }
@@ -6704,23 +6770,73 @@ export function App() {
           </div>
           <div className="sidebar-section-label">Controls</div>
           <div className="sidebar-controls">
-            <div className="control-tabs" role="tablist" aria-label="Controls">
-              {CONTROL_TABS.map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  id={`control-tab-${id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeControlTab === id}
-                  aria-controls={`control-panel-${id}`}
-                  className={activeControlTab === id ? 'active' : ''}
-                  onClick={() => selectControlTab(id)}
-                >
-                  <Icon size={18} stroke={2} />
-                  {label}
-                </button>
-              ))}
-            </div>
+            <nav className="control-tabs" aria-label="Controls">
+              {(() => {
+                const { id, label, Icon } = CONTROL_TAB_DEFINITIONS.overview;
+                return (
+                  <button
+                    key={id}
+                    id={`control-tab-${id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeControlTab === id}
+                    aria-controls={controlPanelIdFor(id)}
+                    className={`control-tab-button ${activeControlTab === id ? 'active' : ''}`}
+                    onClick={() => selectControlTab(id)}
+                  >
+                    <Icon size={18} stroke={2} />
+                    <span>{label}</span>
+                  </button>
+                );
+              })()}
+              {CONTROL_TAB_GROUPS.map(({ id, label, Icon, tabs }) => {
+                const expanded = openControlGroupId === id;
+                const containsActiveTab = tabs.some(({ id: tabId }) => tabId === activeControlTab);
+                const triggerId = `control-group-${id}`;
+                const panelId = `control-group-panel-${id}`;
+                return (
+                  <div
+                    key={id}
+                    className={`control-tab-group ${expanded ? 'expanded' : ''} ${containsActiveTab ? 'contains-active' : ''}`}
+                  >
+                    <button
+                      id={triggerId}
+                      type="button"
+                      className="control-tab-group-trigger"
+                      aria-expanded={expanded}
+                      aria-controls={panelId}
+                      onClick={() => setOpenControlGroupId((current) => current === id ? null : id)}
+                    >
+                      <Icon size={18} stroke={2} />
+                      <span>{label}</span>
+                      <ChevronDown className="control-tab-group-chevron" size={16} stroke={2} aria-hidden="true" />
+                    </button>
+                    <div id={panelId} className="control-tab-group-panel" aria-hidden={!expanded}>
+                      <div className="control-tab-group-clip">
+                        <div className="control-tab-group-items" role="group" aria-labelledby={triggerId}>
+                          {tabs.map(({ id: tabId, label: tabLabel, Icon: TabIcon }) => (
+                            <button
+                              key={tabId}
+                              id={`control-tab-${tabId}`}
+                              type="button"
+                              role="tab"
+                              tabIndex={expanded ? undefined : -1}
+                              aria-selected={activeControlTab === tabId}
+                              aria-controls={controlPanelIdFor(tabId)}
+                              className={`control-tab-button nested ${activeControlTab === tabId ? 'active' : ''}`}
+                              onClick={() => selectControlTab(tabId)}
+                            >
+                              <TabIcon size={18} stroke={2} />
+                              <span>{tabLabel}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </nav>
           </div>
           <div className="sidebar-actions">
             <div className="sidebar-support">
@@ -6743,17 +6859,6 @@ export function App() {
               >
                 <SettingsIcon size={18} />
                 <span>Settings</span>
-              </button>
-              <button
-                className={`sidebar-action-button ${activeControlTab === 'chords' ? 'active' : ''}`}
-                id="control-tab-chords"
-                type="button"
-                aria-controls="control-panel-chords"
-                aria-selected={activeControlTab === 'chords'}
-                onClick={() => selectControlTab('chords')}
-              >
-                <IconReplace size={18} />
-                <span>Chords</span>
               </button>
             </div>
           </div>
@@ -7223,11 +7328,11 @@ export function App() {
           />
 
           <div
-            className={`control-page haptics-page ${activeControlTab === 'haptics' ? 'active' : ''}`}
+            className={`control-page haptics-page ${activeControlTab === 'haptics' || audioHapticsOpen ? 'active' : ''}`}
             role="tabpanel"
             id="control-panel-haptics"
-            aria-labelledby="control-tab-haptics"
-            aria-hidden={activeControlTab !== 'haptics'}
+            aria-labelledby={audioHapticsOpen ? 'control-tab-audio-haptics' : 'control-tab-haptics'}
+            aria-hidden={activeControlTab !== 'haptics' && !audioHapticsOpen}
           >
               <div className="feature-heading">
                 <div>
@@ -7235,29 +7340,16 @@ export function App() {
                   <p>{audioHapticsOpen ? 'Turn system audio into haptic feedback.' : 'Adjust controller haptic feedback and run a quick test.'}</p>
                 </div>
                 <div className="audio-heading-controls">
-                  <div className="inline-switch audio-haptics-switch-control">
-                    {audioReactiveHapticsModeBadgeLabel ? (
+                  {audioReactiveHapticsModeBadgeLabel ? (
+                    <div className="inline-switch audio-haptics-mode-indicator">
                       <span className={`inline-state-badge audio-haptics-mode-state ${audioReactiveHapticsOverrideMode ? 'warn' : 'retry'}`}>
                         {audioReactiveHapticsModeBadgeLabel}
                       </span>
-                    ) : null}
-                    <span>Audio Haptics</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={audioHapticsOpen}
-                      aria-label={audioHapticsOpen ? 'Exit Audio Haptics' : 'Enter Audio Haptics'}
-                      className={`switch audio-haptics-switch ${audioHapticsOpen ? 'on' : ''}`}
-                      onClick={() => setAudioHapticsOpen((open) => !open)}
-                    >
-                      <span />
-                    </button>
-                    {audioReactiveHapticsModeBadgeLabel ? (
                       <span className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-haptics-mode-tooltip">
                         {audioReactiveHapticsModeTooltip}
                       </span>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                   <div className="inline-switch">
                     <span>Enabled</span>
                     <button
@@ -8043,11 +8135,11 @@ export function App() {
           </div>
 
           <div
-            className={`control-page triggers-page ${activeControlTab === 'triggers' ? 'active' : ''}`}
+            className={`control-page triggers-page ${activeControlTab === 'triggers' || triggerLabOpen ? 'active' : ''}`}
             role="tabpanel"
             id="control-panel-triggers"
-            aria-labelledby="control-tab-triggers"
-            aria-hidden={activeControlTab !== 'triggers'}
+            aria-labelledby={triggerLabOpen ? 'control-tab-trigger-lab' : 'control-tab-triggers'}
+            aria-hidden={activeControlTab !== 'triggers' && !triggerLabOpen}
           >
               <div className="feature-heading">
                 <div>
@@ -8055,29 +8147,14 @@ export function App() {
                   <p>{triggerLabOpen ? 'Experimental adaptive trigger profile editor' : 'Set trigger effect intensity and test mode'}</p>
                 </div>
                 <div className="triggers-heading-controls">
-                  <div className="inline-switch trigger-lab-switch-control">
-                    {triggerLabAnyActive ? (
-                      <span className="inline-state-badge warn trigger-lab-state">
-                        Lab Override
-                      </span>
-                    ) : null}
-                    <span>Lab</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={triggerLabOpen}
-                      aria-label={triggerLabOpen ? 'Exit Trigger Lab' : 'Enter Trigger Lab'}
-                      className={`switch trigger-lab-switch ${triggerLabOpen ? 'on' : ''}`}
-                      onClick={() => setTriggerLabOpen((open) => !open)}
-                    >
-                      <span />
-                    </button>
-                    {triggerLabAnyActive ? (
+                  {triggerLabAnyActive ? (
+                    <div className="inline-switch trigger-lab-state-indicator">
+                      <span className="inline-state-badge warn trigger-lab-state">Lab Override</span>
                       <span className="settings-shortcut-tooltip shortcut-glyph-tooltip trigger-lab-override-tooltip">
                         Trigger Lab is overriding game adaptive trigger output.
                       </span>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                   <div className="inline-switch">
                     <span>Enabled</span>
                     <button

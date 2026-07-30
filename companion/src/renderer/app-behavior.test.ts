@@ -346,4 +346,19 @@ describe('renderer behavior guards', () => {
     expect(stylesSource).toContain('.sidebar-bridge-selector');
     expect(stylesSource).toContain('.hero-card > .sidebar-actions');
   });
+
+  it('groups sidebar controls and promotes the two labs to navigation destinations', () => {
+    expect(appSource).toContain("type ControlTabGroupId = 'controller' | 'input' | 'labs' | 'tools'");
+    expect(appSource).toContain("id: 'labs',");
+    expect(appSource).toContain("label: 'Labs',");
+    expect(appSource).toContain("'audio-haptics': { id: 'audio-haptics', label: 'Audio Haptics'");
+    expect(appSource).toContain("'trigger-lab': { id: 'trigger-lab', label: 'Trigger Lab'");
+    expect(appSource).toContain('CONTROL_TAB_GROUPS.map(({ id, label, Icon, tabs }) =>');
+    expect(appSource).toContain('aria-expanded={expanded}');
+    expect(appSource).toContain('tabIndex={expanded ? undefined : -1}');
+    expect(appSource).toContain("const triggerLabOpen = activeControlTab === 'trigger-lab'");
+    expect(appSource).toContain("const audioHapticsOpen = activeControlTab === 'audio-haptics'");
+    expect(appSource).not.toContain('setTriggerLabOpen');
+    expect(appSource).not.toContain('setAudioHapticsOpen');
+  });
 });

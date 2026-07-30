@@ -567,4 +567,14 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.overview-range-ticks span.milestone', 'width: 2px;')).toContain('height: 11px;');
     expect(cssBlock('.overview-range-ticks span.endpoint', 'height: 9px;')).toContain('height: 9px;');
   });
+
+  it('animates collapsible sidebar groups without leaving collapsed controls focusable', () => {
+    expect(cssBlock('.control-tabs', 'flex-direction: column;')).toContain('display: flex;');
+    expect(cssBlock('.control-tab-group-panel', 'grid-template-rows: 0fr;')).toContain('grid-template-rows: 0fr;');
+    expect(cssBlock('.control-tab-group.expanded > .control-tab-group-panel', 'grid-template-rows: 1fr;')).toContain(
+      'grid-template-rows: 1fr;'
+    );
+    expect(cssBlock('.control-tab-group-clip', 'overflow: hidden;')).toContain('overflow: hidden;');
+    expect(cssBlock('.control-tab-button.nested', 'padding-left: 42px;')).toContain('padding-left: 42px;');
+  });
 });
