@@ -187,8 +187,8 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('window.bridge.setWakeOnConnectEnabled(!snapshot.settings.wakeOnConnectEnabled)');
   });
 
-  it('exposes persisted audio interleave presets and advanced controls', () => {
-    expect(appSource).toContain("{ id: 'interleave', label: 'Interleave', Icon: SlidersHorizontal }");
+  it('keeps audio interleave tuning out of navigation while retaining the internal control', () => {
+    expect(appSource).not.toContain("{ id: 'interleave', label: 'Interleave', Icon: SlidersHorizontal }");
     expect(appSource).toContain('id="control-panel-interleave"');
     expect(appSource).toContain('AUDIO_INTERLEAVE_PRESETS');
     expect(appSource).toContain('window.bridge.setAudioInterleave(');

@@ -762,7 +762,6 @@ const CONTROL_TABS: Array<{ id: ControlTab; label: string; Icon: TablerIcon }> =
   { id: 'overview', label: 'Overview', Icon: IconLayoutDashboard },
   { id: 'devices', label: 'Devices', Icon: IconBluetooth },
   { id: 'audio', label: 'Audio', Icon: IconVolume },
-  { id: 'interleave', label: 'Interleave', Icon: SlidersHorizontal },
   { id: 'haptics', label: 'Haptics', Icon: Sparkles },
   { id: 'triggers', label: 'Triggers', Icon: IconDeviceGamepad2 },
   { id: 'lighting', label: 'Lighting', Icon: IconBulb },
