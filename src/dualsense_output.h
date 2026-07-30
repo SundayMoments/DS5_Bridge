@@ -41,7 +41,7 @@ constexpr uint8_t kPowerSaveControlMicMute = 0x10;
 
 constexpr uint8_t kHeadphoneVolumeMax = 0x7f;
 constexpr uint8_t kSpeakerVolumeMax = 0x64;
-constexpr uint8_t kMicVolumeMax = 0x40;
+constexpr uint8_t kMicVolumeMax = 0x30;
 constexpr uint8_t kLightbarSetupLightOut = 0x02;
 constexpr uint8_t kPlayerLed1Instant = 0x24;
 
@@ -81,6 +81,23 @@ constexpr uint8_t kLightbarBlueOffset = 46;
 constexpr uint8_t kLightbarSetupControlMask = 0x03;
 constexpr uint8_t kHostLedControlMask = 0x04 | 0x08 | 0x10;
 constexpr uint8_t kHostLightbarSetupMask = 0x01 | 0x02;
+
+constexpr uint8_t mic_volume_from_percent(uint8_t volume_percent) {
+    const uint8_t clamped = volume_percent > 100 ? 100 : volume_percent;
+    return static_cast<uint8_t>(
+        (static_cast<uint16_t>(clamped) * kMicVolumeMax + 50) / 100
+    );
+}
+
+constexpr uint8_t trigger_motor_power_from_percent(uint8_t intensity_percent) {
+    if (intensity_percent == 0 || intensity_percent >= 100) {
+        return 0;
+    }
+    const uint8_t reduction = static_cast<uint8_t>(
+        ((100 - intensity_percent) * 10 + 50) / 100
+    );
+    return static_cast<uint8_t>((reduction > 10 ? 10 : reduction) << 4);
+}
 
 inline bool payload_has_len(uint16_t len, uint8_t offset) {
     return len > offset;

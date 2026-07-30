@@ -6,7 +6,7 @@
 #ifndef DS5_BRIDGE_USB_H
 #define DS5_BRIDGE_USB_H
 
-#define DEFAULT_COMPANION_SPEAKER_GAIN 0.30f
+#define DEFAULT_COMPANION_SPEAKER_GAIN 1.0f
 
 extern uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
 extern float volume[2]; // 0: companion speaker gain, 1: haptics gain

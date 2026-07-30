@@ -154,6 +154,7 @@ enum CommandId : uint8_t {
     CommandForgetControllerPairing = 0x2E,
     CommandSetSpeakerGain = 0x32,
     CommandEnterBootloader = 0x33,
+    CommandSetAudioInterleave = 0x34,
     CommandSetLightbarRestoreEnabled = 0x36,
 };
 
@@ -2020,6 +2021,22 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
 
+        case CommandSetAudioInterleave: {
+            const uint16_t max_audio_run = value;
+            const uint16_t state_max_age_us = read_u16(buffer + 10);
+            if (max_audio_run == 0) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            bt_set_audio_interleave(
+                static_cast<uint8_t>(std::min<uint16_t>(max_audio_run, 0xff)),
+                state_max_age_us
+            );
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+        }
+
         case CommandSetMicVolume:
             if (value > 100) {
                 set_ack(command_id, sequence, AckInvalidValue);
@@ -2504,6 +2521,7 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 return;
             }
             restore_defaults();
+            bt_reset_audio_interleave();
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;

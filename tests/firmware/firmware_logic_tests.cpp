@@ -811,6 +811,25 @@ void output_state_clear_triggers_removes_effect_bytes_flags_and_power() {
     }
 }
 
+void dualsense_mic_volume_percent_uses_0x30_ceiling() {
+    EXPECT_EQ(mic_volume_from_percent(0), 0x00);
+    EXPECT_EQ(mic_volume_from_percent(50), 0x18);
+    EXPECT_EQ(mic_volume_from_percent(75), 0x24);
+    EXPECT_EQ(mic_volume_from_percent(100), 0x30);
+    EXPECT_EQ(mic_volume_from_percent(255), 0x30);
+}
+
+void adaptive_trigger_motor_power_uses_reduction_high_nibble() {
+    EXPECT_EQ(trigger_motor_power_from_percent(0), 0x00);
+    EXPECT_EQ(trigger_motor_power_from_percent(1), 0xa0);
+    EXPECT_EQ(trigger_motor_power_from_percent(25), 0x80);
+    EXPECT_EQ(trigger_motor_power_from_percent(50), 0x50);
+    EXPECT_EQ(trigger_motor_power_from_percent(75), 0x30);
+    EXPECT_EQ(trigger_motor_power_from_percent(90), 0x10);
+    EXPECT_EQ(trigger_motor_power_from_percent(100), 0x00);
+    EXPECT_EQ(trigger_motor_power_from_percent(255), 0x00);
+}
+
 void rumble_state_machine_sends_real_stops_immediately() {
     ControllerOutputRumbleStateMachine state{};
     auto payload = empty_payload();
@@ -1388,6 +1407,8 @@ std::vector<TestCase> tests{
     {"output state clear classic rumble clears cached selector state", output_state_clear_classic_rumble_clears_cached_selector_state},
     {"output state preserves haptic low pass filter byte", output_state_preserves_haptic_low_pass_filter_byte},
     {"output state clear triggers removes effect bytes flags and power", output_state_clear_triggers_removes_effect_bytes_flags_and_power},
+    {"dualsense mic volume percent uses 0x30 ceiling", dualsense_mic_volume_percent_uses_0x30_ceiling},
+    {"adaptive trigger motor power uses reduction high nibble", adaptive_trigger_motor_power_uses_reduction_high_nibble},
     {"rumble state machine sends real stops immediately", rumble_state_machine_sends_real_stops_immediately},
     {"haptics test signal matches original main packet flip pattern", haptics_test_signal_matches_original_main_packet_flip_pattern},
     {"haptics test signal is constant inside each original packet", haptics_test_signal_is_constant_inside_each_original_packet},

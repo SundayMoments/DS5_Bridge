@@ -67,6 +67,8 @@ bool bt_apply_classic_rumble_gain_payload(uint8_t* payload,uint16_t len);
 bool bt_write_audio_stream(uint8_t* data,uint16_t len);
 void bt_drain_audio_stream();
 void bt_reset_output_debug_stats();
+void bt_set_audio_interleave(uint8_t max_consecutive_audio_sends, uint32_t state_max_age_us);
+void bt_reset_audio_interleave();
 struct bt_output_debug_stats {
     uint32_t audio_0x36_enqueue_to_send_max_us;
     uint32_t audio_0x36_send_gap_max_us;

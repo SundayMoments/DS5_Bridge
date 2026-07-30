@@ -1746,9 +1746,11 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
         "\n}\n\nstatic bool enqueue_feedback_state_output"
     );
     if (
-        bt_cpp.find("#define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4")
+        bt_cpp.find("#define OUTPUT_DEFAULT_MAX_CONSECUTIVE_AUDIO_SENDS 4")
             == std::string::npos
-        || bt_cpp.find("#define OUTPUT_STATE_MAX_AGE_US 3000")
+        || bt_cpp.find("#define OUTPUT_DEFAULT_STATE_MAX_AGE_US 3000")
+            == std::string::npos
+        || select_output.find("output_interleave_config")
             == std::string::npos
         || select_output.find("consecutive_audio_sends")
             == std::string::npos
@@ -1797,7 +1799,7 @@ void assert_companion_trigger_tests_survive_continuous_audio(
             == std::string::npos
         || state_submit.find("enqueue_feedback_state_output")
             == std::string::npos
-        || standard_test.find("adaptive_trigger_motor_power_for_intensity")
+        || standard_test.find("trigger_motor_power_from_percent")
             == std::string::npos
         || standard_test.find("queue_adaptive_trigger_state_report")
             == std::string::npos

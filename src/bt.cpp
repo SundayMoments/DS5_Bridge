@@ -70,7 +70,6 @@
 #define DS_OUTPUT_POWER_SAVE_CONTROL_MIC_MUTE 0x10
 #define DS_OUTPUT_HEADPHONE_VOLUME_MAX 0x7f
 #define DS_OUTPUT_SPEAKER_VOLUME_MAX 0x64
-#define DS_OUTPUT_MIC_VOLUME_MAX 0x40
 #define DS_OUTPUT_AUDIO_FLAGS2_SPEAKER_PREAMP_GAIN 0x04
 #define DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_OUT 0x02
 #define DS_TRIGGER_EFFECT_SIZE 11
@@ -88,8 +87,12 @@
 #define AUDIO_INTERRUPT_PACKET_MAX_SIZE 400
 #define URGENT_SEND_QUEUE_MAX_DEPTH 16
 #define URGENT_SEND_QUEUE_HARD_MAX_DEPTH 64
-#define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4
-#define OUTPUT_STATE_MAX_AGE_US 3000
+#define OUTPUT_DEFAULT_MAX_CONSECUTIVE_AUDIO_SENDS 4
+#define OUTPUT_DEFAULT_STATE_MAX_AGE_US 3000
+#define OUTPUT_MIN_MAX_CONSECUTIVE_AUDIO_SENDS 1
+#define OUTPUT_MAX_MAX_CONSECUTIVE_AUDIO_SENDS 64
+#define OUTPUT_MIN_STATE_MAX_AGE_US 250
+#define OUTPUT_MAX_STATE_MAX_AGE_US 60000
 #define CONTROL_SEND_QUEUE_MAX_DEPTH 8
 #define CONTROL_SEND_HEADSET_AUDIO_SAFE_WINDOW_US 6000
 #define CONTROL_SEND_HEADSET_AUDIO_IDLE_US 20000
@@ -459,6 +462,10 @@ static uint32_t last_audio_0x36_send_us = 0;
 static uint32_t non_audio_reports_since_audio = 0;
 static uint8_t consecutive_non_audio_sends = 0;
 static uint8_t consecutive_audio_sends = 0;
+static OutputSchedulerConfig output_interleave_config{
+    OUTPUT_DEFAULT_MAX_CONSECUTIVE_AUDIO_SENDS,
+    OUTPUT_DEFAULT_STATE_MAX_AGE_US
+};
 static uint8_t consecutive_classic_rumble_stop_sends = 0;
 static bool interrupt_can_send_event_requested = false;
 static critical_section_t queue_lock;
@@ -1778,15 +1785,6 @@ static void set_trigger_vibration(uint8_t *trigger, uint8_t position, uint8_t am
     trigger[9] = frequency;
 }
 
-static uint8_t adaptive_trigger_motor_power_for_intensity(uint8_t intensity_percent) {
-    if (intensity_percent == 0 || intensity_percent >= 100) {
-        return 0;
-    }
-    const uint8_t clamped = intensity_percent > 100 ? 100 : intensity_percent;
-    const uint8_t reduction = static_cast<uint8_t>(((100 - clamped) * 8 + 50) / 100);
-    return std::min<uint8_t>(reduction, 7);
-}
-
 static void queue_adaptive_trigger_state_report(uint8_t *report, uint8_t motor_power) {
     uint8_t *payload = report + 3;
     payload[OUTPUT_PAYLOAD_VALID_FLAG1_OFFSET] |= DS_OUTPUT_VALID_FLAG1_MOTOR_POWER_LEVEL_ENABLE;
@@ -1848,7 +1846,7 @@ void bt_set_adaptive_trigger_effect(uint8_t mode, uint8_t intensity_percent, uin
     }
     queue_adaptive_trigger_state_report(
         report,
-        adaptive_trigger_motor_power_for_intensity(intensity_percent)
+        ds5::output::trigger_motor_power_from_percent(intensity_percent)
     );
 }
 
@@ -2054,7 +2052,7 @@ void bt_set_microphone_state(uint8_t volume_percent, bool muted, bool control_mu
     }
     report[3 + OUTPUT_PAYLOAD_MIC_VOLUME_OFFSET] = muted
         ? 0
-        : static_cast<uint8_t>((companion_mic_volume_percent * DS_OUTPUT_MIC_VOLUME_MAX + 50) / 100);
+        : ds5::output::mic_volume_from_percent(companion_mic_volume_percent);
     report[3 + OUTPUT_PAYLOAD_POWER_SAVE_CONTROL_OFFSET] = muted ? DS_OUTPUT_POWER_SAVE_CONTROL_MIC_MUTE : 0;
     bt_write(report, sizeof(report));
 }
@@ -3629,14 +3627,9 @@ static __attribute__((noinline, noclone, optimize("O2"))) bool __not_in_flash_fu
             consecutive_audio_sends,
             state_age_us
         };
-        constexpr OutputSchedulerConfig scheduler_config{
-            OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS,
-            OUTPUT_STATE_MAX_AGE_US
-        };
-
         const OutputSchedulerChoice choice = output_scheduler_choose_interrupt_packet(
             scheduler_inputs,
-            scheduler_config
+            output_interleave_config
         );
 
         if (choice == OutputSchedulerChoice::AudioStream) {
@@ -5217,6 +5210,31 @@ void bt_reset_output_debug_stats() {
     consecutive_non_audio_sends = 0;
     consecutive_audio_sends = 0;
     update_queue_depth_counters_locked();
+    critical_section_exit(&queue_lock);
+}
+
+void bt_set_audio_interleave(uint8_t max_consecutive_audio_sends, uint32_t state_max_age_us) {
+    max_consecutive_audio_sends = std::clamp<uint8_t>(
+        max_consecutive_audio_sends,
+        OUTPUT_MIN_MAX_CONSECUTIVE_AUDIO_SENDS,
+        OUTPUT_MAX_MAX_CONSECUTIVE_AUDIO_SENDS
+    );
+    state_max_age_us = std::clamp<uint32_t>(
+        state_max_age_us,
+        OUTPUT_MIN_STATE_MAX_AGE_US,
+        OUTPUT_MAX_STATE_MAX_AGE_US
+    );
+    critical_section_enter_blocking(&queue_lock);
+    output_interleave_config.max_consecutive_audio_sends = max_consecutive_audio_sends;
+    output_interleave_config.state_max_age_us = state_max_age_us;
+    critical_section_exit(&queue_lock);
+}
+
+void bt_reset_audio_interleave() {
+    critical_section_enter_blocking(&queue_lock);
+    output_interleave_config.max_consecutive_audio_sends =
+        OUTPUT_DEFAULT_MAX_CONSECUTIVE_AUDIO_SENDS;
+    output_interleave_config.state_max_age_us = OUTPUT_DEFAULT_STATE_MAX_AGE_US;
     critical_section_exit(&queue_lock);
 }
 
