@@ -22,6 +22,7 @@
 #include "controller_output_policy.h"
 #include "controller_output_rumble_state.h"
 #include "controller_output_state.h"
+#include "dualsense_output.h"
 #include "output_scheduler.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
