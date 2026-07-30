@@ -345,6 +345,47 @@ void classic_rumble_delivery_is_bounded_and_protects_managed_stop() {
     EXPECT_TRUE(ds5::classic_rumble::retry_requires_fail_closed(8));
 }
 
+void classic_rumble_coalesces_latest_active_without_crossing_stop() {
+    using ds5::classic_rumble::DeliveryKind;
+    struct Packet {
+        uint8_t id;
+        DeliveryKind kind;
+    };
+    auto kind_of = [](Packet const &packet) {
+        return packet.kind;
+    };
+    std::deque<Packet> queue{
+        {1, DeliveryKind::ManagedActive},
+        {2, DeliveryKind::Other},
+        {3, DeliveryKind::ManagedActive},
+    };
+
+    EXPECT_TRUE(ds5::classic_rumble::coalesce_latest_managed_active(
+        queue,
+        Packet{4, DeliveryKind::ManagedActive},
+        kind_of
+    ));
+    EXPECT_EQ(queue.size(), 3u);
+    EXPECT_EQ(queue[0].id, 1);
+    EXPECT_EQ(queue[2].id, 4);
+
+    queue.push_back(Packet{5, DeliveryKind::ManagedStop});
+    EXPECT_FALSE(ds5::classic_rumble::coalesce_latest_managed_active(
+        queue,
+        Packet{6, DeliveryKind::ManagedActive},
+        kind_of
+    ));
+    queue.push_back(Packet{6, DeliveryKind::ManagedActive});
+    EXPECT_EQ(queue[3].id, 5);
+    EXPECT_EQ(queue[4].id, 6);
+
+    EXPECT_FALSE(ds5::classic_rumble::coalesce_latest_managed_active(
+        queue,
+        Packet{7, DeliveryKind::ManagedStop},
+        kind_of
+    ));
+}
+
 void usb_host_speaker_gain_does_not_attenuate_native_haptics() {
     const ds5::usb_audio::NativeRenderFrame input{
         .speaker_left = 20000,
@@ -809,25 +850,6 @@ void output_state_clear_triggers_removes_effect_bytes_flags_and_power() {
         EXPECT_EQ(payload[kTriggerEffectRightOffset + index], 0);
         EXPECT_EQ(payload[kTriggerEffectLeftOffset + index], 0);
     }
-}
-
-void dualsense_mic_volume_percent_uses_0x30_ceiling() {
-    EXPECT_EQ(mic_volume_from_percent(0), 0x00);
-    EXPECT_EQ(mic_volume_from_percent(50), 0x18);
-    EXPECT_EQ(mic_volume_from_percent(75), 0x24);
-    EXPECT_EQ(mic_volume_from_percent(100), 0x30);
-    EXPECT_EQ(mic_volume_from_percent(255), 0x30);
-}
-
-void adaptive_trigger_motor_power_uses_reduction_high_nibble() {
-    EXPECT_EQ(trigger_motor_power_from_percent(0), 0x00);
-    EXPECT_EQ(trigger_motor_power_from_percent(1), 0xa0);
-    EXPECT_EQ(trigger_motor_power_from_percent(25), 0x80);
-    EXPECT_EQ(trigger_motor_power_from_percent(50), 0x50);
-    EXPECT_EQ(trigger_motor_power_from_percent(75), 0x30);
-    EXPECT_EQ(trigger_motor_power_from_percent(90), 0x10);
-    EXPECT_EQ(trigger_motor_power_from_percent(100), 0x00);
-    EXPECT_EQ(trigger_motor_power_from_percent(255), 0x00);
 }
 
 void rumble_state_machine_sends_real_stops_immediately() {
@@ -1387,6 +1409,7 @@ std::vector<TestCase> tests{
     {"scheduler bounds coalesced state latency during continuous audio", scheduler_bounds_coalesced_state_latency_during_continuous_audio},
     {"scheduler alternates rumble with audio and prioritizes one stop", scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop},
     {"classic rumble delivery is bounded and protects managed stop", classic_rumble_delivery_is_bounded_and_protects_managed_stop},
+    {"classic rumble coalesces latest active without crossing stop", classic_rumble_coalesces_latest_active_without_crossing_stop},
     {"packet compositor initializes bluetooth report and wraps sequence", packet_compositor_initializes_bluetooth_report_and_wraps_sequence},
     {"usb host speaker gain does not attenuate native haptics", usb_host_speaker_gain_does_not_attenuate_native_haptics},
     {"classic rumble gain clamps rounds and touches motor payloads", classic_rumble_gain_clamps_rounds_and_touches_motor_payloads},
@@ -1407,8 +1430,6 @@ std::vector<TestCase> tests{
     {"output state clear classic rumble clears cached selector state", output_state_clear_classic_rumble_clears_cached_selector_state},
     {"output state preserves haptic low pass filter byte", output_state_preserves_haptic_low_pass_filter_byte},
     {"output state clear triggers removes effect bytes flags and power", output_state_clear_triggers_removes_effect_bytes_flags_and_power},
-    {"dualsense mic volume percent uses 0x30 ceiling", dualsense_mic_volume_percent_uses_0x30_ceiling},
-    {"adaptive trigger motor power uses reduction high nibble", adaptive_trigger_motor_power_uses_reduction_high_nibble},
     {"rumble state machine sends real stops immediately", rumble_state_machine_sends_real_stops_immediately},
     {"haptics test signal matches original main packet flip pattern", haptics_test_signal_matches_original_main_packet_flip_pattern},
     {"haptics test signal is constant inside each original packet", haptics_test_signal_is_constant_inside_each_original_packet},

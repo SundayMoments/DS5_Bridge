@@ -1786,13 +1786,17 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
     if (
         classified.find("OutputReasonHostPassthrough") == std::string::npos
         || classified.find("enqueue_urgent_output") == std::string::npos
+        || classified.find("audio_output_route_protected") == std::string::npos
+        || classified.find("output_report_is_classic_rumble_transition") == std::string::npos
+        || classified.find("enqueue_classic_rumble_immediate_or_state_output") == std::string::npos
+        || classified.find("if (audio_protected)") == std::string::npos
         || classified.find("apply_classic_rumble_gain") != std::string::npos
         || classified.find("strip_redundant_classic_rumble_from_output")
             != std::string::npos
         || classified.find("split_state_from_mixed_output") != std::string::npos
     ) {
         throw std::runtime_error(
-            "Normal host/persona reports must stay complete pass-through packets without inferred START/STOP rewriting"
+            "Host/persona reports must retain complete idle pass-through and managed rumble transitions while protected audio coalesces redundant output"
         );
     }
 
@@ -1808,6 +1812,7 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
     );
     if (
         enqueue.find("enqueue_with_soft_cap") == std::string::npos
+        || enqueue.find("coalesce_latest_managed_active") == std::string::npos
         || enqueue.find("URGENT_SEND_QUEUE_HARD_MAX_DEPTH") == std::string::npos
         || retry.find("retry_delay_us") == std::string::npos
         || retry.find("retry_requires_fail_closed") == std::string::npos
@@ -1820,7 +1825,7 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
         || main_cpp.find("bt_output_retry_loop();") == std::string::npos
     ) {
         throw std::runtime_error(
-            "Managed rumble STOP delivery must remain bounded, retryable, and fair to native audio"
+            "Managed rumble delivery must coalesce stale active updates while keeping STOP bounded, retryable, and fair to native audio"
         );
     }
 
@@ -1835,11 +1840,9 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
         "\n}\n\nstatic bool enqueue_feedback_state_output"
     );
     if (
-        bt_cpp.find("#define OUTPUT_DEFAULT_MAX_CONSECUTIVE_AUDIO_SENDS 4")
+        bt_cpp.find("#define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4")
             == std::string::npos
-        || bt_cpp.find("#define OUTPUT_DEFAULT_STATE_MAX_AGE_US 3000")
-            == std::string::npos
-        || select_output.find("output_interleave_config")
+        || bt_cpp.find("#define OUTPUT_STATE_MAX_AGE_US 3000")
             == std::string::npos
         || select_output.find("consecutive_audio_sends")
             == std::string::npos
@@ -1889,7 +1892,7 @@ void assert_companion_trigger_tests_survive_continuous_audio(
             == std::string::npos
         || state_submit.find("enqueue_feedback_state_output")
             == std::string::npos
-        || standard_test.find("trigger_motor_power_from_percent")
+        || standard_test.find("adaptive_trigger_motor_power_for_intensity")
             == std::string::npos
         || standard_test.find("queue_adaptive_trigger_state_report")
             == std::string::npos
