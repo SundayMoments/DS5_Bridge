@@ -117,8 +117,8 @@ int main() {
         );
         require_contains(
             presets,
-            "\"ENABLE_FEEDBACK_TRACE_REPORTS\": \"ON\"",
-            "The UART preset must compile rumble and haptics tracing in"
+            "\"ENABLE_FEEDBACK_TRACE_REPORTS\": \"OFF\"",
+            "The UART preset must keep per-packet feedback tracing opt-in"
         );
         require_contains(
             presets,

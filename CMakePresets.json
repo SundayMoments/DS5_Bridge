@@ -17,7 +17,7 @@
         "DS5_DIAGNOSTICS_PRESET": "custom",
         "ENABLE_COMPANION": "ON",
         "ENABLE_DEBUG_LOGS": "ON",
-        "ENABLE_FEEDBACK_TRACE_REPORTS": "ON",
+        "ENABLE_FEEDBACK_TRACE_REPORTS": "OFF",
         "WAVESHARE_RP2350B_PLUS_W_BUILD": "OFF"
       }
     }
