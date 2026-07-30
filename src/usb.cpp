@@ -13,6 +13,7 @@
 #include "audio.h"
 #include "bt.h"
 #include "host_input.h"
+#include "persona/host_persona.h"
 #include "usb.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
@@ -95,6 +96,11 @@ static bool reconnect_grace_active(uint32_t now) {
 
 static bool usb_bus_suspended() {
     return usb_host_suspended || (tud_inited() && tud_suspended());
+}
+
+static bool usb_wake_retention_enabled_for_persona() {
+    return usb_wake_on_connect
+        && host_persona_active() != HostPersonaModeXusb360;
 }
 
 static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
@@ -228,7 +234,11 @@ bool usb_line_streaming_active() {
 void usb_wake_host_if_suspended() {
     // This function is called from BTstack callbacks. Publish the request here,
     // then let usb_pm_poll issue it from the normal TinyUSB task context.
-    if (usb_bus_suspended() && usb_wake_on_connect && usb_remote_wakeup_armed) {
+    if (
+        usb_bus_suspended()
+        && usb_wake_retention_enabled_for_persona()
+        && usb_remote_wakeup_armed
+    ) {
         usb_remote_wakeup_pending = true;
     }
 }
@@ -237,11 +247,20 @@ void usb_set_wake_on_connect(bool enabled) {
     usb_wake_on_connect = enabled;
     if (!enabled) {
         usb_remote_wakeup_pending = false;
+        if (!usb_controller_transport_ready && usb_controller_transport_attached) {
+            usb_controller_transport_transition_pending = true;
+        }
     }
 }
 
 bool usb_wake_on_connect_enabled() {
     return usb_wake_on_connect;
+}
+
+bool usb_controller_transport_retained_for_wake() {
+    return usb_controller_transport_attached
+        && !usb_controller_transport_ready
+        && usb_wake_retention_enabled_for_persona();
 }
 
 void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
@@ -368,6 +387,17 @@ void usb_pm_poll() {
         return;
     }
 
+    if (
+        !usb_controller_transport_ready
+        && usb_controller_transport_attached
+        && !usb_wake_retention_enabled_for_persona()
+        && !usb_controller_transport_transition_pending
+        && !usb_reconnect_connect_pending
+        && !usb_reconnect_requested
+    ) {
+        usb_controller_transport_transition_pending = true;
+    }
+
     if (usb_controller_transport_transition_pending) {
         if (
             !usb_controller_transport_ready
@@ -389,11 +419,18 @@ void usb_pm_poll() {
             // now runs only from this top-level poll, never a packet callback.
             usb_connect_controller_transport(now);
         } else if (usb_controller_transport_attached && tud_inited()) {
-            // A soft detach hides the emulated controller while preserving the
-            // initialized TinyUSB state used by the first connection.
+            usb_reset_audio_class_state();
+            if (usb_wake_retention_enabled_for_persona()) {
+                // Keep the full native controller persona enumerated as the
+                // wake target after the physical controller goes to sleep.
+                // Controller state is still reported as disconnected, and a
+                // neutral input report clears any held controls.
+                return;
+            }
+            // Wake is disabled or unsupported by this persona. A soft detach
+            // hides the emulated controller while preserving TinyUSB state.
             usb_controller_transport_attached = false;
             usb_mounted = false;
-            usb_reset_audio_class_state();
             tud_disconnect();
         }
         return;

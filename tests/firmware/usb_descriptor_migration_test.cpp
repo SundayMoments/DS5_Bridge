@@ -551,6 +551,7 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
     const auto usb_cpp = read_text(root / "src" / "usb.cpp");
     const auto bt_cpp = read_text(root / "src" / "bt.cpp");
     const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const auto main_cpp = read_text(root / "src" / "main.cpp");
 
     if (
         descriptors.find("0xE0, // bmAttributes: SELF-POWERED, REMOTE-WAKEUP") == std::string::npos
@@ -580,7 +581,9 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
         "\n}\n\nextern \"C\" void tud_mount_cb(void) {"
     );
     if (
-        wake.find("usb_bus_suspended() && usb_wake_on_connect && usb_remote_wakeup_armed") == std::string::npos
+        wake.find("usb_bus_suspended()") == std::string::npos
+        || wake.find("usb_wake_retention_enabled_for_persona()") == std::string::npos
+        || wake.find("usb_remote_wakeup_armed") == std::string::npos
         || wake.find("usb_remote_wakeup_pending = true;") == std::string::npos
         || wake.find("tud_remote_wakeup()") != std::string::npos
         || pm_poll.find("if (usb_remote_wakeup_pending)") == std::string::npos
@@ -592,11 +595,19 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
         || suspend.find("usb_remote_wakeup_armed = remote_wakeup_en;") == std::string::npos
         || ready.find("usb_wake_host_if_suspended();") == std::string::npos
         || bt_cpp.find("usb_wake_host_if_suspended();") == std::string::npos
+        || usb_cpp.find("usb_wake_retention_enabled_for_persona()") == std::string::npos
+        || usb_cpp.find("host_persona_active() != HostPersonaModeXusb360") == std::string::npos
+        || usb_cpp.find("usb_controller_transport_retained_for_wake()") == std::string::npos
+        || usb_cpp.find("Keep the full native controller persona enumerated as the") == std::string::npos
+        || usb_cpp.find("if (!usb_controller_transport_ready && usb_controller_transport_attached)") == std::string::npos
+        || main_cpp.find("report_dirty = usb_controller_transport_retained_for_wake();") == std::string::npos
         || companion_cpp.find("CommandSetWakeOnConnect = 0x35") == std::string::npos
         || companion_cpp.find("usb_set_wake_on_connect(value == 1);") == std::string::npos
         || companion_cpp.find("buffer[49] = usb_wake_on_connect_enabled() ? 1 : 0;") == std::string::npos
     ) {
-        throw std::runtime_error("Wake-on-connect must require suspend, host arming, and the companion setting");
+        throw std::runtime_error(
+            "Wake-on-connect must retain a neutral native persona and require suspend, host arming, and the companion setting"
+        );
     }
 }
 

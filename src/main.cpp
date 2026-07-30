@@ -313,7 +313,10 @@ void reset_controller_input_report_cache() {
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
     interrupt_in_state = default_state;
-    report_dirty = false;
+    // When wake-on-connect retains the native USB persona after the physical
+    // controller sleeps, publish neutral state so Windows never sees a stuck
+    // button or axis from the final Bluetooth report.
+    report_dirty = usb_controller_transport_retained_for_wake();
     critical_section_exit(&report_cs);
 }
 

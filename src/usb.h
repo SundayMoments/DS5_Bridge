@@ -33,5 +33,6 @@ void usb_handle_controller_transport_ready();
 void usb_wake_host_if_suspended();
 void usb_set_wake_on_connect(bool enabled);
 bool usb_wake_on_connect_enabled();
+bool usb_controller_transport_retained_for_wake();
 
 #endif //DS5_BRIDGE_USB_H
