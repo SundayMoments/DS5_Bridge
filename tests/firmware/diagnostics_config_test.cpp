@@ -58,6 +58,8 @@ int main() {
         const std::string utils = read_text(root / "src" / "utils.h");
         const std::string firmware_log =
             read_text(root / "src" / "firmware_log.cpp");
+        const std::string btstack_config =
+            read_text(root / "src" / "btstack_config.h");
         const std::string companion =
             read_text(root / "src" / "companion.cpp");
         const std::string watchdog_telemetry =
@@ -187,6 +189,16 @@ int main() {
             firmware_log,
             "hci_dump_enable_packet_log(false);",
             "The BTstack sink must exclude raw pairing packets"
+        );
+        if (btstack_config.find("ENABLE_LOG_INFO") != std::string::npos) {
+            throw std::runtime_error(
+                "UART diagnostics must not enable BTstack INFO spam"
+            );
+        }
+        require_contains(
+            btstack_config,
+            "#define ENABLE_LOG_ERROR",
+            "UART diagnostics must retain BTstack error reporting"
         );
         require_contains(
             main,
