@@ -210,11 +210,11 @@ bool usb_host_suspended_active() {
     return usb_bus_suspended();
 }
 
-bool usb_speaker_streaming_active() {
+bool __not_in_flash_func(usb_speaker_streaming_active)() {
     return usb_speaker_streaming;
 }
 
-bool usb_mic_streaming_active() {
+bool __not_in_flash_func(usb_mic_streaming_active)() {
     return usb_mic_streaming;
 }
 

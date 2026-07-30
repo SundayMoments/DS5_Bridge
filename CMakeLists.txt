@@ -118,12 +118,13 @@ add_custom_command(
 add_custom_target(opus_ram_relocate ALL DEPENDS ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp)
 add_dependencies(ds5-bridge opus_ram_relocate)
 
-target_compile_options(wdl_resampler PRIVATE -fsigned-char -ffunction-sections)
+target_compile_options(wdl_resampler PRIVATE -O2 -fsigned-char -ffunction-sections)
 add_custom_command(TARGET wdl_resampler POST_BUILD
         COMMAND ${CMAKE_OBJCOPY}
                 --rename-section .text._ZN13WDL_Resampler11ResampleOutEPfiii=.time_critical.WDL_ResampleOut
                 --rename-section .text._ZN13WDL_Resampler15ResamplePrepareEiiPPf=.time_critical.WDL_ResamplePrepare
                 --rename-section .text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset
+                --rename-section .text._ZL26wdl_rs_reinterleave_bufferPfiii=.time_critical.WDL_ReinterleaveBuffer
                 $<TARGET_FILE:wdl_resampler>
         COMMENT "Relocating WDL_Resampler hot path to .time_critical.*"
         VERBATIM
@@ -170,19 +171,49 @@ relocate_to_ram(
 )
 relocate_to_ram(
         lib/cyw43-driver/src/cyw43_ll.c.o
-        ".text.cyw43_ll_sdpcm_poll_device=.time_critical.cyw43_ll_sdpcm_poll_device@.text.cyw43_ll_process_packets=.time_critical.cyw43_ll_process_packets@.text.cyw43_sdpcm_send_common=.time_critical.cyw43_sdpcm_send_common@.text.cyw43_do_ioctl.part.0=.time_critical.cyw43_do_ioctl@.text.cyw43_ll_bt_has_work=.time_critical.cyw43_ll_bt_has_work@.text.cyw43_ll_parse_async_event=.time_critical.cyw43_ll_parse_async_event"
+        ".text.cyw43_ll_bus_sleep=.time_critical.cyw43_ll_bus_sleep@.text.cyw43_ll_sdpcm_poll_device=.time_critical.cyw43_ll_sdpcm_poll_device@.text.cyw43_ll_process_packets=.time_critical.cyw43_ll_process_packets@.text.cyw43_sdpcm_send_common=.time_critical.cyw43_sdpcm_send_common@.text.cyw43_do_ioctl.part.0=.time_critical.cyw43_do_ioctl@.text.cyw43_ll_bt_has_work=.time_critical.cyw43_ll_bt_has_work@.text.cyw43_ll_parse_async_event=.time_critical.cyw43_ll_parse_async_event"
         "Relocating CYW43 SDPCM pump to SRAM"
 )
 relocate_to_ram(
         lib/cyw43-driver/src/cyw43_ctrl.c.o
-        ".text.cyw43_poll_func=.time_critical.cyw43_poll_func@.text.cyw43_bluetooth_hci_read=.time_critical.cyw43_bluetooth_hci_read@.text.cyw43_bluetooth_hci_write=.time_critical.cyw43_bluetooth_hci_write"
+        ".text.cyw43_ensure_up=.time_critical.cyw43_ensure_up@.text.cyw43_cb_ensure_awake=.time_critical.cyw43_cb_ensure_awake@.text.cyw43_poll_func=.time_critical.cyw43_poll_func@.text.cyw43_bluetooth_hci_read=.time_critical.cyw43_bluetooth_hci_read@.text.cyw43_bluetooth_hci_write=.time_critical.cyw43_bluetooth_hci_write"
         "Relocating CYW43 poll and Bluetooth HCI bus to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cybt_shared_bus.c.o
+        ".text.cyw43_btbus_write=.time_critical.cyw43_btbus_write"
+        "Relocating CYW43 shared-bus write to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cybt_shared_bus_driver.c.o
+        ".text.cybt_awake=.time_critical.cybt_awake@.text.cybt_set_bt_awake=.time_critical.cybt_set_bt_awake@.text.cybt_get_bt_buf_index=.time_critical.cybt_get_bt_buf_index@.text.cybt_toggle_bt_intr=.time_critical.cybt_toggle_bt_intr@.text.cybt_reg_write_idx=.time_critical.cybt_reg_write_idx@.text.cybt_mem_write_idx=.time_critical.cybt_mem_write_idx"
+        "Relocating CYW43 shared-bus packet helpers to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_cyw43_driver/cyw43_driver.c.o
+        ".text.cyw43_thread_enter=.time_critical.cyw43_thread_enter@.text.cyw43_thread_exit=.time_critical.cyw43_thread_exit"
+        "Relocating CYW43 driver lock path to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_async_context/async_context_poll.c.o
+        ".text.noop=.time_critical.async_context_poll_noop"
+        "Relocating CYW43 poll-context lock stub to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/hardware_clocks/clocks.c.o
+        ".text.clock_get_hz=.time_critical.clock_get_hz"
+        "Relocating CYW43 bus clock query to SRAM"
 )
 
 # Tier 2: transmit pumps and USB transfer submission.
 relocate_to_ram(
+        src/bt.cpp.o
+        ".text._ZNSt6vectorIhSaIhEE13_M_assign_auxIPKhEEvT_S5_St20forward_iterator_tag.isra.0=.time_critical.audio_packet_vector_assign"
+        "Relocating reusable audio packet copy to SRAM"
+)
+relocate_to_ram(
         lib/btstack/src/hci.c.o
-        ".text.hci_run=.time_critical.hci_run@.text.hci_send_acl_packet_fragments=.time_critical.hci_send_acl_packet_fragments@.text.hci_send_acl_packet_buffer=.time_critical.hci_send_acl_packet_buffer"
+        ".text.hci_run=.time_critical.hci_run@.text.hci_send_acl_packet_fragments=.time_critical.hci_send_acl_packet_fragments@.text.hci_send_acl_packet_buffer=.time_critical.hci_send_acl_packet_buffer@.text.hci_can_send_prepared_acl_packet_now=.time_critical.hci_can_send_prepared_acl_packet_now@.text.hci_can_send_acl_packet_now=.time_critical.hci_can_send_acl_packet_now@.text.hci_can_send_acl_classic_packet_now=.time_critical.hci_can_send_acl_classic_packet_now@.text.hci_is_packet_buffer_reserved=.time_critical.hci_is_packet_buffer_reserved@.text.hci_reserve_packet_buffer=.time_critical.hci_reserve_packet_buffer@.text.hci_get_outgoing_packet_buffer=.time_critical.hci_get_outgoing_packet_buffer@.text.hci_non_flushable_packet_boundary_flag_supported=.time_critical.hci_non_flushable_packet_boundary_flag_supported@.text.hci_automatic_flush_timeout=.time_critical.hci_automatic_flush_timeout"
         "Relocating HCI transmit pump to SRAM"
 )
 relocate_to_ram(
@@ -192,8 +223,33 @@ relocate_to_ram(
 )
 relocate_to_ram(
         lib/btstack/src/btstack_linked_list.c.o
-        ".text.btstack_linked_list_iterator_init=.time_critical.btstack_linked_list_iterator_init@.text.btstack_linked_list_iterator_has_next=.time_critical.btstack_linked_list_iterator_has_next@.text.btstack_linked_list_iterator_next=.time_critical.btstack_linked_list_iterator_next"
+        ".text.btstack_linked_list_add_tail=.time_critical.btstack_linked_list_add_tail@.text.btstack_linked_list_remove=.time_critical.btstack_linked_list_remove@.text.btstack_linked_list_iterator_init=.time_critical.btstack_linked_list_iterator_init@.text.btstack_linked_list_iterator_has_next=.time_critical.btstack_linked_list_iterator_has_next@.text.btstack_linked_list_iterator_next=.time_critical.btstack_linked_list_iterator_next"
         "Relocating BTstack list iterators to SRAM"
+)
+relocate_to_ram(
+        lib/btstack/src/btstack_util.c.o
+        ".text.little_endian_read_16=.time_critical.little_endian_read_16@.text.little_endian_store_16=.time_critical.little_endian_store_16"
+        "Relocating BTstack packet writer to SRAM"
+)
+relocate_to_ram(
+        lib/btstack/src/hci_dump.c.o
+        ".text.hci_dump_btstack_event=.time_critical.hci_dump_btstack_event@.text.hci_dump_packet=.time_critical.hci_dump_packet"
+        "Relocating BTstack event dump stub to SRAM"
+)
+relocate_to_ram(
+        lib/btstack/src/btstack_run_loop.c.o
+        ".text.btstack_run_loop_get_time_ms=.time_critical.btstack_run_loop_get_time_ms"
+        "Relocating BTstack time query to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_btstack/btstack_run_loop_async_context.c.o
+        ".text.btstack_run_loop_async_context_get_time_ms=.time_critical.btstack_run_loop_async_context_get_time_ms"
+        "Relocating BTstack async-context clock to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_cyw43_driver/btstack_hci_transport_cyw43.c.o
+        ".text.hci_transport_cyw43_send_packet=.time_critical.hci_transport_cyw43_send_packet"
+        "Relocating CYW43 HCI packet send entry to SRAM"
 )
 relocate_to_ram(
         lib/cyw43-driver/src/cyw43_ll.c.o
@@ -212,7 +268,7 @@ relocate_to_ram(
 )
 relocate_to_ram(
         lib/tinyusb/src/class/audio/audio_device.c.o
-        ".text.tud_audio_n_read=.time_critical.tud_audio_n_read@.text.tud_audio_n_write=.time_critical.tud_audio_n_write@.text.audiod_calc_tx_packet_sz.isra.0=.time_critical.audiod_calc_tx_packet_sz@.text.audiod_xfer_isr=.time_critical.audiod_xfer_isr"
+        ".text.tud_audio_n_available=.time_critical.tud_audio_n_available@.text.tud_audio_n_get_ep_in_ff=.time_critical.tud_audio_n_get_ep_in_ff@.text.tud_audio_n_read=.time_critical.tud_audio_n_read@.text.tud_audio_n_write=.time_critical.tud_audio_n_write@.text.audiod_calc_tx_packet_sz.isra.0=.time_critical.audiod_calc_tx_packet_sz@.text.audiod_xfer_isr=.time_critical.audiod_xfer_isr"
         "Relocating TinyUSB audio data path to SRAM"
 )
 

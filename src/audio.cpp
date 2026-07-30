@@ -259,7 +259,7 @@ static bool mic_usb_fifo_threshold_configured = false;
 static void __not_in_flash_func(core1_entry)();
 static void reset_core1_audio_pipeline(uint32_t generation);
 static void clear_mic_queues();
-static void process_mic_usb_output();
+static __attribute__((noinline)) void __not_in_flash_func(process_mic_usb_output)();
 static void discard_usb_audio_packets(uint8_t max_reads);
 static void clear_partial_audio_state();
 static void reset_controller_audio_report_counters();
@@ -1034,7 +1034,7 @@ static void update_persistent_speaker_route() {
     }
 }
 
-static bool send_audio_haptics_packet(
+static bool __not_in_flash_func(send_audio_haptics_packet)(
     const int8_t *haptic_buf,
     bool include_speaker,
     bool merge_test_overlay = true
@@ -1070,7 +1070,9 @@ static bool send_audio_haptics_packet(
         critical_section_exit(&opus_cs);
 
         const bool force_route = !speaker_route_active || speaker_route_headset != plug_headset;
-        bt_set_speaker_output_enabled(true, plug_headset, force_route);
+        if (force_route) {
+            bt_set_speaker_output_enabled(true, plug_headset, true);
+        }
         speaker_route_active = true;
         speaker_route_headset = plug_headset;
         pkt[142] = (plug_headset ? 0x16 : 0x13) | 0 << 6 | 1 << 7;
@@ -1090,7 +1092,7 @@ static bool send_audio_haptics_packet(
         }
     }
 
-    if (merge_test_overlay) {
+    if (merge_test_overlay && test_haptics_active) {
         (void)merge_test_haptics_overlay(final_haptics, include_speaker);
     }
     if (haptic_samples_nonzero(final_haptics)) {
@@ -1560,7 +1562,7 @@ static bool audio_silence_tail_active(uint32_t now) {
     return last_audio_us != 0 && static_cast<uint32_t>(now - last_audio_us) < SPEAKER_USB_SILENCE_TAIL_US;
 }
 
-bool audio_recent() {
+bool __not_in_flash_func(audio_recent)() {
     return audio_silence_tail_active(time_us_32());
 }
 
@@ -1977,7 +1979,7 @@ static void configure_mic_usb_fifo_threshold(tu_fifo_t *ep_in_fifo) {
     mic_usb_fifo_threshold_configured = true;
 }
 
-static void refresh_mic_usb_buffered_bytes(
+static void __not_in_flash_func(refresh_mic_usb_buffered_bytes)(
     tu_fifo_t *ep_in_fifo,
     uint16_t pending_len,
     uint16_t pending_offset
@@ -1989,7 +1991,7 @@ static void refresh_mic_usb_buffered_bytes(
     mic_usb_buffered_bytes = fifo_bytes + pending_bytes;
 }
 
-static bool write_mic_usb_pending_frame(
+static __attribute__((noinline, noclone)) bool __not_in_flash_func(write_mic_usb_pending_frame)(
     mic_decode_element &mic_usb_pending,
     uint16_t &mic_usb_pending_offset,
     uint16_t &mic_usb_pending_len
@@ -2065,7 +2067,7 @@ static bool write_mic_usb_pending_frame(
     return true;
 }
 
-static void process_mic_usb_output() {
+static __attribute__((noinline)) void __not_in_flash_func(process_mic_usb_output)() {
     // Keep the in-flight USB frame owned by this playout routine rather than
     // exposing partial-frame state to unrelated microphone lifecycle code.
     static mic_decode_element mic_usb_pending{};

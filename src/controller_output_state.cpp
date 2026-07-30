@@ -4,6 +4,11 @@
 #include <cstring>
 
 #include "dualsense_output.h"
+#ifdef PICO_ON_DEVICE
+#include "pico.h"
+#else
+#define __not_in_flash_func(function_name) function_name
+#endif
 
 using namespace ds5::output;
 
@@ -235,7 +240,7 @@ void controller_output_state_clear_classic_rumble() {
     state_data[kMotorLeftOffset] = 0;
 }
 
-void controller_output_state_strip_zero_classic_rumble(uint8_t *payload, uint16_t len) {
+void __not_in_flash_func(controller_output_state_strip_zero_classic_rumble)(uint8_t *payload, uint16_t len) {
     if (payload == nullptr || len <= kMotorLeftOffset) {
         return;
     }
@@ -500,7 +505,7 @@ bool controller_output_state_copy_player_led_report(uint8_t *destination, uint16
     return true;
 }
 
-void controller_output_state_copy_audio_snapshot(uint8_t *destination, bool headset_plugged) {
+void __not_in_flash_func(controller_output_state_copy_audio_snapshot)(uint8_t *destination, bool headset_plugged) {
     if (destination == nullptr) {
         return;
     }

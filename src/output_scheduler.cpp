@@ -1,6 +1,11 @@
 #include "output_scheduler.h"
+#ifdef PICO_ON_DEVICE
+#include "pico.h"
+#else
+#define __not_in_flash_func(function_name) function_name
+#endif
 
-OutputSchedulerChoice output_scheduler_choose_interrupt_packet(
+OutputSchedulerChoice __not_in_flash_func(output_scheduler_choose_interrupt_packet)(
     OutputSchedulerInputs const &inputs,
     OutputSchedulerConfig const &config
 ) {

@@ -4,6 +4,7 @@
 //
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -84,6 +85,7 @@
 #define DS_TRIGGER_TARGET_LEFT 1
 #define DS_TRIGGER_TARGET_RIGHT 2
 #define AUDIO_SEND_QUEUE_MAX_DEPTH 4
+#define AUDIO_INTERRUPT_PACKET_MAX_SIZE 400
 #define URGENT_SEND_QUEUE_MAX_DEPTH 16
 #define URGENT_SEND_QUEUE_HARD_MAX_DEPTH 64
 #define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4
@@ -248,6 +250,55 @@ struct output_packet {
     uint8_t trace_detail3;
 };
 
+struct audio_output_packet {
+    std::array<uint8_t, AUDIO_INTERRUPT_PACKET_MAX_SIZE> data{};
+    uint16_t data_size = 0;
+    uint32_t enqueue_time_us = 0;
+    uint8_t report_id = 0;
+};
+
+class fixed_audio_output_queue {
+public:
+    bool empty() const { return count_ == 0; }
+    size_t size() const { return count_; }
+    audio_output_packet &front() { return packets_[read_index_]; }
+    audio_output_packet const &front() const { return packets_[read_index_]; }
+
+    void pop() {
+        if (count_ == 0) {
+            return;
+        }
+        read_index_ = next_index(read_index_);
+        count_--;
+    }
+
+    void push(audio_output_packet const &packet) {
+        if (count_ == AUDIO_SEND_QUEUE_MAX_DEPTH) {
+            pop();
+        }
+        packets_[write_index_] = packet;
+        write_index_ = next_index(write_index_);
+        count_++;
+    }
+
+    void clear() {
+        read_index_ = 0;
+        write_index_ = 0;
+        count_ = 0;
+    }
+
+private:
+    static constexpr uint8_t next_index(uint8_t index) {
+        index++;
+        return index == AUDIO_SEND_QUEUE_MAX_DEPTH ? 0 : index;
+    }
+
+    std::array<audio_output_packet, AUDIO_SEND_QUEUE_MAX_DEPTH> packets_{};
+    uint8_t read_index_ = 0;
+    uint8_t write_index_ = 0;
+    uint8_t count_ = 0;
+};
+
 struct control_packet {
     vector<uint8_t> data;
     uint32_t enqueue_time_us;
@@ -294,6 +345,7 @@ struct pairing_transaction {
 
 static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
+static void l2cap_packet_handler_cold(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static int classic_connection_filter(bd_addr_t addr, hci_link_type_t link_type);
 static bool build_interrupt_output_packet(uint8_t *data, uint16_t len, vector<uint8_t> &packet);
 static bool enqueue_urgent_output(uint8_t *data, uint16_t len, uint8_t reason);
@@ -394,7 +446,8 @@ static uint8_t feature_prefetch_count = 0;
 static uint8_t feature_prefetch_index = 0;
 static uint32_t feature_prefetch_next_us = 0;
 static deque<output_packet> urgent_queue;
-static queue<output_packet> audio_queue;
+static fixed_audio_output_queue audio_queue;
+static output_packet interrupt_send_packet;
 static vector<control_packet> control_queue;
 static uint8_t state_pending_report[DS_OUTPUT_REPORT_BT_SIZE];
 static bool state_pending = false;
@@ -439,6 +492,10 @@ static void clear_packet_queue(queue<output_packet> &packets) {
 }
 
 static void clear_packet_queue(deque<output_packet> &packets) {
+    packets.clear();
+}
+
+static void clear_packet_queue(fixed_audio_output_queue &packets) {
     packets.clear();
 }
 
@@ -1466,7 +1523,7 @@ static void set_output_trace_details_locked(
     packet.trace_detail3 = clamp_output_trace_u8(packet_age_us(now, packet.enqueue_time_us) / 1000);
 }
 
-static void output_trace_queue_details_locked(
+static void __not_in_flash_func(output_trace_queue_details_locked)(
     uint8_t &critical_depth,
     uint8_t &audio_depth,
     uint8_t &route_flags
@@ -1490,7 +1547,7 @@ void bt_register_data_callback(bt_data_callback_t callback) {
     bt_data_callback = callback;
 }
 
-bool bt_is_controller_connected() {
+bool __not_in_flash_func(bt_is_controller_connected)() {
     return hid_interrupt_ready;
 }
 
@@ -2726,6 +2783,9 @@ void bt_inquiry_loop() {
 
 int bt_init() {
     critical_section_init(&queue_lock);
+    // Allocate the reusable interrupt packet before streaming starts so the
+    // steady-state CAN_SEND_NOW handler never enters the flash-backed heap.
+    interrupt_send_packet.data.reserve(AUDIO_INTERRUPT_PACKET_MAX_SIZE);
 
     bt_l2cap_init();
     gap_set_link_supervision_timeout(CLASSIC_LINK_SUPERVISION_TIMEOUT_SLOTS);
@@ -3449,7 +3509,10 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
     }
 }
 
-static void note_output_packet_sent(const output_packet &packet, uint32_t now) {
+static __attribute__((noinline, noclone, optimize("O2"))) void __not_in_flash_func(note_output_packet_sent)(
+    const output_packet &packet,
+    uint32_t now
+) {
     const uint32_t age_us = packet_age_us(now, packet.enqueue_time_us);
     if (last_bt_send_us != 0) {
         update_max_u32(output_counters.bt_send_gap_max_us, packet_age_us(now, last_bt_send_us));
@@ -3520,7 +3583,10 @@ static void note_output_packet_sent(const output_packet &packet, uint32_t now) {
     consecutive_audio_sends = 0;
 }
 
-static bool select_next_output_packet_locked(output_packet &packet, uint32_t now) {
+static __attribute__((noinline, noclone, optimize("O2"))) bool __not_in_flash_func(select_next_output_packet_locked)(
+    output_packet &packet,
+    uint32_t now
+) {
     if (!output_pending_locked()) {
         return false;
     }
@@ -3574,7 +3640,17 @@ static bool select_next_output_packet_locked(output_packet &packet, uint32_t now
         );
 
         if (choice == OutputSchedulerChoice::AudioStream) {
-            packet = std::move(audio_queue.front());
+            const audio_output_packet &audio_packet = audio_queue.front();
+            packet.data.assign(
+                audio_packet.data.begin(),
+                audio_packet.data.begin() + audio_packet.data_size
+            );
+            packet.enqueue_time_us = audio_packet.enqueue_time_us;
+            packet.ready_at_us = audio_packet.enqueue_time_us;
+            packet.packet_class = OutputPacketAudio;
+            packet.report_id = audio_packet.report_id;
+            packet.reason = OutputReasonAudioStream;
+            packet.retry_count = 0;
             audio_queue.pop();
         } else if (choice == OutputSchedulerChoice::Urgent) {
             packet = std::move(urgent_queue.front());
@@ -3738,7 +3814,92 @@ static void finish_hid_session_if_ready() {
     bt_schedule_lightbar_restore(250);
 }
 
-static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
+static __attribute__((optimize("O2"))) void __not_in_flash_func(handle_l2cap_can_send_now)(uint8_t *packet) {
+    if (connection_phase == BtConnectionPhase::Disconnecting) {
+        return;
+    }
+    const uint16_t local_cid = l2cap_event_can_send_now_get_local_cid(packet);
+    if (local_cid != hid_interrupt_cid) {
+        return;
+    }
+    interrupt_can_send_event_requested = false;
+
+    const uint32_t now = time_us_32();
+    critical_section_enter_blocking(&queue_lock);
+    if (!select_next_output_packet_locked(interrupt_send_packet, now)) {
+        critical_section_exit(&queue_lock);
+        return;
+    }
+    bool has_more = output_pending_locked();
+    bool should_request_control = false;
+    request_control_if_audio_window_open_locked(now, should_request_control);
+    critical_section_exit(&queue_lock);
+
+    uint8_t status = l2cap_send(
+        hid_interrupt_cid,
+        interrupt_send_packet.data.data(),
+        interrupt_send_packet.data.size()
+    );
+    if (status != 0) {
+        DS5_LOG("[L2CAP] Interrupt Error, Status: 0x%02X\n", status);
+        if (requeue_managed_rumble_on_send_failure(std::move(interrupt_send_packet), now)) {
+            // The failed transition remains at the head until its bounded
+            // backoff expires. Audio may continue meanwhile.
+            critical_section_enter_blocking(&queue_lock);
+            has_more = !audio_queue.empty() || state_pending;
+            critical_section_exit(&queue_lock);
+        }
+    } else if (!interrupt_send_packet.data.empty()) {
+        critical_section_enter_blocking(&queue_lock);
+        note_output_packet_sent(interrupt_send_packet, time_us_32());
+        has_more = has_more || output_pending_locked();
+        critical_section_exit(&queue_lock);
+#ifdef ENABLE_COMPANION
+        companion_note_trigger_trace_report(
+            CompanionTriggerTraceBt,
+            interrupt_send_packet.data.data() + 1,
+            static_cast<uint16_t>(interrupt_send_packet.data.size() - 1),
+            interrupt_send_packet.reason
+        );
+        companion_note_feedback_trace_report(
+            CompanionFeedbackTraceBt,
+            interrupt_send_packet.data.data() + 1,
+            static_cast<uint16_t>(interrupt_send_packet.data.size() - 1),
+            interrupt_send_packet.reason,
+            interrupt_send_packet.trace_detail0,
+            interrupt_send_packet.trace_detail1,
+            interrupt_send_packet.trace_detail2,
+            interrupt_send_packet.trace_detail3
+        );
+#endif
+    }
+    request_can_send_if_needed(has_more);
+    request_control_can_send_if_needed(should_request_control);
+}
+
+static void __not_in_flash_func(l2cap_packet_handler)(
+    uint8_t packet_type,
+    uint16_t channel,
+    uint8_t *packet,
+    uint16_t size
+) {
+    if (
+        packet_type == HCI_EVENT_PACKET
+        && hci_event_packet_get_type(packet) == L2CAP_EVENT_CAN_SEND_NOW
+        && l2cap_event_can_send_now_get_local_cid(packet) == hid_interrupt_cid
+    ) {
+        handle_l2cap_can_send_now(packet);
+        return;
+    }
+    l2cap_packet_handler_cold(packet_type, channel, packet, size);
+}
+
+static __attribute__((noinline)) void l2cap_packet_handler_cold(
+    uint8_t packet_type,
+    uint16_t channel,
+    uint8_t *packet,
+    uint16_t size
+) {
     (void) channel;
 
     if (packet_type == L2CAP_DATA_PACKET) {
@@ -4005,59 +4166,6 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                 request_control_can_send_if_needed(has_more_control && should_request_control);
                 break;
             }
-            if (local_cid != hid_interrupt_cid) {
-                break;
-            }
-            interrupt_can_send_event_requested = false;
-
-            output_packet next_packet{};
-            const uint32_t now = time_us_32();
-            critical_section_enter_blocking(&queue_lock);
-            if (!select_next_output_packet_locked(next_packet, now)) {
-                critical_section_exit(&queue_lock);
-                break;
-            }
-            bool has_more = output_pending_locked();
-            bool should_request_control = false;
-            request_control_if_audio_window_open_locked(now, should_request_control);
-            critical_section_exit(&queue_lock);
-
-            uint8_t status = l2cap_send(hid_interrupt_cid, next_packet.data.data(), next_packet.data.size());
-            if (status != 0) {
-                DS5_LOG("[L2CAP] Interrupt Error, Status: 0x%02X\n", status);
-                if (requeue_managed_rumble_on_send_failure(std::move(next_packet), now)) {
-                    // The failed transition remains at the head until its
-                    // bounded backoff expires. Audio may continue meanwhile.
-                    critical_section_enter_blocking(&queue_lock);
-                    has_more = !audio_queue.empty() || state_pending;
-                    critical_section_exit(&queue_lock);
-                }
-            } else if (!next_packet.data.empty()) {
-                critical_section_enter_blocking(&queue_lock);
-                note_output_packet_sent(next_packet, time_us_32());
-                has_more = has_more || output_pending_locked();
-                critical_section_exit(&queue_lock);
-#ifdef ENABLE_COMPANION
-                companion_note_trigger_trace_report(
-                    CompanionTriggerTraceBt,
-                    next_packet.data.data() + 1,
-                    static_cast<uint16_t>(next_packet.data.size() - 1),
-                    next_packet.reason
-                );
-                companion_note_feedback_trace_report(
-                    CompanionFeedbackTraceBt,
-                    next_packet.data.data() + 1,
-                    static_cast<uint16_t>(next_packet.data.size() - 1),
-                    next_packet.reason,
-                    next_packet.trace_detail0,
-                    next_packet.trace_detail1,
-                    next_packet.trace_detail2,
-                    next_packet.trace_detail3
-                );
-#endif
-            }
-            request_can_send_if_needed(has_more);
-            request_control_can_send_if_needed(should_request_control);
             break;
         }
     }
@@ -4415,18 +4523,23 @@ static bool mirror_classic_rumble_in_packet(
 }
 
 static void mirror_packet_queue_classic_rumble_locked(
-    queue<output_packet> &packets,
+    fixed_audio_output_queue &packets,
     uint8_t const *source,
     uint16_t source_len
 ) {
-    queue<output_packet> scrubbed;
-    while (!packets.empty()) {
-        output_packet packet = std::move(packets.front());
+    const size_t packet_count = packets.size();
+    for (size_t index = 0; index < packet_count; index++) {
+        audio_output_packet packet = packets.front();
         packets.pop();
-        (void)mirror_classic_rumble_in_packet(packet, source, source_len);
-        scrubbed.push(std::move(packet));
+        if (packet.data_size >= 2) {
+            uint8_t *report = packet.data.data() + 1;
+            const uint16_t report_len = static_cast<uint16_t>(packet.data_size - 1);
+            if (mirror_classic_rumble_in_report(report, report_len, source, source_len)) {
+                (void)fill_output_report_checksum(report, report_len);
+            }
+        }
+        packets.push(packet);
     }
-    packets = std::move(scrubbed);
 }
 
 static void mirror_pending_classic_rumble_locked(uint8_t const *data, uint16_t len) {
@@ -5018,11 +5131,24 @@ bool bt_write_classified_output(uint8_t *data, uint16_t len) {
     return enqueued;
 }
 
-bool bt_write_audio_stream(uint8_t *data, uint16_t len) {
-    output_packet packet{};
-    if (!make_output_packet(data, len, OutputPacketAudio, OutputReasonAudioStream, packet)) {
+bool __not_in_flash_func(bt_write_audio_stream)(uint8_t *data, uint16_t len) {
+    if (
+        hid_interrupt_cid == 0
+        || data == nullptr
+        || len + 1u > AUDIO_INTERRUPT_PACKET_MAX_SIZE
+    ) {
         return false;
     }
+
+    audio_output_packet packet{};
+    packet.data[0] = 0xA2;
+    memcpy(packet.data.data() + 1, data, len);
+    if (!fill_output_report_checksum(packet.data.data() + 1, len)) {
+        return false;
+    }
+    packet.data_size = static_cast<uint16_t>(len + 1u);
+    packet.enqueue_time_us = time_us_32();
+    packet.report_id = len > 0 ? data[0] : 0;
 
     bool should_request_send = false;
     uint8_t trace_critical_depth = 0;
@@ -5034,7 +5160,7 @@ bool bt_write_audio_stream(uint8_t *data, uint16_t len) {
     should_request_send = true;
     while (audio_queue.size() >= AUDIO_SEND_QUEUE_MAX_DEPTH) {
 #ifdef ENABLE_COMPANION
-        if (!audio_queue.front().data.empty()) {
+        if (audio_queue.front().data_size > 1) {
             uint8_t drop_critical_depth = 0;
             uint8_t drop_audio_depth = 0;
             uint8_t drop_route_flags = 0;
@@ -5042,7 +5168,7 @@ bool bt_write_audio_stream(uint8_t *data, uint16_t len) {
             companion_note_feedback_trace_report(
                 CompanionFeedbackTraceAudioDrop,
                 audio_queue.front().data.data() + 1,
-                static_cast<uint16_t>(audio_queue.front().data.size() - 1),
+                static_cast<uint16_t>(audio_queue.front().data_size - 1),
                 OutputReasonAudioStream,
                 drop_critical_depth,
                 drop_audio_depth,
@@ -5054,7 +5180,7 @@ bool bt_write_audio_stream(uint8_t *data, uint16_t len) {
         audio_queue.pop();
         output_counters.audio_drop_oldest_count++;
     }
-    audio_queue.push(std::move(packet));
+    audio_queue.push(packet);
     output_counters.audio_0x36_enqueued_count++;
     update_queue_depth_counters_locked();
     output_trace_queue_details_locked(trace_critical_depth, trace_audio_depth, trace_route_flags);

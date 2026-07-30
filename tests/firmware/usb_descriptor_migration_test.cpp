@@ -939,7 +939,7 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
     const std::string finish_hid = extract_between(
         bt_cpp,
         "static void finish_hid_session_if_ready() {",
-        "\n}\n\nstatic void l2cap_packet_handler"
+        "\n}\n\nstatic __attribute__((optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
     );
     const auto transaction_accept =
         link_key_notification.find("mark_pairing_transaction_key_accepted(addr)");
@@ -1152,7 +1152,7 @@ void assert_bluetooth_device_management_policy(std::filesystem::path const &root
     const std::string finish_hid = extract_between(
         bt_cpp,
         "static void finish_hid_session_if_ready() {",
-        "\n}\n\nstatic void l2cap_packet_handler"
+        "\n}\n\nstatic __attribute__((optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
     );
     const auto durable_key_gate =
         finish_hid.find("pairing_link_key_required && !current_link_key_persisted");
@@ -1469,6 +1469,23 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             == std::string::npos
         || audio_exact_queue_h.find("count_ == Capacity") == std::string::npos
         || cmake.find("verify_core1_sram.cmake") == std::string::npos
+        || cmake.find(".text.tud_audio_n_available=.time_critical.tud_audio_n_available")
+            == std::string::npos
+        || cmake.find(".text.tud_audio_n_get_ep_in_ff=.time_critical.tud_audio_n_get_ep_in_ff")
+            == std::string::npos
+        || verify_cmake.find("_ZL25send_audio_haptics_packetPKabb") == std::string::npos
+        || verify_cmake.find("_Z21bt_write_audio_streamPht") == std::string::npos
+        || verify_cmake.find("_Z37controller_packet_copy_audio_snapshotPhb") == std::string::npos
+        || verify_cmake.find("_Z43controller_output_state_copy_audio_snapshotPhb") == std::string::npos
+        || verify_cmake.find("_Z49controller_output_state_strip_zero_classic_rumblePht")
+            == std::string::npos
+        || verify_cmake.find("_ZL22process_mic_usb_outputv") == std::string::npos
+        || verify_cmake.find("_ZL27write_mic_usb_pending_frameR18mic_decode_elementRtS1_")
+            == std::string::npos
+        || verify_cmake.find("_Z26bt_is_controller_connectedv") == std::string::npos
+        || verify_cmake.find("_Z24usb_mic_streaming_activev") == std::string::npos
+        || verify_cmake.find("tud_audio_n_available") == std::string::npos
+        || verify_cmake.find("tud_audio_n_get_ep_in_ff") == std::string::npos
         || cmake.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4")
             == std::string::npos
         || cmake.find("PICO_FLASH_ASSUME_CORE1_SAFE=0") == std::string::npos
@@ -1674,7 +1691,7 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
     const std::string classified = extract_between(
         bt_cpp,
         "bool bt_write_classified_output",
-        "\n}\n\nbool bt_write_audio_stream"
+        "\n}\n\nbool __not_in_flash_func(bt_write_audio_stream)"
     );
     if (
         classified.find("OutputReasonHostPassthrough") == std::string::npos
@@ -1719,7 +1736,7 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
 
     const std::string select_output = extract_between(
         bt_cpp,
-        "static bool select_next_output_packet_locked(output_packet &packet, uint32_t now) {",
+        "static __attribute__((noinline, noclone, optimize(\"O2\"))) bool __not_in_flash_func(select_next_output_packet_locked)(",
         "\n}\n\nstatic bool select_next_control_packet_locked"
     );
     const std::string enqueue_state = extract_between(
