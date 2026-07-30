@@ -3811,10 +3811,14 @@ export function App() {
     || !audioReactiveHapticsSupported
     || !audioReactiveHapticsRouteSupported
     || !hapticsEnabled;
-  const audioReactiveHapticsControlDisabled = audioReactiveHapticsBlocked
+  const audioReactiveHapticsControlDisabled = !connected
+    || !audioReactiveHapticsSupported
     || pendingAction !== null
     || audioReactiveHapticsCommitPending;
-  const audioReactiveHapticsConfigDisabled = audioReactiveHapticsControlDisabled || !audioReactiveHapticsEnabled;
+  const audioReactiveHapticsConfigDisabled = audioReactiveHapticsBlocked
+    || pendingAction !== null
+    || audioReactiveHapticsCommitPending
+    || !audioReactiveHapticsEnabled;
   const audioReactiveHapticsStatusLabel = !connected
     ? 'Unavailable'
     : !audioReactiveHapticsSupported
@@ -4615,11 +4619,31 @@ export function App() {
     }
   }
 
-  function toggleAudioReactiveHapticsEnabled() {
-    if (!snapshot) return;
-    void commitAudioReactiveHapticsConfig({
-      enabled: !snapshot.settings.audioReactiveHapticsEnabled
-    });
+  async function toggleAudioReactiveHapticsEnabled() {
+    if (
+      !snapshot
+      || snapshot.state !== 'connected'
+      || !audioReactiveHapticsSupported
+      || pendingAction !== null
+      || audioReactiveHapticsCommitPending
+    ) {
+      return;
+    }
+
+    const enabled = !snapshot.settings.audioReactiveHapticsEnabled;
+    setAudioReactiveHapticsCommitPending(true);
+    try {
+      if (enabled && !snapshot.settings.hapticsEnabled) {
+        await window.bridge.setHapticsEnabled(true);
+      }
+      const next = await window.bridge.setAudioReactiveHapticsConfig({ enabled });
+      applySnapshot(next);
+    } catch {
+      const next = await window.bridge.getStatus();
+      applySnapshot(next);
+    } finally {
+      setAudioReactiveHapticsCommitPending(false);
+    }
   }
 
   function setAudioReactiveHapticsMode(mode: AudioReactiveHapticsMode) {
@@ -7360,10 +7384,14 @@ export function App() {
                     <button
                       type="button"
                       role="switch"
-                      aria-checked={activeHapticsFeatureEnabled}
-                      className={`switch ${activeHapticsFeatureEnabled ? 'on' : ''}`}
-                      disabled={!controllerControlsAvailable || pendingAction !== null}
-                      onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
+                      aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}
+                      className={`switch ${(audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled) ? 'on' : ''}`}
+                      disabled={audioHapticsOpen
+                        ? audioReactiveHapticsControlDisabled
+                        : !controllerControlsAvailable || pendingAction !== null}
+                      onClick={audioHapticsOpen
+                        ? () => void toggleAudioReactiveHapticsEnabled()
+                        : showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
                     >
                       <span />
                     </button>
@@ -7381,7 +7409,7 @@ export function App() {
                         aria-label={audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'}
                         title={audioReactiveHapticsStatusLabel}
                         disabled={audioReactiveHapticsControlDisabled}
-                        onClick={toggleAudioReactiveHapticsEnabled}
+                        onClick={() => void toggleAudioReactiveHapticsEnabled()}
                       >
                         <IconDeviceAudioTape size={20} />
                       </button>
@@ -8152,7 +8180,7 @@ export function App() {
                   <p>{triggerLabOpen ? 'Experimental adaptive trigger profile editor' : 'Set trigger effect intensity and test mode'}</p>
                 </div>
                 <div className="triggers-heading-controls">
-                  {triggerLabAnyActive ? (
+                  {adaptiveTriggersEnabled && triggerLabAnyActive ? (
                     <div className="inline-switch trigger-lab-state-indicator">
                       <span className="inline-state-badge warn trigger-lab-state">Lab Override</span>
                       <span className="settings-shortcut-tooltip shortcut-glyph-tooltip trigger-lab-override-tooltip">

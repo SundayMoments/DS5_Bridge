@@ -363,4 +363,17 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('setTriggerLabOpen');
     expect(appSource).not.toContain('setAudioHapticsOpen');
   });
+
+  it('keeps Audio Haptics page enablement aligned with its feature tile', () => {
+    expect(appSource).toContain(
+      'aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}'
+    );
+    expect(appSource).toContain('if (enabled && !snapshot.settings.hapticsEnabled)');
+    expect(appSource).toContain('await window.bridge.setHapticsEnabled(true);');
+    expect(appSource).toContain('window.bridge.setAudioReactiveHapticsConfig({ enabled })');
+  });
+
+  it('only reports a Trigger Lab override while adaptive triggers are globally enabled', () => {
+    expect(appSource).toContain('{adaptiveTriggersEnabled && triggerLabAnyActive ? (');
+  });
 });
