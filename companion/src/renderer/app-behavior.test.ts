@@ -338,9 +338,12 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('snapshot?.bridgeDevices ?? null');
     expect(appSource).toContain("window.bridge.selectBridge(String(devicePath))");
     expect(appSource).toContain('window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)');
-    expect(appSource).toContain('Rename this bridge');
+    expect(appSource).toContain('title="Rename bridge"');
+    expect(appSource).toContain('title="Refresh bridges"');
+    expect(appSource).toContain('window.bridge.refreshBridgeDevices()');
+    expect(appSource).toContain("label || 'No bridge detected'");
     expect(appSource).toContain('USB direct');
-    expect(stylesSource).toContain('.bridge-device-census');
+    expect(stylesSource).toContain('.sidebar-bridge-selector');
     expect(stylesSource).toContain('.hero-card > .sidebar-actions');
   });
 });

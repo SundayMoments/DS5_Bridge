@@ -2373,7 +2373,7 @@ function CustomSelect<T extends SelectValue>({
           }
         }}
       >
-        <span>{selected ? (renderValue?.(selected[0], selected[1]) ?? selected[0]) : String(value)}</span>
+        <span>{renderValue?.(selected?.[0] ?? String(value), selected?.[1] ?? value) ?? selected?.[0] ?? String(value)}</span>
         <ChevronDown size={18} />
       </button>
       {floatingMenu && portalTarget && menu
@@ -3930,14 +3930,12 @@ export function App() {
     `${bridge.name ?? `Bridge ${index + 1}`}${bridge.connected ? ' (active)' : ''}`,
     bridge.path
   ]);
-  const activeBridgeSelectValue = bridgeDevices?.bridges.find((bridge) => bridge.selected)?.path
-    ?? bridgeDevices?.bridges.find((bridge) => bridge.connected)?.path
-    ?? '';
-  const activeBridgeInfo = bridgeDevices?.bridges.find((bridge) => bridge.connected) ?? null;
+  const selectedBridgeInfo = bridgeDevices?.bridges.find((bridge) => bridge.selected)
+    ?? bridgeDevices?.bridges.find((bridge) => bridge.connected)
+    ?? bridgeDevices?.bridges[0]
+    ?? null;
+  const activeBridgeSelectValue = selectedBridgeInfo?.path ?? '';
   const directControllers = bridgeDevices?.directControllers ?? [];
-  const showBridgeDevices = (bridgeDevices?.bridges.length ?? 0) > 1
-    || directControllers.length > 0
-    || Boolean(activeBridgeInfo?.uniqueId);
   const pollingRateLabel = POLLING_RATE_OPTIONS.find(([, mode]) => mode === snapshot?.settings.pollingRateMode)?.[0]
     .replace(' / Real-time', '')
     ?? '--';
@@ -6616,86 +6614,94 @@ export function App() {
               </div>
             </div>
           </div>
-          {showBridgeDevices && (
-            <>
-              <div className="sidebar-section-label">Devices</div>
-              <div className="bridge-device-census">
-                {bridgeSelectOptions.length === 1 && (
-                  <div className="bridge-single-name">{bridgeSelectOptions[0][0]}</div>
-                )}
-                {bridgeSelectOptions.length > 1 && (
-                  <CustomSelect
-                    value={activeBridgeSelectValue}
-                    options={bridgeSelectOptions}
-                    onChange={(devicePath) => {
-                      setBridgeRenameDraft(null);
-                      void runAction('bridge-select', () => window.bridge.selectBridge(String(devicePath)));
-                    }}
-                    ariaLabel="Managed bridge"
-                    className="bridge-device-select"
-                    disabled={pendingAction !== null}
-                  />
-                )}
-                {activeBridgeInfo?.uniqueId && bridgeRenameDraft === null && (
-                  <button
-                    type="button"
-                    className="bridge-rename-toggle"
-                    disabled={pendingAction !== null}
-                    onClick={() => {
+          <div className="sidebar-bridge-area">
+            <div className="sidebar-bridge-selector" aria-label="Pico bridge selector">
+              <span className="sidebar-bridge-type" aria-hidden="true">
+                <IconUsb size={16} />
+              </span>
+              {bridgeRenameDraft === null ? (
+                <CustomSelect
+                  value={activeBridgeSelectValue}
+                  options={bridgeSelectOptions}
+                  onChange={(devicePath) => {
+                    if (!devicePath) return;
+                    void runAction('bridge-select', () => window.bridge.selectBridge(String(devicePath)));
+                  }}
+                  renderValue={(label) => selectedBridgeInfo?.name ?? (label || 'No bridge detected')}
+                  renderMenuFooter={(closeMenu) => (
+                    <div className="trigger-lab-profile-actions chords-function-menu-actions">
+                      <button
+                        type="button"
+                        title="Rename bridge"
+                        disabled={pendingAction !== null || !selectedBridgeInfo?.uniqueId}
+                        onClick={() => {
+                          closeMenu();
+                          if (!selectedBridgeInfo?.uniqueId) return;
+                          bridgeRenameCancelledRef.current = false;
+                          setBridgeRenameDraft({
+                            uniqueId: selectedBridgeInfo.uniqueId,
+                            value: selectedBridgeInfo.name ?? ''
+                          });
+                        }}
+                      >
+                        <Pencil size={15} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Refresh bridges"
+                        disabled={pendingAction !== null}
+                        onClick={() => void runAction('bridge-refresh', () => window.bridge.refreshBridgeDevices())}
+                      >
+                        <RefreshCcw size={15} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
+                  ariaLabel="Pico bridge"
+                  className="chords-function-select sidebar-bridge-select"
+                  disabled={pendingAction !== null}
+                />
+              ) : (
+                <input
+                  className="bridge-rename-input"
+                  type="text"
+                  autoFocus
+                  maxLength={32}
+                  aria-label="Bridge name"
+                  placeholder="Bridge name"
+                  value={bridgeRenameDraft.value}
+                  onChange={(event) => setBridgeRenameDraft({
+                    ...bridgeRenameDraft,
+                    value: event.currentTarget.value
+                  })}
+                  onBlur={() => {
+                    const draft = bridgeRenameDraft;
+                    setBridgeRenameDraft(null);
+                    if (bridgeRenameCancelledRef.current) {
                       bridgeRenameCancelledRef.current = false;
-                      setBridgeRenameDraft({
-                        uniqueId: activeBridgeInfo.uniqueId!,
-                        value: activeBridgeInfo.name ?? ''
-                      });
-                    }}
-                  >
-                    <Pencil size={12} aria-hidden="true" />
-                    Rename this bridge
-                  </button>
-                )}
-                {activeBridgeInfo?.uniqueId && bridgeRenameDraft !== null && (
-                  <input
-                    className="bridge-rename-input"
-                    type="text"
-                    autoFocus
-                    maxLength={32}
-                    aria-label="Bridge name"
-                    placeholder="Bridge name"
-                    value={bridgeRenameDraft.value}
-                    onChange={(event) => setBridgeRenameDraft({
-                      ...bridgeRenameDraft,
-                      value: event.currentTarget.value
-                    })}
-                    onBlur={() => {
-                      const draft = bridgeRenameDraft;
-                      setBridgeRenameDraft(null);
-                      if (bridgeRenameCancelledRef.current) {
-                        bridgeRenameCancelledRef.current = false;
-                        return;
-                      }
-                      void runAction('bridge-rename', () => (
-                        window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)
-                      ));
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.currentTarget.blur();
-                      } else if (event.key === 'Escape') {
-                        bridgeRenameCancelledRef.current = true;
-                        event.currentTarget.blur();
-                      }
-                    }}
-                  />
-                )}
-                {directControllers.map((controller) => (
-                  <div key={controller.path} className="bridge-direct-controller" title={controller.path}>
-                    <IconUsb size={13} aria-hidden="true" />
-                    <span>{(controller.product ?? 'DualSense').replace(' Wireless Controller', '')} — USB direct</span>
-                  </div>
-                ))}
+                      return;
+                    }
+                    void runAction('bridge-rename', () => (
+                      window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)
+                    ));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur();
+                    } else if (event.key === 'Escape') {
+                      bridgeRenameCancelledRef.current = true;
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+              )}
+            </div>
+            {directControllers.map((controller) => (
+              <div key={controller.path} className="bridge-direct-controller" title={controller.path}>
+                <IconUsb size={13} aria-hidden="true" />
+                <span>{(controller.product ?? 'DualSense').replace(' Wireless Controller', '')} — USB direct</span>
               </div>
-            </>
-          )}
+            ))}
+          </div>
           <div className="sidebar-section-label">Controls</div>
           <div className="sidebar-controls">
             <div className="control-tabs" role="tablist" aria-label="Controls">
