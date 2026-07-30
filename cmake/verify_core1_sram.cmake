@@ -28,8 +28,8 @@ set(required_sram_symbols
         "_Z14interrupt_loopv"
         "_Z35companion_process_controller_reportPht"
         "_Z34companion_update_controller_reportPKht"
-        "_ZN12_GLOBAL__N_120queue_shortcut_eventEh"
-        "_ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb"
+        "_ZN12_GLOBAL__N_120queue_shortcut_eventEh|_ZN12_GLOBAL__N_1L20queue_shortcut_eventEh"
+        "_ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb|_ZN12_GLOBAL__N_1L27dpad_direction_from_buttonsEbbbb"
         "_Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState"
         "host_persona_active"
         "host_persona_descriptors_verified"
@@ -159,26 +159,35 @@ set(required_sram_symbols
 set(rp2350_sram_start 536870912)
 set(rp2350_sram_end 537403392)
 
-foreach(symbol ${required_sram_symbols})
-    string(REGEX MATCH
-            "(^|\n)${symbol} [A-Za-z] ([0-9A-Fa-f]+)"
-            symbol_match
-            "${symbol_table}"
-    )
-    if(NOT symbol_match)
+foreach(symbol_group ${required_sram_symbols})
+    string(REPLACE "|" ";" candidate_symbols "${symbol_group}")
+    set(linked_symbol "")
+    set(symbol_address "")
+    foreach(symbol ${candidate_symbols})
+        string(REGEX MATCH
+                "(^|\n)${symbol} [A-Za-z] ([0-9A-Fa-f]+)"
+                symbol_match
+                "${symbol_table}"
+        )
+        if(symbol_match)
+            set(linked_symbol "${symbol}")
+            set(symbol_address "0x${CMAKE_MATCH_2}")
+            break()
+        endif()
+    endforeach()
+    if(linked_symbol STREQUAL "")
         message(FATAL_ERROR
-                "verify_core1_sram: missing linked symbol '${symbol}'"
+                "verify_core1_sram: missing linked symbol from '${symbol_group}'"
         )
     endif()
 
-    set(symbol_address "0x${CMAKE_MATCH_2}")
     math(EXPR symbol_address_decimal "${symbol_address}")
     if(
         symbol_address_decimal LESS ${rp2350_sram_start}
         OR NOT symbol_address_decimal LESS ${rp2350_sram_end}
     )
         message(FATAL_ERROR
-                "verify_core1_sram: '${symbol}' linked outside SRAM at ${symbol_address}"
+                "verify_core1_sram: '${linked_symbol}' linked outside SRAM at ${symbol_address}"
         )
     endif()
 endforeach()

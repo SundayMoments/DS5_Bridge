@@ -1,5 +1,7 @@
 # Relocate selected function sections from one compiled object into the Pico
-# SDK's .time_critical SRAM region. Adapted from awalol/DS5Dongle (MIT).
+# SDK's .time_critical SRAM region. Source sections separated by "|" are
+# compiler-specific alternatives; the first section present is relocated.
+# Adapted from awalol/DS5Dongle (MIT).
 
 foreach(required_value OBJROOT OBJCOPY OBJDUMP SUFFIX RENAMES)
     if(NOT DEFINED ${required_value})
@@ -55,15 +57,31 @@ foreach(section_rename ${section_renames})
                 "relocate_to_ram: invalid section rename '${section_rename}'"
         )
     endif()
-    list(GET rename_parts 0 source_section)
+    list(GET rename_parts 0 source_section_group)
     list(GET rename_parts 1 destination_section)
-    string(FIND "${section_table}" " ${source_section} " source_section_index)
+    string(REPLACE "|" ";" source_sections "${source_section_group}")
+    set(source_section "")
+    foreach(source_section_candidate ${source_sections})
+        string(FIND
+                "${section_table}"
+                " ${source_section_candidate} "
+                source_section_index
+        )
+        if(NOT source_section_index EQUAL -1)
+            set(source_section "${source_section_candidate}")
+            break()
+        endif()
+    endforeach()
     string(FIND "${section_table}" " ${destination_section} " destination_section_index)
-    if(NOT source_section_index EQUAL -1)
-        list(APPEND objcopy_arguments --rename-section "${section_rename}")
+    if(NOT source_section STREQUAL "")
+        list(APPEND
+                objcopy_arguments
+                --rename-section
+                "${source_section}=${destination_section}"
+        )
     elseif(destination_section_index EQUAL -1)
         message(FATAL_ERROR
-                "relocate_to_ram: '${matching_object}' contains neither '${source_section}' nor '${destination_section}'"
+                "relocate_to_ram: '${matching_object}' contains none of '${source_section_group}' or '${destination_section}'"
         )
     endif()
 endforeach()
