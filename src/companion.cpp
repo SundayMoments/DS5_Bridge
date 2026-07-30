@@ -30,7 +30,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 18;
+constexpr uint8_t kProtocolMinor = 19;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -156,6 +156,7 @@ enum CommandId : uint8_t {
     CommandSetSpeakerGain = 0x32,
     CommandEnterBootloader = 0x33,
     CommandSetAudioInterleave = 0x34,
+    CommandSetWakeOnConnect = 0x35,
     CommandSetLightbarRestoreEnabled = 0x36,
 };
 
@@ -873,6 +874,7 @@ void restore_defaults() {
     audio_set_mic_mute_led_passthrough(false);
     audio_set_mic_output_state(companion_mic_volume_percent, companion_mic_muted);
     bt_set_speaker_output_gain(kDefaultSpeakerOutputGain);
+    usb_set_wake_on_connect(true);
     reset_button_remap();
     bt_set_mute_led(false);
     lightbar_override_enabled = false;
@@ -1680,6 +1682,7 @@ uint16_t build_status(uint8_t *buffer, uint16_t reqlen) {
     buffer[46] = game_trigger_update_recent() ? 1 : 0;
     buffer[47] = static_cast<uint8_t>(host_persona_active());
     buffer[48] = supported_host_persona_mask();
+    buffer[49] = usb_wake_on_connect_enabled() ? 1 : 0;
     buffer[50] = companion_mic_muted ? 1 : 0;
     buffer[56] = bt_speaker_output_gain();
     buffer[58] = lightbar_override_enabled ? 1 : 0;
@@ -2041,6 +2044,16 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
         }
+
+        case CommandSetWakeOnConnect:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            usb_set_wake_on_connect(value == 1);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
 
         case CommandSetMicVolume:
             if (value > 100) {

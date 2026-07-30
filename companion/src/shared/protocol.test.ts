@@ -133,6 +133,7 @@ describe('companion protocol', () => {
     report[47] = 1;
     report[48] = 2;
     report[49] = 0x07;
+    report[50] = 1;
     report[51] = 1;
     report[57] = 6;
     report[60] = 1;
@@ -156,6 +157,8 @@ describe('companion protocol', () => {
     expect(status.firmwareFlags.sleepControllerControl).toBe(true);
     expect(status.firmwareFlags.pollingRateControl).toBe(true);
     expect(status.usbSuspendDisconnectEnabled).toBe(true);
+    expect(status.wakeOnConnectEnabled).toBe(true);
+    expect(status.firmwareFlags.wakeOnConnectControl).toBe(true);
     expect(status.sleepKeybindEnabled).toBe(true);
     expect(status.testAdaptiveTriggersBusy).toBe(true);
     expect(status.adaptiveTriggerOutputRecent).toBe(true);
@@ -543,6 +546,13 @@ describe('companion protocol', () => {
     const report = buildCommandReport(COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED, 5, 1);
     expect(report[7]).toBe(COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED);
     expect(report[8]).toBe(5);
+    expect(report[9]).toBe(1);
+  });
+
+  it('builds a wake-on-connect setting command report', () => {
+    const report = buildCommandReport(COMMAND_ID.SET_WAKE_ON_CONNECT, 6, 1);
+    expect(report[7]).toBe(COMMAND_ID.SET_WAKE_ON_CONNECT);
+    expect(report[8]).toBe(6);
     expect(report[9]).toBe(1);
   });
 

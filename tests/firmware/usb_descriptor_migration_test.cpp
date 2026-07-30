@@ -11,8 +11,8 @@
 
 namespace {
 
-constexpr uint16_t kExpectedUsbDeviceRevision = 0x0153;
-constexpr uint64_t kExpectedCompanionDescriptorHash = 0x4f0540e7fbbbddcbull;
+constexpr uint16_t kExpectedUsbDeviceRevision = 0x0154;
+constexpr uint64_t kExpectedCompanionDescriptorHash = 0x57632c24ad95e61dull;
 
 std::string read_text(std::filesystem::path const &path) {
     std::ifstream input(path, std::ios::binary);
@@ -287,8 +287,8 @@ void assert_ds4_persona_identity_is_ds4_facing(std::string const &source) {
         throw std::runtime_error("DS4 persona must expose the DS4 v2 USB product ID");
     }
 
-    if (source.find("#define DS4_USB_BCD_DEVICE 0x0102") == std::string::npos) {
-        throw std::runtime_error("DS4 persona must expose the DS4 v2 USB device revision");
+    if (source.find("#define DS4_USB_BCD_DEVICE 0x0103") == std::string::npos) {
+        throw std::runtime_error("DS4 persona must bump its USB revision for the remote-wake descriptor");
     }
 
     if (source.find("#define DS4_HID_REPORT_DESC_LEN 0x01FB") == std::string::npos) {
@@ -543,6 +543,48 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
         throw std::runtime_error(
             "Normal controller disconnects must keep the Pico alive, including while USB is suspended"
         );
+    }
+}
+
+void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path const &root) {
+    const auto descriptors = read_text(root / "src" / "usb_descriptors.c");
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+
+    if (
+        descriptors.find("0xE0, // bmAttributes: SELF-POWERED, REMOTE-WAKEUP") == std::string::npos
+        || descriptors.find("descriptor_configuration_xusb[7] = 0xC0;") == std::string::npos
+    ) {
+        throw std::runtime_error("Remote wake must be advertised by DualSense/DS4 without leaking into Xbox mode");
+    }
+
+    const std::string wake = extract_between(
+        usb_cpp,
+        "void usb_wake_host_if_suspended() {",
+        "\n}\n\nvoid usb_set_wake_on_connect"
+    );
+    const std::string suspend = extract_between(
+        usb_cpp,
+        "extern \"C\" void tud_suspend_cb(bool remote_wakeup_en) {",
+        "\n}\n\nextern \"C\" void tud_resume_cb(void) {"
+    );
+    const std::string ready = extract_between(
+        usb_cpp,
+        "void usb_handle_controller_transport_ready() {",
+        "\n}\n\nextern \"C\" void tud_mount_cb(void) {"
+    );
+    if (
+        wake.find("usb_bus_suspended() && usb_wake_on_connect && usb_remote_wakeup_armed") == std::string::npos
+        || wake.find("tud_remote_wakeup()") == std::string::npos
+        || suspend.find("usb_remote_wakeup_armed = remote_wakeup_en;") == std::string::npos
+        || ready.find("usb_wake_host_if_suspended();") == std::string::npos
+        || bt_cpp.find("usb_wake_host_if_suspended();") == std::string::npos
+        || companion_cpp.find("CommandSetWakeOnConnect = 0x35") == std::string::npos
+        || companion_cpp.find("usb_set_wake_on_connect(value == 1);") == std::string::npos
+        || companion_cpp.find("buffer[49] = usb_wake_on_connect_enabled() ? 1 : 0;") == std::string::npos
+    ) {
+        throw std::runtime_error("Wake-on-connect must require suspend, host arming, and the companion setting");
     }
 }
 
@@ -1183,9 +1225,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 18;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 19;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 18;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 19;")
             == std::string::npos
         || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
             == std::string::npos
@@ -1202,6 +1244,10 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
         || protocol_ts.find("FORGET_CONTROLLER_PAIRINGS: 0x28")
             == std::string::npos
         || protocol_ts.find("FORGET_CONTROLLER_PAIRING: 0x2e")
+            == std::string::npos
+        || companion_cpp.find("CommandSetWakeOnConnect = 0x35")
+            == std::string::npos
+        || protocol_ts.find("SET_WAKE_ON_CONNECT: 0x35")
             == std::string::npos
     ) {
         throw std::runtime_error(
@@ -1899,6 +1945,7 @@ int main() {
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);
         assert_usb_suspend_poweroff_is_debounced(source_root);
+        assert_wake_on_connect_is_gated_and_persona_safe(source_root);
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);

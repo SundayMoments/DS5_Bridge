@@ -38,6 +38,8 @@ static volatile bool usb_mounted = false;
 static volatile bool usb_host_suspended = false;
 static volatile uint32_t usb_suspend_at_us = 0;
 static volatile uint32_t usb_reconnect_grace_until_us = 0;
+static volatile bool usb_remote_wakeup_armed = false;
+static volatile bool usb_wake_on_connect = true;
 
 extern "C" {
 uint8_t usb_hid_polling_interval_ms_value = 1;
@@ -222,6 +224,20 @@ bool usb_line_streaming_active() {
     return usb_line_streaming;
 }
 
+void usb_wake_host_if_suspended() {
+    if (usb_bus_suspended() && usb_wake_on_connect && usb_remote_wakeup_armed) {
+        (void)tud_remote_wakeup();
+    }
+}
+
+void usb_set_wake_on_connect(bool enabled) {
+    usb_wake_on_connect = enabled;
+}
+
+bool usb_wake_on_connect_enabled() {
+    return usb_wake_on_connect;
+}
+
 void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
     usb_reconnect_requested = false;
     usb_reconnect_connect_pending = false;
@@ -236,6 +252,7 @@ void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
 }
 
 void usb_handle_controller_transport_ready() {
+    usb_wake_host_if_suspended();
     if (
         usb_controller_transport_ready
         && !usb_controller_transport_transition_pending
@@ -250,6 +267,7 @@ void usb_handle_controller_transport_ready() {
 extern "C" void tud_mount_cb(void) {
     usb_mounted = true;
     usb_host_suspended = false;
+    usb_remote_wakeup_armed = false;
     usb_suspend_at_us = 0;
     usb_reconnect_grace_until_us = 0;
     host_input_note_usb_mounted();
@@ -257,6 +275,7 @@ extern "C" void tud_mount_cb(void) {
 
 extern "C" void tud_umount_cb(void) {
     usb_mounted = false;
+    usb_remote_wakeup_armed = false;
     usb_speaker_streaming = false;
     usb_mic_streaming = false;
     usb_line_streaming = false;
@@ -286,7 +305,7 @@ extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t cons
 }
 
 extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
-    (void) remote_wakeup_en;
+    usb_remote_wakeup_armed = remote_wakeup_en;
     const uint32_t now = time_us_32();
     if (reconnect_grace_active(now)) {
         usb_suspend_at_us = 0;
@@ -305,6 +324,7 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
 
 extern "C" void tud_resume_cb(void) {
     usb_host_suspended = false;
+    usb_remote_wakeup_armed = false;
     usb_suspend_at_us = 0;
 }
 

@@ -84,7 +84,7 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define XUSB360_STRING_PRODUCT "Xbox 360 Controller for Windows"
 #define DS4_VENDOR_ID 0x054C
 #define DS4_PRODUCT_ID 0x09CC
-#define DS4_USB_BCD_DEVICE 0x0102
+#define DS4_USB_BCD_DEVICE 0x0103
 #define DS4_HID_REPORT_DESC_LEN 0x01FB
 #define DS4_HID_REPORT_DESC_FNV1A32 0x9316A41Du
 #define DS4_HID_EP_INTERVAL 0x04
@@ -143,9 +143,9 @@ static tusb_desc_device_t const desc_device =
 #else
     .idProduct = 0x0CE6,
 #endif
-    // v1.6.1 removes the defunct host-encoder PCM mirror interface. Bump the
-    // USB revision so Windows re-enumerates the companion bridge cleanly.
-    .bcdDevice = 0x0153,
+    // Remote wake changes the configuration descriptor. Bump the revision so
+    // Windows does not reuse its cached non-wake descriptor.
+    .bcdDevice = 0x0154,
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
@@ -189,7 +189,7 @@ uint8_t descriptor_configuration[] = {
 #endif
     0x01, // bConfigurationValue: 1
     0x00, // iConfiguration: 0
-    0xC0, // bmAttributes: SELF-POWERED, NO REMOTE-WAKEUP
+    0xE0, // bmAttributes: SELF-POWERED, REMOTE-WAKEUP
     0xFA, // bMaxPower: 500mA (250 * 2mA)
 
     // --- INTERFACE DESCRIPTOR (0.0): Audio Control ---
@@ -745,6 +745,9 @@ static uint16_t build_xusb_configuration_descriptor(void) {
 
     descriptor_configuration_xusb[2] = (uint8_t)(dest & 0xff);
     descriptor_configuration_xusb[3] = (uint8_t)((dest >> 8) & 0xff);
+    // The base descriptor serves DualSense and DS4. Xbox mode intentionally
+    // keeps its existing no-remote-wakeup configuration.
+    descriptor_configuration_xusb[7] = 0xC0;
     descriptor_configuration_xusb_len = dest;
     return dest;
 }

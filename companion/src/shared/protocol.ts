@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 18;
+export const PROTOCOL_MINOR = 19;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -95,6 +95,7 @@ export const COMMAND_ID = {
   SET_SPEAKER_GAIN: 0x32,
   ENTER_BOOTLOADER: 0x33,
   SET_AUDIO_INTERLEAVE: 0x34,
+  SET_WAKE_ON_CONNECT: 0x35,
   SET_LIGHTBAR_RESTORE_ENABLED: 0x36
 } as const;
 
@@ -443,6 +444,7 @@ export interface BridgeStatusPayload {
   signalStrengthDbm: number | null;
   usbSuspendDisconnectEnabled: boolean;
   sleepKeybindEnabled: boolean;
+  wakeOnConnectEnabled: boolean;
   settingsRevision: number;
   lastCommandResult: AckResultCode;
   testHapticsBusy: boolean;
@@ -466,6 +468,7 @@ export interface BridgeStatusPayload {
     pollingRateControl: boolean;
     hostPersonaControl: boolean;
     audioReactiveHapticsControl: boolean;
+    wakeOnConnectControl: boolean;
   };
   hostPersonaMode: HostPersonaMode;
   supportedHostPersonaModes: HostPersonaMode[];
@@ -776,6 +779,7 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
     idleDisconnectEnabled: report[16] === 1,
     usbSuspendDisconnectEnabled: (statusFlags & 0x10) !== 0,
     sleepKeybindEnabled: (statusFlags & 0x40) !== 0,
+    wakeOnConnectEnabled: report[50] === 1,
     settingsRevision: readU16(report, 17),
     lastCommandResult: report[19] as AckResultCode,
     testHapticsBusy: (statusFlags & 0x01) !== 0,
@@ -798,7 +802,8 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
       sleepControllerControl: (statusFlags & 0x80) !== 0,
       pollingRateControl: true,
       hostPersonaControl: report[49] !== 0,
-      audioReactiveHapticsControl: report[6] >= 7
+      audioReactiveHapticsControl: report[6] >= 7,
+      wakeOnConnectControl: report[6] >= 19
     },
     hostPersonaMode: hostPersonaMode(report[48]),
     supportedHostPersonaModes: supportedHostPersonaModes(report[49]),

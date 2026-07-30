@@ -3151,6 +3151,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                     break;
                 }
                 acl_connection_outbound = false;
+                usb_wake_host_if_suspended();
                 DS5_LOG("[HCI] Request GAP security level 2 on handle=0x%04X\n", handle);
                 gap_request_security_level(handle, LEVEL_2);
             } else {
