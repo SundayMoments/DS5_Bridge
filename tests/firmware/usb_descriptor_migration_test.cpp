@@ -1073,6 +1073,12 @@ void assert_firmware_version_has_one_canonical_source(
             "pico_set_program_version(ds5-bridge \"${DS5_FIRMWARE_VERSION}\")"
         ) == std::string::npos
         || cmake.find(
+            "PROPERTY CMAKE_CONFIGURE_DEPENDS"
+        ) == std::string::npos
+        || cmake.find(
+            "\"${DS5_FIRMWARE_VERSION_FILE}\""
+        ) == std::string::npos
+        || cmake.find(
             "DS5_FIRMWARE_VERSION_MAJOR=${DS5_FIRMWARE_VERSION_MAJOR}"
         ) == std::string::npos
         || companion_cpp.find(
