@@ -1240,7 +1240,11 @@ bool build_scaled_cached_game_trigger_effect(
     return true;
 }
 
-void replay_cached_game_trigger_effect() {
+bool replay_cached_game_trigger_effect(
+    bool replay_right = true,
+    bool replay_left = true,
+    bool replay_motor_power = true
+) {
     uint8_t right_trigger[kTriggerEffectSize]{};
     uint8_t left_trigger[kTriggerEffectSize]{};
     bool right_valid = false;
@@ -1255,7 +1259,14 @@ void replay_cached_game_trigger_effect() {
         motor_power,
         motor_power_valid
     )) {
-        return;
+        return false;
+    }
+
+    right_valid = right_valid && replay_right;
+    left_valid = left_valid && replay_left;
+    motor_power_valid = motor_power_valid && replay_motor_power;
+    if (!right_valid && !left_valid) {
+        return false;
     }
 
     bt_replay_adaptive_trigger_effect(
@@ -1266,6 +1277,13 @@ void replay_cached_game_trigger_effect() {
         motor_power,
         motor_power_valid
     );
+    return true;
+}
+
+void restore_cached_game_trigger_effect_or_reset() {
+    if (!replay_cached_game_trigger_effect()) {
+        bt_reset_adaptive_triggers();
+    }
 }
 
 bool valid_trigger_test_mode(uint16_t mode) {
@@ -1469,6 +1487,14 @@ void apply_persistent_trigger_effect(bool force = false) {
         persistent_trigger_effect_left.force_percent,
         persistent_trigger_effect_left.active
     );
+    // The custom report explicitly clears any side without a Lab override.
+    // Immediately restore that side from the cached game output while leaving
+    // the active Lab side and its motor-power state untouched.
+    (void)replay_cached_game_trigger_effect(
+        !persistent_trigger_effect_right.active,
+        !persistent_trigger_effect_left.active,
+        false
+    );
     persistent_trigger_effect_last_apply_us = now;
 }
 
@@ -1507,7 +1533,7 @@ bool set_persistent_trigger_effect(
         adaptive_trigger_test_active = false;
         apply_persistent_trigger_effect(true);
     } else {
-        bt_reset_adaptive_triggers();
+        restore_cached_game_trigger_effect_or_reset();
     }
     return true;
 }
@@ -1554,7 +1580,7 @@ void classic_rumble_test_loop() {
 void reset_adaptive_trigger_test() {
     adaptive_trigger_test_active = false;
     clear_persistent_trigger_effect();
-    bt_reset_adaptive_triggers();
+    restore_cached_game_trigger_effect_or_reset();
 }
 
 void mute_keyboard_loop() {

@@ -3733,6 +3733,7 @@ export function App() {
     snapshot?.settings.speakerGainLevel ?? snapshot?.status?.speakerGainLevel ?? 4
   )));
   const adaptiveTriggersEnabled = Boolean(snapshot?.settings.adaptiveTriggersEnabled);
+  const triggerPageEnabled = triggerLabOpen ? triggerLabEnabled : adaptiveTriggersEnabled;
   const lightbarEnabled = Boolean(snapshot?.settings.lightbarEnabled);
   const sleepKeybindEnabled = Boolean(snapshot?.settings.sleepKeybindEnabled);
   const controllerToastEnabled = Boolean(snapshot?.settings.notifyControllerConnection);
@@ -8207,12 +8208,12 @@ export function App() {
                     <button
                       type="button"
                       role="switch"
-                      aria-checked={triggerLabEnabled}
-                      aria-label="Enable Trigger Lab"
-                      title="Enable Trigger Lab"
-                      className={`switch ${triggerLabEnabled ? 'on' : ''}`}
+                      aria-checked={triggerPageEnabled}
+                      aria-label={triggerLabOpen ? 'Enable Trigger Lab' : 'Enable adaptive triggers'}
+                      title={triggerLabOpen ? 'Enable Trigger Lab' : 'Enable adaptive triggers'}
+                      className={`switch ${triggerPageEnabled ? 'on' : ''}`}
                       disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
-                      onClick={toggleTriggerLabEnabled}
+                      onClick={triggerLabOpen ? toggleTriggerLabEnabled : toggleAdaptiveTriggersEnabled}
                     >
                       <span />
                     </button>

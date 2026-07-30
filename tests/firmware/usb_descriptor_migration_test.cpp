@@ -1855,6 +1855,7 @@ void assert_companion_trigger_tests_survive_continuous_audio(
     std::filesystem::path const &root
 ) {
     const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
     const std::string state_submit = extract_between(
         bt_cpp,
         "static void queue_adaptive_trigger_state_report",
@@ -1886,9 +1887,20 @@ void assert_companion_trigger_tests_survive_continuous_audio(
         || custom_test.find("queue_adaptive_trigger_state_report(report, 0)")
             == std::string::npos
         || custom_test.find("bt_write(") != std::string::npos
+        || companion_cpp.find("bool replay_cached_game_trigger_effect(")
+            == std::string::npos
+        || companion_cpp.find("restore_cached_game_trigger_effect_or_reset();")
+            == std::string::npos
+        || companion_cpp.find("!persistent_trigger_effect_right.active,")
+            == std::string::npos
+        || companion_cpp.find("!persistent_trigger_effect_left.active,")
+            == std::string::npos
+        || companion_cpp.find(
+            "clear_persistent_trigger_effect();\n    restore_cached_game_trigger_effect_or_reset();"
+        ) == std::string::npos
     ) {
         throw std::runtime_error(
-            "Companion trigger tests must update the audio-carried output state and use the bounded feedback queue"
+            "Companion trigger tests must use bounded output and restore cached game effects when Lab overrides stop"
         );
     }
 }

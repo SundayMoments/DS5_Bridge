@@ -375,9 +375,10 @@ describe('renderer behavior guards', () => {
 
   it('keeps Trigger Lab enablement independent from the global adaptive-trigger setting', () => {
     expect(appSource).toContain('const [triggerLabEnabled, setTriggerLabEnabled] = useState(triggerLabInitialState.enabled);');
+    expect(appSource).toContain('const triggerPageEnabled = triggerLabOpen ? triggerLabEnabled : adaptiveTriggersEnabled;');
     expect(appSource).toContain('{triggerLabEnabled && triggerLabAnyActive ? (');
-    expect(appSource).toContain('aria-checked={triggerLabEnabled}');
-    expect(appSource).toContain('onClick={toggleTriggerLabEnabled}');
+    expect(appSource).toContain('aria-checked={triggerPageEnabled}');
+    expect(appSource).toContain('onClick={triggerLabOpen ? toggleTriggerLabEnabled : toggleAdaptiveTriggersEnabled}');
     expect(appSource).toContain("void runAction('trigger-lab-enabled', () => window.bridge.resetAdaptiveTriggers());");
   });
 
