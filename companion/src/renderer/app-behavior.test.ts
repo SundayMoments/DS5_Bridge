@@ -373,13 +373,17 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('window.bridge.setAudioReactiveHapticsConfig({ enabled })');
   });
 
-  it('only reports a Trigger Lab override while adaptive triggers are globally enabled', () => {
-    expect(appSource).toContain('{adaptiveTriggersEnabled && triggerLabAnyActive ? (');
+  it('keeps Trigger Lab enablement independent from the global adaptive-trigger setting', () => {
+    expect(appSource).toContain('const [triggerLabEnabled, setTriggerLabEnabled] = useState(triggerLabInitialState.enabled);');
+    expect(appSource).toContain('{triggerLabEnabled && triggerLabAnyActive ? (');
+    expect(appSource).toContain('aria-checked={triggerLabEnabled}');
+    expect(appSource).toContain('onClick={toggleTriggerLabEnabled}');
+    expect(appSource).toContain("void runAction('trigger-lab-enabled', () => window.bridge.resetAdaptiveTriggers());");
   });
 
-  it('reapplies saved Trigger Lab effects after global triggers are toggled off and on', () => {
-    expect(appSource).toContain('if (!connected || !adaptiveTriggersEnabled)');
+  it('restores Trigger Lab independently, including after global trigger settings change', () => {
+    expect(appSource).toContain('}, [adaptiveTriggersEnabled, connected, triggerLabEnabled]);');
+    expect(appSource).toContain('|| !triggerLabEnabled');
     expect(appSource).toContain('triggerLabRestoreAppliedRef.current = false;');
-    expect(appSource).toContain('}, [adaptiveTriggersEnabled, connected]);');
   });
 });

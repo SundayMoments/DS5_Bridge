@@ -261,6 +261,7 @@ type TriggerLabSplitState = {
   active: Record<TriggerLabSide, boolean>;
 };
 type TriggerLabWorkspaceState = {
+  enabled: boolean;
   linked: boolean;
   drafts: Record<TriggerLabSide, TriggerLabDraft>;
   active: Record<TriggerLabSide, boolean>;
@@ -1071,6 +1072,7 @@ function createTriggerLabProfileId(): TriggerLabCustomProfileId {
 
 function defaultTriggerLabWorkspaceState(): TriggerLabWorkspaceState {
   return {
+    enabled: false,
     linked: true,
     drafts: {
       l2: { ...TRIGGER_LAB_DEFAULT_DRAFT },
@@ -1168,6 +1170,9 @@ function loadTriggerLabWorkspaceState(profiles: TriggerLabCustomProfile[]): Trig
       : active;
 
     return {
+      enabled: typeof candidate.enabled === 'boolean'
+        ? candidate.enabled
+        : workspaceActive.l2 || workspaceActive.r2,
       linked,
       drafts: {
         l2: l2Draft,
@@ -2905,6 +2910,7 @@ export function App() {
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
   const [audioHapticsSessions, setAudioHapticsSessions] = useState<AudioHapticsSession[]>([]);
   const [audioHapticsSessionsLoading, setAudioHapticsSessionsLoading] = useState(false);
+  const [triggerLabEnabled, setTriggerLabEnabled] = useState(triggerLabInitialState.enabled);
   const [triggerLabLinked, setTriggerLabLinked] = useState(triggerLabInitialState.linked);
   const [triggerLabDrafts, setTriggerLabDrafts] = useState<Record<TriggerLabSide, TriggerLabDraft>>(triggerLabInitialState.drafts);
   const [triggerLabActive, setTriggerLabActive] = useState<Record<TriggerLabSide, boolean>>(triggerLabInitialState.active);
@@ -3054,12 +3060,13 @@ export function App() {
 
   useEffect(() => {
     saveTriggerLabWorkspaceState({
+      enabled: triggerLabEnabled,
       linked: triggerLabLinked,
       drafts: triggerLabDrafts,
       active: triggerLabActive,
       splitState: triggerLabSplitState
     });
-  }, [triggerLabActive, triggerLabDrafts, triggerLabLinked, triggerLabSplitState]);
+  }, [triggerLabActive, triggerLabDrafts, triggerLabEnabled, triggerLabLinked, triggerLabSplitState]);
 
   const personaTransition = snapshot?.personaTransition ?? null;
   const personaTransitionActive = Boolean(personaTransition);
@@ -3743,17 +3750,15 @@ export function App() {
   const OutputIcon = headsetOutputDetected ? Headphones : Volume2;
 
   useEffect(() => {
-    if (!connected || !adaptiveTriggersEnabled) {
-      triggerLabRestoreAppliedRef.current = false;
-    }
-  }, [adaptiveTriggersEnabled, connected]);
+    triggerLabRestoreAppliedRef.current = false;
+  }, [adaptiveTriggersEnabled, connected, triggerLabEnabled]);
 
   useEffect(() => {
     if (
       triggerLabRestoreAppliedRef.current
       || !connected
       || !adaptiveTriggersSupported
-      || !adaptiveTriggersEnabled
+      || !triggerLabEnabled
       || pendingAction !== null
     ) {
       return;
@@ -3782,6 +3787,7 @@ export function App() {
     triggerLabActive,
     triggerLabAnyActive,
     triggerLabDrafts,
+    triggerLabEnabled,
     triggerLabLinked
   ]);
   const outputControlLabel = headsetOutputDetected ? 'Headphones' : 'Speaker';
@@ -5868,6 +5874,14 @@ export function App() {
     window.addEventListener('keydown', keyDown);
   }
 
+  function toggleTriggerLabEnabled() {
+    const enabled = !triggerLabEnabled;
+    setTriggerLabEnabled(enabled);
+    if (!enabled) {
+      void runAction('trigger-lab-enabled', () => window.bridge.resetAdaptiveTriggers());
+    }
+  }
+
   async function commitAudioInterleave(run: number, ageUs: number) {
     const clamped = clampAudioInterleaveValues(run, ageUs);
     setAudioInterleaveRun(clamped.maxConsecutiveAudioSends);
@@ -6379,7 +6393,7 @@ export function App() {
     const active = triggerLabActiveForSide(side);
     const labActionDisabled = !connected
       || !adaptiveTriggersSupported
-      || !adaptiveTriggersEnabled
+      || !triggerLabEnabled
       || pendingAction !== null;
     const activeDisabled = labActionDisabled || (!active && draft.forcePercent <= 0);
     const previewDisabled = labActionDisabled
@@ -8180,7 +8194,7 @@ export function App() {
                   <p>{triggerLabOpen ? 'Experimental adaptive trigger profile editor' : 'Set trigger effect intensity and test mode'}</p>
                 </div>
                 <div className="triggers-heading-controls">
-                  {adaptiveTriggersEnabled && triggerLabAnyActive ? (
+                  {triggerLabEnabled && triggerLabAnyActive ? (
                     <div className="inline-switch trigger-lab-state-indicator">
                       <span className="inline-state-badge warn trigger-lab-state">Lab Override</span>
                       <span className="settings-shortcut-tooltip shortcut-glyph-tooltip trigger-lab-override-tooltip">
@@ -8193,10 +8207,12 @@ export function App() {
                     <button
                       type="button"
                       role="switch"
-                      aria-checked={snapshot.settings.adaptiveTriggersEnabled}
-                      className={`switch ${snapshot.settings.adaptiveTriggersEnabled ? 'on' : ''}`}
+                      aria-checked={triggerLabEnabled}
+                      aria-label="Enable Trigger Lab"
+                      title="Enable Trigger Lab"
+                      className={`switch ${triggerLabEnabled ? 'on' : ''}`}
                       disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
-                      onClick={toggleAdaptiveTriggersEnabled}
+                      onClick={toggleTriggerLabEnabled}
                     >
                       <span />
                     </button>
