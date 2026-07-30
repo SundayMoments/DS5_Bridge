@@ -24,6 +24,23 @@ if(NOT result EQUAL 0)
 endif()
 
 set(required_sram_symbols
+        "_Z10on_bt_data12CHANNEL_TYPEPht"
+        "_Z14interrupt_loopv"
+        "_Z35companion_process_controller_reportPht"
+        "_Z34companion_update_controller_reportPKht"
+        "_ZN12_GLOBAL__N_120queue_shortcut_eventEh"
+        "_ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb"
+        "_Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState"
+        "host_persona_active"
+        "host_persona_descriptors_verified"
+        "_Z25host_persona_encode_input15HostPersonaModeRK21BridgeControllerStateR22HostPersonaInputReport"
+        "_Z30dualsense_persona_encode_inputRK21BridgeControllerStateR22HostPersonaInputReport"
+        "_Z24ds4_persona_encode_inputRK21BridgeControllerStateR22HostPersonaInputReport"
+        "_Z28xusb360_persona_encode_inputRK21BridgeControllerStateR22HostPersonaInputReport"
+        "_Z17xusb360_usb_readyv"
+        "_Z23xusb360_usb_send_reportPKhh"
+        "_Z11set_headsetb"
+        "_Z20audio_mic_add_packetPKht"
         "_ZL24process_usb_audio_packetv"
         "_ZL25send_audio_haptics_packetPKabb"
         "_Z21bt_write_audio_streamPht"

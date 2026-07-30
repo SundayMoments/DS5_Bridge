@@ -278,6 +278,56 @@ relocate_to_ram(
 
 # Tier 3: controller input-report and scheduler tail.
 relocate_to_ram(
+        src/main.cpp.o
+        ".text._Z10on_bt_data12CHANNEL_TYPEPht=.time_critical.controller_input_bt_callback@.text._Z14interrupt_loopv=.time_critical.controller_input_usb_submit"
+        "Relocating controller input receive and USB submission to SRAM"
+)
+relocate_to_ram(
+        src/companion.cpp.o
+        ".text._ZN12_GLOBAL__N_120queue_shortcut_eventEh=.time_critical.controller_input_shortcut_queue@.text._ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb=.time_critical.controller_input_dpad_remap@.text._Z35companion_process_controller_reportPht=.time_critical.controller_input_companion_process@.text._Z34companion_update_controller_reportPKht=.time_critical.controller_input_companion_snapshot"
+        "Relocating companion controller-report processing to SRAM"
+)
+relocate_to_ram(
+        src/dualsense_input_decoder.cpp.o
+        ".text._Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState=.time_critical.controller_input_decode"
+        "Relocating DualSense input decoding to SRAM"
+)
+relocate_to_ram(
+        src/persona/host_persona.cpp.o
+        ".text.host_persona_active=.time_critical.controller_input_active_persona@.text._Z25host_persona_encode_input15HostPersonaModeRK21BridgeControllerStateR22HostPersonaInputReport=.time_critical.controller_input_persona_encode"
+        "Relocating host-persona input dispatch to SRAM"
+)
+relocate_to_ram(
+        src/usb_descriptors.c.o
+        ".text.host_persona_descriptors_verified=.time_critical.controller_input_persona_verified"
+        "Relocating host-persona verification to SRAM"
+)
+relocate_to_ram(
+        src/persona/dualsense_persona.cpp.o
+        ".text._Z30dualsense_persona_encode_inputRK21BridgeControllerStateR22HostPersonaInputReport=.time_critical.controller_input_dualsense_encode"
+        "Relocating DualSense persona input encoding to SRAM"
+)
+relocate_to_ram(
+        src/persona/ds4_persona.cpp.o
+        ".text._Z24ds4_persona_encode_inputRK21BridgeControllerStateR22HostPersonaInputReport=.time_critical.controller_input_ds4_encode"
+        "Relocating DS4 persona input encoding to SRAM"
+)
+relocate_to_ram(
+        src/persona/xusb360_persona.cpp.o
+        ".text._Z28xusb360_persona_encode_inputRK21BridgeControllerStateR22HostPersonaInputReport=.time_critical.controller_input_xusb_encode"
+        "Relocating XUSB persona input encoding to SRAM"
+)
+relocate_to_ram(
+        src/persona/xusb360_usb.cpp.o
+        ".text._Z17xusb360_usb_readyv=.time_critical.controller_input_xusb_ready@.text._Z23xusb360_usb_send_reportPKhh=.time_critical.controller_input_xusb_submit"
+        "Relocating XUSB controller input submission to SRAM"
+)
+relocate_to_ram(
+        src/audio.cpp.o
+        ".text._Z11set_headsetb=.time_critical.controller_input_headset_state@.text._Z20audio_mic_add_packetPKht=.time_critical.controller_input_mic_enqueue"
+        "Relocating controller headset and microphone input handling to SRAM"
+)
+relocate_to_ram(
         lib/tinyusb/src/class/hid/hid_device.c.o
         ".text.tud_hid_n_report=.time_critical.tud_hid_n_report@.text.tud_hid_n_ready=.time_critical.tud_hid_n_ready@.text.hidd_xfer_cb=.time_critical.hidd_xfer_cb"
         "Relocating TinyUSB HID report path to SRAM"

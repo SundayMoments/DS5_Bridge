@@ -1555,6 +1555,16 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             == std::string::npos
         || verify_cmake.find("_ZL25send_audio_haptics_packetPKabb") == std::string::npos
         || verify_cmake.find("_Z21bt_write_audio_streamPht") == std::string::npos
+        || verify_cmake.find("_Z10on_bt_data12CHANNEL_TYPEPht") == std::string::npos
+        || verify_cmake.find("_Z35companion_process_controller_reportPht")
+            == std::string::npos
+        || verify_cmake.find(
+            "_Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState"
+        ) == std::string::npos
+        || verify_cmake.find(
+            "_Z25host_persona_encode_input15HostPersonaModeRK21BridgeControllerStateR22HostPersonaInputReport"
+        ) == std::string::npos
+        || verify_cmake.find("_Z20audio_mic_add_packetPKht") == std::string::npos
         || verify_cmake.find("_Z37controller_packet_copy_audio_snapshotPhb") == std::string::npos
         || verify_cmake.find("_Z43controller_output_state_copy_audio_snapshotPhb") == std::string::npos
         || verify_cmake.find("_Z49controller_output_state_strip_zero_classic_rumblePht")
