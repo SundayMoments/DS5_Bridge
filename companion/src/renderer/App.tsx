@@ -92,6 +92,9 @@ import {
   UI_THEME_PREVIEW_SWATCHES
 } from './ui-themes';
 import {
+  AUDIO_INTERLEAVE_DEFAULT,
+  AUDIO_INTERLEAVE_LIMITS,
+  AUDIO_INTERLEAVE_PRESETS,
   CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
   CHORD_CONTROLLER_SETTING_STEP_MAX,
   CHORD_CONTROLLER_SETTING_STEP_MIN,
@@ -103,6 +106,7 @@ import {
   MAX_KEYBOARD_FUNCTION_KEYS,
   REMAP_BUTTON_IDS,
   ackResultName,
+  clampAudioInterleaveValues,
   normalizeChordControllerSettingStepPercent,
   isChordBindingAllowed
 } from '../shared/protocol';
@@ -147,7 +151,7 @@ import {
   type ControllerDeviceRenameDialog
 } from './ControllerDevicesPage';
 
-type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio' | 'triggers' | 'lighting' | 'remapping' | 'chords' | 'system';
+type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio' | 'interleave' | 'triggers' | 'lighting' | 'remapping' | 'chords' | 'system';
 type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type ControllerType = BridgeStatusPayload['controllerType'];
 type KnownControllerType = Exclude<ControllerType, 'unknown'>;
@@ -286,6 +290,33 @@ const SPEAKER_VOLUME_STEP = 10;
 const MIC_VOLUME_STEP = 10;
 const AUDIO_BUFFER_LENGTH_MIN = 16;
 const AUDIO_BUFFER_LENGTH_MAX = 128;
+const AUDIO_INTERLEAVE_RUN_UI_MAX = 16;
+const AUDIO_INTERLEAVE_AGE_UI_MAX_US = 8000;
+const AUDIO_INTERLEAVE_AGE_UI_STEP_US = 250;
+const AUDIO_INTERLEAVE_PRESET_OPTIONS: Array<[keyof typeof AUDIO_INTERLEAVE_PRESETS, string]> = [
+  ['smooth', 'Smooth Audio'],
+  ['balanced', 'Balanced'],
+  ['responsive', 'Responsive']
+];
+
+function audioInterleaveActivePreset(
+  maxConsecutiveAudioSends: number,
+  stateMaxAgeUs: number
+): keyof typeof AUDIO_INTERLEAVE_PRESETS | null {
+  for (const [key, preset] of Object.entries(AUDIO_INTERLEAVE_PRESETS)) {
+    if (
+      preset.maxConsecutiveAudioSends === maxConsecutiveAudioSends
+      && preset.stateMaxAgeUs === stateMaxAgeUs
+    ) {
+      return key as keyof typeof AUDIO_INTERLEAVE_PRESETS;
+    }
+  }
+  return null;
+}
+
+function formatInterleaveLatency(stateMaxAgeUs: number): string {
+  return `${(stateMaxAgeUs / 1000).toFixed(stateMaxAgeUs % 1000 === 0 ? 0 : 2)} ms`;
+}
 const AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX = 44;
 const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
 const LIGHTBAR_BRIGHTNESS_STEP = 10;
@@ -731,12 +762,21 @@ const CONTROL_TABS: Array<{ id: ControlTab; label: string; Icon: TablerIcon }> =
   { id: 'overview', label: 'Overview', Icon: IconLayoutDashboard },
   { id: 'devices', label: 'Devices', Icon: IconBluetooth },
   { id: 'audio', label: 'Audio', Icon: IconVolume },
+  { id: 'interleave', label: 'Interleave', Icon: SlidersHorizontal },
   { id: 'haptics', label: 'Haptics', Icon: Sparkles },
   { id: 'triggers', label: 'Triggers', Icon: IconDeviceGamepad2 },
   { id: 'lighting', label: 'Lighting', Icon: IconBulb },
   { id: 'remapping', label: 'Button Remapping', Icon: IconDeviceGamepad3 },
   { id: 'system', label: 'System', Icon: IconCpu }
 ];
+
+function profileDisplayName(name: string | undefined, id: string): string {
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (trimmed.length > 0) return trimmed;
+  if (id === DEFAULT_CONTROLLER_PROFILE_ID || id === DEFAULT_BUTTON_REMAP_PROFILE_ID) return 'Default';
+  if (id === 'custom') return 'Custom';
+  return id.length > 0 ? id : 'Profile';
+}
 
 type SelectValue = string | number;
 type SinkSelectableAudio = HTMLAudioElement & {
@@ -2780,6 +2820,13 @@ export function App() {
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
   const [micVolumeValue, setMicVolumeValue] = useState(100);
   const [audioBufferLengthValue, setAudioBufferLengthValue] = useState(64);
+  const [audioInterleaveRun, setAudioInterleaveRun] = useState<number>(
+    AUDIO_INTERLEAVE_DEFAULT.maxConsecutiveAudioSends
+  );
+  const [audioInterleaveAgeUs, setAudioInterleaveAgeUs] = useState<number>(
+    AUDIO_INTERLEAVE_DEFAULT.stateMaxAgeUs
+  );
+  const [audioInterleaveAdvancedOpen, setAudioInterleaveAdvancedOpen] = useState(false);
   const [lightbarColor, setLightbarColor] = useState('#ffff00');
   const [customLightbarColor, setCustomLightbarColor] = useState<string | null>(() => {
     const saved = window.localStorage.getItem('ds5bridge.customLightbarColor');
@@ -2860,6 +2907,7 @@ export function App() {
   const [speakerVolumeCommitPending, setSpeakerVolumeCommitPending] = useState(false);
   const [micVolumeCommitPending, setMicVolumeCommitPending] = useState(false);
   const [audioBufferLengthCommitPending, setAudioBufferLengthCommitPending] = useState(false);
+  const [audioInterleaveCommitPending, setAudioInterleaveCommitPending] = useState(false);
   const [audioReactiveHapticsCommitPending, setAudioReactiveHapticsCommitPending] = useState(false);
   const [lightbarCommitPending, setLightbarCommitPending] = useState(false);
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
@@ -2876,6 +2924,7 @@ export function App() {
   const speakerVolumeEditingRef = useRef(false);
   const micVolumeEditingRef = useRef(false);
   const audioBufferLengthEditingRef = useRef(false);
+  const audioInterleaveEditingRef = useRef(false);
   const lightbarBrightnessEditingRef = useRef(false);
   const triggerEffectEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -2991,7 +3040,9 @@ export function App() {
   ));
   const selectedControllerProfileId = selectedControllerProfile?.id ?? DEFAULT_CONTROLLER_PROFILE_ID;
   const controllerProfileOptions = useMemo<Array<[string, string]>>(() => (
-    snapshot?.settings.controllerProfiles.map((profile) => [profile.name, profile.id]) ?? [['Default', DEFAULT_CONTROLLER_PROFILE_ID]]
+    snapshot?.settings.controllerProfiles.map((profile): [string, string] => (
+      [profileDisplayName(profile.name, profile.id), profile.id]
+    )) ?? [['Default', DEFAULT_CONTROLLER_PROFILE_ID]]
   ), [snapshot?.settings.controllerProfiles]);
   const selectedControllerProfileIsDefault = selectedControllerProfileId === DEFAULT_CONTROLLER_PROFILE_ID;
   const canDeleteControllerProfile = !selectedControllerProfileIsDefault;
@@ -3000,7 +3051,9 @@ export function App() {
   ));
   const selectedRemapProfileId = selectedRemapProfile?.id ?? DEFAULT_BUTTON_REMAP_PROFILE_ID;
   const remapProfileOptions = useMemo<Array<[string, string]>>(() => (
-    snapshot?.settings.buttonRemappingProfiles.map((profile) => [profile.name, profile.id]) ?? [['Default', DEFAULT_BUTTON_REMAP_PROFILE_ID]]
+    snapshot?.settings.buttonRemappingProfiles.map((profile): [string, string] => (
+      [profileDisplayName(profile.name, profile.id), profile.id]
+    )) ?? [['Default', DEFAULT_BUTTON_REMAP_PROFILE_ID]]
   ), [snapshot?.settings.buttonRemappingProfiles]);
   const selectedRemapProfileIsDefault = selectedRemapProfileId === DEFAULT_BUTTON_REMAP_PROFILE_ID;
   const remappingLayoutAsset = showDualSenseEdgeRemapButtons ? REMAP_EDGE_LAYOUT_ASSET : REMAP_STANDARD_LAYOUT_ASSET;
@@ -3228,6 +3281,14 @@ export function App() {
     }
     if (!audioBufferLengthEditingRef.current) {
       setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
+    }
+    if (!audioInterleaveEditingRef.current) {
+      const interleave = clampAudioInterleaveValues(
+        next.settings.audioInterleaveMaxConsecutiveAudioSends,
+        next.settings.audioInterleaveStateMaxAgeUs
+      );
+      setAudioInterleaveRun(interleave.maxConsecutiveAudioSends);
+      setAudioInterleaveAgeUs(interleave.stateMaxAgeUs);
     }
     const nextLightbarColor = lightbarColorFromSnapshot(next);
     setLightbarColor(nextLightbarColor);
@@ -3683,6 +3744,10 @@ export function App() {
     || !audioBufferLengthControlSupported
     || pendingAction !== null
     || audioBufferLengthCommitPending;
+  const audioInterleaveControlDisabled = !connected
+    || pendingAction !== null
+    || audioInterleaveCommitPending;
+  const activeInterleavePreset = audioInterleaveActivePreset(audioInterleaveRun, audioInterleaveAgeUs);
   const audioReactiveHapticsRouteSupported = audioReactiveHapticsSupported;
   const audioReactiveHapticsBlocked = !connected
     || !audioReactiveHapticsSupported
@@ -5708,6 +5773,52 @@ export function App() {
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', cancel);
     window.addEventListener('keydown', keyDown);
+  }
+
+  async function commitAudioInterleave(run: number, ageUs: number) {
+    const clamped = clampAudioInterleaveValues(run, ageUs);
+    setAudioInterleaveRun(clamped.maxConsecutiveAudioSends);
+    setAudioInterleaveAgeUs(clamped.stateMaxAgeUs);
+    if (
+      !snapshot
+      || snapshot.state !== 'connected'
+      || audioInterleaveCommitPending
+      || (
+        clamped.maxConsecutiveAudioSends === snapshot.settings.audioInterleaveMaxConsecutiveAudioSends
+        && clamped.stateMaxAgeUs === snapshot.settings.audioInterleaveStateMaxAgeUs
+      )
+    ) {
+      audioInterleaveEditingRef.current = false;
+      return;
+    }
+
+    setAudioInterleaveCommitPending(true);
+    audioInterleaveEditingRef.current = true;
+    try {
+      const next = await window.bridge.setAudioInterleave(
+        clamped.maxConsecutiveAudioSends,
+        clamped.stateMaxAgeUs
+      );
+      setSnapshot(next);
+      const applied = clampAudioInterleaveValues(
+        next.settings.audioInterleaveMaxConsecutiveAudioSends,
+        next.settings.audioInterleaveStateMaxAgeUs
+      );
+      setAudioInterleaveRun(applied.maxConsecutiveAudioSends);
+      setAudioInterleaveAgeUs(applied.stateMaxAgeUs);
+    } catch {
+      const next = await window.bridge.getStatus();
+      setSnapshot(next);
+      const applied = clampAudioInterleaveValues(
+        next.settings.audioInterleaveMaxConsecutiveAudioSends,
+        next.settings.audioInterleaveStateMaxAgeUs
+      );
+      setAudioInterleaveRun(applied.maxConsecutiveAudioSends);
+      setAudioInterleaveAgeUs(applied.stateMaxAgeUs);
+    } finally {
+      setAudioInterleaveCommitPending(false);
+      audioInterleaveEditingRef.current = false;
+    }
   }
 
   function chooseFirmwareLogDirectory() {
@@ -8905,6 +9016,156 @@ export function App() {
                   </div>
                 </section>
               </div>
+          </div>
+
+          <div
+            className={`control-page interleave-page ${activeControlTab === 'interleave' ? 'active' : ''}`}
+            role="tabpanel"
+            id="control-panel-interleave"
+            aria-labelledby="control-tab-interleave"
+            aria-hidden={activeControlTab !== 'interleave'}
+          >
+            <div className="feature-heading">
+              <div>
+                <h2>Interleave</h2>
+                <p>Balance Bluetooth bandwidth between audio and controller updates.</p>
+              </div>
+            </div>
+            <div className="feature-card-grid">
+              <section className="feature-card audio-interleave-card">
+                <div className="feature-card-title">
+                  <span className="feature-icon"><SlidersHorizontal size={20} /></span>
+                  <div className="title-copy">
+                    <h3>Audio Interleave</h3>
+                    <p>Favor a fuller audio buffer or faster adaptive-trigger, rumble, and lighting updates.</p>
+                  </div>
+                </div>
+                <div className="segmented-row audio-interleave-presets">
+                  {AUDIO_INTERLEAVE_PRESET_OPTIONS.map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={activeInterleavePreset === key ? 'active' : ''}
+                      disabled={audioInterleaveControlDisabled}
+                      onClick={() => void commitAudioInterleave(
+                        AUDIO_INTERLEAVE_PRESETS[key].maxConsecutiveAudioSends,
+                        AUDIO_INTERLEAVE_PRESETS[key].stateMaxAgeUs
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="audio-interleave-advanced-toggle"
+                  aria-expanded={audioInterleaveAdvancedOpen}
+                  onClick={() => setAudioInterleaveAdvancedOpen((open) => !open)}
+                >
+                  <ChevronDown
+                    size={15}
+                    style={{
+                      transform: audioInterleaveAdvancedOpen ? 'none' : 'rotate(-90deg)',
+                      transition: 'transform 0.15s'
+                    }}
+                  />
+                  Advanced
+                </button>
+                {audioInterleaveAdvancedOpen && (
+                  <div className="audio-interleave-advanced">
+                    <label className="audio-slider-row audio-interleave-slider-row">
+                      <div className="audio-interleave-slider-label">
+                        <span>Audio packets per controller update</span>
+                        <strong>{audioInterleaveRun}</strong>
+                      </div>
+                      <div className="range-control">
+                        <input
+                          type="range"
+                          min={AUDIO_INTERLEAVE_LIMITS.maxConsecutiveAudioSends.min}
+                          max={AUDIO_INTERLEAVE_RUN_UI_MAX}
+                          step="1"
+                          value={Math.min(audioInterleaveRun, AUDIO_INTERLEAVE_RUN_UI_MAX)}
+                          aria-label="Audio packets per controller update"
+                          disabled={audioInterleaveControlDisabled}
+                          onPointerDown={() => { audioInterleaveEditingRef.current = true; }}
+                          onChange={(event) => {
+                            audioInterleaveEditingRef.current = true;
+                            setAudioInterleaveRun(Number(event.currentTarget.value));
+                          }}
+                          onPointerUp={(event) => void commitAudioInterleave(
+                            Number(event.currentTarget.value),
+                            audioInterleaveAgeUs
+                          )}
+                          onPointerCancel={(event) => void commitAudioInterleave(
+                            Number(event.currentTarget.value),
+                            audioInterleaveAgeUs
+                          )}
+                          onKeyUp={(event) => {
+                            if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+                              void commitAudioInterleave(Number(event.currentTarget.value), audioInterleaveAgeUs);
+                            }
+                          }}
+                          onBlur={(event) => void commitAudioInterleave(
+                            Number(event.currentTarget.value),
+                            audioInterleaveAgeUs
+                          )}
+                        />
+                      </div>
+                    </label>
+                    <label className="audio-slider-row audio-interleave-slider-row">
+                      <div className="audio-interleave-slider-label">
+                        <span>Maximum controller latency</span>
+                        <strong>{formatInterleaveLatency(audioInterleaveAgeUs)}</strong>
+                      </div>
+                      <div className="range-control">
+                        <input
+                          type="range"
+                          min={AUDIO_INTERLEAVE_LIMITS.stateMaxAgeUs.min}
+                          max={AUDIO_INTERLEAVE_AGE_UI_MAX_US}
+                          step={AUDIO_INTERLEAVE_AGE_UI_STEP_US}
+                          value={Math.min(audioInterleaveAgeUs, AUDIO_INTERLEAVE_AGE_UI_MAX_US)}
+                          aria-label="Maximum controller latency in microseconds"
+                          disabled={audioInterleaveControlDisabled}
+                          onPointerDown={() => { audioInterleaveEditingRef.current = true; }}
+                          onChange={(event) => {
+                            audioInterleaveEditingRef.current = true;
+                            setAudioInterleaveAgeUs(Number(event.currentTarget.value));
+                          }}
+                          onPointerUp={(event) => void commitAudioInterleave(
+                            audioInterleaveRun,
+                            Number(event.currentTarget.value)
+                          )}
+                          onPointerCancel={(event) => void commitAudioInterleave(
+                            audioInterleaveRun,
+                            Number(event.currentTarget.value)
+                          )}
+                          onKeyUp={(event) => {
+                            if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+                              void commitAudioInterleave(audioInterleaveRun, Number(event.currentTarget.value));
+                            }
+                          }}
+                          onBlur={(event) => void commitAudioInterleave(
+                            audioInterleaveRun,
+                            Number(event.currentTarget.value)
+                          )}
+                        />
+                      </div>
+                    </label>
+                    <button
+                      type="button"
+                      className="secondary-action audio-interleave-reset"
+                      disabled={audioInterleaveControlDisabled}
+                      onClick={() => void commitAudioInterleave(
+                        AUDIO_INTERLEAVE_DEFAULT.maxConsecutiveAudioSends,
+                        AUDIO_INTERLEAVE_DEFAULT.stateMaxAgeUs
+                      )}
+                    >
+                      <RefreshCcw size={14} /> Reset to firmware default
+                    </button>
+                  </div>
+                )}
+              </section>
+            </div>
           </div>
 
           <div

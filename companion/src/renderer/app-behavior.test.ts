@@ -184,6 +184,23 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('window.bridge.setShowBatteryPercentTrayIcon(!snapshot.settings.showBatteryPercentTrayIcon)');
   });
 
+  it('exposes persisted audio interleave presets and advanced controls', () => {
+    expect(appSource).toContain("{ id: 'interleave', label: 'Interleave', Icon: SlidersHorizontal }");
+    expect(appSource).toContain('id="control-panel-interleave"');
+    expect(appSource).toContain('AUDIO_INTERLEAVE_PRESETS');
+    expect(appSource).toContain('window.bridge.setAudioInterleave(');
+    expect(appSource).toContain('Audio packets per controller update');
+    expect(appSource).toContain('Maximum controller latency');
+    expect(appSource).toContain('Reset to firmware default');
+    expect(stylesSource).toContain('.audio-interleave-advanced');
+    expect(stylesSource).toContain('.audio-interleave-slider-label');
+  });
+
+  it('never renders a blank profile selector label', () => {
+    expect(appSource).toContain('function profileDisplayName(');
+    expect(appSource).toContain('profileDisplayName(profile.name, profile.id)');
+  });
+
   it('distinguishes active charging from connected external power', () => {
     expect(appSource).toContain(
       'function isChargingPowerState(rawPowerState: number | undefined): boolean {'

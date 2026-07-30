@@ -4580,6 +4580,60 @@ button.feature-icon {
   margin-top: 8px;
 }
 
+.audio-interleave-presets {
+  margin-top: 4px;
+}
+
+.audio-interleave-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.audio-interleave-advanced-toggle:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.audio-interleave-advanced {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.audio-interleave-slider-row {
+  display: grid;
+  gap: 6px;
+}
+
+.audio-interleave-slider-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.audio-interleave-slider-label strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-interleave-reset {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  gap: 6px;
+}
+
 .segmented-row.compact {
   grid-template-columns: 72px 72px 124px;
   gap: 8px;
