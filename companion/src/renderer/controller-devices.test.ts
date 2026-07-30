@@ -32,6 +32,7 @@ function identity(
 ): CompanionDeviceIdentityPayload {
   return {
     schemaVersion: 1,
+    bridgeId: null,
     controllerConnected: true,
     pairingActive: false,
     addressKnown: true,

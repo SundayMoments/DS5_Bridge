@@ -1225,6 +1225,10 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
             == std::string::npos
         || identity.find("write_u16(buffer + 53, identity.product_id);")
             == std::string::npos
+        || identity.find("pico_get_unique_board_id(&board_id);")
+            == std::string::npos
+        || identity.find("memcpy(buffer + 55, board_id.id")
+            == std::string::npos
         || protocol_ts.find("export function parseDeviceIdentityReport")
             == std::string::npos
         || protocol_ts.find("const address = readAscii(report, 10, 18);")

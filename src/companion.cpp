@@ -16,6 +16,7 @@
 #include "pico/critical_section.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
+#include "pico/unique_id.h"
 #include "pico/time.h"
 #include "usb.h"
 
@@ -1712,7 +1713,7 @@ uint16_t build_device_identity(uint8_t *buffer, uint16_t reqlen) {
 
     memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
     write_magic_and_version(buffer);
-    buffer[6] = 1; // Device identity schema version.
+    buffer[6] = 2; // Device identity schema version.
 
     BtDeviceIdentitySnapshot identity{};
     const bool has_identity = bt_get_device_identity(&identity);
@@ -1728,6 +1729,10 @@ uint16_t build_device_identity(uint8_t *buffer, uint16_t reqlen) {
         write_u16(buffer + 51, identity.vendor_id);
         write_u16(buffer + 53, identity.product_id);
     }
+    pico_unique_board_id_t board_id{};
+    pico_get_unique_board_id(&board_id);
+    static_assert(PICO_UNIQUE_BOARD_ID_SIZE_BYTES == 8);
+    memcpy(buffer + 55, board_id.id, PICO_UNIQUE_BOARD_ID_SIZE_BYTES);
     return COMPANION_PAYLOAD_SIZE;
 }
 

@@ -207,7 +207,7 @@ describe('companion protocol', () => {
 
   it('parses controller device identity and pairing state', () => {
     const report = baseReport(REPORT_ID.DEVICE_IDENTITY);
-    report[7] = 1;
+    report[7] = 2;
     report[8] = 0x0f;
     report[9] = 5;
     for (const [index, value] of [...'AA:BB:CC:DD:EE:FF'].entries()) {
@@ -218,9 +218,11 @@ describe('companion protocol', () => {
     }
     writeU16(report, 52, 0x054c);
     writeU16(report, 54, 0x0df2);
+    report.splice(56, 8, 0xde, 0xad, 0xbe, 0xef, 0x01, 0x23, 0x45, 0x67);
 
     expect(parseDeviceIdentityReport(report)).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      bridgeId: 'deadbeef01234567',
       controllerConnected: true,
       pairingActive: true,
       addressKnown: true,
@@ -232,6 +234,12 @@ describe('companion protocol', () => {
       productId: 0x0df2,
       protocolVersion: `${PROTOCOL_MAJOR}.${PROTOCOL_MINOR}`
     });
+  });
+
+  it('keeps bridge identity optional for schema-one firmware', () => {
+    const report = baseReport(REPORT_ID.DEVICE_IDENTITY);
+    report[7] = 1;
+    expect(parseDeviceIdentityReport(report).bridgeId).toBeNull();
   });
 
   it('parses pairing identity without exposing an unknown address', () => {

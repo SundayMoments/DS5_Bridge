@@ -484,6 +484,7 @@ export interface BridgeAckPayload {
 
 export interface CompanionDeviceIdentityPayload {
   schemaVersion: number;
+  bridgeId: string | null;
   controllerConnected: boolean;
   pairingActive: boolean;
   addressKnown: boolean;
@@ -1035,10 +1036,14 @@ export function parseDeviceIdentityReport(
   const controllerName = readAscii(report, 28, 24);
   const vendorId = readU16(report, 52);
   const productId = readU16(report, 54);
+  const bridgeId = report[7] >= 2
+    ? Array.from({ length: 8 }, (_, index) => report[56 + index].toString(16).padStart(2, '0')).join('')
+    : null;
   const addressKnown = (flags & 0x01) !== 0 && address.length > 0;
   const linkKeyKnown = (flags & 0x02) !== 0;
   return {
     schemaVersion: report[7],
+    bridgeId: bridgeId && !/^0+$/.test(bridgeId) ? bridgeId : null,
     controllerConnected: (flags & 0x04) !== 0,
     pairingActive: (flags & 0x08) !== 0,
     addressKnown,
