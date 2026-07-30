@@ -1753,7 +1753,7 @@ void audio_test_haptics_loop() {
     }
 }
 
-static bool process_usb_audio_packet() {
+static bool __not_in_flash_func(process_usb_audio_packet)() {
     const uint32_t now = time_us_32();
     if (!tud_audio_available()) {
         return false;

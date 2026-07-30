@@ -1459,6 +1459,9 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             == std::string::npos
         || audio_cpp.find("if (!did_speaker && !did_mic)") == std::string::npos
         || audio_cpp.find("sleep_us(10);") == std::string::npos
+        || audio_cpp.find(
+            "static bool __not_in_flash_func(process_usb_audio_packet)() {"
+        ) == std::string::npos
         || audio_exact_queue_h.find("T storage_[Capacity]{};") == std::string::npos
         || audio_exact_queue_h.find("critical_section_init_with_lock_num(")
             == std::string::npos
@@ -1500,6 +1503,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         || ram_mem_c.find("__not_in_flash_func(memmove)") == std::string::npos
         || relocate_cmake.find("--rename-section") == std::string::npos
         || relocate_cmake.find("destination_section_index") == std::string::npos
+        || verify_cmake.find("\"_ZL24process_usb_audio_packetv\"") == std::string::npos
         || verify_cmake.find("\"_ZL11core1_entryv\"") == std::string::npos
         || verify_cmake.find("\"_ZL22audio_core1_stack_pollm\"") == std::string::npos
         || verify_cmake.find("\"crc32_lookup_table\"") == std::string::npos

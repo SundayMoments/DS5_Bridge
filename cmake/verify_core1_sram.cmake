@@ -24,6 +24,7 @@ if(NOT result EQUAL 0)
 endif()
 
 set(required_sram_symbols
+        "_ZL24process_usb_audio_packetv"
         "_ZL11core1_entryv"
         "_ZL22audio_core1_stack_pollm"
         "_ZN13WDL_Resampler15ResamplePrepareEiiPPf"
