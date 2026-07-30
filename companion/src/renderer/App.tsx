@@ -10133,7 +10133,7 @@ export function App() {
           onMouseDown={() => setShowBridgeSettings(false)}
         >
           <div
-            className="settings-menu bridge-settings-modal"
+            className="settings-menu bridge-settings-modal bridge-settings-preferences-modal"
             role="dialog"
             aria-modal="true"
             aria-label="Bridge settings"

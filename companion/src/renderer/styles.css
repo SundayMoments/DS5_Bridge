@@ -1336,6 +1336,37 @@ button {
   font-weight: 560;
 }
 
+.bridge-settings-preferences-modal .bridge-settings-modal-heading {
+  font-size: 14px;
+}
+
+.bridge-settings-preferences-modal .settings-menu-section-label {
+  font-size: 10px;
+}
+
+.bridge-settings-preferences-modal .bridge-settings-column .settings-menu-row {
+  gap: 12px;
+  min-height: 32px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.bridge-settings-preferences-modal .settings-menu-row strong {
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.bridge-settings-preferences-modal .settings-menu-copy > span {
+  font-size: 10.5px;
+  line-height: 1.16;
+}
+
+.bridge-settings-preferences-modal.settings-menu .custom-select-button,
+.bridge-settings-preferences-modal.settings-menu .custom-select-menu button,
+.bridge-settings-preferences-modal .pico-firmware-actions .heading-action {
+  font-size: 10.5px;
+}
+
 .bridge-settings-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

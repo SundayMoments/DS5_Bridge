@@ -568,6 +568,22 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.overview-range-ticks span.endpoint', 'height: 9px;')).toContain('height: 9px;');
   });
 
+  it('keeps the Bridge Settings preferences modal typography compact', () => {
+    expect(appSource).toContain('bridge-settings-modal bridge-settings-preferences-modal');
+    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-modal-heading', 'font-size: 14px;')).toContain(
+      'font-size: 14px;'
+    );
+    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-row strong', 'font-size: 12px;')).toContain(
+      'font-size: 12px;'
+    );
+    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-copy > span', 'font-size: 10.5px;')).toContain(
+      'font-size: 10.5px;'
+    );
+    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-column .settings-menu-row', 'min-height: 32px;')).toContain(
+      'padding-top: 3px;'
+    );
+  });
+
   it('animates collapsible sidebar groups without leaving collapsed controls focusable', () => {
     expect(cssBlock('.control-tabs', 'flex-direction: column;')).toContain('display: flex;');
     expect(cssBlock('.control-tab-group-panel', 'grid-template-rows: 0fr;')).toContain('grid-template-rows: 0fr;');
