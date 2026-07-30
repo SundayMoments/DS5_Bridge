@@ -5,19 +5,43 @@
 
 #include "hardware/uart.h"
 #include "hci_dump.h"
+#include "pico/critical_section.h"
 
 namespace {
 
 bool firmware_log_ready = false;
 
 #if DS5_DEBUG_LOGS_ENABLED
+constexpr std::size_t kFirmwareLogRingSize = 8 * 1024;
+alignas(4) uint8_t firmware_log_ring[kFirmwareLogRingSize]{};
+critical_section_t firmware_log_ring_cs;
+uint32_t firmware_log_write_sequence = 0;
+uint32_t firmware_log_read_sequence = 0;
+uint32_t firmware_log_dropped_bytes = 0;
+
+void retain_log_bytes(const char *text, std::size_t length) {
+    critical_section_enter_blocking(&firmware_log_ring_cs);
+    for (std::size_t index = 0; index < length; index++) {
+        if (firmware_log_write_sequence - firmware_log_read_sequence >= kFirmwareLogRingSize) {
+            firmware_log_read_sequence++;
+            firmware_log_dropped_bytes++;
+        }
+        firmware_log_ring[firmware_log_write_sequence % kFirmwareLogRingSize] =
+            static_cast<uint8_t>(text[index]);
+        firmware_log_write_sequence++;
+    }
+    critical_section_exit(&firmware_log_ring_cs);
+}
+
 void write_log_bytes(const char *text, int length) {
     if (!firmware_log_ready || text == nullptr || length <= 0) {
         return;
     }
 
-    // Diagnostic builds stream directly to the dedicated physical COM UART.
-    // There is no retained archive, companion transport, or SRAM spool.
+    retain_log_bytes(text, static_cast<std::size_t>(length));
+
+    // Keep the dedicated physical COM UART as the live diagnostic sink. The
+    // companion report independently drains the retained SRAM copy.
     uart_write_blocking(
         uart_default,
         reinterpret_cast<const uint8_t *>(text),
@@ -80,11 +104,42 @@ void firmware_log_init() {
         return;
     }
 
+#if DS5_DEBUG_LOGS_ENABLED
+    critical_section_init(&firmware_log_ring_cs);
+#endif
     firmware_log_ready = true;
 #if DS5_DEBUG_LOGS_ENABLED
     firmware_log_printf(
-        "\n[FirmwareLog] direct physical UART stream ready baud=921600\n"
+        "\n[FirmwareLog] physical UART and 8192-byte SRAM ring ready baud=921600\n"
     );
+#endif
+}
+
+FirmwareLogReadResult firmware_log_read(uint8_t *destination, std::size_t capacity) {
+#if DS5_DEBUG_LOGS_ENABLED
+    FirmwareLogReadResult result{true, 0, 0, 0, 0};
+    if (!firmware_log_ready || destination == nullptr || capacity == 0) {
+        return result;
+    }
+
+    critical_section_enter_blocking(&firmware_log_ring_cs);
+    result.sequence = firmware_log_read_sequence;
+    result.next_sequence = firmware_log_write_sequence;
+    result.dropped_bytes = firmware_log_dropped_bytes;
+    const uint32_t available = firmware_log_write_sequence - firmware_log_read_sequence;
+    result.length = available < capacity ? available : capacity;
+    for (std::size_t index = 0; index < result.length; index++) {
+        destination[index] = firmware_log_ring[
+            (firmware_log_read_sequence + static_cast<uint32_t>(index)) % kFirmwareLogRingSize
+        ];
+    }
+    firmware_log_read_sequence += static_cast<uint32_t>(result.length);
+    critical_section_exit(&firmware_log_ring_cs);
+    return result;
+#else
+    (void)destination;
+    (void)capacity;
+    return FirmwareLogReadResult{false, 0, 0, 0, 0};
 #endif
 }
 
@@ -151,5 +206,6 @@ void firmware_log_init_btstack_sink() {
 }
 
 void firmware_log_flush_live() {
-    // Direct physical-COM streaming has no buffered state to flush.
+    // Direct physical-COM streaming has no buffered state to flush. The SRAM
+    // ring is drained on demand through the companion feature report.
 }

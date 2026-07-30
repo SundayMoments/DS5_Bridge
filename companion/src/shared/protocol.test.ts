@@ -25,6 +25,7 @@ import {
   parseAudioStatsReport,
   parseAckReport,
   parseFeedbackTraceReport,
+  parseFirmwareLogReport,
   parseDeviceIdentityReport,
   parseTriggerTraceReport,
   parseStatusReport,
@@ -175,6 +176,30 @@ describe('companion protocol', () => {
 
     const status = parseStatusReport(report);
     expect(status.muteButtonMode).toBe('chord');
+  });
+
+  it('parses retained firmware log bytes', () => {
+    const report = baseReport(REPORT_ID.FIRMWARE_LOG);
+    report[7] = 0x01;
+    report[8] = 4;
+    writeU32(report, 9, 120);
+    writeU32(report, 13, 124);
+    writeU32(report, 17, 7);
+    report.splice(21, 4, ...Buffer.from('test'));
+
+    expect(parseFirmwareLogReport(report)).toEqual({
+      enabled: true,
+      sequence: 120,
+      nextSequence: 124,
+      droppedBytes: 7,
+      bytes: [...Buffer.from('test')]
+    });
+  });
+
+  it('rejects oversized retained firmware log payloads', () => {
+    const report = baseReport(REPORT_ID.FIRMWARE_LOG);
+    report[8] = 44;
+    expect(() => parseFirmwareLogReport(report)).toThrowError(ProtocolError);
   });
 
   it('parses controller device identity and pairing state', () => {

@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 17;
+export const PROTOCOL_MINOR = 18;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -16,7 +16,8 @@ export const REPORT_ID = {
   AUDIO_STATUS: 0x08,
   TRIGGER_TRACE: 0x09,
   FEEDBACK_TRACE: 0x0a,
-  DEVICE_IDENTITY: 0x0d
+  DEVICE_IDENTITY: 0x0d,
+  FIRMWARE_LOG: 0x0e
 } as const;
 
 export const SHORTCUT_EVENT = {
@@ -662,6 +663,14 @@ function readU32(report: ArrayLike<number>, offset: number): number {
   ) >>> 0;
 }
 
+export interface FirmwareLogPayload {
+  enabled: boolean;
+  sequence: number;
+  nextSequence: number;
+  droppedBytes: number;
+  bytes: number[];
+}
+
 function readAscii(report: ArrayLike<number>, offset: number, length: number): string {
   const chars: number[] = [];
   for (let index = 0; index < length; index += 1) {
@@ -993,6 +1002,24 @@ export function parseAudioStatusReport(report: ArrayLike<number>): AudioStatusPa
     micPeakPermille: readU16(report, 61),
     micUsbStreaming: (primaryFlags & 0x80) !== 0,
     protocolVersion: `${protocolMajor}.${protocolMinor}`
+  };
+}
+
+export function parseFirmwareLogReport(report: ArrayLike<number>): FirmwareLogPayload {
+  assertReport(report, REPORT_ID.FIRMWARE_LOG);
+  assertVersion(report);
+
+  const length = report[8];
+  const dataOffset = 21;
+  if (length > REPORT_LENGTH - dataOffset) {
+    throw new ProtocolError(`Firmware log payload length ${length} is too large.`, 'bad-firmware-log-length');
+  }
+  return {
+    enabled: (report[7] & 0x01) !== 0,
+    sequence: readU32(report, 9),
+    nextSequence: readU32(report, 13),
+    droppedBytes: readU32(report, 17),
+    bytes: Array.from({ length }, (_, index) => report[dataOffset + index])
   };
 }
 

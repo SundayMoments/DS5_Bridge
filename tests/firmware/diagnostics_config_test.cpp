@@ -145,15 +145,21 @@ int main() {
             "uart_write_blocking(",
             "Diagnostic logs must stream directly to physical UART"
         );
-        if (
-            firmware_log.find("kFirmwareLogRingSize") != std::string::npos
-            || firmware_log.find("__uninitialized_ram") != std::string::npos
-            || firmware_log.find("uart_is_writable") != std::string::npos
-        ) {
-            throw std::runtime_error(
-                "The direct UART logger must not reserve or drain a retained SRAM spool"
-            );
-        }
+        require_contains(
+            firmware_log,
+            "kFirmwareLogRingSize = 8 * 1024",
+            "UART diagnostics must retain an 8 KiB SRAM ring"
+        );
+        require_contains(
+            firmware_log,
+            "firmware_log_read_sequence",
+            "The companion must drain the retained UART ring incrementally"
+        );
+        require_contains(
+            companion,
+            "build_firmware_log",
+            "The companion protocol must expose retained UART bytes"
+        );
         require_contains(
             firmware_log,
             "hci_dump_enable_packet_log(false);",

@@ -29,7 +29,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 17;
+constexpr uint8_t kProtocolMinor = 18;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -1817,6 +1817,26 @@ uint16_t build_audio_status(uint8_t *buffer, uint16_t reqlen) {
     return COMPANION_PAYLOAD_SIZE;
 }
 
+uint16_t build_firmware_log(uint8_t *buffer, uint16_t reqlen) {
+    if (reqlen < COMPANION_PAYLOAD_SIZE) {
+        return 0;
+    }
+
+    memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
+    write_magic_and_version(buffer);
+    constexpr std::size_t kDataOffset = 20;
+    const FirmwareLogReadResult result = firmware_log_read(
+        buffer + kDataOffset,
+        COMPANION_PAYLOAD_SIZE - kDataOffset
+    );
+    buffer[6] = result.enabled ? 0x01 : 0x00;
+    buffer[7] = static_cast<uint8_t>(result.length);
+    write_u32(buffer + 8, result.sequence);
+    write_u32(buffer + 12, result.next_sequence);
+    write_u32(buffer + 16, result.dropped_bytes);
+    return COMPANION_PAYLOAD_SIZE;
+}
+
 #if DS5_TRIGGER_TRACE_ENABLED
 uint16_t build_trigger_trace(uint8_t *buffer, uint16_t reqlen) {
     if (reqlen < COMPANION_PAYLOAD_SIZE) {
@@ -3271,6 +3291,8 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
             return build_audio_status(buffer, reqlen);
         case COMPANION_REPORT_DEVICE_IDENTITY:
             return build_device_identity(buffer, reqlen);
+        case COMPANION_REPORT_FIRMWARE_LOG:
+            return build_firmware_log(buffer, reqlen);
 #if DS5_TRIGGER_TRACE_ENABLED
         case COMPANION_REPORT_TRIGGER_TRACE:
             return build_trigger_trace(buffer, reqlen);

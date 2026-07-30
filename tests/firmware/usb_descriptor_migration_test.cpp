@@ -1183,9 +1183,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 17;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 18;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 17;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 18;")
             == std::string::npos
         || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
             == std::string::npos
