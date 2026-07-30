@@ -782,14 +782,14 @@ describe('BridgeService', () => {
     expect(snapshot.diagnostics.lastError).toBeNull();
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toEqual({
       currentVersion: '1.6.3',
-      availableVersion: '1.6.4'
+      availableVersion: '1.7.0'
     });
   });
 
   it('does not surface an available update for the bundled bridge firmware', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
-    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 4 });
+    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 7, firmwarePatch: 0 });
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
@@ -797,7 +797,7 @@ describe('BridgeService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.state).toBe('connected');
-    expect(snapshot.status?.firmwareVersion).toBe('1.6.4');
+    expect(snapshot.status?.firmwareVersion).toBe('1.7.0');
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toBeNull();
   });
 
