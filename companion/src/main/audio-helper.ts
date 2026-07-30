@@ -84,10 +84,67 @@ function bridgePersonaArgs(mode: HostPersonaMode): string[] {
   return ['--bridge-persona', normalizeBridgePersonaMode(mode)];
 }
 
+export interface AudioHelperBridgeTarget {
+  devicePath?: string;
+  containerId?: string;
+}
+
+let activeBridgeTarget: AudioHelperBridgeTarget = {};
+
+export function setAudioHelperBridgeTarget(target: AudioHelperBridgeTarget): void {
+  activeBridgeTarget = {
+    ...(target.devicePath ? { devicePath: target.devicePath } : {}),
+    ...(target.containerId ? { containerId: target.containerId } : {})
+  };
+}
+
+function bridgeTargetKey(): string {
+  return `${activeBridgeTarget.devicePath ?? ''}\n${activeBridgeTarget.containerId ?? ''}`;
+}
+
+function bridgeTargetArgs(): string[] {
+  const args: string[] = [];
+  if (activeBridgeTarget.containerId) {
+    args.push('--bridge-container', activeBridgeTarget.containerId);
+  }
+  if (activeBridgeTarget.devicePath) {
+    args.push('--device-path', activeBridgeTarget.devicePath);
+  }
+  return args;
+}
+
+export interface BridgeCensusEntry {
+  path: string;
+  containerId: string | null;
+}
+
+export interface BridgeCensusHidDevice {
+  path: string;
+  productId: number;
+  product: string | null;
+  containerId: string | null;
+  isBridge: boolean;
+}
+
+export interface BridgeCensus {
+  bridges: BridgeCensusEntry[];
+  hidDevices: BridgeCensusHidDevice[];
+}
+
+export async function listBridges(): Promise<BridgeCensus> {
+  const result = await runAudioHelperCommand(['--list-bridges']);
+  const parsed = JSON.parse(result.stdout) as Partial<BridgeCensus>;
+  return {
+    bridges: Array.isArray(parsed.bridges) ? parsed.bridges : [],
+    hidDevices: Array.isArray(parsed.hidDevices) ? parsed.hidDevices : []
+  };
+}
+
 export class SystemAudioHapticsEngine extends EventEmitter {
   private process: ChildProcessWithoutNullStreams | null = null;
   private starting: Promise<void> | null = null;
   private activeHostPersonaMode: HostPersonaMode = 'dualsense';
+  private activeBridgeTargetKey = '';
   private activeConfig: SystemAudioHapticsConfig = {
     source: 'system-audio',
     gainPercent: 100,
@@ -104,6 +161,7 @@ export class SystemAudioHapticsEngine extends EventEmitter {
       if (
         audioReactiveHapticsSourceKey(this.activeConfig.source) !== audioReactiveHapticsSourceKey(nextConfig.source)
         || this.activeHostPersonaMode !== nextHostPersonaMode
+        || this.activeBridgeTargetKey !== bridgeTargetKey()
       ) {
         await this.stop();
         return this.start(nextConfig, nextHostPersonaMode);
@@ -117,6 +175,7 @@ export class SystemAudioHapticsEngine extends EventEmitter {
         if (
           audioReactiveHapticsSourceKey(this.activeConfig.source) === audioReactiveHapticsSourceKey(nextConfig.source)
           && this.activeHostPersonaMode === nextHostPersonaMode
+          && this.activeBridgeTargetKey === bridgeTargetKey()
         ) {
           this.setConfig(nextConfig);
           return;
@@ -190,8 +249,10 @@ export class SystemAudioHapticsEngine extends EventEmitter {
     const helperPath = resolveHelperPath();
     this.activeConfig = config;
     this.activeHostPersonaMode = hostPersonaMode;
+    this.activeBridgeTargetKey = bridgeTargetKey();
     const args = [
       ...bridgePersonaArgs(hostPersonaMode),
+      ...bridgeTargetArgs(),
       '--source',
       'render-loopback',
       '--haptics-only',
@@ -769,6 +830,7 @@ export async function playBridgeSpeakerTestTone(
   const helper = spawn(helperPath, [
     '--play-test-tone',
     ...bridgePersonaArgs(hostPersonaMode),
+    ...bridgeTargetArgs(),
     '--test-audio-path',
     testAudioPath,
     '--speaker-volume',
@@ -826,6 +888,7 @@ export async function playBridgeHapticsTestPattern(
   const helper = spawn(helperPath, [
     '--play-test-haptics',
     ...bridgePersonaArgs(hostPersonaMode),
+    ...bridgeTargetArgs(),
     '--haptics-gain',
     `${normalizeTestHapticsGainPercent(hapticsGainPercent)}`
   ], {
@@ -874,7 +937,7 @@ export async function playBridgeHapticsTestPattern(
 }
 
 export async function getDefaultRenderEndpointStatus(): Promise<DefaultRenderEndpointStatus> {
-  const result = await runAudioHelperCommand(['--default-render-status']);
+  const result = await runAudioHelperCommand(['--default-render-status', ...bridgeTargetArgs()]);
   return parseDefaultRenderEndpointStatus(result.stdout);
 }
 
@@ -882,17 +945,22 @@ export async function setDefaultRenderBridgeEndpoint(mode: HostPersonaMode): Pro
   await runAudioHelperCommand([
     '--set-default-render-bridge',
     '--bridge-persona',
-    mode
+    mode,
+    ...bridgeTargetArgs()
   ]);
 }
 
 export class MicKeepaliveEngine extends EventEmitter {
   private process: ChildProcess | null = null;
   private starting: Promise<void> | null = null;
+  private activeBridgeTargetKey = '';
 
   async start(): Promise<void> {
-    if (this.process) {
+    if (this.process && this.activeBridgeTargetKey === bridgeTargetKey()) {
       return;
+    }
+    if (this.process) {
+      await this.stop();
     }
     if (this.starting) {
       return this.starting;
@@ -935,7 +1003,13 @@ export class MicKeepaliveEngine extends EventEmitter {
 
   private async startInternal(): Promise<void> {
     const helperPath = resolveHelperPath();
-    const helper = spawn(helperPath, ['--mic-keepalive-only', '--mic-device-name', 'DS5 Bridge'], {
+    this.activeBridgeTargetKey = bridgeTargetKey();
+    const helper = spawn(helperPath, [
+      '--mic-keepalive-only',
+      '--mic-device-name',
+      'DS5 Bridge',
+      ...bridgeTargetArgs()
+    ], {
       windowsHide: true,
       stdio: ['pipe', 'ignore', 'pipe']
     });

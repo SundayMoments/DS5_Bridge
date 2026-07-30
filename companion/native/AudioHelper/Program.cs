@@ -12,6 +12,13 @@ using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 
 var options = HelperOptions.Parse(args);
+EndpointManager.TargetBridgeContainer = options.BridgeContainer;
+if (EndpointManager.TargetBridgeContainer is null
+    && options.CompanionDevicePath is { Length: > 0 } targetPath
+    && BridgeDeviceIdentity.TryGetContainerIdForInterfacePath(targetPath, out var targetContainer))
+{
+    EndpointManager.TargetBridgeContainer = targetContainer;
+}
 if (options.MediaDebugClock)
 {
     await WindowsMediaSessionCli.DebugClockAsync(options.MediaDebugSeconds, options.MediaDebugIntervalMs);
@@ -34,7 +41,7 @@ if (!string.IsNullOrWhiteSpace(options.ResolveIconDataUrlPath))
 }
 if (options.CompanionTransportServer)
 {
-    Environment.ExitCode = await CompanionTransportServer.RunAsync();
+    Environment.ExitCode = await CompanionTransportServer.RunAsync(options.CompanionDevicePath);
     return;
 }
 if (options.PlayTestTone)
@@ -56,6 +63,11 @@ if (options.MonitorAudioSessions)
 if (options.ListDevices)
 {
     EndpointManager.ListDevices();
+    return;
+}
+if (options.ListBridges)
+{
+    BridgeCensus.PrintJson();
     return;
 }
 if (options.DefaultRenderStatus)
@@ -171,7 +183,7 @@ static class AudioHelperTestHaptics
 
     public static void Play(HelperOptions options)
     {
-        if (TryPlayViaBridgeFrames(options.HapticsGainPercent))
+        if (TryPlayViaBridgeFrames(options.HapticsGainPercent, options.CompanionDevicePath))
         {
             return;
         }
@@ -179,9 +191,9 @@ static class AudioHelperTestHaptics
         PlayViaRenderEndpoint(options);
     }
 
-    private static bool TryPlayViaBridgeFrames(int hapticsGainPercent)
+    private static bool TryPlayViaBridgeFrames(int hapticsGainPercent, string? devicePath)
     {
-        using var transport = WinUsbBridgeTransport.TryOpen();
+        using var transport = WinUsbBridgeTransport.TryOpen(devicePath);
         if (transport is null)
         {
             return false;
@@ -791,7 +803,7 @@ sealed class AudioHelper : IDisposable
         {
             return true;
         }
-        bridgeTransport = WinUsbBridgeTransport.TryOpen();
+        bridgeTransport = WinUsbBridgeTransport.TryOpen(options.CompanionDevicePath);
         if (bridgeTransport is not null)
         {
             if (AudioConstants.DiagnosticsEnabled)
@@ -2760,6 +2772,10 @@ sealed record HelperOptions(
     int RawCaptureDumpSeconds,
     bool CaptureDumpOnly)
 {
+    public bool ListBridges { get; init; }
+    public string? CompanionDevicePath { get; init; }
+    public Guid? BridgeContainer { get; init; }
+
     public string SourceArgument => Source switch
     {
         AudioHelperSource.RawPcmCapture => "raw-pcm-capture",
@@ -2788,6 +2804,9 @@ sealed record HelperOptions(
         var monitorAudioSessions = false;
         string? resolveIconDataUrlPath = null;
         var companionTransportServer = false;
+        var listBridges = false;
+        string? companionDevicePath = null;
+        Guid? bridgeContainer = null;
         var micKeepaliveOnly = false;
         int? appProcessId = null;
         string? appProcessPath = null;
@@ -2925,6 +2944,18 @@ sealed record HelperOptions(
                 case "--companion-transport":
                     companionTransportServer = true;
                     break;
+                case "--list-bridges":
+                    listBridges = true;
+                    break;
+                case "--device-path" when index + 1 < args.Length:
+                    companionDevicePath = args[++index];
+                    break;
+                case "--bridge-container" when index + 1 < args.Length:
+                    if (Guid.TryParse(args[++index], out var parsedBridgeContainer))
+                    {
+                        bridgeContainer = parsedBridgeContainer;
+                    }
+                    break;
                 case "--mic-keepalive-only":
                     micKeepaliveOnly = true;
                     break;
@@ -2993,7 +3024,12 @@ sealed record HelperOptions(
             frameDumpFrameLimit,
             rawCaptureDumpPath,
             rawCaptureDumpSeconds,
-            captureDumpOnly);
+            captureDumpOnly)
+        {
+            ListBridges = listBridges,
+            CompanionDevicePath = companionDevicePath,
+            BridgeContainer = bridgeContainer
+        };
     }
 
     private static AudioHelperSource ParseSource(string value)

@@ -4,12 +4,12 @@ static class CompanionTransportServer
 {
     private const int ReportBytes = 64;
 
-    public static async Task<int> RunAsync()
+    public static async Task<int> RunAsync(string? devicePath = null)
     {
         WinUsbBridgeTransport transport;
         try
         {
-            transport = WinUsbBridgeTransport.Open();
+            transport = WinUsbBridgeTransport.Open(devicePath);
         }
         catch (Exception error)
         {

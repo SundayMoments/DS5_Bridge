@@ -53,12 +53,15 @@ vi.mock('node:fs', () => ({
 
 import {
   AudioHapticsSessionMonitor,
+  MicKeepaliveEngine,
   playBridgeHapticsTestPattern,
   playBridgeSpeakerTestTone,
+  setAudioHelperBridgeTarget,
   SystemAudioHapticsEngine
 } from './audio-helper';
 
 beforeEach(() => {
+  setAudioHelperBridgeTarget({});
   childProcessMock.processes.length = 0;
   childProcessMock.spawn.mockClear();
   fsMock.existsSync.mockClear();
@@ -104,6 +107,59 @@ describe('SystemAudioHapticsEngine app source', () => {
     await engine.stop();
   });
 
+  it('restarts the helper when the selected physical bridge changes', async () => {
+    const engine = new SystemAudioHapticsEngine();
+    const config = {
+      source: 'system-audio' as const,
+      gainPercent: 100,
+      bassFocus: 'balanced' as const,
+      response: 'balanced' as const,
+      attack: 'balanced' as const,
+      release: 'balanced' as const
+    };
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-a', containerId: 'container-a' });
+    const firstStart = engine.start(config);
+    childProcessMock.processes[0]!.stderr.emit('data', Buffer.from('status: recording-started\n'));
+    await firstStart;
+
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-b', containerId: 'container-b' });
+    const secondStart = engine.start(config);
+    await vi.waitFor(() => expect(childProcessMock.processes).toHaveLength(2));
+    childProcessMock.processes[1]!.stderr.emit('data', Buffer.from('status: recording-started\n'));
+    await secondStart;
+
+    expect(childProcessMock.spawn).toHaveBeenCalledTimes(2);
+    expect(childProcessMock.spawn.mock.calls[1]![1]).toEqual(expect.arrayContaining([
+      '--device-path',
+      'bridge-b',
+      '--bridge-container',
+      'container-b'
+    ]));
+    await engine.stop();
+  });
+
+});
+
+describe('mic keepalive targeting', () => {
+  it('restarts against the newly selected bridge', async () => {
+    const engine = new MicKeepaliveEngine();
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-a', containerId: 'container-a' });
+    await engine.start();
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-b', containerId: 'container-b' });
+    await engine.start();
+
+    expect(childProcessMock.spawn).toHaveBeenCalledTimes(2);
+    expect(childProcessMock.spawn.mock.calls[1]![1]).toEqual([
+      '--mic-keepalive-only',
+      '--mic-device-name',
+      'DS5 Bridge',
+      '--bridge-container',
+      'container-b',
+      '--device-path',
+      'bridge-b'
+    ]);
+    await engine.stop();
+  });
 });
 
 describe('bridge haptics test', () => {

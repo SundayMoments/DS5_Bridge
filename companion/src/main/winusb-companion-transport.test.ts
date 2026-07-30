@@ -103,6 +103,20 @@ describe('WinUsbCompanionTransport', () => {
     expect(transport.path).toBe('winusb://bridge');
   });
 
+  it('passes a selected bridge path to the helper', async () => {
+    const opening = WinUsbCompanionTransport.open({ devicePath: 'winusb://selected-bridge' });
+    const process = helperProcess();
+    emitJsonLine(process.stdout, { id: 0, ok: true, path: 'winusb://selected-bridge' });
+    const transport = await opening;
+
+    expect(childProcessMock.spawn).toHaveBeenCalledWith(
+      'AudioHelper.exe',
+      ['--companion-transport', '--device-path', 'winusb://selected-bridge'],
+      expect.objectContaining({ windowsHide: true })
+    );
+    expect(transport.path).toBe('winusb://selected-bridge');
+  });
+
   it('rejects a controlled helper startup failure without waiting for a crash', async () => {
     const opening = WinUsbCompanionTransport.open();
     const process = helperProcess();
