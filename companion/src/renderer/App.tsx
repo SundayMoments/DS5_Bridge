@@ -154,7 +154,7 @@ import {
 type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio-haptics' | 'audio' | 'interleave' | 'triggers' | 'trigger-lab' | 'lighting' | 'remapping' | 'chords' | 'system';
 type SidebarControlTab = Exclude<ControlTab, 'interleave'>;
 type ControlTabDefinition = Readonly<{ id: SidebarControlTab; label: string; Icon: TablerIcon }>;
-type ControlTabGroupId = 'controller' | 'input' | 'labs' | 'tools';
+type ControlTabGroupId = 'controller' | 'input' | 'labs';
 type ControlTabGroupDefinition = Readonly<{
   id: ControlTabGroupId;
   label: string;
@@ -811,12 +811,6 @@ const CONTROL_TAB_GROUPS: readonly ControlTabGroupDefinition[] = [
       CONTROL_TAB_DEFINITIONS['audio-haptics'],
       CONTROL_TAB_DEFINITIONS['trigger-lab']
     ]
-  },
-  {
-    id: 'tools',
-    label: 'Tools',
-    Icon: IconTool,
-    tabs: [CONTROL_TAB_DEFINITIONS.system]
   }
 ];
 
@@ -6859,6 +6853,17 @@ export function App() {
               >
                 <SettingsIcon size={18} />
                 <span>Settings</span>
+              </button>
+              <button
+                className={`sidebar-action-button ${activeControlTab === 'system' ? 'active' : ''}`}
+                id="control-tab-system"
+                type="button"
+                aria-controls="control-panel-system"
+                aria-selected={activeControlTab === 'system'}
+                onClick={() => selectControlTab('system')}
+              >
+                <IconCpu size={18} />
+                <span>System</span>
               </button>
             </div>
           </div>

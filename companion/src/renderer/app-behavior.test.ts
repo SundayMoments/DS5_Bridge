@@ -348,7 +348,7 @@ describe('renderer behavior guards', () => {
   });
 
   it('groups sidebar controls and promotes the two labs to navigation destinations', () => {
-    expect(appSource).toContain("type ControlTabGroupId = 'controller' | 'input' | 'labs' | 'tools'");
+    expect(appSource).toContain("type ControlTabGroupId = 'controller' | 'input' | 'labs'");
     expect(appSource).toContain("id: 'labs',");
     expect(appSource).toContain("label: 'Labs',");
     expect(appSource).toContain("'audio-haptics': { id: 'audio-haptics', label: 'Audio Haptics'");
@@ -358,6 +358,8 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('tabIndex={expanded ? undefined : -1}');
     expect(appSource).toContain("const triggerLabOpen = activeControlTab === 'trigger-lab'");
     expect(appSource).toContain("const audioHapticsOpen = activeControlTab === 'audio-haptics'");
+    expect(appSource).toContain('className={`sidebar-action-button ${activeControlTab === \'system\' ? \'active\' : \'\'}`}');
+    expect(appSource).not.toContain("id: 'tools',");
     expect(appSource).not.toContain('setTriggerLabOpen');
     expect(appSource).not.toContain('setAudioHapticsOpen');
   });
