@@ -577,4 +577,16 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.control-tab-group-clip', 'overflow: hidden;')).toContain('overflow: hidden;');
     expect(cssBlock('.control-tab-button.nested', 'padding-left: 42px;')).toContain('padding-left: 42px;');
   });
+
+  it('keeps the sidebar device and actions fixed while only the controls region scrolls', () => {
+    const sidebar = cssBlock('.hero-card', 'grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;');
+    expect(sidebar).toContain('overflow: hidden;');
+    expect(sidebar).toContain('display: grid;');
+    expect(sidebar).toContain('grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;');
+    const controlsRegion = cssBlock('.sidebar-controls', 'overflow-y: auto;');
+    expect(controlsRegion).toContain('min-height: 0;');
+    expect(controlsRegion).toContain('overflow-y: auto;');
+    expect(controlsRegion).toContain('overscroll-behavior: contain;');
+    expect(cssBlock('.hero-card > .sidebar-actions', 'margin-top: 0;')).toContain('margin-top: 0;');
+  });
 });

@@ -1031,13 +1031,12 @@ button {
   position: relative;
   grid-column: 1;
   grid-row: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   min-height: 0;
   height: 100%;
   padding: 20px 16px 18px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 10px;
   border: 0;
@@ -1048,7 +1047,7 @@ button {
 }
 
 .hero-card > .sidebar-actions {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .hero-card::before {
@@ -2242,8 +2241,31 @@ button {
 .sidebar-controls {
   position: relative;
   z-index: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: grid;
+  align-content: start;
   gap: 4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-controls::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-controls::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-controls::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
 }
 
 .control-tabs {
