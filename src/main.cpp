@@ -562,13 +562,13 @@ int main() {
 
     board_init();
     watchdog_telemetry_boot_capture();
-    firmware_log_init();
     usb_device_stack_init_disconnected();
 #if DS5_DEBUG_LOGS_ENABLED
     // TinyUSB's board_init() configures its UART at 115200. Reinitialize stdio
     // after the custom USB stack so diagnostic builds use the configured baud.
     stdio_init_all();
 #endif
+    firmware_log_init();
     board_init_after_tusb();
     firmware_log_init_btstack_sink();
 

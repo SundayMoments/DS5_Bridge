@@ -66,7 +66,7 @@ int main() {
         require_contains(
             cmake,
             "PICO_DEFAULT_UART_BAUD_RATE=921600",
-            "Diagnostic UART firmware must match the persistent host collector"
+            "Diagnostic UART firmware must match the host collector"
         );
         require_contains(
             cmake,
@@ -82,6 +82,12 @@ int main() {
             main,
             "stdio_init_all();",
             "The debug build must reinitialize stdio at the configured UART baud"
+        );
+        require_before(
+            main,
+            "stdio_init_all();",
+            "firmware_log_init();",
+            "The direct UART logger must start only after stdio configures the UART"
         );
         require_before(
             main,
@@ -122,28 +128,32 @@ int main() {
         require_contains(
             cmake,
             "src/firmware_log.cpp",
-            "The retained firmware logger must be linked"
+            "The direct firmware logger must be linked"
         );
         require_contains(
             utils,
             "firmware_log_printf(__VA_ARGS__)",
-            "Firmware logs must append to the nonblocking retained logger"
+            "Firmware logs must use the dedicated physical-UART logger"
         );
         require_contains(
             utils,
             "firmware_log_hexdump((data), (size))",
-            "Firmware hexdumps must avoid direct UART writes"
+            "Firmware hexdumps must use the central logger"
         );
         require_contains(
             firmware_log,
-            "constexpr uint32_t kFirmwareLogRingSize = 8u * 1024u;",
-            "The retained log ring must preserve Kitsune Input's RAM-safe size"
+            "uart_write_blocking(",
+            "Diagnostic logs must stream directly to physical UART"
         );
-        require_contains(
-            firmware_log,
-            "while (written < copied && uart_is_writable(uart_default))",
-            "UART draining must be bounded by currently writable FIFO space"
-        );
+        if (
+            firmware_log.find("kFirmwareLogRingSize") != std::string::npos
+            || firmware_log.find("__uninitialized_ram") != std::string::npos
+            || firmware_log.find("uart_is_writable") != std::string::npos
+        ) {
+            throw std::runtime_error(
+                "The direct UART logger must not reserve or drain a retained SRAM spool"
+            );
+        }
         require_contains(
             firmware_log,
             "hci_dump_enable_packet_log(false);",
@@ -152,7 +162,7 @@ int main() {
         require_contains(
             main,
             "firmware_log_flush_live();",
-            "The main loop must service the nonblocking UART drain"
+            "The main loop compatibility hook must remain available"
         );
         require_contains(
             companion,
@@ -172,7 +182,7 @@ int main() {
         require_contains(
             companion,
             "\"[FB] lost=%lu\\n\"",
-            "Feedback UART overruns must be visible in the persistent log"
+            "Feedback UART overruns must be visible in the diagnostic stream"
         );
         require_contains(
             cmake,

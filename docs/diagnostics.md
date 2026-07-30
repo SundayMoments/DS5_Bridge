@@ -73,8 +73,8 @@ Flash this artifact through BOOTSEL:
 build/diagnostics/pico2-w-debug-uart-companion-on/ds5-bridge.uf2
 ```
 
-This preset also enables the feedback trace and drains it asynchronously through
-the retained UART logger. Rumble and haptic records use compact CSV-style lines:
+This preset also enables the feedback trace and streams it directly through the
+physical UART. Rumble and haptic records use compact CSV-style lines:
 
 ```text
 [FB] seq,t_ms,stage,report,len,tag,decision,flag0,flag1,flag2,motor_r,motor_l,haptic_peak,haptic_mean,haptic_nonzero,detail0,detail1,detail2,detail3

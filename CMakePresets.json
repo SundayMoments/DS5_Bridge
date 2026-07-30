@@ -9,7 +9,7 @@
     {
       "name": "pico2-w-debug-uart-companion-on",
       "displayName": "Pico 2 W Debug UART (companion ON)",
-      "description": "Companion-enabled firmware with retained logging on the physical GPIO UART and no USB descriptor changes.",
+      "description": "Companion-enabled firmware with direct logging on the physical GPIO UART and no USB descriptor changes.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/diagnostics/pico2-w-debug-uart-companion-on",
       "cacheVariables": {
