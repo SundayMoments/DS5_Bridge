@@ -1084,6 +1084,11 @@ function registerIpc(service: BridgeService): void {
   ));
   ipcMain.handle('bridge:setSpeakerVolume', (_event, value: number) => service.setSpeakerVolume(value));
   ipcMain.handle('bridge:setSpeakerGainLevel', (_event, value: number) => service.setSpeakerGainLevel(value));
+  ipcMain.handle('bridge:selectBridge', (_event, devicePath: string | null) => service.selectBridge(devicePath));
+  ipcMain.handle('bridge:refreshBridgeDevices', () => service.refreshBridgeDevices());
+  ipcMain.handle('bridge:setBridgeLabel', (_event, uniqueId: string, label: string | null) => (
+    service.setBridgeLabel(uniqueId, label)
+  ));
   ipcMain.handle('bridge:setSpeakerEnabled', (_event, value: boolean) => service.setSpeakerEnabled(value));
   ipcMain.handle('bridge:setMicVolume', (_event, value: number) => service.setMicVolume(value));
   ipcMain.handle('bridge:setMicMute', (_event, value: boolean) => service.setMicMute(value));

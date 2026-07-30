@@ -160,6 +160,9 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   speakerEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerEnabled,
   speakerVolumePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumePercent,
   speakerGainLevel: 4,
+  selectedBridgePath: null,
+  bridgeIdentities: {},
+  controllerBindings: {},
   micVolumePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.micVolumePercent,
   micMuted: DEFAULT_CONTROLLER_PROFILE_SETTINGS.micMuted,
   audioReactiveHapticsEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.audioReactiveHapticsEnabled,
@@ -808,6 +811,10 @@ function syncSelectedButtonRemappingProfile(settings: CompanionSettings): Compan
 function cloneSettings(settings: CompanionSettings): CompanionSettings {
   return {
     ...settings,
+    bridgeIdentities: Object.fromEntries(
+      Object.entries(settings.bridgeIdentities).map(([uniqueId, identity]) => [uniqueId, { ...identity }])
+    ),
+    controllerBindings: { ...settings.controllerBindings },
     controllerProfiles: settings.controllerProfiles.map((profile) => ({
       ...profile,
       settings: cloneControllerProfileSettings(profile.settings)
@@ -827,7 +834,7 @@ type PersistedSettings = Partial<CompanionSettings> & {
   settingsSchemaVersion?: number;
 };
 
-const CURRENT_SETTINGS_SCHEMA_VERSION = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION = 3;
 
 function migratePersistedSettings(value: PersistedSettings): PersistedSettings {
   const version = Number.isFinite(value.settingsSchemaVersion)
@@ -926,6 +933,13 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     speakerGainLevel: Number.isFinite(value?.speakerGainLevel)
       ? Math.max(1, Math.min(7, Math.round(value!.speakerGainLevel!)))
       : DEFAULT_SETTINGS.speakerGainLevel,
+    selectedBridgePath: typeof value?.selectedBridgePath === 'string'
+      && value.selectedBridgePath.trim().length > 0
+      && value.selectedBridgePath.length <= 4096
+      ? value.selectedBridgePath
+      : null,
+    bridgeIdentities: normalizeBridgeIdentities(value?.bridgeIdentities),
+    controllerBindings: normalizeControllerBindings(value?.controllerBindings, controllerProfiles),
     micVolumePercent: Number.isFinite(value?.micVolumePercent)
       ? Math.max(0, Math.min(100, Math.round(value!.micVolumePercent!)))
       : DEFAULT_SETTINGS.micVolumePercent,
@@ -1072,9 +1086,13 @@ export class SettingsStore {
   restoreDefaults(): CompanionSettings {
     const controllerProfiles = restoreDefaultControllerProfile(this.settings.controllerProfiles);
     const firmwareLogDirectory = this.settings.firmwareLogDirectory;
+    const selectedBridgePath = this.settings.selectedBridgePath;
+    const bridgeIdentities = this.settings.bridgeIdentities;
     this.settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
       firmwareLogDirectory,
+      selectedBridgePath,
+      bridgeIdentities,
       selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
       controllerProfiles
     });
@@ -1314,4 +1332,43 @@ export class SettingsStore {
       customProfile: this.customSettings
     }, null, 2)}\n`, 'utf8');
   }
+}
+
+function normalizeBridgeIdentities(value: unknown): CompanionSettings['bridgeIdentities'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  const result: CompanionSettings['bridgeIdentities'] = {};
+  for (const [rawUniqueId, rawIdentity] of Object.entries(value as Record<string, unknown>)) {
+    const uniqueId = rawUniqueId.toLowerCase();
+    if (!/^[0-9a-f]{16}$/.test(uniqueId) || !rawIdentity || typeof rawIdentity !== 'object' || Array.isArray(rawIdentity)) {
+      continue;
+    }
+    const identity = rawIdentity as { label?: unknown; containerId?: unknown };
+    const label = typeof identity.label === 'string' ? identity.label.trim().slice(0, 32) : '';
+    const containerId = typeof identity.containerId === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.containerId)
+      ? identity.containerId.toLowerCase()
+      : null;
+    result[uniqueId] = { label: label || null, containerId };
+  }
+  return result;
+}
+
+function normalizeControllerBindings(
+  value: unknown,
+  controllerProfiles: ControllerProfile[]
+): CompanionSettings['controllerBindings'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  const profileIds = new Set(controllerProfiles.map((profile) => profile.id));
+  const result: CompanionSettings['controllerBindings'] = {};
+  for (const [rawAddress, profileId] of Object.entries(value as Record<string, unknown>)) {
+    const address = rawAddress.toLowerCase();
+    if (/^[0-9a-f]{12}$/.test(address) && typeof profileId === 'string' && profileIds.has(profileId)) {
+      result[address] = profileId;
+    }
+  }
+  return result;
 }

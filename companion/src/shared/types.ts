@@ -48,6 +48,9 @@ export interface CompanionSettings {
   speakerEnabled: boolean;
   speakerVolumePercent: number;
   speakerGainLevel: number;
+  selectedBridgePath: string | null;
+  bridgeIdentities: Record<string, BridgeIdentityRecord>;
+  controllerBindings: Record<string, string>;
   micVolumePercent: number;
   micMuted: boolean;
   audioReactiveHapticsEnabled: boolean;
@@ -160,6 +163,33 @@ export interface BridgeSnapshot {
   settings: CompanionSettings;
   diagnostics: BridgeDiagnostics;
   personaTransition?: HostPersonaTransition | null;
+  bridgeDevices?: BridgeDeviceCensus | null;
+}
+
+export interface BridgeDeviceInfo {
+  path: string;
+  containerId: string | null;
+  selected: boolean;
+  connected: boolean;
+  uniqueId: string | null;
+  name: string | null;
+}
+
+export interface DirectControllerInfo {
+  path: string;
+  product: string | null;
+  productId: number;
+}
+
+export interface BridgeIdentityRecord {
+  label: string | null;
+  containerId: string | null;
+}
+
+export interface BridgeDeviceCensus {
+  bridges: BridgeDeviceInfo[];
+  directControllers: DirectControllerInfo[];
+  selectedBridgePath: string | null;
 }
 
 export interface HostPersonaTransition {

@@ -43,7 +43,16 @@ const hidMock = vi.hoisted(() => {
 });
 
 const winUsbTransportMock = vi.hoisted(() => ({
-  open: vi.fn(async () => {
+  open: vi.fn(async (options?: { devicePath?: string }) => {
+    if (options?.devicePath) {
+      const selected = [...hidMock.state.openDevices.values()].find((candidate) => (
+        candidate.path.toLowerCase() === options.devicePath!.toLowerCase()
+      ));
+      if (!selected) {
+        throw new Error('Selected WinUSB bridge transport is unavailable');
+      }
+      return selected;
+    }
     const listedPath = hidMock.state.devicesList[0]?.path;
     const device = (typeof listedPath === 'string' ? hidMock.state.openDevices.get(listedPath) : null)
       ?? hidMock.state.openDevices.values().next().value;
@@ -56,7 +65,9 @@ const winUsbTransportMock = vi.hoisted(() => ({
 
 const audioHelperMock = vi.hoisted(() => ({
   playBridgeHapticsTestPattern: vi.fn(async () => undefined),
-  playBridgeSpeakerTestTone: vi.fn(async () => undefined)
+  playBridgeSpeakerTestTone: vi.fn(async () => undefined),
+  listBridges: vi.fn(async () => ({ bridges: [], hidDevices: [] })),
+  setAudioHelperBridgeTarget: vi.fn()
 }));
 
 vi.mock('node-hid', () => ({
@@ -77,7 +88,9 @@ vi.mock('./audio-helper', async (importOriginal) => {
   return {
     ...actual,
     playBridgeHapticsTestPattern: audioHelperMock.playBridgeHapticsTestPattern,
-    playBridgeSpeakerTestTone: audioHelperMock.playBridgeSpeakerTestTone
+    playBridgeSpeakerTestTone: audioHelperMock.playBridgeSpeakerTestTone,
+    listBridges: audioHelperMock.listBridges,
+    setAudioHelperBridgeTarget: audioHelperMock.setAudioHelperBridgeTarget
   };
 });
 
@@ -327,6 +340,7 @@ function statusReport(overrides: StatusOverrides = {}): number[] {
 }
 
 function deviceIdentityReport(options: {
+  bridgeId?: string | null;
   address?: string | null;
   name?: string;
   connected?: boolean;
@@ -340,7 +354,7 @@ function deviceIdentityReport(options: {
   report[0] = REPORT_ID.DEVICE_IDENTITY;
   writeMagic(report);
   writeVersion(report);
-  report[7] = 1;
+  report[7] = options.bridgeId === undefined ? 1 : 2;
   const address = options.address === undefined ? 'AA:BB:CC:DD:EE:FF' : options.address;
   report[8] = (address ? 0x01 : 0)
     | (options.linkKeyKnown === false ? 0 : 0x02)
@@ -357,6 +371,12 @@ function deviceIdentityReport(options: {
   });
   writeU16(report, 52, options.vendorId ?? 0x054c);
   writeU16(report, 54, options.productId ?? 0x0ce6);
+  if (options.bridgeId) {
+    const bytes = options.bridgeId.match(/.{2}/g) ?? [];
+    bytes.slice(0, 8).forEach((value, index) => {
+      report[56 + index] = Number.parseInt(value, 16);
+    });
+  }
   return report;
 }
 
@@ -549,6 +569,9 @@ describe('BridgeService', () => {
     winUsbTransportMock.open.mockClear();
     audioHelperMock.playBridgeHapticsTestPattern.mockClear();
     audioHelperMock.playBridgeSpeakerTestTone.mockClear();
+    audioHelperMock.listBridges.mockReset();
+    audioHelperMock.listBridges.mockResolvedValue({ bridges: [], hidDevices: [] });
+    audioHelperMock.setAudioHelperBridgeTarget.mockClear();
     tempDirs = [];
     services = [];
   });
@@ -2283,6 +2306,84 @@ describe('BridgeService', () => {
       productId: 0x0df2
     });
     expect(device.featureReportIds).toContain(REPORT_ID.DEVICE_IDENTITY);
+  });
+
+  it('selects one enumerated bridge and exposes the full device census', async () => {
+    const service = serviceFixture();
+    const bridgeA = new MockHidDevice();
+    bridgeA.path = 'winusb://bridge-a';
+    const bridgeB = new MockHidDevice();
+    bridgeB.path = 'winusb://bridge-b';
+    bridgeB.deviceIdentity = deviceIdentityReport({ bridgeId: '0011223344556677' });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('bridge-a', bridgeA);
+    hidMock.state.openDevices.set('bridge-b', bridgeB);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [
+        { path: bridgeA.path, containerId: '11111111-1111-1111-1111-111111111111' },
+        { path: bridgeB.path, containerId: '22222222-2222-2222-2222-222222222222' }
+      ],
+      hidDevices: [{
+        path: 'hid://direct-controller',
+        productId: 0x0df2,
+        product: 'DualSense Edge',
+        containerId: '33333333-3333-3333-3333-333333333333',
+        isBridge: false
+      }]
+    });
+
+    await service.selectBridge(bridgeB.path);
+    await poll(service);
+
+    const snapshot = service.getSnapshot();
+    expect(winUsbTransportMock.open).toHaveBeenCalledWith(expect.objectContaining({ devicePath: bridgeB.path }));
+    expect(snapshot.settings.selectedBridgePath).toBe(bridgeB.path);
+    expect(snapshot.bridgeDevices?.bridges.find((bridge) => bridge.path === bridgeB.path)).toMatchObject({
+      selected: true,
+      connected: true,
+      uniqueId: '0011223344556677'
+    });
+    expect(snapshot.bridgeDevices?.directControllers).toEqual([{
+      path: 'hid://direct-controller',
+      productId: 0x0df2,
+      product: 'DualSense Edge'
+    }]);
+    expect(audioHelperMock.setAudioHelperBridgeTarget).toHaveBeenLastCalledWith({
+      devicePath: bridgeB.path,
+      containerId: '22222222-2222-2222-2222-222222222222'
+    });
+
+    const named = await service.setBridgeLabel('0011223344556677', 'Desk');
+    expect(named.bridgeDevices?.bridges.find((bridge) => bridge.path === bridgeB.path)?.name).toBe('Desk');
+  });
+
+  it('rejects bridge paths and identities that were not enumerated', async () => {
+    const service = serviceFixture();
+
+    await expect(service.selectBridge('winusb://injected')).rejects.toThrow('no longer connected');
+    await expect(service.setBridgeLabel('0011223344556677', 'Unknown')).rejects.toThrow('not known');
+  });
+
+  it('applies the profile bound to the connected controller identity', async () => {
+    const service = serviceFixture();
+    const settingsStore = (service as unknown as { settingsStore: SettingsStore }).settingsStore;
+    const saved = settingsStore.saveControllerProfile('Racing');
+    const racingProfileId = saved.selectedControllerProfileId;
+    settingsStore.selectControllerProfile(DEFAULT_CONTROLLER_PROFILE_ID);
+    settingsStore.update({ controllerBindings: { aabbccddeeff: racingProfileId } });
+    const device = new MockHidDevice();
+    device.deviceIdentity = deviceIdentityReport({
+      bridgeId: '8899aabbccddeeff',
+      address: 'AA:BB:CC:DD:EE:FF'
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    expect(service.getSnapshot().settings.selectedControllerProfileId).toBe(racingProfileId);
+    const manuallySelected = await service.selectControllerProfile(DEFAULT_CONTROLLER_PROFILE_ID);
+    expect(manuallySelected.settings.controllerBindings.aabbccddeeff).toBe(DEFAULT_CONTROLLER_PROFILE_ID);
   });
 
   it('sends scan, forget-all, and address-specific forget commands', async () => {

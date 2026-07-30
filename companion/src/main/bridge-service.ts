@@ -78,7 +78,8 @@ import type {
   HidDeviceSummary,
   UiScalePercent,
   UiThemePreset,
-  WindowsDeviceCleanupResult
+  WindowsDeviceCleanupResult,
+  BridgeDeviceCensus
 } from '../shared/types';
 import {
   AudioHapticsSessionMonitor,
@@ -88,6 +89,9 @@ import {
   playBridgeSpeakerTestTone,
   getDefaultRenderEndpointStatus,
   setDefaultRenderBridgeEndpoint,
+  listBridges,
+  setAudioHelperBridgeTarget,
+  type BridgeCensus,
   type DefaultRenderEndpointStatus,
   type SystemAudioHapticsConfig
 } from './audio-helper';
@@ -103,6 +107,7 @@ const AUDIO_STATUS_READ_INTERVAL_MS = 500;
 const AUDIO_DEBUG_READ_INTERVAL_MS = 500;
 const TRIGGER_TRACE_READ_INTERVAL_MS = 250;
 const FEEDBACK_TRACE_READ_INTERVAL_MS = 250;
+const BRIDGE_CENSUS_INTERVAL_MS = 10000;
 const AUDIO_DEBUG_DIAGNOSTICS_ENABLED = CompanionDebugConfig.audioDebugDiagnosticsEnabled;
 const TRIGGER_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.triggerTraceDiagnosticsEnabled;
 const FEEDBACK_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.feedbackTraceDiagnosticsEnabled;
@@ -1218,6 +1223,11 @@ async function runElevatedWindowsDeviceCleanup(scriptPath: string, logPath: stri
 
 export class BridgeService extends EventEmitter {
   private device: WinUsbCompanionTransport | null = null;
+  private bridgeCensus: BridgeCensus | null = null;
+  private lastBridgeCensusAt = 0;
+  private connectedBridgeUniqueId: string | null = null;
+  private connectedControllerMac: string | null = null;
+  private bindingAppliedForMac: string | null = null;
   private devicePath: string | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private hostPersonaTransitionPollTimer: NodeJS.Timeout | null = null;
@@ -1292,8 +1302,10 @@ export class BridgeService extends EventEmitter {
       status: null,
       settings: this.settingsStore.get(),
       diagnostics: this.withAudioDebugDiagnostics(emptyDiagnostics([])),
-      personaTransition: null
+      personaTransition: null,
+      bridgeDevices: null
     };
+    this.syncAudioHelperBridgeTarget();
     this.systemAudioHapticsEngine.on('error', (error: Error) => {
       this.appendAudioDebugLines([`[SystemHaptics] error: ${error.message}`]);
       this.emitSnapshot();
@@ -3097,8 +3109,21 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
-  async selectControllerProfile(profileId: string): Promise<BridgeSnapshot> {
+  async selectControllerProfile(
+    profileId: string,
+    options: { recordBinding?: boolean } = {}
+  ): Promise<BridgeSnapshot> {
     this.snapshot.settings = this.settingsStore.selectControllerProfile(profileId);
+    if (options.recordBinding !== false && this.connectedControllerMac) {
+      const selectedProfileId = this.snapshot.settings.selectedControllerProfileId;
+      this.snapshot.settings = this.settingsStore.update({
+        controllerBindings: {
+          ...this.snapshot.settings.controllerBindings,
+          [this.connectedControllerMac]: selectedProfileId
+        }
+      });
+      this.bindingAppliedForMac = this.connectedControllerMac;
+    }
     if (this.snapshot.state === 'connected') {
       await this.applyCurrentSettings(this.snapshot.settings, false);
     }
@@ -3475,7 +3500,7 @@ export class BridgeService extends EventEmitter {
     if (now < this.pollPausedUntil) {
       return;
     }
-    const currentSettings = this.settingsStore.get();
+    await this.refreshBridgeCensusIfDue();
 
     const rawDevices = await this.hidDiscovery.listDevices();
     let status: BridgeStatusPayload | null;
@@ -3546,6 +3571,7 @@ export class BridgeService extends EventEmitter {
     await this.readAudioDebugThrottled(true);
     await this.readAudioStatus();
     const deviceIdentity = await this.readDeviceIdentity();
+    this.updateConnectedDeviceIdentity(deviceIdentity, status.controllerConnected);
     this.maybeEmitStatusToasts(status);
 
     const previousUptime = this.lastUptimeSeconds;
@@ -3561,7 +3587,7 @@ export class BridgeService extends EventEmitter {
     }
     this.lastUptimeSeconds = status.uptimeSeconds;
 
-    let settings = this.settingsStore.get();
+    let settings = this.applyBoundControllerProfile();
     if (
       this.reappliedSessionKey === this.sessionKey
       && settings.duplexMicEnabled
@@ -3653,7 +3679,8 @@ export class BridgeService extends EventEmitter {
     try {
       if (!this.device) {
         this.device = await WinUsbCompanionTransport.open({
-          retryTimeoutMs: this.isHostPersonaTransitionActive() ? HOST_PERSONA_TRANSITION_OPEN_RETRY_MS : 0
+          retryTimeoutMs: this.isHostPersonaTransitionActive() ? HOST_PERSONA_TRANSITION_OPEN_RETRY_MS : 0,
+          devicePath: this.settingsStore.get().selectedBridgePath ?? undefined
         });
         const openedDevice = this.device;
         this.device.on('error', (error: Error) => this.publishError(error));
@@ -3661,6 +3688,7 @@ export class BridgeService extends EventEmitter {
           void this.handleCompanionTransportClose(openedDevice);
         });
         this.devicePath = this.device.path;
+        this.syncAudioHelperBridgeTarget();
         this.shortcutFeaturePollRetryAt = 0;
         this.lastUptimeSeconds = null;
         this.sessionKey = null;
@@ -3951,9 +3979,218 @@ export class BridgeService extends EventEmitter {
     this.emitSnapshot();
   }
 
+  private static bridgePathsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+    return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+  }
+
+  private async refreshBridgeCensusIfDue(): Promise<void> {
+    if (Date.now() - this.lastBridgeCensusAt >= BRIDGE_CENSUS_INTERVAL_MS) {
+      await this.refreshBridgeCensus();
+    }
+  }
+
+  private async refreshBridgeCensus(): Promise<void> {
+    this.lastBridgeCensusAt = Date.now();
+    try {
+      this.bridgeCensus = await listBridges();
+    } catch {
+      // Enumeration is supplementary; retain the last successful census.
+    }
+    this.recordBridgeIdentityAssociation();
+    this.syncAudioHelperBridgeTarget();
+  }
+
+  private activeBridgePath(): string | null {
+    return this.device?.path ?? this.settingsStore.get().selectedBridgePath ?? null;
+  }
+
+  private syncAudioHelperBridgeTarget(): void {
+    const devicePath = this.activeBridgePath();
+    const containerId = devicePath
+      ? this.bridgeCensus?.bridges.find((bridge) => (
+          BridgeService.bridgePathsEqual(bridge.path, devicePath)
+        ))?.containerId ?? undefined
+      : undefined;
+    setAudioHelperBridgeTarget({
+      devicePath: devicePath ?? undefined,
+      containerId: containerId ?? undefined
+    });
+  }
+
+  private updateConnectedDeviceIdentity(
+    identity: CompanionDeviceIdentityPayload | null,
+    controllerConnected: boolean
+  ): void {
+    if (identity?.bridgeId) {
+      this.connectedBridgeUniqueId = identity.bridgeId.toLowerCase();
+    }
+    if (!controllerConnected) {
+      this.connectedControllerMac = null;
+      this.bindingAppliedForMac = null;
+    } else if (identity) {
+      const nextControllerMac = identity.bluetoothAddress
+        ? identity.bluetoothAddress.replaceAll(':', '').toLowerCase()
+        : null;
+      if (nextControllerMac !== this.connectedControllerMac) {
+        this.connectedControllerMac = nextControllerMac;
+        this.bindingAppliedForMac = null;
+      }
+    }
+    this.recordBridgeIdentityAssociation();
+  }
+
+  private applyBoundControllerProfile(): CompanionSettings {
+    const settings = this.settingsStore.get();
+    const mac = this.connectedControllerMac;
+    if (!mac || this.bindingAppliedForMac === mac) {
+      return settings;
+    }
+    this.bindingAppliedForMac = mac;
+    const profileId = settings.controllerBindings[mac];
+    if (!profileId || profileId === settings.selectedControllerProfileId) {
+      return settings;
+    }
+    if (!settings.controllerProfiles.some((profile) => profile.id === profileId)) {
+      return settings;
+    }
+    return this.settingsStore.selectControllerProfile(profileId);
+  }
+
+  private recordBridgeIdentityAssociation(): void {
+    const uniqueId = this.connectedBridgeUniqueId;
+    const devicePath = this.device?.path;
+    if (!uniqueId || !devicePath) {
+      return;
+    }
+    const containerId = this.bridgeCensus?.bridges.find((bridge) => (
+      BridgeService.bridgePathsEqual(bridge.path, devicePath)
+    ))?.containerId ?? null;
+    if (!containerId) {
+      return;
+    }
+    const settings = this.settingsStore.get();
+    const existing = settings.bridgeIdentities[uniqueId];
+    if (existing?.containerId?.toLowerCase() === containerId.toLowerCase()) {
+      return;
+    }
+    this.snapshot.settings = this.settingsStore.update({
+      bridgeIdentities: {
+        ...settings.bridgeIdentities,
+        [uniqueId]: {
+          label: existing?.label ?? null,
+          containerId
+        }
+      }
+    });
+  }
+
+  async setBridgeLabel(uniqueId: string, label: string | null): Promise<BridgeSnapshot> {
+    const normalizedUniqueId = uniqueId.toLowerCase();
+    if (!/^[0-9a-f]{16}$/.test(normalizedUniqueId)) {
+      throw new Error('Invalid bridge identity.');
+    }
+    const settings = this.settingsStore.get();
+    if (normalizedUniqueId !== this.connectedBridgeUniqueId && !settings.bridgeIdentities[normalizedUniqueId]) {
+      throw new Error('Bridge identity is not known to this app.');
+    }
+    const normalizedLabel = typeof label === 'string' ? label.trim().slice(0, 32) : '';
+    this.snapshot.settings = this.settingsStore.update({
+      bridgeIdentities: {
+        ...settings.bridgeIdentities,
+        [normalizedUniqueId]: {
+          label: normalizedLabel || null,
+          containerId: settings.bridgeIdentities[normalizedUniqueId]?.containerId ?? null
+        }
+      }
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  private bridgeDevicesSnapshot(): BridgeDeviceCensus | null {
+    if (!this.bridgeCensus) {
+      return null;
+    }
+    const settings = this.settingsStore.get();
+    const selectedPath = settings.selectedBridgePath;
+    const activePath = this.device?.path ?? null;
+    const uniqueIdForBridge = (path: string, containerId: string | null): string | null => {
+      if (BridgeService.bridgePathsEqual(path, activePath) && this.connectedBridgeUniqueId) {
+        return this.connectedBridgeUniqueId;
+      }
+      if (!containerId) {
+        return null;
+      }
+      return Object.entries(settings.bridgeIdentities).find(([, identity]) => (
+        identity.containerId?.toLowerCase() === containerId.toLowerCase()
+      ))?.[0] ?? null;
+    };
+    return {
+      bridges: this.bridgeCensus.bridges.map((bridge) => {
+        const uniqueId = uniqueIdForBridge(bridge.path, bridge.containerId);
+        return {
+          path: bridge.path,
+          containerId: bridge.containerId,
+          selected: selectedPath
+            ? BridgeService.bridgePathsEqual(bridge.path, selectedPath)
+            : BridgeService.bridgePathsEqual(bridge.path, activePath),
+          connected: BridgeService.bridgePathsEqual(bridge.path, activePath),
+          uniqueId,
+          name: uniqueId ? settings.bridgeIdentities[uniqueId]?.label ?? null : null
+        };
+      }),
+      directControllers: this.bridgeCensus.hidDevices
+        .filter((device) => !device.isBridge)
+        .map((device) => ({
+          path: device.path,
+          product: device.product,
+          productId: device.productId
+        })),
+      selectedBridgePath: selectedPath
+    };
+  }
+
+  async selectBridge(devicePath: string | null): Promise<BridgeSnapshot> {
+    await this.refreshBridgeCensus();
+    let selectedPath: string | null = null;
+    if (devicePath !== null) {
+      selectedPath = this.bridgeCensus?.bridges.find((bridge) => (
+        BridgeService.bridgePathsEqual(bridge.path, devicePath)
+      ))?.path ?? null;
+      if (!selectedPath) {
+        throw new Error('The selected bridge is no longer connected.');
+      }
+    }
+    const switchingDevices = Boolean(
+      this.device
+      && selectedPath
+      && !BridgeService.bridgePathsEqual(this.device.path, selectedPath)
+    );
+    if (switchingDevices) {
+      await this.stopControllerAudioPolling();
+    }
+    this.snapshot.settings = this.settingsStore.update({ selectedBridgePath: selectedPath });
+    if (switchingDevices) {
+      this.closeDevice();
+    } else {
+      this.syncAudioHelperBridgeTarget();
+    }
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  async refreshBridgeDevices(): Promise<BridgeSnapshot> {
+    await this.refreshBridgeCensus();
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   private closeDevice(): void {
     const device = this.device;
     this.device = null;
+    this.connectedBridgeUniqueId = null;
+    this.connectedControllerMac = null;
+    this.bindingAppliedForMac = null;
     if (device) {
       try {
         device.removeAllListeners();
@@ -3971,6 +4208,7 @@ export class BridgeService extends EventEmitter {
     this.controllerPowerSavingActive = null;
     this.systemAudioHapticsRetryAt = 0;
     this.systemAudioHapticsPassthroughActive = false;
+    this.syncAudioHelperBridgeTarget();
     void this.stopControllerAudioPolling();
   }
 
@@ -4003,7 +4241,8 @@ export class BridgeService extends EventEmitter {
       : this.hostPersonaTransitionSnapshot();
     this.snapshot = {
       ...this.snapshot,
-      personaTransition
+      personaTransition,
+      bridgeDevices: this.bridgeDevicesSnapshot()
     };
     const signature = JSON.stringify({
       state: this.snapshot.state,
@@ -4016,6 +4255,7 @@ export class BridgeService extends EventEmitter {
         : null,
       settings: this.snapshot.settings,
       personaTransition: this.snapshot.personaTransition,
+      bridgeDevices: this.snapshot.bridgeDevices,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,

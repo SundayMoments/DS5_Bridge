@@ -582,4 +582,40 @@ describe('SettingsStore', () => {
     expect(persistedSettings(userDataPath).uiThemePreset).toBe('kiwi');
     expect(new SettingsStore(userDataPath).get().uiThemePreset).toBe('kiwi');
   });
+
+  it('normalizes and clones persisted bridge metadata and controller bindings', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const savedProfile = store.saveControllerProfile('David');
+    const profileId = savedProfile.selectedControllerProfileId;
+
+    const updated = store.update({
+      selectedBridgePath: 'winusb://bridge-a',
+      bridgeIdentities: {
+        AABBCCDDEEFF0011: {
+          label: '  Living Room  ',
+          containerId: '11111111-2222-3333-4444-555555555555'
+        },
+        invalid: { label: 'ignored', containerId: null }
+      },
+      controllerBindings: {
+        AABBCCDDEEFF: profileId,
+        '001122334455': 'missing-profile'
+      }
+    });
+
+    expect(updated.selectedBridgePath).toBe('winusb://bridge-a');
+    expect(updated.bridgeIdentities).toEqual({
+      aabbccddeeff0011: {
+        label: 'Living Room',
+        containerId: '11111111-2222-3333-4444-555555555555'
+      }
+    });
+    expect(updated.controllerBindings).toEqual({ aabbccddeeff: profileId });
+
+    updated.bridgeIdentities.aabbccddeeff0011!.label = 'mutated';
+    updated.controllerBindings.aabbccddeeff = DEFAULT_CONTROLLER_PROFILE_ID;
+    expect(store.get().bridgeIdentities.aabbccddeeff0011?.label).toBe('Living Room');
+    expect(store.get().controllerBindings.aabbccddeeff).toBe(profileId);
+  });
 });

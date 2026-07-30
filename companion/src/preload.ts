@@ -80,6 +80,15 @@ const api = {
   setSpeakerGainLevel: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setSpeakerGainLevel', value)
   ),
+  selectBridge: (devicePath: string | null): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:selectBridge', devicePath)
+  ),
+  refreshBridgeDevices: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:refreshBridgeDevices')
+  ),
+  setBridgeLabel: (uniqueId: string, label: string | null): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setBridgeLabel', uniqueId, label)
+  ),
   setSpeakerEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setSpeakerEnabled', value),
   setMicVolume: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setMicVolume', value),
   setMicMute: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setMicMute', value),
