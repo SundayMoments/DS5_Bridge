@@ -62,6 +62,18 @@ describe('SettingsStore', () => {
     expect(settings.micMuted).toBe(false);
     expect(settings.lightbarColor).toBe('#0000ff');
     expect(settings.showBatteryPercentTrayIcon).toBe(false);
+    expect(settings.wakeOnConnectEnabled).toBe(true);
+  });
+
+  it('persists the wake-on-connect preference', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    const updated = store.update({ wakeOnConnectEnabled: false });
+
+    expect(updated.wakeOnConnectEnabled).toBe(false);
+    expect(persistedSettings(userDataPath).wakeOnConnectEnabled).toBe(false);
+    expect(new SettingsStore(userDataPath).get().wakeOnConnectEnabled).toBe(false);
   });
 
   it('migrates legacy custom-only profile data without stealing selection', () => {

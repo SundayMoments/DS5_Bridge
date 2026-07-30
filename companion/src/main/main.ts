@@ -1128,6 +1128,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setUsbSuspendDisconnectEnabled', (_event, value: boolean) => (
     service.setUsbSuspendDisconnectEnabled(value)
   ));
+  ipcMain.handle('bridge:setWakeOnConnectEnabled', (_event, value: boolean) => (
+    service.setWakeOnConnectEnabled(value)
+  ));
   ipcMain.handle('bridge:setSleepKeybindEnabled', (_event, value: boolean) => (
     service.setSleepKeybindEnabled(value)
   ));

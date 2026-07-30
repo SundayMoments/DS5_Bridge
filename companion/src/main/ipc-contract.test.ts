@@ -131,4 +131,10 @@ describe('IPC contract', () => {
     expect(mainSource).toContain("if (rawPowerState === 0x01) return 'charging';");
     expect(mainSource).toContain("if (rawPowerState === 0x02) return 'external-power';");
   });
+
+  it('exposes the wake-on-connect preference', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setWakeOnConnectEnabled', value)");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setWakeOnConnectEnabled'");
+    expect(bridgeServiceSource).toContain('setWakeOnConnectEnabled(enabled: boolean): Promise<BridgeSnapshot>');
+  });
 });

@@ -116,6 +116,7 @@ type StatusOverrides = {
   hostPersonaMode?: 'dualsense' | 'xbox' | 'ds4';
   supportedHostPersonaModesMask?: number;
   micMuted?: boolean;
+  wakeOnConnectEnabled?: boolean;
 };
 
 const FULL_REAPPLY_COMMANDS = [
@@ -140,6 +141,7 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED,
   COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT,
   COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED,
+  COMMAND_ID.SET_WAKE_ON_CONNECT,
   COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED,
   COMMAND_ID.SET_SPEAKER_VOLUME_SHORTCUT_ENABLED,
   COMMAND_ID.SET_BUTTON_REMAP,
@@ -334,6 +336,7 @@ function statusReport(overrides: StatusOverrides = {}): number[] {
   writeU16(report, 43, overrides.idleDisconnectTimeoutMinutes ?? 15);
   report[48] = overrides.hostPersonaMode === 'xbox' ? 1 : overrides.hostPersonaMode === 'ds4' ? 2 : 0;
   report[49] = overrides.supportedHostPersonaModesMask ?? 0;
+  report[50] = overrides.wakeOnConnectEnabled === false ? 0 : 1;
   report[51] = overrides.micMuted ? 1 : 0;
   report[57] = overrides.speakerGainLevel ?? 4;
   return report;
@@ -1546,6 +1549,23 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED);
     expect(command?.[9]).toBe(0);
     expect(snapshot.settings.usbSuspendDisconnectEnabled).toBe(false);
+  });
+
+  it('sends and stores wake-on-connect settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setWakeOnConnectEnabled(false);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_WAKE_ON_CONNECT);
+    expect(command?.[9]).toBe(0);
+    expect(snapshot.settings.wakeOnConnectEnabled).toBe(false);
+    expect(snapshot.status?.wakeOnConnectEnabled).toBe(false);
   });
 
   it('sends and stores idle disconnect timeout settings', async () => {

@@ -182,6 +182,9 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('Show controller battery percentage in the tray');
     expect(appSource).toContain('snapshot.settings.showBatteryPercentTrayIcon');
     expect(appSource).toContain('window.bridge.setShowBatteryPercentTrayIcon(!snapshot.settings.showBatteryPercentTrayIcon)');
+    expect(appSource).toContain('<strong>Wake PC on Controller</strong>');
+    expect(appSource).toContain('firmwareFlags.wakeOnConnectControl');
+    expect(appSource).toContain('window.bridge.setWakeOnConnectEnabled(!snapshot.settings.wakeOnConnectEnabled)');
   });
 
   it('exposes persisted audio interleave presets and advanced controls', () => {

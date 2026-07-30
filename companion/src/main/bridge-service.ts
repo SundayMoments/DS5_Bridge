@@ -2868,6 +2868,17 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setWakeOnConnectEnabled(enabled: boolean): Promise<BridgeSnapshot> {
+    await this.sendSettingCommand(COMMAND_ID.SET_WAKE_ON_CONNECT, enabled ? 1 : 0, {
+      wakeOnConnectEnabled: enabled
+    });
+    if (this.snapshot.status) {
+      this.snapshot.status.wakeOnConnectEnabled = enabled;
+      this.emitSnapshot();
+    }
+    return this.getSnapshot();
+  }
+
   async setSleepKeybindEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     await this.sendSettingCommand(COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED, enabled ? 1 : 0, {
       sleepKeybindEnabled: enabled
@@ -3881,6 +3892,11 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(
       COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED,
       settings.usbSuspendDisconnectEnabled ? 1 : 0,
+      { expectSettingsRevisionChange }
+    );
+    await this.sendCommand(
+      COMMAND_ID.SET_WAKE_ON_CONNECT,
+      settings.wakeOnConnectEnabled ? 1 : 0,
       { expectSettingsRevisionChange }
     );
     await this.sendCommand(

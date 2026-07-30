@@ -188,6 +188,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   idleDisconnectEnabled: true,
   idleDisconnectTimeoutMinutes: 15,
   usbSuspendDisconnectEnabled: true,
+  wakeOnConnectEnabled: true,
   sleepKeybindEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
   speakerVolumeShortcutEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumeShortcutEnabled,
   pollingRateMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.pollingRateMode,
@@ -834,7 +835,7 @@ type PersistedSettings = Partial<CompanionSettings> & {
   settingsSchemaVersion?: number;
 };
 
-const CURRENT_SETTINGS_SCHEMA_VERSION = 3;
+const CURRENT_SETTINGS_SCHEMA_VERSION = 4;
 
 function migratePersistedSettings(value: PersistedSettings): PersistedSettings {
   const version = Number.isFinite(value.settingsSchemaVersion)
@@ -1002,6 +1003,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     usbSuspendDisconnectEnabled: typeof value?.usbSuspendDisconnectEnabled === 'boolean'
       ? value.usbSuspendDisconnectEnabled
       : DEFAULT_SETTINGS.usbSuspendDisconnectEnabled,
+    wakeOnConnectEnabled: typeof value?.wakeOnConnectEnabled === 'boolean'
+      ? value.wakeOnConnectEnabled
+      : DEFAULT_SETTINGS.wakeOnConnectEnabled,
     sleepKeybindEnabled: typeof value?.sleepKeybindEnabled === 'boolean'
       ? value.sleepKeybindEnabled
       : DEFAULT_SETTINGS.sleepKeybindEnabled,

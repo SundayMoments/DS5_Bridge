@@ -3623,6 +3623,7 @@ export function App() {
   const muteButtonActionsSupported = Boolean(snapshot?.status?.firmwareFlags.muteButtonActions);
   const adaptiveTriggersSupported = Boolean(snapshot?.status?.firmwareFlags.adaptiveTriggersControl);
   const usbSuspendDisconnectSupported = Boolean(snapshot?.status?.firmwareFlags.usbSuspendDisconnectControl);
+  const wakeOnConnectSupported = Boolean(snapshot?.status?.firmwareFlags.wakeOnConnectControl);
   const sleepControllerSupported = Boolean(snapshot?.status?.firmwareFlags.sleepControllerControl);
   const pollingRateControlSupported = Boolean(snapshot?.status?.firmwareFlags.pollingRateControl);
   const hostPersonaControlSupported = Boolean(snapshot?.status?.firmwareFlags.hostPersonaControl);
@@ -10153,6 +10154,24 @@ export function App() {
                     disabled={!connected || !usbSuspendDisconnectSupported}
                     onClick={() => void runAction('usb-suspend', () => (
                       window.bridge.setUsbSuspendDisconnectEnabled(!snapshot.settings.usbSuspendDisconnectEnabled)
+                    ))}
+                  >
+                    <span />
+                  </button>
+                </div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Wake PC on Controller</strong>
+                    <span>Wake through USB when a controller reconnects. Requires Windows wake permission and DualSense or DS4 mode.</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapshot.settings.wakeOnConnectEnabled}
+                    className={`switch ${snapshot.settings.wakeOnConnectEnabled ? 'on' : ''}`}
+                    disabled={!connected || !wakeOnConnectSupported || pendingAction !== null}
+                    onClick={() => void runAction('wake-on-connect', () => (
+                      window.bridge.setWakeOnConnectEnabled(!snapshot.settings.wakeOnConnectEnabled)
                     ))}
                   >
                     <span />
