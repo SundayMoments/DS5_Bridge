@@ -52,6 +52,12 @@ const api = {
   setHapticsBufferLength: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setHapticsBufferLength', value)
   ),
+  setAudioInterleave: (
+    maxConsecutiveAudioSends: number,
+    stateMaxAgeUs: number
+  ): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setAudioInterleave', maxConsecutiveAudioSends, stateMaxAgeUs)
+  ),
   setClassicRumbleGain: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setClassicRumbleGain', value)
   ),

@@ -94,6 +94,7 @@ export const COMMAND_ID = {
   FORGET_CONTROLLER_PAIRING: 0x2e,
   SET_SPEAKER_GAIN: 0x32,
   ENTER_BOOTLOADER: 0x33,
+  SET_AUDIO_INTERLEAVE: 0x34,
   SET_LIGHTBAR_RESTORE_ENABLED: 0x36
 } as const;
 
@@ -1086,6 +1087,50 @@ export function buildCommandReport(
     report[11 + index] = extraPayload[index] & 0xff;
   }
   return report;
+}
+
+export const AUDIO_INTERLEAVE_DEFAULT = {
+  maxConsecutiveAudioSends: 4,
+  stateMaxAgeUs: 3000
+} as const;
+
+export const AUDIO_INTERLEAVE_LIMITS = {
+  maxConsecutiveAudioSends: { min: 1, max: 64 },
+  stateMaxAgeUs: { min: 250, max: 60000 }
+} as const;
+
+export const AUDIO_INTERLEAVE_PRESETS = {
+  smooth: { maxConsecutiveAudioSends: 8, stateMaxAgeUs: 6000 },
+  balanced: { maxConsecutiveAudioSends: 4, stateMaxAgeUs: 3000 },
+  responsive: { maxConsecutiveAudioSends: 2, stateMaxAgeUs: 1500 }
+} as const;
+
+export function clampAudioInterleaveValues(
+  maxConsecutiveAudioSends: number,
+  stateMaxAgeUs: number
+): { maxConsecutiveAudioSends: number; stateMaxAgeUs: number } {
+  const runLimits = AUDIO_INTERLEAVE_LIMITS.maxConsecutiveAudioSends;
+  const ageLimits = AUDIO_INTERLEAVE_LIMITS.stateMaxAgeUs;
+  const run = Math.round(Number.isFinite(maxConsecutiveAudioSends) ? maxConsecutiveAudioSends : runLimits.min);
+  const age = Math.round(Number.isFinite(stateMaxAgeUs) ? stateMaxAgeUs : ageLimits.min);
+  return {
+    maxConsecutiveAudioSends: Math.min(runLimits.max, Math.max(runLimits.min, run)),
+    stateMaxAgeUs: Math.min(ageLimits.max, Math.max(ageLimits.min, age))
+  };
+}
+
+export function buildAudioInterleaveCommand(
+  sequence: number,
+  maxConsecutiveAudioSends: number,
+  stateMaxAgeUs: number
+): number[] {
+  const clamped = clampAudioInterleaveValues(maxConsecutiveAudioSends, stateMaxAgeUs);
+  return buildCommandReport(
+    COMMAND_ID.SET_AUDIO_INTERLEAVE,
+    sequence,
+    clamped.maxConsecutiveAudioSends,
+    [clamped.stateMaxAgeUs & 0xff, (clamped.stateMaxAgeUs >> 8) & 0xff]
+  );
 }
 
 export function ackResultName(result: number): string {

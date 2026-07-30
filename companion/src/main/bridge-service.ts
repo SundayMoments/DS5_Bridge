@@ -21,6 +21,7 @@ import {
   bluetoothAddressPayload,
   buildChordBindingsPayload,
   buildCommandReport,
+  clampAudioInterleaveValues,
   parseAckReport,
   parseAudioDebugReport,
   parseAudioStatsReport,
@@ -2586,6 +2587,23 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setAudioInterleave(
+    maxConsecutiveAudioSends: number,
+    stateMaxAgeUs: number
+  ): Promise<BridgeSnapshot> {
+    const clamped = clampAudioInterleaveValues(maxConsecutiveAudioSends, stateMaxAgeUs);
+    await this.sendSettingCommand(
+      COMMAND_ID.SET_AUDIO_INTERLEAVE,
+      clamped.maxConsecutiveAudioSends,
+      {
+        audioInterleaveMaxConsecutiveAudioSends: clamped.maxConsecutiveAudioSends,
+        audioInterleaveStateMaxAgeUs: clamped.stateMaxAgeUs
+      },
+      [clamped.stateMaxAgeUs & 0xff, (clamped.stateMaxAgeUs >> 8) & 0xff]
+    );
+    return this.getSnapshot();
+  }
+
   async setLightbarRestoreEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     await this.sendSettingCommand(COMMAND_ID.SET_LIGHTBAR_RESTORE_ENABLED, enabled ? 1 : 0, {
       lightbarRestoreEnabled: enabled
@@ -3216,9 +3234,13 @@ export class BridgeService extends EventEmitter {
   private async sendSettingCommand(
     commandId: number,
     value: number,
-    settingUpdate: Partial<CompanionSettings>
+    settingUpdate: Partial<CompanionSettings>,
+    extraPayload?: ArrayLike<number>
   ): Promise<void> {
-    const ack = await this.sendCommand(commandId, value, { expectSettingsRevisionChange: true });
+    const ack = await this.sendCommand(commandId, value, {
+      expectSettingsRevisionChange: true,
+      ...(extraPayload ? { extraPayload } : {})
+    });
     if (ack.resultCode === ACK_RESULT.OK) {
       this.snapshot.settings = this.settingsStore.update(settingUpdate);
       this.emitSnapshot();
@@ -3783,6 +3805,17 @@ export class BridgeService extends EventEmitter {
     await this.sendCommand(COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH, settings.hapticsBufferLength, {
       expectSettingsRevisionChange
     });
+    {
+      const interleave = clampAudioInterleaveValues(
+        settings.audioInterleaveMaxConsecutiveAudioSends,
+        settings.audioInterleaveStateMaxAgeUs
+      );
+      await this.sendCommand(COMMAND_ID.SET_AUDIO_INTERLEAVE, interleave.maxConsecutiveAudioSends, {
+        expectSettingsRevisionChange,
+        throwOnCommandError: false,
+        extraPayload: [interleave.stateMaxAgeUs & 0xff, (interleave.stateMaxAgeUs >> 8) & 0xff]
+      });
+    }
     await this.applyAudioReactiveHapticsSettings(settings, expectSettingsRevisionChange);
     if (!this.reapplyActive) {
       await this.updateSystemAudioHapticsEngine();

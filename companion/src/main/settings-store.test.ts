@@ -230,6 +230,20 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(userDataPath).get().showBatteryPercentTrayIcon).toBe(true);
   });
 
+  it('normalizes and persists audio interleave settings', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    store.update({
+      audioInterleaveMaxConsecutiveAudioSends: 1000,
+      audioInterleaveStateMaxAgeUs: 10
+    });
+
+    const reloaded = new SettingsStore(userDataPath).get();
+    expect(reloaded.audioInterleaveMaxConsecutiveAudioSends).toBe(64);
+    expect(reloaded.audioInterleaveStateMaxAgeUs).toBe(250);
+  });
+
   it('persists the firmware log folder across restarts and controller default restores', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);

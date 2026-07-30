@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACK_RESULT,
+  AUDIO_INTERLEAVE_DEFAULT,
   AUDIO_DEBUG_EVENT,
   CHORD_MUTE_STARTER_ID,
   COMMAND_ID,
@@ -14,9 +15,11 @@ import {
   REMAP_BUTTON_IDS,
   REPORT_ID,
   bluetoothAddressPayload,
+  buildAudioInterleaveCommand,
   buildButtonRemapPayload,
   buildChordBindingsPayload,
   buildCommandReport,
+  clampAudioInterleaveValues,
   hostPersonaModeValue,
   isChordBindingAllowed,
   normalizeBridgePresetId,
@@ -458,6 +461,28 @@ describe('companion protocol', () => {
     expect(report[8]).toBe(12);
     expect(report[9]).toBe(175);
     expect(report[10]).toBe(0);
+  });
+
+  it('builds and clamps an audio interleave command', () => {
+    const report = buildAudioInterleaveCommand(9, 4, 3000);
+    expect(report[7]).toBe(COMMAND_ID.SET_AUDIO_INTERLEAVE);
+    expect(report[8]).toBe(9);
+    expect(report[9]).toBe(4);
+    expect(report[11]).toBe(3000 & 0xff);
+    expect(report[12]).toBe((3000 >> 8) & 0xff);
+
+    expect(clampAudioInterleaveValues(0, 10)).toEqual({
+      maxConsecutiveAudioSends: 1,
+      stateMaxAgeUs: 250
+    });
+    expect(clampAudioInterleaveValues(1000, 999999)).toEqual({
+      maxConsecutiveAudioSends: 64,
+      stateMaxAgeUs: 60000
+    });
+    expect(clampAudioInterleaveValues(
+      AUDIO_INTERLEAVE_DEFAULT.maxConsecutiveAudioSends,
+      AUDIO_INTERLEAVE_DEFAULT.stateMaxAgeUs
+    )).toEqual(AUDIO_INTERLEAVE_DEFAULT);
   });
 
   it('encodes a canonical Bluetooth address for targeted forget', () => {

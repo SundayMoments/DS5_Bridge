@@ -1067,6 +1067,9 @@ function registerIpc(service: BridgeService): void {
     service.setFeedbackBoostEnabled(value)
   ));
   ipcMain.handle('bridge:setHapticsBufferLength', (_event, value: number) => service.setHapticsBufferLength(value));
+  ipcMain.handle('bridge:setAudioInterleave', (_event, maxConsecutiveAudioSends: number, stateMaxAgeUs: number) => (
+    service.setAudioInterleave(maxConsecutiveAudioSends, stateMaxAgeUs)
+  ));
   ipcMain.handle('bridge:setClassicRumbleGain', (_event, value: number) => service.setClassicRumbleGain(value));
   ipcMain.handle('bridge:setClassicRumbleEnabled', (_event, value: boolean) => service.setClassicRumbleEnabled(value));
   ipcMain.handle('bridge:setClassicRumbleV1Enabled', (_event, value: boolean) => (

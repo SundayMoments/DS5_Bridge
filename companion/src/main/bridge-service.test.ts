@@ -112,6 +112,7 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_MUTE_BUTTON_ACTION,
   COMMAND_ID.SET_HAPTICS_GAIN,
   COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH,
+  COMMAND_ID.SET_AUDIO_INTERLEAVE,
   COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS,
   COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN,
   COMMAND_ID.SET_CLASSIC_RUMBLE_V1,
@@ -1556,6 +1557,25 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SET_PLAYER_LED_ENABLED);
     expect(command?.[9]).toBe(0);
     expect(snapshot.settings.playerLedEnabled).toBe(false);
+  });
+
+  it('sends and stores clamped audio interleave values', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setAudioInterleave(1000, 999999);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_AUDIO_INTERLEAVE);
+    expect(command?.[9]).toBe(64);
+    expect(command?.[11]).toBe(60000 & 0xff);
+    expect(command?.[12]).toBe((60000 >> 8) & 0xff);
+    expect(snapshot.settings.audioInterleaveMaxConsecutiveAudioSends).toBe(64);
+    expect(snapshot.settings.audioInterleaveStateMaxAgeUs).toBe(60000);
   });
 
   it('writes retained UART firmware bytes into the selected folder', async () => {
