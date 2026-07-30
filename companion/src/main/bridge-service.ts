@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, promises as fsPromises, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -28,6 +28,7 @@ import {
   parseDeviceIdentityReport,
   parseTriggerTraceReport,
   parseFeedbackTraceReport,
+  parseFirmwareLogReport,
   parseStatusReport,
   readReportProtocolVersion,
   SHORTCUT_EVENT,
@@ -117,6 +118,7 @@ const TRIGGER_TRACE_LOG_LINE_LIMIT = 300;
 const TRIGGER_TRACE_MAX_READS_PER_POLL = 32;
 const FEEDBACK_TRACE_LOG_LINE_LIMIT = 300;
 const FEEDBACK_TRACE_MAX_READS_PER_POLL = 32;
+const FIRMWARE_LOG_MAX_READS_PER_POLL = 64;
 const STARTUP_REAPPLY_MIN_SETTLE_MS = 0;
 const STARTUP_REAPPLY_RETRY_DELAYS_MS = [250, 650, 1300] as const;
 const HOST_PERSONA_TRANSITION_TIMEOUT_MS = 8000;
@@ -146,6 +148,11 @@ const CLEANUP_LOG_EXCERPT_MAX_CHARS = 3000;
 type BridgeDiagnosticsWithoutAudioLog = Omit<
   BridgeDiagnostics,
   | 'audioDebugLogPath'
+  | 'firmwareLogDirectory'
+  | 'firmwareLogPath'
+  | 'firmwareLogEnabled'
+  | 'firmwareLogDroppedBytes'
+  | 'firmwareLogLastError'
   | 'audioDebugLogLines'
   | 'audioDebugDroppedCount'
   | 'audioDebugStats'
@@ -305,6 +312,11 @@ function emptyDiagnostics(rawDevices: HidDeviceSummary[]): BridgeDiagnostics {
     lastPollAt: null,
     rawDevices,
     deviceIdentity: null,
+    firmwareLogDirectory: null,
+    firmwareLogPath: null,
+    firmwareLogEnabled: null,
+    firmwareLogDroppedBytes: 0,
+    firmwareLogLastError: null,
     audioDebugLogPath: null,
     audioDebugLogLines: [],
     audioDebugDroppedCount: 0,
@@ -1232,6 +1244,10 @@ export class BridgeService extends EventEmitter {
   private reapplyActive = false;
   private pollPausedUntil = 0;
   private readonly audioDebugLogPath: string | null = null;
+  private firmwareLogPath: string | null = null;
+  private firmwareLogEnabled: boolean | null = null;
+  private firmwareLogDroppedBytes = 0;
+  private firmwareLogLastError: string | null = null;
   private audioDebugLogLines: string[] = [];
   private audioDebugDroppedCount = 0;
   private audioDebugStats: AudioDebugStatsPayload | null = null;
@@ -1392,6 +1408,27 @@ export class BridgeService extends EventEmitter {
     return this.hidDiscovery.listDevices();
   }
 
+  async setFirmwareLogDirectory(directory: string | null): Promise<BridgeSnapshot> {
+    const normalizedDirectory = typeof directory === 'string' && directory.trim()
+      ? path.resolve(directory.trim())
+      : null;
+    const settings = this.settingsStore.update({ firmwareLogDirectory: normalizedDirectory });
+    this.firmwareLogPath = null;
+    this.firmwareLogEnabled = null;
+    this.firmwareLogDroppedBytes = 0;
+    this.firmwareLogLastError = null;
+    if (normalizedDirectory && this.device) {
+      await this.readFirmwareLog();
+    }
+    this.snapshot = {
+      ...this.snapshot,
+      settings,
+      diagnostics: this.withAudioDebugDiagnostics(this.snapshot.diagnostics)
+    };
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   private controllerAudioReady(status = this.snapshot.status): boolean {
     return Boolean(status?.controllerConnected);
   }
@@ -1540,6 +1577,11 @@ export class BridgeService extends EventEmitter {
   private withAudioDebugDiagnostics(diagnostics: BridgeDiagnosticsWithoutAudioLog): BridgeDiagnostics {
     return {
       ...diagnostics,
+      firmwareLogDirectory: this.settingsStore.get().firmwareLogDirectory,
+      firmwareLogPath: this.firmwareLogPath,
+      firmwareLogEnabled: this.firmwareLogEnabled,
+      firmwareLogDroppedBytes: this.firmwareLogDroppedBytes,
+      firmwareLogLastError: this.firmwareLogLastError,
       audioDebugLogPath: this.audioDebugLogPath,
       audioDebugLogLines: [...this.audioDebugLogLines],
       audioDebugDroppedCount: this.audioDebugDroppedCount,
@@ -1943,6 +1985,67 @@ export class BridgeService extends EventEmitter {
       this.appendFeedbackTraceLines(lines);
     } catch {
       this.feedbackTraceSupported = false;
+    }
+  }
+
+  private async ensureFirmwareLogFile(directory: string): Promise<string> {
+    if (this.firmwareLogPath) {
+      return this.firmwareLogPath;
+    }
+
+    await fsPromises.mkdir(directory, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    for (let suffix = 0; suffix < 100; suffix += 1) {
+      const suffixText = suffix === 0 ? '' : `-${suffix}`;
+      const candidate = path.join(directory, `ds5-bridge-firmware-${timestamp}${suffixText}.log`);
+      try {
+        await fsPromises.writeFile(candidate, new Uint8Array(), { flag: 'wx' });
+        this.firmwareLogPath = candidate;
+        return candidate;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw error;
+        }
+      }
+    }
+    throw new Error('Could not create a unique firmware log file.');
+  }
+
+  private async readFirmwareLog(): Promise<void> {
+    const directory = this.settingsStore.get().firmwareLogDirectory;
+    if (!directory || !this.device || this.firmwareLogLastError || this.firmwareLogEnabled === false) {
+      return;
+    }
+
+    for (let readIndex = 0; readIndex < FIRMWARE_LOG_MAX_READS_PER_POLL; readIndex += 1) {
+      let log;
+      try {
+        log = parseFirmwareLogReport(
+          await this.device.getFeatureReport(REPORT_ID.FIRMWARE_LOG, REPORT_LENGTH)
+        );
+      } catch {
+        return;
+      }
+
+      this.firmwareLogEnabled = log.enabled;
+      this.firmwareLogDroppedBytes = log.droppedBytes;
+      if (!log.enabled) {
+        return;
+      }
+
+      try {
+        const logPath = await this.ensureFirmwareLogFile(directory);
+        if (log.bytes.length > 0) {
+          await fsPromises.appendFile(logPath, Buffer.from(log.bytes));
+        }
+      } catch (error) {
+        this.firmwareLogLastError = error instanceof Error ? error.message : String(error);
+        return;
+      }
+
+      if (log.bytes.length === 0) {
+        return;
+      }
     }
   }
 
@@ -3417,6 +3520,7 @@ export class BridgeService extends EventEmitter {
     }
     await this.readTriggerTraceThrottled();
     await this.readFeedbackTraceThrottled();
+    await this.readFirmwareLog();
     await this.readAudioDebugThrottled(true);
     await this.readAudioStatus();
     const deviceIdentity = await this.readDeviceIdentity();
@@ -3830,6 +3934,7 @@ export class BridgeService extends EventEmitter {
     this.incompatibleCompanionProtocolVersion = null;
     this.triggerTraceSupported = null;
     this.feedbackTraceSupported = null;
+    this.firmwareLogEnabled = null;
     this.controllerPowerSavingActive = null;
     this.systemAudioHapticsRetryAt = 0;
     this.systemAudioHapticsPassthroughActive = false;
@@ -3886,6 +3991,11 @@ export class BridgeService extends EventEmitter {
         lastError: this.snapshot.diagnostics.lastError,
         firmwareUpdateAvailable: this.snapshot.diagnostics.firmwareUpdateAvailable,
         deviceIdentity: this.snapshot.diagnostics.deviceIdentity,
+        firmwareLogDirectory: this.snapshot.diagnostics.firmwareLogDirectory,
+        firmwareLogPath: this.snapshot.diagnostics.firmwareLogPath,
+        firmwareLogEnabled: this.snapshot.diagnostics.firmwareLogEnabled,
+        firmwareLogDroppedBytes: this.snapshot.diagnostics.firmwareLogDroppedBytes,
+        firmwareLogLastError: this.snapshot.diagnostics.firmwareLogLastError,
         audioDebugLogPath: this.snapshot.diagnostics.audioDebugLogPath,
         audioDebugLogLineCount: this.snapshot.diagnostics.audioDebugLogLines.length,
         audioDebugLogTail: this.snapshot.diagnostics.audioDebugLogLines.at(-1) ?? null,

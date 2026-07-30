@@ -230,6 +230,19 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(userDataPath).get().showBatteryPercentTrayIcon).toBe(true);
   });
 
+  it('persists the firmware log folder across restarts and controller default restores', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const firmwareLogDirectory = path.join(userDataPath, 'firmware logs');
+
+    store.update({ firmwareLogDirectory });
+    expect(new SettingsStore(userDataPath).get().firmwareLogDirectory).toBe(firmwareLogDirectory);
+
+    const restored = store.restoreDefaults();
+    expect(restored.firmwareLogDirectory).toBe(firmwareLogDirectory);
+    expect(persistedSettings(userDataPath).firmwareLogDirectory).toBe(firmwareLogDirectory);
+  });
+
   it('normalizes and persists chord functions and assignments', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);

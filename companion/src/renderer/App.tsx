@@ -4102,6 +4102,17 @@ export function App() {
     const lines = snapshot?.diagnostics.feedbackTraceLines ?? [];
     return lines.length > 0 ? lines.join('\n') : 'No non-zero feedback trace events captured yet.';
   }, [diagnosticsVisible, snapshot?.diagnostics.feedbackTraceLines]);
+  const firmwareLogStatus = snapshot?.diagnostics.firmwareLogLastError
+    ? `Write failed: ${snapshot.diagnostics.firmwareLogLastError}`
+    : !snapshot?.diagnostics.firmwareLogDirectory
+      ? 'Choose a folder to start capture.'
+      : snapshot.diagnostics.firmwareLogEnabled === false
+        ? 'Unavailable: firmware was not compiled with UART logging.'
+        : snapshot.diagnostics.firmwareLogEnabled === null
+          ? 'Waiting for UART-enabled firmware.'
+          : snapshot.diagnostics.firmwareLogPath
+            ? 'Capturing retained firmware logs.'
+            : 'Starting capture.';
 
   async function runAction(label: string, action: () => Promise<BridgeSnapshot>) {
     if (!snapshot || pendingAction) {
@@ -5697,6 +5708,14 @@ export function App() {
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', cancel);
     window.addEventListener('keydown', keyDown);
+  }
+
+  function chooseFirmwareLogDirectory() {
+    void runAction('firmware-log-directory', () => window.bridge.selectFirmwareLogDirectory());
+  }
+
+  function clearFirmwareLogDirectory() {
+    void runAction('firmware-log-directory', () => window.bridge.clearFirmwareLogDirectory());
   }
 
   async function refreshSnapshotAfterControllerDeviceError() {
@@ -9088,6 +9107,43 @@ export function App() {
                         </div>
                         <div><dt>Last ACK</dt><dd>{ackText}</dd></div>
                         <div><dt>HID Path</dt><dd>{snapshot.diagnostics.hidPath ?? '--'}</dd></div>
+                        <div className="debug-entry firmware-log-entry">
+                          <dt>Firmware UART Log</dt>
+                          <dd>
+                            <div className="firmware-log-details">
+                              <span>{firmwareLogStatus}</span>
+                              <span title={snapshot.diagnostics.firmwareLogDirectory ?? undefined}>
+                                Folder: {snapshot.diagnostics.firmwareLogDirectory ?? '--'}
+                              </span>
+                              <span title={snapshot.diagnostics.firmwareLogPath ?? undefined}>
+                                File: {snapshot.diagnostics.firmwareLogPath ?? '--'}
+                              </span>
+                              <span>
+                                SRAM overwrite loss: <span className="diagnostic-number">{snapshot.diagnostics.firmwareLogDroppedBytes}</span> bytes
+                              </span>
+                            </div>
+                            <div className="firmware-log-actions">
+                              <button
+                                type="button"
+                                className="secondary-action"
+                                disabled={pendingAction !== null}
+                                onClick={chooseFirmwareLogDirectory}
+                              >
+                                Choose Folder
+                              </button>
+                              {snapshot.diagnostics.firmwareLogDirectory ? (
+                                <button
+                                  type="button"
+                                  className="secondary-action"
+                                  disabled={pendingAction !== null}
+                                  onClick={clearFirmwareLogDirectory}
+                                >
+                                  Stop Capture
+                                </button>
+                              ) : null}
+                            </div>
+                          </dd>
+                        </div>
                         <div>
                           <dt>Audio Log</dt>
                           <dd title={snapshot.diagnostics.audioDebugLogPath ?? undefined}>

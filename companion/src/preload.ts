@@ -207,6 +207,12 @@ const api = {
   repairWindowsDeviceCache: (): Promise<WindowsDeviceCleanupResult> => (
     ipcRenderer.invoke('bridge:repairWindowsDeviceCache')
   ),
+  selectFirmwareLogDirectory: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:selectFirmwareLogDirectory')
+  ),
+  clearFirmwareLogDirectory: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:clearFirmwareLogDirectory')
+  ),
   getDiagnostics: (): Promise<BridgeDiagnostics> => ipcRenderer.invoke('bridge:getDiagnostics'),
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke('window:toggleMaximize'),

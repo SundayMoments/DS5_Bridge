@@ -7493,6 +7493,23 @@ button.trigger-lab-chip {
   white-space: normal;
 }
 
+.firmware-log-details {
+  display: grid;
+  gap: 4px;
+}
+
+.firmware-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.firmware-log-actions .secondary-action {
+  min-height: 32px;
+  padding: 6px 12px;
+}
+
 .device-diagnostics textarea {
   width: 100%;
   min-height: 72px;

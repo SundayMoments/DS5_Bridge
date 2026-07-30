@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -140,6 +140,7 @@ class MockHidDevice extends EventEmitter {
   audioDebugReports: number[][] = [];
   audioStatsReports: number[][] = [];
   audioStatusReports: number[][] = [];
+  firmwareLogReports: number[][] = [];
   deviceIdentity = deviceIdentityReport();
   shortcutEvents: number[] = [];
   shortcutReadError: Error | null = null;
@@ -202,6 +203,9 @@ class MockHidDevice extends EventEmitter {
     }
     if (reportId === REPORT_ID.DEVICE_IDENTITY) {
       return [...this.deviceIdentity];
+    }
+    if (reportId === REPORT_ID.FIRMWARE_LOG) {
+      return [...(this.firmwareLogReports.shift() ?? firmwareLogReport([], { enabled: false }))];
     }
     if (reportId === REPORT_ID.INPUT) {
       if (this.shortcutReadError) {
@@ -468,6 +472,27 @@ function audioStatusReport(overrides: Partial<{
     | (overrides.headsetAudioRoute ? 0x02 : 0x00);
   writeU32(report, 49, overrides.micUsbConcealCount ?? 0);
   writeU32(report, 53, overrides.micPlcCount ?? 0);
+  return report;
+}
+
+function firmwareLogReport(bytes: number[], options: {
+  enabled?: boolean;
+  sequence?: number;
+  nextSequence?: number;
+  droppedBytes?: number;
+} = {}): number[] {
+  const report = new Array<number>(REPORT_LENGTH).fill(0);
+  report[0] = REPORT_ID.FIRMWARE_LOG;
+  writeMagic(report);
+  writeVersion(report);
+  report[7] = options.enabled === false ? 0 : 0x01;
+  report[8] = Math.min(bytes.length, 43);
+  writeU32(report, 9, options.sequence ?? 0);
+  writeU32(report, 13, options.nextSequence ?? bytes.length);
+  writeU32(report, 17, options.droppedBytes ?? 0);
+  bytes.slice(0, 43).forEach((value, index) => {
+    report[21 + index] = value;
+  });
   return report;
 }
 
@@ -1531,6 +1556,58 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SET_PLAYER_LED_ENABLED);
     expect(command?.[9]).toBe(0);
     expect(snapshot.settings.playerLedEnabled).toBe(false);
+  });
+
+  it('writes retained UART firmware bytes into the selected folder', async () => {
+    const fixture = createService();
+    tempDirs.push(fixture.tempDir);
+    const logDirectory = path.join(fixture.tempDir, 'firmware-logs');
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    const bytes = [...Buffer.from('[FirmwareLog] ready\n')];
+    device.firmwareLogReports.push(
+      firmwareLogReport(bytes, {
+        sequence: 12,
+        nextSequence: 12 + bytes.length,
+        droppedBytes: 5
+      }),
+      firmwareLogReport([], {
+        sequence: 12 + bytes.length,
+        nextSequence: 12 + bytes.length,
+        droppedBytes: 5
+      })
+    );
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(fixture.service);
+    await fixture.service.setFirmwareLogDirectory(logDirectory);
+
+    const snapshot = fixture.service.getSnapshot();
+    expect(snapshot.settings.firmwareLogDirectory).toBe(path.resolve(logDirectory));
+    expect(snapshot.diagnostics.firmwareLogEnabled).toBe(true);
+    expect(snapshot.diagnostics.firmwareLogDroppedBytes).toBe(5);
+    expect(snapshot.diagnostics.firmwareLogPath).toMatch(/ds5-bridge-firmware-.+\.log$/);
+    expect(readFileSync(snapshot.diagnostics.firmwareLogPath!, 'utf8')).toBe('[FirmwareLog] ready\n');
+  });
+
+  it('does not create a file when firmware UART logging is compiled out', async () => {
+    const fixture = createService();
+    tempDirs.push(fixture.tempDir);
+    const logDirectory = path.join(fixture.tempDir, 'firmware-logs');
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    device.firmwareLogReports.push(firmwareLogReport([], { enabled: false }));
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(fixture.service);
+    await fixture.service.setFirmwareLogDirectory(logDirectory);
+
+    const snapshot = fixture.service.getSnapshot();
+    expect(snapshot.diagnostics.firmwareLogEnabled).toBe(false);
+    expect(snapshot.diagnostics.firmwareLogPath).toBeNull();
+    expect(existsSync(logDirectory)).toBe(false);
   });
 
   it('sends and stores automatic lightbar restore settings', async () => {

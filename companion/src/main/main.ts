@@ -908,6 +908,18 @@ async function selectPicoFirmwareUf2Path(): Promise<string | null> {
   return result.canceled ? null : result.filePaths[0] ?? null;
 }
 
+async function selectFirmwareLogDirectory(currentDirectory: string | null): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = {
+    title: 'Choose firmware log folder',
+    properties: ['openDirectory', 'createDirectory'],
+    ...(currentDirectory && fs.existsSync(currentDirectory) ? { defaultPath: currentDirectory } : {})
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
 function picoFirmwareOptions(service: BridgeService, includeNukeUf2 = false) {
   return {
     enterBootloader: () => service.mountPicoBootloader(),
@@ -1212,6 +1224,14 @@ function registerIpc(service: BridgeService): void {
     service.setChordAssignments(assignments)
   ));
   ipcMain.handle('bridge:repairWindowsDeviceCache', () => service.repairWindowsDeviceCache());
+  ipcMain.handle('bridge:selectFirmwareLogDirectory', async () => {
+    const currentDirectory = service.getSnapshot().settings.firmwareLogDirectory;
+    const selectedDirectory = await selectFirmwareLogDirectory(currentDirectory);
+    return selectedDirectory === null
+      ? service.getSnapshot()
+      : service.setFirmwareLogDirectory(selectedDirectory);
+  });
+  ipcMain.handle('bridge:clearFirmwareLogDirectory', () => service.setFirmwareLogDirectory(null));
   ipcMain.handle('bridge:getDiagnostics', () => service.getSnapshot().diagnostics);
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:toggleMaximize', () => {

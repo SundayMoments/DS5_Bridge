@@ -32,6 +32,7 @@ export interface CompanionSettings {
   uiThemePreset: UiThemePreset;
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
+  firmwareLogDirectory: string | null;
   hapticsEnabled: boolean;
   hapticsGainPercent: number;
   feedbackBoostEnabled: boolean;
@@ -134,6 +135,11 @@ export interface BridgeDiagnostics {
   lastPollAt: number | null;
   rawDevices: HidDeviceSummary[];
   deviceIdentity: CompanionDeviceIdentityPayload | null;
+  firmwareLogDirectory: string | null;
+  firmwareLogPath: string | null;
+  firmwareLogEnabled: boolean | null;
+  firmwareLogDroppedBytes: number;
+  firmwareLogLastError: string | null;
   audioDebugLogPath: string | null;
   audioDebugLogLines: string[];
   audioDebugDroppedCount: number;

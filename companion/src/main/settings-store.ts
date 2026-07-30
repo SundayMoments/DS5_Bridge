@@ -142,6 +142,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   uiThemePreset: 'dark',
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
+  firmwareLogDirectory: null,
   hapticsEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsEnabled,
   hapticsGainPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsGainPercent,
   feedbackBoostEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.feedbackBoostEnabled,
@@ -863,6 +864,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     showBatteryPercentTrayIcon: typeof value?.showBatteryPercentTrayIcon === 'boolean'
       ? value.showBatteryPercentTrayIcon
       : DEFAULT_SETTINGS.showBatteryPercentTrayIcon,
+    firmwareLogDirectory: typeof value?.firmwareLogDirectory === 'string' && value.firmwareLogDirectory.trim()
+      ? value.firmwareLogDirectory.trim()
+      : DEFAULT_SETTINGS.firmwareLogDirectory,
     hapticsEnabled: typeof value?.hapticsEnabled === 'boolean'
       ? value.hapticsEnabled
       : DEFAULT_SETTINGS.hapticsEnabled,
@@ -1047,8 +1051,10 @@ export class SettingsStore {
 
   restoreDefaults(): CompanionSettings {
     const controllerProfiles = restoreDefaultControllerProfile(this.settings.controllerProfiles);
+    const firmwareLogDirectory = this.settings.firmwareLogDirectory;
     this.settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
+      firmwareLogDirectory,
       selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
       controllerProfiles
     });
