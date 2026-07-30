@@ -2814,6 +2814,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
   const [startupVisible, setStartupVisible] = useState(true);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const [hapticsValue, setHapticsValue] = useState(100);
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
@@ -2928,6 +2929,7 @@ export function App() {
   const lightbarBrightnessEditingRef = useRef(false);
   const triggerEffectEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const bridgeRenameCancelledRef = useRef(false);
   const remappingLayoutRef = useRef<HTMLDivElement>(null);
   const remappingLeftSideRef = useRef<HTMLDivElement>(null);
   const remappingRightSideRef = useRef<HTMLDivElement>(null);
@@ -3923,6 +3925,19 @@ export function App() {
     : connected && controllerConnected
     ? batteryPercentLabel
     : '\u2014';
+  const bridgeDevices = snapshot?.bridgeDevices ?? null;
+  const bridgeSelectOptions: Array<[string, string]> = (bridgeDevices?.bridges ?? []).map((bridge, index) => [
+    `${bridge.name ?? `Bridge ${index + 1}`}${bridge.connected ? ' (active)' : ''}`,
+    bridge.path
+  ]);
+  const activeBridgeSelectValue = bridgeDevices?.bridges.find((bridge) => bridge.selected)?.path
+    ?? bridgeDevices?.bridges.find((bridge) => bridge.connected)?.path
+    ?? '';
+  const activeBridgeInfo = bridgeDevices?.bridges.find((bridge) => bridge.connected) ?? null;
+  const directControllers = bridgeDevices?.directControllers ?? [];
+  const showBridgeDevices = (bridgeDevices?.bridges.length ?? 0) > 1
+    || directControllers.length > 0
+    || Boolean(activeBridgeInfo?.uniqueId);
   const pollingRateLabel = POLLING_RATE_OPTIONS.find(([, mode]) => mode === snapshot?.settings.pollingRateMode)?.[0]
     .replace(' / Real-time', '')
     ?? '--';
@@ -6601,6 +6616,86 @@ export function App() {
               </div>
             </div>
           </div>
+          {showBridgeDevices && (
+            <>
+              <div className="sidebar-section-label">Devices</div>
+              <div className="bridge-device-census">
+                {bridgeSelectOptions.length === 1 && (
+                  <div className="bridge-single-name">{bridgeSelectOptions[0][0]}</div>
+                )}
+                {bridgeSelectOptions.length > 1 && (
+                  <CustomSelect
+                    value={activeBridgeSelectValue}
+                    options={bridgeSelectOptions}
+                    onChange={(devicePath) => {
+                      setBridgeRenameDraft(null);
+                      void runAction('bridge-select', () => window.bridge.selectBridge(String(devicePath)));
+                    }}
+                    ariaLabel="Managed bridge"
+                    className="bridge-device-select"
+                    disabled={pendingAction !== null}
+                  />
+                )}
+                {activeBridgeInfo?.uniqueId && bridgeRenameDraft === null && (
+                  <button
+                    type="button"
+                    className="bridge-rename-toggle"
+                    disabled={pendingAction !== null}
+                    onClick={() => {
+                      bridgeRenameCancelledRef.current = false;
+                      setBridgeRenameDraft({
+                        uniqueId: activeBridgeInfo.uniqueId!,
+                        value: activeBridgeInfo.name ?? ''
+                      });
+                    }}
+                  >
+                    <Pencil size={12} aria-hidden="true" />
+                    Rename this bridge
+                  </button>
+                )}
+                {activeBridgeInfo?.uniqueId && bridgeRenameDraft !== null && (
+                  <input
+                    className="bridge-rename-input"
+                    type="text"
+                    autoFocus
+                    maxLength={32}
+                    aria-label="Bridge name"
+                    placeholder="Bridge name"
+                    value={bridgeRenameDraft.value}
+                    onChange={(event) => setBridgeRenameDraft({
+                      ...bridgeRenameDraft,
+                      value: event.currentTarget.value
+                    })}
+                    onBlur={() => {
+                      const draft = bridgeRenameDraft;
+                      setBridgeRenameDraft(null);
+                      if (bridgeRenameCancelledRef.current) {
+                        bridgeRenameCancelledRef.current = false;
+                        return;
+                      }
+                      void runAction('bridge-rename', () => (
+                        window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)
+                      ));
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.currentTarget.blur();
+                      } else if (event.key === 'Escape') {
+                        bridgeRenameCancelledRef.current = true;
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                )}
+                {directControllers.map((controller) => (
+                  <div key={controller.path} className="bridge-direct-controller" title={controller.path}>
+                    <IconUsb size={13} aria-hidden="true" />
+                    <span>{(controller.product ?? 'DualSense').replace(' Wireless Controller', '')} — USB direct</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           <div className="sidebar-section-label">Controls</div>
           <div className="sidebar-controls">
             <div className="control-tabs" role="tablist" aria-label="Controls">

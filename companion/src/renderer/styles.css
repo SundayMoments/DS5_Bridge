@@ -1036,15 +1036,19 @@ button {
   min-height: 0;
   height: 100%;
   padding: 20px 16px 18px;
-  display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
-  align-content: start;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   border: 0;
   border-right: 1px solid var(--sidebar-border);
   border-radius: 0;
   background: var(--sidebar-bg);
   box-shadow: none;
+}
+
+.hero-card > .sidebar-actions {
+  margin-top: auto;
 }
 
 .hero-card::before {
@@ -8083,5 +8087,88 @@ input[type="color"]::-webkit-color-swatch {
 
 .quiet-state.active {
   color: var(--danger);
+}
+
+.bridge-device-census {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px 6px;
+}
+
+.bridge-device-select {
+  width: 100%;
+  font-size: 13px;
+}
+
+.bridge-device-select .custom-select-button,
+.bridge-device-select .custom-select-menu button {
+  font-size: 13px;
+}
+
+.bridge-direct-controller {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bridge-direct-controller svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.bridge-direct-controller span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bridge-rename-toggle {
+  align-self: flex-start;
+  min-height: 24px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+}
+
+.bridge-rename-toggle:hover:not(:disabled) {
+  color: var(--text-control);
+}
+
+.bridge-rename-input {
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  padding: 0 9px;
+  color: var(--text-control);
+  background: var(--surface-control);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.bridge-rename-input:focus {
+  border-color: var(--accent-border-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.bridge-single-name {
+  padding: 2px 4px;
+  color: var(--text-control);
+  font-size: 13px;
+  font-weight: 650;
 }
 

@@ -324,4 +324,14 @@ describe('renderer behavior guards', () => {
     expect(normalizeSource).toContain("case 'prtscn':");
     expect(normalizeSource).toContain("return 'Print Screen';");
   });
+
+  it('exposes bridge selection, stable naming, and direct USB controller status', () => {
+    expect(appSource).toContain('snapshot?.bridgeDevices ?? null');
+    expect(appSource).toContain("window.bridge.selectBridge(String(devicePath))");
+    expect(appSource).toContain('window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)');
+    expect(appSource).toContain('Rename this bridge');
+    expect(appSource).toContain('USB direct');
+    expect(stylesSource).toContain('.bridge-device-census');
+    expect(stylesSource).toContain('.hero-card > .sidebar-actions');
+  });
 });
