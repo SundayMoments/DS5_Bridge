@@ -376,4 +376,10 @@ describe('renderer behavior guards', () => {
   it('only reports a Trigger Lab override while adaptive triggers are globally enabled', () => {
     expect(appSource).toContain('{adaptiveTriggersEnabled && triggerLabAnyActive ? (');
   });
+
+  it('reapplies saved Trigger Lab effects after global triggers are toggled off and on', () => {
+    expect(appSource).toContain('if (!connected || !adaptiveTriggersEnabled)');
+    expect(appSource).toContain('triggerLabRestoreAppliedRef.current = false;');
+    expect(appSource).toContain('}, [adaptiveTriggersEnabled, connected]);');
+  });
 });

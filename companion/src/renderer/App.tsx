@@ -3743,10 +3743,10 @@ export function App() {
   const OutputIcon = headsetOutputDetected ? Headphones : Volume2;
 
   useEffect(() => {
-    if (!connected) {
+    if (!connected || !adaptiveTriggersEnabled) {
       triggerLabRestoreAppliedRef.current = false;
     }
-  }, [connected]);
+  }, [adaptiveTriggersEnabled, connected]);
 
   useEffect(() => {
     if (
