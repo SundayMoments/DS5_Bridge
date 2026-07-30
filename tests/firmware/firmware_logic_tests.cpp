@@ -1039,7 +1039,7 @@ void dualsense_decoder_extracts_normalized_controller_state() {
     EXPECT_EQ(state.dualsense_report[7], report[7]);
 }
 
-void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
+void dualsense_decoder_interprets_battery_power_states() {
     auto report = sample_dualsense_input_report();
     BridgeControllerState state{};
 
@@ -1050,7 +1050,7 @@ void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
 
     report[52] = 0x28;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 85);
+    EXPECT_EQ(state.battery_percent, 100);
     EXPECT_EQ(state.raw_power_state, 2);
 
     report[52] = 0x2a;
@@ -1060,8 +1060,28 @@ void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
 
     report[52] = 0x2f;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.battery_percent, 100);
     EXPECT_EQ(state.raw_power_state, 2);
+
+    report[52] = 0xa8;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 0x0a);
+
+    report[52] = 0xb8;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 0x0b);
+
+    report[52] = 0xf8;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 0x0f);
+
+    report[52] = 0x38;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 3);
 }
 
 void bootsel_gesture_policy_emits_click_double_triple_and_hold() {
@@ -1374,7 +1394,7 @@ std::vector<TestCase> tests{
     {"haptics test signal drives left and right actuators opposite phase", haptics_test_signal_drives_left_and_right_actuators_opposite_phase},
     {"haptics test signal allows carrier paced packets without wall clock gap", haptics_test_signal_allows_carrier_paced_packets_without_wall_clock_gap},
     {"dualsense decoder extracts normalized controller state", dualsense_decoder_extracts_normalized_controller_state},
-    {"dualsense decoder preserves valid battery bucket across power states", dualsense_decoder_preserves_valid_battery_bucket_across_power_states},
+    {"dualsense decoder interprets battery power states", dualsense_decoder_interprets_battery_power_states},
     {"bootsel gesture policy emits click double triple and hold", bootsel_gesture_policy_emits_click_double_triple_and_hold},
     {"dualsense persona preserves native report bytes", dualsense_persona_preserves_native_report_bytes},
     {"xusb360 persona maps standard gamepad fields", xusb360_persona_maps_standard_gamepad_fields},

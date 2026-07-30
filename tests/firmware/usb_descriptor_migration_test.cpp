@@ -1292,7 +1292,7 @@ void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path
         "void init_feature() {",
         "\n}\n"
     );
-    const auto edge_probe = init_feature.find("schedule_feature_prefetch(0x70, 64);");
+    const auto edge_probe = init_feature.find("schedule_feature_prefetch(0x20, 64);");
     const auto informational_probe = init_feature.find("schedule_feature_prefetch(0x09, 20);");
     const std::string control_data = extract_between(
         bt_cpp,
@@ -1303,8 +1303,11 @@ void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path
         edge_probe == std::string::npos
         || informational_probe == std::string::npos
         || edge_probe > informational_probe
-        || control_data.find("const bool edge_type_response =")
+        || control_data.find("const bool firmware_type_response =")
             == std::string::npos
+        || control_data.find("size > 23") == std::string::npos
+        || control_data.find("packet[23] == 0x44") == std::string::npos
+        || init_feature.find("schedule_feature_prefetch(0x70, 64);") != std::string::npos
         || control_data.find("controller_type == ControllerTypeDualSense")
             == std::string::npos
         || control_data.find(
@@ -1312,7 +1315,7 @@ void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path
         ) == std::string::npos
     ) {
         throw std::runtime_error(
-            "Initial feature pacing must prioritize Edge detection and accept a delayed authoritative reply"
+            "Initial feature pacing must prioritize firmware-report controller detection and accept a delayed authoritative reply"
         );
     }
 
@@ -1387,7 +1390,7 @@ void assert_dualsense_feature_startup_is_paced(std::filesystem::path const &root
         || bt_h.find("void bt_feature_prefetch_loop();") == std::string::npos
         || init_feature_block.find("schedule_feature_prefetch(0x09, 20);")
             == std::string::npos
-        || init_feature_block.find("schedule_feature_prefetch(0x70, 64);")
+        || init_feature_block.find("schedule_feature_prefetch(0x20, 64);")
             == std::string::npos
         || init_feature_block.find("get_feature_data(") != std::string::npos
         || prefetch_loop.find("get_feature_data(request.report_id, request.len)")
@@ -1802,16 +1805,17 @@ void assert_dualsense_battery_buckets_preserve_power_state(
 ) {
     const auto decoder = read_text(root / "src" / "dualsense_input_decoder.cpp");
     const auto companion = read_text(root / "src" / "companion.cpp");
-    constexpr auto midpoint_formula = "battery == 10 ? 100 : battery * 10 + 5";
+    const auto battery = read_text(root / "src" / "dualsense_battery_status.h");
 
     if (
-        decoder.find(midpoint_formula) == std::string::npos
-        || companion.find(midpoint_formula) == std::string::npos
-        || decoder.find("raw_power_state == 0x02") != std::string::npos
-        || companion.find("raw_power_state == 0x02") != std::string::npos
+        decoder.find("dualsense_battery::decode_status(report[52])") == std::string::npos
+        || companion.find("dualsense_battery::decode_status(report[52])") == std::string::npos
+        || battery.find("case kPowerFull:") == std::string::npos
+        || battery.find("reading.percent = 100;") == std::string::npos
+        || battery.find("kUnknownPercent = 0xff") == std::string::npos
     ) {
         throw std::runtime_error(
-            "DualSense battery buckets must map to midpoint percentages independently of charging or external-power state"
+            "DualSense battery decoding must centralize full, fault, and unknown power-state semantics"
         );
     }
 }

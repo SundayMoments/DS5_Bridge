@@ -3765,15 +3765,21 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                 bt_disconnect_with_intent(BtControllerDisconnectIntentIdleTimeout);
             }
         } else if (channel == hid_control_cid) {
-            const bool edge_type_response =
-                size > 1
+            const bool firmware_type_response =
+                size > 23
                 && packet[0] == 0xA3
-                && packet[1] == 0x70;
+                && packet[1] == 0x20;
+            const bool edge_type_response = firmware_type_response && packet[23] == 0x44;
             if (controller_type_check_pending) {
-                if (edge_type_response) {
-                    controller_type = ControllerTypeDualSenseEdge;
+                if (firmware_type_response) {
+                    controller_type = edge_type_response
+                        ? ControllerTypeDualSenseEdge
+                        : ControllerTypeDualSense;
                     controller_type_check_pending = false;
-                    DS5_LOG("[L2CAP] Connected controller detected as DualSense Edge\n");
+                    DS5_LOG(
+                        "[L2CAP] Connected controller detected as %s\n",
+                        edge_type_response ? "DualSense Edge" : "DualSense"
+                    );
                     usb_handle_controller_transport_ready();
                 } else if (size > 0 && packet[0] == 0x02) {
                     controller_type = ControllerTypeDualSense;
@@ -3786,7 +3792,7 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                 && controller_type == ControllerTypeDualSense
             ) {
                 // The initial USB persona intentionally remains base DualSense,
-                // but a delayed 0x70 reply must still upgrade Edge-specific
+                // but a delayed firmware report must still upgrade Edge-specific
                 // input handling after the fallback has already published.
                 controller_type = ControllerTypeDualSenseEdge;
                 DS5_LOG("[L2CAP] Late controller type response upgraded controller to DualSense Edge\n");
@@ -5154,9 +5160,8 @@ void init_feature() {
     controller_type = ControllerTypeUnknown;
     clear_feature_prefetch_queue();
     controller_type_check_pending = true;
-    schedule_feature_prefetch(0x70, 64);
-    schedule_feature_prefetch(0x09, 20);
     schedule_feature_prefetch(0x20, 64);
+    schedule_feature_prefetch(0x09, 20);
     schedule_feature_prefetch(0x22, 64);
     schedule_feature_prefetch(0x05, 41);
     feature_prefetch_next_us = time_us_32();

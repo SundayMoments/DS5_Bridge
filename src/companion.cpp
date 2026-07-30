@@ -9,6 +9,7 @@
 #include "controller_output_policy.h"
 #include "controller_output_submit.h"
 #include "dualsense_output.h"
+#include "dualsense_battery_status.h"
 #include "firmware_log.h"
 #include "host_input.h"
 #include "persona/host_persona.h"
@@ -1619,11 +1620,9 @@ void get_battery(uint8_t &battery_percent, uint8_t &raw_power_state) {
         return;
     }
 
-    const uint8_t battery = report[52] & 0x0F;
-    raw_power_state = (report[52] >> 4) & 0x0F;
-    if (battery <= 10) {
-        battery_percent = static_cast<uint8_t>(battery == 10 ? 100 : battery * 10 + 5);
-    }
+    const auto battery = ds5::dualsense_battery::decode_status(report[52]);
+    battery_percent = battery.percent;
+    raw_power_state = battery.raw_power_state;
 }
 
 uint16_t build_status(uint8_t *buffer, uint16_t reqlen) {
