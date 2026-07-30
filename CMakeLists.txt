@@ -118,6 +118,7 @@ add_custom_command(
 add_custom_target(opus_ram_relocate ALL DEPENDS ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp)
 add_dependencies(ds5-bridge opus_ram_relocate)
 
+target_compile_options(opus PRIVATE -O2)
 target_compile_options(wdl_resampler PRIVATE -O2 -fsigned-char -ffunction-sections)
 add_custom_command(TARGET wdl_resampler POST_BUILD
         COMMAND ${CMAKE_OBJCOPY}

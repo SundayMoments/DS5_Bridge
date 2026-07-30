@@ -1439,6 +1439,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             != std::string::npos
         || cmake.find(".text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset")
             == std::string::npos
+        || cmake.find("target_compile_options(opus PRIVATE -O2)") == std::string::npos
         || cmake.find("\"-DOBJDUMP=${CMAKE_OBJDUMP}\"") == std::string::npos
         || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 79120)")
             == std::string::npos
