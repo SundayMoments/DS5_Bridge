@@ -32,7 +32,7 @@ OutputSchedulerChoice __not_in_flash_func(output_scheduler_choose_interrupt_pack
     return OutputSchedulerChoice::None;
 }
 
-bool output_scheduler_classic_rumble_can_bypass_audio(
+bool __not_in_flash_func(output_scheduler_classic_rumble_can_bypass_audio)(
     bool audio_available,
     bool terminal_stop,
     uint8_t consecutive_stop_sends,

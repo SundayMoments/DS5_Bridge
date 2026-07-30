@@ -710,7 +710,7 @@ void audio_debug_note_hid_event(
 #endif
 }
 
-void audio_debug_note_bt_event(
+void __not_in_flash_func(audio_debug_note_bt_event)(
     uint8_t kind,
     uint32_t arg1,
     uint32_t arg2,

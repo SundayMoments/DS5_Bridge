@@ -34,6 +34,8 @@ set(required_sram_symbols
         "_ZL23note_output_packet_sentRK13output_packetm"
         "_ZL32select_next_output_packet_lockedR13output_packetm"
         "_Z40output_scheduler_choose_interrupt_packetRK21OutputSchedulerInputsRK21OutputSchedulerConfig"
+        "_Z48output_scheduler_classic_rumble_can_bypass_audiobbhh"
+        "_Z25audio_debug_note_bt_eventhmmmm"
         "_ZNSt6vectorIhSaIhEE13_M_assign_auxIPKhEEvT_S5_St20forward_iterator_tag.isra.0"
         "_Z37controller_packet_copy_audio_snapshotPhb"
         "_Z43controller_output_state_copy_audio_snapshotPhb"
