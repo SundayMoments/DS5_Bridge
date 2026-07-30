@@ -27,9 +27,9 @@ if (WIN32)
 else ()
     set(USERHOME $ENV{HOME})
 endif ()
-set(sdkVersion 2.2.0)
-set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-a4)
+set(sdkVersion 2.3.0)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -53,6 +53,12 @@ set(CYW43_PIO_CLOCK_DIV_VALUE 2 CACHE STRING "CYW43 PIO clock divider")
 include(pico_sdk_import.cmake)
 
 project(ds5-bridge C CXX ASM)
+
+# DS5 Bridge owns TinyUSB from the core-0 bare-metal loop and synchronizes all
+# cross-core traffic through its own queues. TinyUSB 0.21 defaults RP2 builds
+# to OPT_OS_PICO, which consumes additional exclusive critical sections and
+# changes the firmware's established concurrency model.
+set(TINYUSB_OPT_OS OPT_OS_NONE CACHE STRING "TinyUSB OS abstraction for DS5 Bridge firmware" FORCE)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()

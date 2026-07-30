@@ -4,7 +4,8 @@
 # Requires:
 #   - ARM toolchain (arm-none-eabi-gcc)
 #   - Ninja
-#   - A pico-sdk checkout pinned to 2.2.0 with TinyUSB checked out to 0.20.0.
+#   - A pico-sdk checkout pinned to 2.3.0 with TinyUSB checked out to
+#     2d56dc533e45e4e91b15e93fdab5e22e964f328d.
 #     If you don't already have one, see the README for setup. By default this
 #     script uses PICO_SDK_PATH from the environment.
 #
@@ -18,7 +19,7 @@ BUILD_DIR="build/waveshare"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [[ -z "${PICO_SDK_PATH:-}" ]]; then
-    echo "PICO_SDK_PATH is not set. Set it to a pico-sdk checkout pinned to 2.2.0+TinyUSB 0.20.0." >&2
+    echo "PICO_SDK_PATH is not set. Use pico-sdk 2.3.0 with TinyUSB 2d56dc533e45e4e91b15e93fdab5e22e964f328d." >&2
     exit 1
 fi
 

@@ -22,7 +22,7 @@ bool xusb360_arm_out(uint8_t rhport) {
     if (xusb_ep_out == 0) {
         return false;
     }
-    return usbd_edpt_xfer(rhport, xusb_ep_out, xusb_rx_buffer, sizeof(xusb_rx_buffer));
+    return usbd_edpt_xfer(rhport, xusb_ep_out, xusb_rx_buffer, sizeof(xusb_rx_buffer), false);
 }
 
 bool xusb360_send_neutral_report(uint8_t rhport) {
@@ -33,7 +33,13 @@ bool xusb360_send_neutral_report(uint8_t rhport) {
     std::memset(xusb_tx_buffer, 0, sizeof(xusb_tx_buffer));
     xusb_tx_buffer[0] = 0x00;
     xusb_tx_buffer[1] = kXusb360InputReportSize;
-    xusb_in_busy = usbd_edpt_xfer(rhport, xusb_ep_in, xusb_tx_buffer, kXusb360InputReportSize);
+    xusb_in_busy = usbd_edpt_xfer(
+        rhport,
+        xusb_ep_in,
+        xusb_tx_buffer,
+        kXusb360InputReportSize,
+        false
+    );
     return xusb_in_busy;
 }
 
@@ -167,7 +173,7 @@ bool xusb360_usb_send_report(uint8_t const *report, uint8_t len) {
 
     std::memset(xusb_tx_buffer, 0, sizeof(xusb_tx_buffer));
     std::memcpy(xusb_tx_buffer, report, len);
-    xusb_in_busy = usbd_edpt_xfer(xusb_rhport, xusb_ep_in, xusb_tx_buffer, len);
+    xusb_in_busy = usbd_edpt_xfer(xusb_rhport, xusb_ep_in, xusb_tx_buffer, len, false);
     return xusb_in_busy;
 }
 

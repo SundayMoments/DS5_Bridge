@@ -36,7 +36,13 @@ static bool host_bridge_arm_out(uint8_t rhport) {
     if (host_bridge_ep_out == 0) {
         return false;
     }
-    return usbd_edpt_xfer(rhport, host_bridge_ep_out, host_bridge_rx_buffer, sizeof(host_bridge_rx_buffer));
+    return usbd_edpt_xfer(
+        rhport,
+        host_bridge_ep_out,
+        host_bridge_rx_buffer,
+        sizeof(host_bridge_rx_buffer),
+        false
+    );
 }
 
 extern "C" uint16_t host_bridge_get_report(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {

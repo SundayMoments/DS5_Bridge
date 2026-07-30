@@ -9,13 +9,14 @@ Install these tools before building:
 
 - Git with submodule support.
 - CMake and Ninja.
-- Arm GNU toolchain for embedded builds, such as `gcc-arm-none-eabi`.
-- Raspberry Pi Pico SDK `2.2.0`.
+- Arm GNU Toolchain `15.2.Rel1` (`arm-none-eabi-gcc` `15.2.1`).
+- Raspberry Pi Pico SDK `2.3.0`.
 - Node.js `22`.
 - .NET SDK `9.0`.
 - Windows, for building and running the companion app.
 
-The firmware CI currently builds with Pico SDK `2.2.0` and TinyUSB `0.20.0`.
+The firmware CI currently builds with Pico SDK `2.3.0` and TinyUSB commit
+`2d56dc533e45e4e91b15e93fdab5e22e964f328d`.
 For the closest local match, use the same versions.
 
 For debug presets and runtime diagnostic flags, see `docs/diagnostics.md`.

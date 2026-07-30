@@ -12,11 +12,11 @@ on:
         type: string
 
 env:
-  PICO_SDK_REF: 2.2.0
-  TINYUSB_REF: 0.20.0
+  PICO_SDK_REF: 2.3.0
+  TINYUSB_REF: 2d56dc533e45e4e91b15e93fdab5e22e964f328d
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
-  ARM_TOOLCHAIN_VERSION: 14.2.rel1
-  ARM_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz
+  ARM_TOOLCHAIN_VERSION: 15.2.rel1
+  ARM_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz
   ARM_TOOLCHAIN_PATH: ${{ github.workspace }}/arm-toolchain
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
 
@@ -42,7 +42,7 @@ jobs:
 
       # The Ubuntu apt-packaged gcc-arm-none-eabi 13.2 (15:13.2.rel1-2)
       # produces Waveshare RP2350B-Plus-W binaries with audible audio static
-      # that ARM's official toolchains do not exhibit. Use ARM's 14.2.Rel1
+      # that ARM's official toolchains do not exhibit. Use ARM's 15.2.Rel1
       # tarball instead of the apt package, matching the CI build workflow.
       - name: Cache ARM toolchain
         id: cache-arm-toolchain
@@ -72,12 +72,13 @@ jobs:
           git clone --depth 1 --branch "$PICO_SDK_REF" https://github.com/raspberrypi/pico-sdk.git "$PICO_SDK_PATH"
           git -C "$PICO_SDK_PATH" submodule update --init --recursive
 
-      - name: Switch TinyUSB to configured tag
+      - name: Switch TinyUSB to configured revision
         run: |
-          if ! git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse -q --verify "refs/tags/$TINYUSB_REF" >/dev/null; then
-            git -C "$PICO_SDK_PATH/lib/tinyusb" fetch --depth 1 origin "refs/tags/$TINYUSB_REF:refs/tags/$TINYUSB_REF"
+          if ! git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse -q --verify "${TINYUSB_REF}^{commit}" >/dev/null; then
+            git -C "$PICO_SDK_PATH/lib/tinyusb" fetch --depth 1 origin "$TINYUSB_REF"
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
+          test "$(git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse HEAD)" = "$TINYUSB_REF"
 
       - name: Read firmware version
         shell: pwsh
@@ -139,6 +140,8 @@ jobs:
 
       - name: Set up Arm GNU Toolchain
         uses: carlosperate/arm-none-eabi-gcc-action@v1.12.3
+        with:
+          release: '15.2.Rel1'
 
       - name: Install firmware build dependencies
         shell: pwsh
@@ -153,15 +156,18 @@ jobs:
           git clone --depth 1 --branch "$env:PICO_SDK_REF" https://github.com/raspberrypi/pico-sdk.git "$env:PICO_SDK_PATH"
           git -C "$env:PICO_SDK_PATH" submodule update --init --recursive
 
-      - name: Switch TinyUSB to configured tag
+      - name: Switch TinyUSB to configured revision
         shell: pwsh
         run: |
           $tinyUsbPath = Join-Path $env:PICO_SDK_PATH 'lib/tinyusb'
-          $tagExists = -not [string]::IsNullOrWhiteSpace((git -C "$tinyUsbPath" tag --list "$env:TINYUSB_REF"))
-          if (-not $tagExists) {
-            git -C "$tinyUsbPath" fetch --depth 1 origin "refs/tags/${env:TINYUSB_REF}:refs/tags/${env:TINYUSB_REF}"
+          git -C "$tinyUsbPath" rev-parse -q --verify "$env:TINYUSB_REF^{commit}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            git -C "$tinyUsbPath" fetch --depth 1 origin "$env:TINYUSB_REF"
           }
           git -C "$tinyUsbPath" checkout --detach "$env:TINYUSB_REF"
+          if ((git -C "$tinyUsbPath" rev-parse HEAD).Trim() -ne $env:TINYUSB_REF) {
+            throw 'TinyUSB revision mismatch.'
+          }
 
       - name: Install companion dependencies
         working-directory: companion
