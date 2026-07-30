@@ -9,6 +9,7 @@
 
 #include "debug_config.h"
 #include "hci_cmd.h"
+#include "pico/platform/sections.h"
 
 #if DS5_DEBUG_LOGS_ENABLED
 #include "firmware_log.h"
@@ -115,7 +116,8 @@ inline constexpr auto make_crc32_table() {
     return table;
 }
 
-inline constexpr auto crc32_lookup_table = make_crc32_table();
+inline constexpr std::array<uint32_t, 256> __not_in_flash("crc32_lookup_table")
+crc32_lookup_table = make_crc32_table();
 
 inline uint32_t crc32_seeded(const uint8_t *data, size_t size, const uint32_t seed) {
     uint32_t crc = ~seed;
