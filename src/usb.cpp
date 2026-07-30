@@ -39,6 +39,7 @@ static volatile bool usb_host_suspended = false;
 static volatile uint32_t usb_suspend_at_us = 0;
 static volatile uint32_t usb_reconnect_grace_until_us = 0;
 static volatile bool usb_remote_wakeup_armed = false;
+static volatile bool usb_remote_wakeup_pending = false;
 static volatile bool usb_wake_on_connect = true;
 
 extern "C" {
@@ -225,13 +226,18 @@ bool usb_line_streaming_active() {
 }
 
 void usb_wake_host_if_suspended() {
+    // This function is called from BTstack callbacks. Publish the request here,
+    // then let usb_pm_poll issue it from the normal TinyUSB task context.
     if (usb_bus_suspended() && usb_wake_on_connect && usb_remote_wakeup_armed) {
-        (void)tud_remote_wakeup();
+        usb_remote_wakeup_pending = true;
     }
 }
 
 void usb_set_wake_on_connect(bool enabled) {
     usb_wake_on_connect = enabled;
+    if (!enabled) {
+        usb_remote_wakeup_pending = false;
+    }
 }
 
 bool usb_wake_on_connect_enabled() {
@@ -268,6 +274,7 @@ extern "C" void tud_mount_cb(void) {
     usb_mounted = true;
     usb_host_suspended = false;
     usb_remote_wakeup_armed = false;
+    usb_remote_wakeup_pending = false;
     usb_suspend_at_us = 0;
     usb_reconnect_grace_until_us = 0;
     host_input_note_usb_mounted();
@@ -276,6 +283,7 @@ extern "C" void tud_mount_cb(void) {
 extern "C" void tud_umount_cb(void) {
     usb_mounted = false;
     usb_remote_wakeup_armed = false;
+    usb_remote_wakeup_pending = false;
     usb_speaker_streaming = false;
     usb_mic_streaming = false;
     usb_line_streaming = false;
@@ -325,6 +333,7 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
 extern "C" void tud_resume_cb(void) {
     usb_host_suspended = false;
     usb_remote_wakeup_armed = false;
+    usb_remote_wakeup_pending = false;
     usb_suspend_at_us = 0;
 }
 
@@ -341,6 +350,18 @@ void usb_pm_poll() {
     ) {
         (void)bt_power_off_controller();
         usb_suspend_at_us = 0;
+    }
+
+    if (usb_remote_wakeup_pending) {
+        usb_remote_wakeup_pending = false;
+        if (
+            usb_wake_on_connect
+            && usb_remote_wakeup_armed
+            && usb_bus_suspended()
+            && tud_inited()
+        ) {
+            (void)tud_remote_wakeup();
+        }
     }
 
     if (usb_bus_suspended()) {

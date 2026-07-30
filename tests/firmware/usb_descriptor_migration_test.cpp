@@ -569,6 +569,11 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
         "extern \"C\" void tud_suspend_cb(bool remote_wakeup_en) {",
         "\n}\n\nextern \"C\" void tud_resume_cb(void) {"
     );
+    const std::string pm_poll = extract_between(
+        usb_cpp,
+        "void usb_pm_poll() {",
+        "\n}\n\nstatic UsbAudioVolumeRange"
+    );
     const std::string ready = extract_between(
         usb_cpp,
         "void usb_handle_controller_transport_ready() {",
@@ -576,7 +581,14 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
     );
     if (
         wake.find("usb_bus_suspended() && usb_wake_on_connect && usb_remote_wakeup_armed") == std::string::npos
-        || wake.find("tud_remote_wakeup()") == std::string::npos
+        || wake.find("usb_remote_wakeup_pending = true;") == std::string::npos
+        || wake.find("tud_remote_wakeup()") != std::string::npos
+        || pm_poll.find("if (usb_remote_wakeup_pending)") == std::string::npos
+        || pm_poll.find("usb_wake_on_connect") == std::string::npos
+        || pm_poll.find("usb_remote_wakeup_armed") == std::string::npos
+        || pm_poll.find("usb_bus_suspended()") == std::string::npos
+        || pm_poll.find("(void)tud_remote_wakeup();") == std::string::npos
+        || pm_poll.find("if (usb_bus_suspended())") < pm_poll.find("(void)tud_remote_wakeup();")
         || suspend.find("usb_remote_wakeup_armed = remote_wakeup_en;") == std::string::npos
         || ready.find("usb_wake_host_if_suspended();") == std::string::npos
         || bt_cpp.find("usb_wake_host_if_suspended();") == std::string::npos
