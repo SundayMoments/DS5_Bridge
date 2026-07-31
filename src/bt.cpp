@@ -88,8 +88,6 @@
 #define DS_TRIGGER_TARGET_RIGHT 2
 #define AUDIO_SEND_QUEUE_MAX_DEPTH 4
 #define AUDIO_INTERRUPT_PACKET_MAX_SIZE 548
-#define AUDIO_STREAM_EXPECTED_INTERVAL_US 21333u
-#define AUDIO_STREAM_DEADLINE_GUARD_START_US (AUDIO_STREAM_EXPECTED_INTERVAL_US - 3333u)
 #define AUDIO_STREAM_IDLE_US 35000u
 #define AUDIO_STREAM_QUEUE_LATE_US 12000u
 #define AUDIO_STREAM_GAP_LATE_US 25000u
@@ -2721,36 +2719,11 @@ void bt_output_retry_loop() {
     const uint32_t now = time_us_32();
     critical_section_enter_blocking(&queue_lock);
     const bool audio_queued = !audio_queue.empty();
-    const bool audio_deadline_guard = output_scheduler_audio_deadline_guard_active(
-        speaker_output_enabled,
-        audio_queued,
-        last_audio_0x36_send_us,
-        now,
-        AUDIO_STREAM_DEADLINE_GUARD_START_US,
-        AUDIO_STREAM_IDLE_US
-    );
-    const bool audio_reserved = audio_queued || audio_deadline_guard;
     const bool urgent_ready = !urgent_queue.empty()
         && bt_time_reached(now, urgent_queue.front().ready_at_us);
-    const auto urgent_delivery_kind = !urgent_queue.empty()
-        ? classic_rumble_delivery_kind(urgent_queue.front().reason)
-        : ds5::classic_rumble::DeliveryKind::Other;
-    const bool urgent_can_send = urgent_ready
-        && (
-            (
-                !ds5::classic_rumble::is_classic_rumble(urgent_delivery_kind)
-                && !audio_reserved
-            )
-            || output_scheduler_classic_rumble_can_bypass_audio(
-                audio_reserved,
-                ds5::classic_rumble::is_terminal_stop(urgent_delivery_kind),
-                consecutive_classic_rumble_stop_sends,
-                consecutive_non_audio_sends
-            )
-        );
     retry_ready = audio_queued
-        || urgent_can_send
-        || (state_pending && !audio_reserved);
+        || urgent_ready
+        || (state_pending && urgent_queue.empty());
     critical_section_exit(&queue_lock);
     request_can_send_if_needed(retry_ready);
 }
@@ -3641,43 +3614,24 @@ static __attribute__((noinline, noclone, optimize("O2"))) bool __not_in_flash_fu
     const bool urgent_ready = urgent_queued
         && bt_time_reached(now, urgent_queue.front().ready_at_us);
     const bool audio_queued = !audio_queue.empty();
-    const bool audio_deadline_guard = output_scheduler_audio_deadline_guard_active(
-        speaker_output_enabled,
+    const bool urgent_precedes_audio = output_scheduler_fifo_prefers_urgent(
+        urgent_ready,
+        urgent_queued ? urgent_queue.front().enqueue_time_us : 0,
         audio_queued,
-        last_audio_0x36_send_us,
-        now,
-        AUDIO_STREAM_DEADLINE_GUARD_START_US,
-        AUDIO_STREAM_IDLE_US
+        audio_queued ? audio_queue.front().enqueue_time_us : 0
     );
-    const bool audio_reserved = audio_queued || audio_deadline_guard;
-    const auto urgent_delivery_kind = urgent_queued
-        ? classic_rumble_delivery_kind(urgent_queue.front().reason)
-        : ds5::classic_rumble::DeliveryKind::Other;
 
     uint8_t trace_critical_depth = 0;
     uint8_t trace_audio_depth = 0;
     uint8_t trace_route_flags = 0;
     output_trace_queue_details_locked(trace_critical_depth, trace_audio_depth, trace_route_flags);
 
-    if (
-        urgent_ready
-        && (
-            (
-                !ds5::classic_rumble::is_classic_rumble(urgent_delivery_kind)
-                && !audio_reserved
-            )
-            || output_scheduler_classic_rumble_can_bypass_audio(
-                audio_reserved,
-                ds5::classic_rumble::is_terminal_stop(urgent_delivery_kind),
-                consecutive_classic_rumble_stop_sends,
-                consecutive_non_audio_sends
-            )
-        )
-    ) {
+    if (urgent_precedes_audio) {
+        // Match Awalol/DS5Dongle's shared FIFO: host 0x31 and audio 0x39
+        // reports drain in arrival order. Retry readiness still prevents a
+        // delayed urgent head from blocking newer audio indefinitely.
         packet = std::move(urgent_queue.front());
         urgent_queue.pop_front();
-    } else if (audio_deadline_guard && !audio_queued) {
-        return false;
     } else {
         const bool audio_available = audio_queued;
         const uint32_t state_age_us = state_pending
@@ -5190,9 +5144,8 @@ bool bt_write_classified_output(uint8_t *data, uint16_t len) {
     );
 #endif
     // Preserve every complete host SetStateData report as a standalone 0x31,
-    // including the full active-rumble envelope. A due batched 0x39 audio
-    // report owns its deadline; every gap between those 21.3 ms carriers
-    // remains available to this full-rate host FIFO.
+    // including the full active-rumble envelope. Batched 0x39 audio and host
+    // reports share arrival-ordered FIFO scheduling.
     const bool audio_protected = speaker_output_enabled && audio_output_route_protected();
     const bool classic_rumble_transition = output_report_is_classic_rumble_transition(data, len);
     const bool enqueued = enqueue_urgent_output(

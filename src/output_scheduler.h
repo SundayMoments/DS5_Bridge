@@ -28,22 +28,17 @@ OutputSchedulerChoice output_scheduler_choose_interrupt_packet(
     OutputSchedulerConfig const &config
 );
 
-bool output_scheduler_classic_rumble_can_bypass_audio(
+// Awalol/DS5Dongle-style ordering for the shared outgoing interrupt stream.
+// When both lanes are ready, the report that entered the firmware first wins.
+bool output_scheduler_fifo_prefers_urgent(
+    bool urgent_ready,
+    uint32_t urgent_enqueue_time_us,
     bool audio_available,
-    bool terminal_stop,
-    uint8_t consecutive_stop_sends,
-    uint8_t consecutive_non_audio_sends
+    uint32_t audio_enqueue_time_us
 );
 
-// Reserve the final part of the expected audio period for the next batched
-// carrier. The reservation expires if audio has actually gone idle.
-bool output_scheduler_audio_deadline_guard_active(
-    bool speaker_enabled,
-    bool audio_queued,
-    uint32_t last_audio_send_us,
-    uint32_t now_us,
-    uint32_t guard_start_us,
-    uint32_t idle_us
-);
+// Wrap-safe ordering for short-lived 32-bit microsecond timestamps.
+// True when timestamp was captured at or before reference.
+bool output_scheduler_timestamp_at_or_before(uint32_t timestamp, uint32_t reference);
 
 #endif // DS5_BRIDGE_OUTPUT_SCHEDULER_H

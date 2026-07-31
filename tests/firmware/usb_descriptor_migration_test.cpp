@@ -1566,7 +1566,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             "_Z25host_persona_encode_input15HostPersonaModeRK21BridgeControllerStateR22HostPersonaInputReport"
         ) == std::string::npos
         || verify_cmake.find("_Z20audio_mic_add_packetPKht") == std::string::npos
-        || verify_cmake.find("_Z44output_scheduler_audio_deadline_guard_activebbmmmm")
+        || verify_cmake.find("_Z36output_scheduler_fifo_prefers_urgentbmbm")
             == std::string::npos
         || verify_cmake.find("_ZL22process_mic_usb_outputv") == std::string::npos
         || verify_cmake.find("_ZL27write_mic_usb_pending_frameR18mic_decode_elementRtS1_")
@@ -1819,13 +1819,13 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
         || retry.find("requeue_failed_front") == std::string::npos
         || delivery_policy.find("DeliveryKind::ManagedStop") == std::string::npos
         || delivery_policy.find("return is_terminal_stop(kind);") == std::string::npos
-        || scheduler_cpp.find("output_scheduler_classic_rumble_can_bypass_audio")
+        || scheduler_cpp.find("output_scheduler_fifo_prefers_urgent")
             == std::string::npos
         || bt_h.find("void bt_output_retry_loop();") == std::string::npos
         || main_cpp.find("bt_output_retry_loop();") == std::string::npos
     ) {
         throw std::runtime_error(
-            "Managed rumble delivery must coalesce stale active updates while keeping STOP bounded, retryable, and fair to native audio"
+            "Managed rumble delivery must coalesce stale active updates while keeping STOP bounded, retryable, and ordered with native audio"
         );
     }
 
@@ -1848,21 +1848,20 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
             == std::string::npos
         || select_output.find("state_age_us")
             == std::string::npos
-        || scheduler_cpp.find("output_scheduler_audio_deadline_guard_active")
+        || scheduler_cpp.find("output_scheduler_fifo_prefers_urgent")
             == std::string::npos
         || scheduler_cpp.find("const bool state_starved")
             != std::string::npos
-        || bt_cpp.find("AUDIO_STREAM_EXPECTED_INTERVAL_US 21333u")
+        || select_output.find("urgent_precedes_audio")
             == std::string::npos
-        || select_output.find("audio_deadline_guard")
-            == std::string::npos
+        || select_output.find("audio_deadline_guard") != std::string::npos
         || bt_cpp.find("state_send_blocked_by_audio_locked")
             != std::string::npos
         || enqueue_state.find("request_can_send_if_needed(true);")
             == std::string::npos
     ) {
         throw std::runtime_error(
-            "Batched audio must own its deadline while state and full-rate rumble use the intervening Bluetooth opportunities"
+            "Batched audio and full-rate rumble must share arrival-ordered Bluetooth scheduling"
         );
     }
 }

@@ -24,30 +24,24 @@ OutputSchedulerChoice __not_in_flash_func(output_scheduler_choose_interrupt_pack
     return OutputSchedulerChoice::None;
 }
 
-bool __not_in_flash_func(output_scheduler_classic_rumble_can_bypass_audio)(
+bool __not_in_flash_func(output_scheduler_fifo_prefers_urgent)(
+    bool urgent_ready,
+    uint32_t urgent_enqueue_time_us,
     bool audio_available,
-    bool terminal_stop,
-    uint8_t consecutive_stop_sends,
-    uint8_t consecutive_non_audio_sends
+    uint32_t audio_enqueue_time_us
 ) {
-    (void)consecutive_non_audio_sends;
+    if (!urgent_ready) {
+        return false;
+    }
     if (!audio_available) {
         return true;
     }
-    return terminal_stop && consecutive_stop_sends == 0;
+    return output_scheduler_timestamp_at_or_before(
+        urgent_enqueue_time_us,
+        audio_enqueue_time_us
+    );
 }
 
-bool __not_in_flash_func(output_scheduler_audio_deadline_guard_active)(
-    bool speaker_enabled,
-    bool audio_queued,
-    uint32_t last_audio_send_us,
-    uint32_t now_us,
-    uint32_t guard_start_us,
-    uint32_t idle_us
-) {
-    if (!speaker_enabled || audio_queued || last_audio_send_us == 0) {
-        return false;
-    }
-    const uint32_t elapsed_us = now_us - last_audio_send_us;
-    return elapsed_us >= guard_start_us && elapsed_us < idle_us;
+bool output_scheduler_timestamp_at_or_before(uint32_t timestamp, uint32_t reference) {
+    return static_cast<int32_t>(timestamp - reference) <= 0;
 }
