@@ -543,7 +543,7 @@ static void audio_debug_increment_u32(uint32_t &value) {
 }
 
 static void audio_stats_note_usb_read(uint32_t now) {
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     if (!audio_debug_cs_ready) {
         last_usb_audio_read_us = now;
         return;
@@ -564,12 +564,13 @@ static void audio_stats_note_usb_read(uint32_t now) {
 }
 
 static void audio_stats_note_opus_encode(uint32_t encode_us) {
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     if (!audio_debug_cs_ready) {
         return;
     }
     critical_section_enter_blocking(&audio_debug_cs);
     audio_debug_update_max_u32(audio_stats.opus_encode_max_us, encode_us);
+    audio_debug_increment_u32(audio_stats.opus_encode_count);
     if (encode_us > OPUS_ENCODE_BUDGET_US) {
         audio_debug_increment_u32(audio_stats.opus_encode_over_budget_count);
     }
@@ -580,7 +581,7 @@ static void audio_stats_note_opus_encode(uint32_t encode_us) {
 }
 
 static void audio_stats_note_generation_drop() {
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     if (!audio_debug_cs_ready) {
         return;
     }
@@ -632,7 +633,7 @@ static void audio_debug_log_impl(
 #endif
 
 static void audio_debug_reset_stats() {
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     if (audio_debug_cs_ready) {
         critical_section_enter_blocking(&audio_debug_cs);
         memset(&audio_stats, 0, sizeof(audio_stats));
@@ -1765,7 +1766,7 @@ void audio_debug_get_stats(audio_debug_stats *stats) {
         return;
     }
     memset(stats, 0, sizeof(*stats));
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     if (!audio_debug_cs_ready) {
         return;
     }
@@ -2245,7 +2246,7 @@ void __not_in_flash_func(audio_loop)() {
 }
 
 bool audio_init() {
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     critical_section_init(&audio_debug_cs);
     audio_debug_cs_ready = true;
 #endif
@@ -2511,11 +2512,11 @@ static bool __not_in_flash_func(core1_process_speaker)() {
     static WDL_ResampleSample out_buf[480 * 2];
     resampler_audio.ResampleOut(out_buf,nframes,480,2);
     static uint8_t encoded[SPEAKER_OPUS_SIZE];
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     const uint32_t encode_start_us = time_us_32();
 #endif
     const opus_int32 encoded_bytes = opus_encode_float(encoder,out_buf,480,encoded,sizeof(encoded));
-#if DS5_AUDIO_DEBUG_ENABLED
+#if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     audio_stats_note_opus_encode(static_cast<uint32_t>(time_us_32() - encode_start_us));
 #endif
     if (encoded_bytes < 0) {

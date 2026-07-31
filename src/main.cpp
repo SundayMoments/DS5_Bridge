@@ -51,6 +51,120 @@ enum HidDebugKind : uint8_t {
 static uint32_t last_input_debug_us = 0;
 static uint8_t input_debug_burst_remaining = 0;
 
+#if DS5_DEBUG_LOGS_ENABLED
+static constexpr uint32_t AUDIO_TRANSPORT_UART_LOG_INTERVAL_US = 10'000'000u;
+static constexpr uint32_t AUDIO_TRANSPORT_UART_PROBE_INTERVAL_US = 250'000u;
+static constexpr uint32_t AUDIO_TRANSPORT_UART_INITIAL_DELAY_US = 2'500'000u;
+
+struct AudioTransportUartSnapshot {
+    audio_debug_stats audio{};
+    bt_output_debug_stats bt{};
+};
+
+static AudioTransportUartSnapshot audio_transport_uart_previous{};
+static uint32_t audio_transport_uart_next_log_us = 0;
+static uint32_t audio_transport_uart_next_probe_us = 0;
+static bool audio_transport_uart_armed = false;
+
+static uint32_t audio_transport_uart_counter_delta(uint32_t current, uint32_t previous) {
+    return current - previous;
+}
+
+static void audio_transport_uart_capture(AudioTransportUartSnapshot &snapshot) {
+    audio_debug_get_stats(&snapshot.audio);
+    bt_get_output_debug_stats(&snapshot.bt);
+}
+
+static void audio_transport_uart_log_if_due(uint32_t now) {
+    if (
+        audio_transport_uart_next_probe_us != 0
+        && static_cast<int32_t>(now - audio_transport_uart_next_probe_us) < 0
+    ) {
+        return;
+    }
+    audio_transport_uart_next_probe_us = now + AUDIO_TRANSPORT_UART_PROBE_INTERVAL_US;
+
+    if (!audio_recent()) {
+        audio_transport_uart_armed = false;
+        audio_transport_uart_next_log_us = 0;
+        return;
+    }
+
+    if (!audio_transport_uart_armed) {
+        audio_transport_uart_capture(audio_transport_uart_previous);
+        audio_transport_uart_next_log_us = now + AUDIO_TRANSPORT_UART_INITIAL_DELAY_US;
+        audio_transport_uart_armed = true;
+        return;
+    }
+
+    if (static_cast<int32_t>(now - audio_transport_uart_next_log_us) < 0) {
+        return;
+    }
+
+    AudioTransportUartSnapshot current{};
+    audio_transport_uart_capture(current);
+    DS5_LOG(
+        "[AUDUSB] readGap=%lu readLate=%lu genDrop=%lu\n",
+        static_cast<unsigned long>(current.audio.usb_audio_gap_max_us),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.usb_audio_gap_over_1500_count,
+            audio_transport_uart_previous.audio.usb_audio_gap_over_1500_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.audio_generation_drop_count,
+            audio_transport_uart_previous.audio.audio_generation_drop_count
+        ))
+    );
+    DS5_LOG(
+        "[AUDBT] report=0x39 encMax=%lu encLate=%lu enc=%lu ageMax=%lu sendGap=%lu late=%lu drop=%lu qMax=%lu nonAudio=%lu fail=%lu enq=%lu sent=%lu stateRx=%lu stateSent=%lu\n",
+        static_cast<unsigned long>(current.audio.opus_encode_max_us),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.opus_encode_over_budget_count,
+            audio_transport_uart_previous.audio.opus_encode_over_budget_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.opus_encode_count,
+            audio_transport_uart_previous.audio.opus_encode_count
+        )),
+        static_cast<unsigned long>(current.bt.audio_0x36_enqueue_to_send_max_us),
+        static_cast<unsigned long>(current.bt.audio_0x36_send_gap_max_us),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_late_count_over_12000_us,
+            audio_transport_uart_previous.bt.audio_0x36_late_count_over_12000_us
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_drop_oldest_count,
+            audio_transport_uart_previous.bt.audio_0x36_drop_oldest_count
+        )),
+        static_cast<unsigned long>(current.bt.bt_audio_queue_depth_max),
+        static_cast<unsigned long>(current.bt.non_audio_reports_between_audio_max),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_l2cap_send_fail_count,
+            audio_transport_uart_previous.bt.audio_l2cap_send_fail_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_enqueued_count,
+            audio_transport_uart_previous.bt.audio_0x36_enqueued_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_sent_count,
+            audio_transport_uart_previous.bt.audio_0x36_sent_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.normal_0x31_rx_count,
+            audio_transport_uart_previous.bt.normal_0x31_rx_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.normal_0x31_sent_count,
+            audio_transport_uart_previous.bt.normal_0x31_sent_count
+        ))
+    );
+
+    audio_transport_uart_previous = current;
+    audio_transport_uart_next_log_us = now + AUDIO_TRANSPORT_UART_LOG_INTERVAL_US;
+}
+#endif
+
 #define RUN_MAIN_PHASE(phase_id, block) \
     do { \
         watchdog_telemetry_note_phase(phase_id); \
@@ -677,5 +791,8 @@ int main() {
                 interrupt_loop();
             }
         );
+#if DS5_DEBUG_LOGS_ENABLED
+        audio_transport_uart_log_if_due(time_us_32());
+#endif
     }
 }

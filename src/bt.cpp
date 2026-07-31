@@ -330,6 +330,7 @@ struct output_scheduler_counters {
     uint32_t audio_drop_oldest_count;
     uint32_t audio_0x36_sent_count;
     uint32_t audio_0x36_enqueued_count;
+    uint32_t audio_l2cap_send_fail_count;
     uint32_t normal_0x31_rx_count;
     uint32_t normal_0x31_sent_count;
     uint32_t non_audio_reports_between_audio_max;
@@ -3912,6 +3913,13 @@ static __attribute__((optimize("O2"))) void __not_in_flash_func(handle_l2cap_can
     );
     if (status != 0) {
         DS5_LOG("[L2CAP] Interrupt Error, Status: 0x%02X\n", status);
+        if (interrupt_send_packet.packet_class == OutputPacketAudio) {
+            critical_section_enter_blocking(&queue_lock);
+            if (output_counters.audio_l2cap_send_fail_count != 0xffffffffu) {
+                output_counters.audio_l2cap_send_fail_count++;
+            }
+            critical_section_exit(&queue_lock);
+        }
         if (requeue_managed_rumble_on_send_failure(std::move(interrupt_send_packet), now)) {
             // The failed transition remains at the head until its bounded
             // backoff expires. Audio may continue meanwhile.
@@ -5319,6 +5327,9 @@ void bt_get_output_debug_stats(bt_output_debug_stats *stats) {
     stats->bt_audio_queue_depth_max = output_counters.audio_queue_max_depth;
     stats->audio_0x36_enqueued_count = output_counters.audio_0x36_enqueued_count;
     stats->audio_0x36_sent_count = output_counters.audio_0x36_sent_count;
+    stats->audio_l2cap_send_fail_count = output_counters.audio_l2cap_send_fail_count;
+    stats->normal_0x31_rx_count = output_counters.normal_0x31_rx_count;
+    stats->normal_0x31_sent_count = output_counters.normal_0x31_sent_count;
     critical_section_exit(&queue_lock);
 }
 

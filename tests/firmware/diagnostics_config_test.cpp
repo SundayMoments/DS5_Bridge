@@ -64,6 +64,10 @@ int main() {
             read_text(root / "src" / "companion.cpp");
         const std::string watchdog_telemetry =
             read_text(root / "src" / "watchdog_telemetry.cpp");
+        const std::string debug_config =
+            read_text(root / "src" / "debug_config.h");
+        const std::string audio = read_text(root / "src" / "audio.cpp");
+        const std::string bt = read_text(root / "src" / "bt.cpp");
 
         require_contains(
             cmake,
@@ -259,6 +263,31 @@ int main() {
             watchdog_telemetry,
             "kScratchSignature | scratch_crc(word1, word2, word3);",
             "Watchdog telemetry must publish a checksummed commit marker last"
+        );
+        require_contains(
+            debug_config,
+            "#if DS5_AUDIO_DEBUG_ENABLED || DS5_DEBUG_LOGS_ENABLED",
+            "UART builds must collect transport counters without companion audio reports"
+        );
+        require_contains(
+            audio,
+            "audio_debug_increment_u32(audio_stats.opus_encode_count);",
+            "Audio diagnostics must count every encoded Opus frame"
+        );
+        require_contains(
+            bt,
+            "output_counters.audio_l2cap_send_fail_count++",
+            "Bluetooth diagnostics must count failed audio submissions"
+        );
+        require_contains(
+            main,
+            "report=0x39 encMax=%lu",
+            "UART diagnostics must identify the batched DualSense audio report"
+        );
+        require_contains(
+            main,
+            "stateRx=%lu stateSent=%lu",
+            "UART diagnostics must expose complete host-output throughput"
         );
 
         std::cout << "Diagnostics configuration checks passed.\n";
