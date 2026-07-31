@@ -89,7 +89,7 @@ bool controller_output_policy_render_classic_rumble_payload(
     payload[kValidFlag0Offset] = static_cast<uint8_t>(
         (payload[kValidFlag0Offset] & static_cast<uint8_t>(~(
             kFlag0CompatibleVibration | kFlag0HapticsSelect
-        ))) | kFlag0HapticsSelect
+        )))
     );
     if (len > kValidFlag2Offset) {
         payload[kValidFlag2Offset] = static_cast<uint8_t>(
@@ -98,6 +98,23 @@ bool controller_output_policy_render_classic_rumble_payload(
             ))
         );
     }
+
+    payload[kMotorRightOffset] = right;
+    payload[kMotorLeftOffset] = left;
+    if ((right | left) == 0) {
+        // HAPTICS_SELECT with zero motors stops classic rumble but leaves the
+        // controller in rumble-emulation mode, which silences later actuator
+        // audio. COMPATIBLE_VIBRATION without HAPTICS_SELECT is the DualSense
+        // transition that stops rumble and returns ownership to audio haptics.
+        payload[kValidFlag0Offset] = static_cast<uint8_t>(
+            payload[kValidFlag0Offset] | kFlag0CompatibleVibration
+        );
+        return true;
+    }
+
+    payload[kValidFlag0Offset] = static_cast<uint8_t>(
+        payload[kValidFlag0Offset] | kFlag0HapticsSelect
+    );
 
     if (classic_rumble_v1_enabled) {
         payload[kValidFlag0Offset] = static_cast<uint8_t>(
@@ -110,8 +127,6 @@ bool controller_output_policy_render_classic_rumble_payload(
         );
     }
 
-    payload[kMotorRightOffset] = right;
-    payload[kMotorLeftOffset] = left;
     return true;
 }
 
