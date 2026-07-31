@@ -37,7 +37,7 @@ static void __no_inline_not_in_flash_func(flash_enable_xip_via_boot2)(void) {
     flash_enter_cmd_xip_func();
 }
 
-void __no_inline_not_in_flash_func(flash_do_cmd)(const uint8_t *txbuf, uint8_t *rxbuf, size_t count) {
+void __no_inline_not_in_flash_func(flash_nuke_do_cmd)(const uint8_t *txbuf, uint8_t *rxbuf, size_t count) {
     rom_connect_internal_flash_fn connect_internal_flash_func =
         (rom_connect_internal_flash_fn)rom_func_lookup_inline(ROM_FUNC_CONNECT_INTERNAL_FLASH);
     rom_flash_exit_xip_fn flash_exit_xip_func =
