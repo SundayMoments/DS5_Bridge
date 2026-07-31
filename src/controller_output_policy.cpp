@@ -125,7 +125,9 @@ bool controller_output_policy_sanitize_host_speaker_amp_payload(uint8_t *payload
     const uint8_t original_flag0 = payload[kValidFlag0Offset];
     const uint8_t original_flag1 = payload[kValidFlag1Offset];
     const uint8_t next_flag0 = original_flag0 & static_cast<uint8_t>(~(
-        kFlag0SpeakerVolumeEnable | kFlag0AudioControlEnable
+        kFlag0HeadphoneVolumeEnable
+        | kFlag0SpeakerVolumeEnable
+        | kFlag0AudioControlEnable
     ));
     if (payload[kValidFlag0Offset] != next_flag0) {
         payload[kValidFlag0Offset] = next_flag0;
@@ -138,7 +140,11 @@ bool controller_output_policy_sanitize_host_speaker_amp_payload(uint8_t *payload
         changed = true;
     }
 
-    if (original_flag0 & (kFlag0SpeakerVolumeEnable | kFlag0AudioControlEnable)) {
+    if (original_flag0 & (
+        kFlag0HeadphoneVolumeEnable
+        | kFlag0SpeakerVolumeEnable
+        | kFlag0AudioControlEnable
+    )) {
         if (payload[kHeadphoneVolumeOffset] != 0) {
             payload[kHeadphoneVolumeOffset] = 0;
             changed = true;

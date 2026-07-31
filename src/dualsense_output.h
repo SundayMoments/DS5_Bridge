@@ -17,6 +17,7 @@ constexpr uint8_t kFlag0CompatibleVibration = 0x01;
 constexpr uint8_t kFlag0HapticsSelect = 0x02;
 constexpr uint8_t kFlag0RightTriggerEffect = 0x04;
 constexpr uint8_t kFlag0LeftTriggerEffect = 0x08;
+constexpr uint8_t kFlag0HeadphoneVolumeEnable = 0x10;
 constexpr uint8_t kFlag0SpeakerVolumeEnable = 0x20;
 constexpr uint8_t kFlag0MicVolumeEnable = 0x40;
 constexpr uint8_t kFlag0AudioControlEnable = 0x80;

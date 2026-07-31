@@ -517,7 +517,10 @@ void audio_haptics_replace_tracks_state_without_suppressing_classic_rumble() {
 
 void speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields() {
     auto payload = empty_payload();
-    payload[kValidFlag0Offset] = kFlag0SpeakerVolumeEnable | kFlag0AudioControlEnable | kFlag0CompatibleVibration;
+    payload[kValidFlag0Offset] = kFlag0HeadphoneVolumeEnable
+        | kFlag0SpeakerVolumeEnable
+        | kFlag0AudioControlEnable
+        | kFlag0CompatibleVibration;
     payload[kValidFlag1Offset] = kFlag1AudioControl2Enable | kFlag1LightbarControlEnable;
     payload[kHeadphoneVolumeOffset] = 0x44;
     payload[kSpeakerVolumeOffset] = 0x55;
@@ -627,6 +630,7 @@ void output_state_audio_snapshot_routes_to_speaker_and_headphones_safely() {
     AudioSnapshot headset{};
     controller_output_state_copy_audio_snapshot(headset.data(), true);
     EXPECT_TRUE((headset[kValidFlag0Offset] & kFlag0AudioControlEnable) != 0);
+    EXPECT_TRUE((headset[kValidFlag0Offset] & kFlag0HeadphoneVolumeEnable) != 0);
     EXPECT_FALSE((headset[kValidFlag0Offset] & kFlag0SpeakerVolumeEnable) != 0);
     EXPECT_TRUE((headset[kValidFlag1Offset] & kFlag1AudioControl2Enable) != 0);
     EXPECT_EQ(headset[kHeadphoneVolumeOffset], kHeadphoneVolumeMax);

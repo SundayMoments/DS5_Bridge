@@ -52,6 +52,7 @@
 #define DS_OUTPUT_VALID_FLAG0_HAPTICS_SELECT 0x02
 #define DS_OUTPUT_VALID_FLAG0_RIGHT_TRIGGER_EFFECT 0x04
 #define DS_OUTPUT_VALID_FLAG0_LEFT_TRIGGER_EFFECT 0x08
+#define DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE 0x10
 #define DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE 0x20
 #define DS_OUTPUT_VALID_FLAG0_MIC_VOLUME_ENABLE 0x40
 #define DS_OUTPUT_VALID_FLAG0_AUDIO_CONTROL_ENABLE 0x80
@@ -2076,6 +2077,7 @@ static void send_speaker_output_state(bool enabled, bool headset_plugged) {
 
     if (enabled) {
         if (headset_plugged) {
+            report[3] |= DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE;
             report[3 + OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET] = DS_OUTPUT_HEADPHONE_VOLUME_MAX;
             report[3 + OUTPUT_PAYLOAD_AUDIO_CONTROL_OFFSET] = DS_OUTPUT_AUDIO_FLAGS_OUTPUT_PATH_HEADPHONES;
         } else {
@@ -4660,6 +4662,9 @@ static bool has_unclassified_state_payload_data(uint8_t const *payload, uint16_t
         mark_payload_byte(recognized, payload_len, OUTPUT_PAYLOAD_MOTOR_RIGHT_OFFSET);
         mark_payload_byte(recognized, payload_len, OUTPUT_PAYLOAD_MOTOR_LEFT_OFFSET);
     }
+    if (flag0 & DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE) {
+        mark_payload_byte(recognized, payload_len, OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET);
+    }
     if (flag0 & DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE) {
         mark_payload_byte(recognized, payload_len, OUTPUT_PAYLOAD_SPEAKER_VOLUME_OFFSET);
     }
@@ -4745,6 +4750,7 @@ static uint8_t classify_output_report(uint8_t const *data, uint16_t len) {
         | DS_OUTPUT_VALID_FLAG0_HAPTICS_SELECT
         | DS_OUTPUT_VALID_FLAG0_RIGHT_TRIGGER_EFFECT
         | DS_OUTPUT_VALID_FLAG0_LEFT_TRIGGER_EFFECT
+        | DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE
         | DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE
         | DS_OUTPUT_VALID_FLAG0_MIC_VOLUME_ENABLE;
     const uint8_t state_flag1 =
@@ -4792,6 +4798,7 @@ static bool output_report_has_state_flags(uint8_t const *data, uint16_t len) {
         | DS_OUTPUT_VALID_FLAG0_HAPTICS_SELECT
         | DS_OUTPUT_VALID_FLAG0_RIGHT_TRIGGER_EFFECT
         | DS_OUTPUT_VALID_FLAG0_LEFT_TRIGGER_EFFECT
+        | DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE
         | DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE
         | DS_OUTPUT_VALID_FLAG0_MIC_VOLUME_ENABLE;
     const uint8_t state_mask1 =
@@ -4882,6 +4889,7 @@ static bool split_state_from_mixed_output(uint8_t *data, uint16_t len) {
         | DS_OUTPUT_VALID_FLAG0_HAPTICS_SELECT
         | DS_OUTPUT_VALID_FLAG0_RIGHT_TRIGGER_EFFECT
         | DS_OUTPUT_VALID_FLAG0_LEFT_TRIGGER_EFFECT
+        | DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE
         | DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE
         | DS_OUTPUT_VALID_FLAG0_MIC_VOLUME_ENABLE;
     uint8_t state_mask1 =
@@ -4939,9 +4947,12 @@ static bool split_state_from_mixed_output(uint8_t *data, uint16_t len) {
             clear_payload_byte(payload, payload_len, DS_TRIGGER_EFFECT_LEFT_OFFSET + i);
         }
     }
+    if (state_flag0 & DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE) {
+        copy_payload_byte(state_payload, payload, payload_len, OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET);
+        clear_payload_byte(payload, payload_len, OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET);
+    }
     if (state_flag0 & DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE) {
         copy_payload_byte(state_payload, payload, payload_len, OUTPUT_PAYLOAD_SPEAKER_VOLUME_OFFSET);
-        clear_payload_byte(payload, payload_len, OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET);
         clear_payload_byte(payload, payload_len, OUTPUT_PAYLOAD_SPEAKER_VOLUME_OFFSET);
     }
     if (state_flag0 & DS_OUTPUT_VALID_FLAG0_MIC_VOLUME_ENABLE) {
@@ -5069,6 +5080,10 @@ static void merge_state_output_locked(uint8_t const *data, uint16_t len, uint32_
                 copy_payload_byte(dst, src, payload_len, DS_TRIGGER_EFFECT_LEFT_OFFSET + i);
             }
         }
+    }
+    if (flag0 & DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE) {
+        dst[OUTPUT_PAYLOAD_VALID_FLAG0_OFFSET] |= DS_OUTPUT_VALID_FLAG0_HEADPHONE_VOLUME_ENABLE;
+        dst[OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET] = src[OUTPUT_PAYLOAD_HEADPHONE_VOLUME_OFFSET];
     }
     if (flag0 & DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE) {
         dst[OUTPUT_PAYLOAD_VALID_FLAG0_OFFSET] |= DS_OUTPUT_VALID_FLAG0_SPEAKER_VOLUME_ENABLE;
