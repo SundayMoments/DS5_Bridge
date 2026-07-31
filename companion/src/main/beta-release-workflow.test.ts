@@ -29,7 +29,11 @@ describe('beta release workflow', () => {
   it('reuses stable release jobs while preserving beta versions in every asset', () => {
     expect(releaseWorkflow).toContain('workflow_call:');
     expect(releaseWorkflow).toContain('build_version:');
-    expect(releaseWorkflow).toContain('npm version $env:BUILD_VERSION --no-git-tag-version --allow-same-version');
+    expect(releaseWorkflow).toContain(
+      "RELEASE_BUILD_VERSION: ${{ inputs.build_version || (github.event.release.prerelease && github.event.release.tag_name) || '' }}"
+    );
+    expect(releaseWorkflow).toContain("$buildVersion = $env:BUILD_VERSION -replace '^v', ''");
+    expect(releaseWorkflow).toContain('npm version $buildVersion --no-git-tag-version --allow-same-version');
     expect(releaseWorkflow).toContain('DS5-Bridge-Firmware-v${RELEASE_ASSET_VERSION}.uf2');
     expect(releaseWorkflow).toContain('DS5-Bridge-Firmware-Waveshare-v${RELEASE_ASSET_VERSION}.uf2');
     expect(releaseWorkflow).toContain('"DS5-Bridge-Companion-Setup-v$companionVersion.exe"');

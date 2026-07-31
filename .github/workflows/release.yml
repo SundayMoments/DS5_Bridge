@@ -35,6 +35,9 @@ env:
   ARM_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz
   ARM_TOOLCHAIN_PATH: ${{ github.workspace }}/arm-toolchain
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
+  # workflow_call/dispatch supplies the version directly. A published
+  # prerelease has no inputs, so preserve its tag-derived beta version too.
+  RELEASE_BUILD_VERSION: ${{ inputs.build_version || (github.event.release.prerelease && github.event.release.tag_name) || '' }}
 
 permissions:
   contents: write
@@ -99,21 +102,22 @@ jobs:
       - name: Read firmware version
         shell: pwsh
         env:
-          BUILD_VERSION: ${{ inputs.build_version }}
+          BUILD_VERSION: ${{ env.RELEASE_BUILD_VERSION }}
         run: |
           $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
           if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
           }
           $assetVersion = $firmwareVersion
-          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_VERSION)) {
-            if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+          $buildVersion = $env:BUILD_VERSION -replace '^v', ''
+          if (-not [string]::IsNullOrWhiteSpace($buildVersion)) {
+            if ($buildVersion -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
               throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
             }
-            if (-not $env:BUILD_VERSION.StartsWith("$firmwareVersion-beta.")) {
+            if (-not $buildVersion.StartsWith("$firmwareVersion-beta.")) {
               throw "build_version must be based on firmware version $firmwareVersion"
             }
-            $assetVersion = $env:BUILD_VERSION
+            $assetVersion = $buildVersion
           }
           "FIRMWARE_VERSION=$firmwareVersion" >> $env:GITHUB_ENV
           "RELEASE_ASSET_VERSION=$assetVersion" >> $env:GITHUB_ENV
@@ -203,20 +207,21 @@ jobs:
         run: npm ci
 
       - name: Apply companion prerelease version
-        if: inputs.build_version != ''
+        if: env.RELEASE_BUILD_VERSION != ''
         working-directory: companion
         shell: pwsh
         env:
-          BUILD_VERSION: ${{ inputs.build_version }}
+          BUILD_VERSION: ${{ env.RELEASE_BUILD_VERSION }}
         run: |
           $packageVersion = [string] (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+          $buildVersion = $env:BUILD_VERSION -replace '^v', ''
+          if ($buildVersion -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
             throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
           }
-          if (-not $env:BUILD_VERSION.StartsWith("$packageVersion-beta.")) {
+          if (-not $buildVersion.StartsWith("$packageVersion-beta.")) {
             throw "build_version must be based on companion version $packageVersion"
           }
-          npm version $env:BUILD_VERSION --no-git-tag-version --allow-same-version
+          npm version $buildVersion --no-git-tag-version --allow-same-version
           if ($LASTEXITCODE -ne 0) {
             throw 'Unable to apply companion prerelease version.'
           }
@@ -280,7 +285,7 @@ jobs:
       - name: Stage release metadata
         shell: pwsh
         env:
-          BUILD_VERSION: ${{ inputs.build_version }}
+          BUILD_VERSION: ${{ env.RELEASE_BUILD_VERSION }}
         run: |
           $ErrorActionPreference = 'Stop'
           $companionVersion = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
@@ -289,15 +294,16 @@ jobs:
             throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
           }
           $assetVersion = $firmwareVersion
-          if (-not [string]::IsNullOrWhiteSpace($env:BUILD_VERSION)) {
-            if ($env:BUILD_VERSION -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+          $buildVersion = $env:BUILD_VERSION -replace '^v', ''
+          if (-not [string]::IsNullOrWhiteSpace($buildVersion)) {
+            if ($buildVersion -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
               throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
             }
-            if (-not $env:BUILD_VERSION.StartsWith("$firmwareVersion-beta.")) {
+            if (-not $buildVersion.StartsWith("$firmwareVersion-beta.")) {
               throw "build_version must be based on firmware version $firmwareVersion"
             }
-            $assetVersion = $env:BUILD_VERSION
-            $companionVersion = $env:BUILD_VERSION
+            $assetVersion = $buildVersion
+            $companionVersion = $buildVersion
           }
           $commit = (git rev-parse HEAD).Trim()
           $dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain | Out-String).Trim())
