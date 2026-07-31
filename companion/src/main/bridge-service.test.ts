@@ -2427,6 +2427,33 @@ describe('BridgeService', () => {
     expect(named.bridgeDevices?.bridges.find((bridge) => bridge.path === bridgeB.path)?.name).toBe('Desk');
   });
 
+  it('adopts the only connected bridge when the saved device path is stale', async () => {
+    const stalePath = 'winusb://disconnected-waveshare';
+    const currentPath = 'winusb://regular-pico';
+    const service = serviceFixture({ selectedBridgePath: stalePath });
+    const device = new MockHidDevice();
+    device.path = currentPath;
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set(currentPath, device);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [{
+        path: currentPath,
+        containerId: '11111111-1111-1111-1111-111111111111'
+      }],
+      hidDevices: []
+    });
+
+    await poll(service);
+
+    expect(winUsbTransportMock.open).toHaveBeenCalledWith(expect.objectContaining({
+      devicePath: currentPath
+    }));
+    expect(service.getSnapshot()).toMatchObject({
+      state: 'connected',
+      settings: { selectedBridgePath: currentPath }
+    });
+  });
+
   it('rejects bridge paths and identities that were not enumerated', async () => {
     const service = serviceFixture();
 

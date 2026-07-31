@@ -4036,6 +4036,18 @@ export class BridgeService extends EventEmitter {
     this.lastBridgeCensusAt = Date.now();
     try {
       this.bridgeCensus = await listBridges();
+      const selectedPath = this.settingsStore.get().selectedBridgePath;
+      if (
+        selectedPath
+        && this.bridgeCensus.bridges.length === 1
+        && !this.bridgeCensus.bridges.some((bridge) => (
+          BridgeService.bridgePathsEqual(bridge.path, selectedPath)
+        ))
+      ) {
+        this.snapshot.settings = this.settingsStore.update({
+          selectedBridgePath: this.bridgeCensus.bridges[0].path
+        });
+      }
     } catch {
       // Enumeration is supplementary; retain the last successful census.
     }
