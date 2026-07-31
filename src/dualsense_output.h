@@ -42,6 +42,11 @@ constexpr uint8_t kPowerSaveControlMicMute = 0x10;
 constexpr uint8_t kHeadphoneVolumeMax = 0x7f;
 constexpr uint8_t kSpeakerVolumeMax = 0x64;
 constexpr uint8_t kMicVolumeMax = 0x40;
+// DualSense 0x39 declares seven audio sections. Bit 7 is reserved and must
+// remain clear; bit 0 controls controller-microphone transport.
+constexpr uint8_t kAudioSectionEnableMask = 0x7f;
+constexpr uint8_t kAudioSectionControllerMicrophone = 0x01;
+constexpr uint8_t kControllerMicrophoneTransportBaseMask = 0x02;
 constexpr uint8_t kLightbarSetupLightOut = 0x02;
 constexpr uint8_t kPlayerLed1Instant = 0x24;
 
@@ -120,6 +125,21 @@ inline void init_bt_output_report(uint8_t *report, uint8_t sequence_nibble) {
 
 inline uint8_t scaled_percent(uint8_t value, uint8_t percent) {
     return static_cast<uint8_t>((static_cast<uint16_t>(value) * percent + 50) / 100);
+}
+
+inline uint8_t audio_section_enable_mask(bool controller_microphone_streaming) {
+    return controller_microphone_streaming
+        ? kAudioSectionEnableMask
+        : static_cast<uint8_t>(
+            kAudioSectionEnableMask & ~kAudioSectionControllerMicrophone
+        );
+}
+
+inline uint8_t controller_microphone_transport_mask(bool enabled) {
+    return static_cast<uint8_t>(
+        kControllerMicrophoneTransportBaseMask
+        | (enabled ? kAudioSectionControllerMicrophone : 0)
+    );
 }
 
 } // namespace ds5::output

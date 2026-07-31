@@ -1554,6 +1554,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         || cmake.find(".text.tud_audio_n_get_ep_in_ff=.time_critical.tud_audio_n_get_ep_in_ff")
             == std::string::npos
         || verify_cmake.find("_ZL25send_audio_haptics_packetPKabb") == std::string::npos
+        || verify_cmake.find("_ZL28try_send_pending_audio_batchv") == std::string::npos
         || verify_cmake.find("_Z21bt_write_audio_streamPht") == std::string::npos
         || verify_cmake.find("_Z10on_bt_data12CHANNEL_TYPEPht") == std::string::npos
         || verify_cmake.find("_Z35companion_process_controller_reportPht")
@@ -1565,9 +1566,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             "_Z25host_persona_encode_input15HostPersonaModeRK21BridgeControllerStateR22HostPersonaInputReport"
         ) == std::string::npos
         || verify_cmake.find("_Z20audio_mic_add_packetPKht") == std::string::npos
-        || verify_cmake.find("_Z37controller_packet_copy_audio_snapshotPhb") == std::string::npos
-        || verify_cmake.find("_Z43controller_output_state_copy_audio_snapshotPhb") == std::string::npos
-        || verify_cmake.find("_Z49controller_output_state_strip_zero_classic_rumblePht")
+        || verify_cmake.find("_Z44output_scheduler_audio_deadline_guard_activebbmmmm")
             == std::string::npos
         || verify_cmake.find("_ZL22process_mic_usb_outputv") == std::string::npos
         || verify_cmake.find("_ZL27write_mic_usb_pending_frameR18mic_decode_elementRtS1_")
@@ -1788,15 +1787,16 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
         || classified.find("enqueue_urgent_output") == std::string::npos
         || classified.find("audio_output_route_protected") == std::string::npos
         || classified.find("output_report_is_classic_rumble_transition") == std::string::npos
-        || classified.find("enqueue_classic_rumble_immediate_or_state_output") == std::string::npos
-        || classified.find("if (audio_protected)") == std::string::npos
+        || classified.find("const bool enqueued = enqueue_urgent_output") == std::string::npos
+        || classified.find("enqueue_classic_rumble_immediate_or_state_output") != std::string::npos
+        || classified.find("if (audio_protected)") != std::string::npos
         || classified.find("apply_classic_rumble_gain") != std::string::npos
         || classified.find("strip_redundant_classic_rumble_from_output")
             != std::string::npos
         || classified.find("split_state_from_mixed_output") != std::string::npos
     ) {
         throw std::runtime_error(
-            "Host/persona reports must retain complete idle pass-through and managed rumble transitions while protected audio coalesces redundant output"
+            "Host/persona reports must retain complete full-rate pass-through while deadline-scheduled audio owns only its due Bluetooth slots"
         );
     }
 
@@ -1848,18 +1848,21 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
             == std::string::npos
         || select_output.find("state_age_us")
             == std::string::npos
-        || scheduler_cpp.find("const bool state_starved")
+        || scheduler_cpp.find("output_scheduler_audio_deadline_guard_active")
             == std::string::npos
-        || scheduler_cpp.find(
-            "return OutputSchedulerChoice::CoalescedState;"
-        ) == std::string::npos
+        || scheduler_cpp.find("const bool state_starved")
+            != std::string::npos
+        || bt_cpp.find("AUDIO_STREAM_EXPECTED_INTERVAL_US 21333u")
+            == std::string::npos
+        || select_output.find("audio_deadline_guard")
+            == std::string::npos
         || bt_cpp.find("state_send_blocked_by_audio_locked")
             != std::string::npos
         || enqueue_state.find("request_can_send_if_needed(true);")
             == std::string::npos
     ) {
         throw std::runtime_error(
-            "Companion feedback must receive a bounded scheduler turn during continuous audio"
+            "Batched audio must own its deadline while state and full-rate rumble use the intervening Bluetooth opportunities"
         );
     }
 }

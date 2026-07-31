@@ -86,14 +86,19 @@
 #define DS_TRIGGER_TARGET_LEFT 1
 #define DS_TRIGGER_TARGET_RIGHT 2
 #define AUDIO_SEND_QUEUE_MAX_DEPTH 4
-#define AUDIO_INTERRUPT_PACKET_MAX_SIZE 400
+#define AUDIO_INTERRUPT_PACKET_MAX_SIZE 548
+#define AUDIO_STREAM_EXPECTED_INTERVAL_US 21333u
+#define AUDIO_STREAM_DEADLINE_GUARD_START_US (AUDIO_STREAM_EXPECTED_INTERVAL_US - 3333u)
+#define AUDIO_STREAM_IDLE_US 35000u
+#define AUDIO_STREAM_QUEUE_LATE_US 12000u
+#define AUDIO_STREAM_GAP_LATE_US 25000u
 #define URGENT_SEND_QUEUE_MAX_DEPTH 16
 #define URGENT_SEND_QUEUE_HARD_MAX_DEPTH 64
 #define OUTPUT_MAX_CONSECUTIVE_AUDIO_SENDS 4
 #define OUTPUT_STATE_MAX_AGE_US 3000
 #define CONTROL_SEND_QUEUE_MAX_DEPTH 8
 #define CONTROL_SEND_HEADSET_AUDIO_SAFE_WINDOW_US 6000
-#define CONTROL_SEND_HEADSET_AUDIO_IDLE_US 20000
+#define CONTROL_SEND_HEADSET_AUDIO_IDLE_US AUDIO_STREAM_IDLE_US
 #define FEATURE_PREFETCH_MAX_REQUESTS 16
 #define FEATURE_PREFETCH_SPACING_US 5000u
 #define CONTROLLER_DISCONNECT_REBOOT_DELAY_MS 25
@@ -349,6 +354,8 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
 static void l2cap_packet_handler_cold(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static int classic_connection_filter(bd_addr_t addr, hci_link_type_t link_type);
 static bool build_interrupt_output_packet(uint8_t *data, uint16_t len, vector<uint8_t> &packet);
+static bool prepare_interrupt_output_packet_for_send(output_packet &packet);
+static void commit_interrupt_output_packet_sent(output_packet const &packet);
 static bool enqueue_urgent_output(uint8_t *data, uint16_t len, uint8_t reason);
 static bool enqueue_state_output(uint8_t *data, uint16_t len, uint8_t reason);
 static bool enqueue_feedback_state_output(uint8_t *data, uint16_t len, uint8_t reason);
@@ -361,7 +368,7 @@ static bool enqueue_control_packet(uint8_t const *data, uint16_t len, bool coale
 static bool select_next_control_packet_locked(control_packet &packet, uint32_t now);
 static void request_can_send_if_needed(bool should_request_send);
 static void request_control_can_send_if_needed(bool should_request_send);
-static bool headset_audio_send_window_closed_locked(uint32_t now);
+static bool audio_send_window_closed_locked(uint32_t now);
 static void request_control_if_audio_window_open_locked(uint32_t now, bool &should_request_control);
 static void finish_hid_session_if_ready();
 static void init_state_report(uint8_t *report);
@@ -1677,7 +1684,9 @@ static uint8_t scale_lightbar_channel(uint8_t channel, uint8_t brightness_percen
 }
 
 static void init_state_report(uint8_t *report) {
-    controller_packet_init_bt_output_report(report, state_report_seq);
+    // Sequence is shared with 0x39 audio and assigned immediately before the
+    // report reaches L2CAP.
+    ds5::output::init_bt_output_report(report, 0);
 }
 
 static uint8_t trigger_strength_from_percent(uint8_t intensity_percent) {
@@ -2708,8 +2717,37 @@ void bt_output_retry_loop() {
     bool retry_ready = false;
     const uint32_t now = time_us_32();
     critical_section_enter_blocking(&queue_lock);
-    retry_ready = !urgent_queue.empty()
+    const bool audio_queued = !audio_queue.empty();
+    const bool audio_deadline_guard = output_scheduler_audio_deadline_guard_active(
+        speaker_output_enabled,
+        audio_queued,
+        last_audio_0x36_send_us,
+        now,
+        AUDIO_STREAM_DEADLINE_GUARD_START_US,
+        AUDIO_STREAM_IDLE_US
+    );
+    const bool audio_reserved = audio_queued || audio_deadline_guard;
+    const bool urgent_ready = !urgent_queue.empty()
         && bt_time_reached(now, urgent_queue.front().ready_at_us);
+    const auto urgent_delivery_kind = !urgent_queue.empty()
+        ? classic_rumble_delivery_kind(urgent_queue.front().reason)
+        : ds5::classic_rumble::DeliveryKind::Other;
+    const bool urgent_can_send = urgent_ready
+        && (
+            (
+                !ds5::classic_rumble::is_classic_rumble(urgent_delivery_kind)
+                && !audio_reserved
+            )
+            || output_scheduler_classic_rumble_can_bypass_audio(
+                audio_reserved,
+                ds5::classic_rumble::is_terminal_stop(urgent_delivery_kind),
+                consecutive_classic_rumble_stop_sends,
+                consecutive_non_audio_sends
+            )
+        );
+    retry_ready = audio_queued
+        || urgent_can_send
+        || (state_pending && !audio_reserved);
     critical_section_exit(&queue_lock);
     request_can_send_if_needed(retry_ready);
 }
@@ -3539,10 +3577,13 @@ static __attribute__((noinline, noclone, optimize("O2"))) void __not_in_flash_fu
             update_max_u32(output_counters.audio_0x36_send_gap_max_us, audio_gap_us);
         }
         last_audio_0x36_send_us = now;
-        if (age_us > 12000) {
+        if (age_us > AUDIO_STREAM_QUEUE_LATE_US) {
             output_counters.audio_0x36_late_count_over_12000_us++;
         }
-        if (age_us > 12000 || audio_gap_us > 12000) {
+        if (
+            age_us > AUDIO_STREAM_QUEUE_LATE_US
+            || audio_gap_us > AUDIO_STREAM_GAP_LATE_US
+        ) {
             audio_debug_note_bt_event(
                 BtAudioDebugLateAudio,
                 age_us / 100,
@@ -3596,6 +3637,16 @@ static __attribute__((noinline, noclone, optimize("O2"))) bool __not_in_flash_fu
     const bool urgent_queued = !urgent_queue.empty();
     const bool urgent_ready = urgent_queued
         && bt_time_reached(now, urgent_queue.front().ready_at_us);
+    const bool audio_queued = !audio_queue.empty();
+    const bool audio_deadline_guard = output_scheduler_audio_deadline_guard_active(
+        speaker_output_enabled,
+        audio_queued,
+        last_audio_0x36_send_us,
+        now,
+        AUDIO_STREAM_DEADLINE_GUARD_START_US,
+        AUDIO_STREAM_IDLE_US
+    );
+    const bool audio_reserved = audio_queued || audio_deadline_guard;
     const auto urgent_delivery_kind = urgent_queued
         ? classic_rumble_delivery_kind(urgent_queue.front().reason)
         : ds5::classic_rumble::DeliveryKind::Other;
@@ -3608,9 +3659,12 @@ static __attribute__((noinline, noclone, optimize("O2"))) bool __not_in_flash_fu
     if (
         urgent_ready
         && (
-            !ds5::classic_rumble::is_classic_rumble(urgent_delivery_kind)
+            (
+                !ds5::classic_rumble::is_classic_rumble(urgent_delivery_kind)
+                && !audio_reserved
+            )
             || output_scheduler_classic_rumble_can_bypass_audio(
-                !audio_queue.empty(),
+                audio_reserved,
                 ds5::classic_rumble::is_terminal_stop(urgent_delivery_kind),
                 consecutive_classic_rumble_stop_sends,
                 consecutive_non_audio_sends
@@ -3619,8 +3673,10 @@ static __attribute__((noinline, noclone, optimize("O2"))) bool __not_in_flash_fu
     ) {
         packet = std::move(urgent_queue.front());
         urgent_queue.pop_front();
+    } else if (audio_deadline_guard && !audio_queued) {
+        return false;
     } else {
-        const bool audio_available = !audio_queue.empty();
+        const bool audio_available = audio_queued;
         const uint32_t state_age_us = state_pending
             ? packet_age_us(now, state_pending_since_us)
             : 0;
@@ -3690,7 +3746,7 @@ static bool select_next_control_packet_locked(control_packet &packet, uint32_t n
     if (!control_pending_locked()) {
         return false;
     }
-    if (headset_audio_send_window_closed_locked(now)) {
+    if (audio_send_window_closed_locked(now)) {
         return false;
     }
 
@@ -3835,7 +3891,17 @@ static __attribute__((optimize("O2"))) void __not_in_flash_func(handle_l2cap_can
     bool has_more = output_pending_locked();
     bool should_request_control = false;
     request_control_if_audio_window_open_locked(now, should_request_control);
+    const bool transport_ready = prepare_interrupt_output_packet_for_send(
+        interrupt_send_packet
+    );
     critical_section_exit(&queue_lock);
+
+    if (!transport_ready) {
+        DS5_LOG("[L2CAP] Refusing malformed DualSense output transport report\n");
+        request_can_send_if_needed(has_more);
+        request_control_can_send_if_needed(should_request_control);
+        return;
+    }
 
     uint8_t status = l2cap_send(
         hid_interrupt_cid,
@@ -3853,6 +3919,7 @@ static __attribute__((optimize("O2"))) void __not_in_flash_func(handle_l2cap_can
         }
     } else if (!interrupt_send_packet.data.empty()) {
         critical_section_enter_blocking(&queue_lock);
+        commit_interrupt_output_packet_sent(interrupt_send_packet);
         note_output_packet_sent(interrupt_send_packet, time_us_32());
         has_more = has_more || output_pending_locked();
         critical_section_exit(&queue_lock);
@@ -4186,6 +4253,33 @@ static bool build_interrupt_output_packet(uint8_t *data, uint16_t len, vector<ui
     return true;
 }
 
+static bool dualsense_output_transport_report(output_packet const &packet) {
+    if (packet.data.size() <= 2) {
+        return false;
+    }
+    const uint8_t report_id = packet.data[1];
+    return report_id == DS_OUTPUT_REPORT_BT
+        || report_id == 0x32
+        || report_id == 0x39;
+}
+
+static bool prepare_interrupt_output_packet_for_send(output_packet &packet) {
+    if (!dualsense_output_transport_report(packet)) {
+        return true;
+    }
+    uint8_t *report = packet.data.data() + 1;
+    const uint16_t report_len = static_cast<uint16_t>(packet.data.size() - 1);
+    report[1] = static_cast<uint8_t>((state_report_seq & 0x0f) << 4);
+    return fill_output_report_checksum(report, report_len);
+}
+
+static void commit_interrupt_output_packet_sent(output_packet const &packet) {
+    if (!dualsense_output_transport_report(packet)) {
+        return;
+    }
+    state_report_seq = static_cast<uint8_t>((state_report_seq + 1) & 0x0f);
+}
+
 static void request_can_send_if_needed(bool should_request_send) {
     if (!should_request_send) {
         return;
@@ -4215,8 +4309,8 @@ static void request_control_can_send_if_needed(bool should_request_send) {
     l2cap_request_can_send_now_event(hid_control_cid);
 }
 
-static bool headset_audio_send_window_closed_locked(uint32_t now) {
-    if (!speaker_output_headset_route) {
+static bool audio_send_window_closed_locked(uint32_t now) {
+    if (!speaker_output_enabled) {
         return false;
     }
     if (!audio_queue.empty()) {
@@ -4232,7 +4326,7 @@ static bool headset_audio_send_window_closed_locked(uint32_t now) {
 }
 
 static void request_control_if_audio_window_open_locked(uint32_t now, bool &should_request_control) {
-    should_request_control = control_pending_locked() && !headset_audio_send_window_closed_locked(now);
+    should_request_control = control_pending_locked() && !audio_send_window_closed_locked(now);
 }
 
 static bool make_output_packet(
@@ -4517,50 +4611,12 @@ static bool mirror_classic_rumble_in_report(
     return true;
 }
 
-static bool mirror_classic_rumble_in_packet(
-    output_packet &packet,
-    uint8_t const *source,
-    uint16_t source_len
-) {
-    if (packet.data.size() < 2) {
-        return false;
-    }
-
-    uint8_t *report = packet.data.data() + 1;
-    const uint16_t report_len = static_cast<uint16_t>(packet.data.size() - 1);
-    if (!mirror_classic_rumble_in_report(report, report_len, source, source_len)) {
-        return false;
-    }
-    return fill_output_report_checksum(report, report_len);
-}
-
-static void mirror_packet_queue_classic_rumble_locked(
-    fixed_audio_output_queue &packets,
-    uint8_t const *source,
-    uint16_t source_len
-) {
-    const size_t packet_count = packets.size();
-    for (size_t index = 0; index < packet_count; index++) {
-        audio_output_packet packet = packets.front();
-        packets.pop();
-        if (packet.data_size >= 2) {
-            uint8_t *report = packet.data.data() + 1;
-            const uint16_t report_len = static_cast<uint16_t>(packet.data_size - 1);
-            if (mirror_classic_rumble_in_report(report, report_len, source, source_len)) {
-                (void)fill_output_report_checksum(report, report_len);
-            }
-        }
-        packets.push(packet);
-    }
-}
-
 static void mirror_pending_classic_rumble_locked(uint8_t const *data, uint16_t len) {
     if (state_pending) {
         (void)mirror_classic_rumble_in_report(state_pending_report, sizeof(state_pending_report), data, len);
     }
-    // Complete host reports already queued in the urgent lane are immutable.
-    // Only cached state carriers are refreshed to avoid stale-rumble replay.
-    mirror_packet_queue_classic_rumble_locked(audio_queue, data, len);
+    // Batched 0x39 audio carries no controller state. Complete host reports
+    // already queued in the urgent lane remain immutable and ordered.
 }
 
 static void apply_player_led_policy_to_payload(uint8_t *payload, uint16_t payload_len) {
@@ -5110,34 +5166,17 @@ bool bt_write_classified_output(uint8_t *data, uint16_t len) {
         0
     );
 #endif
-    // While controller audio is active, the accepted host state is published
-    // into the next 0x36 carrier by controller_output_submit_usb_payload().
-    // Sending the same complete 0x31 report here would consume an additional
-    // L2CAP opportunity and can push the 10.67 ms audio cadence past its
-    // deadline. Preserve standalone pass-through outside the protected audio
-    // window, and preserve immediate/retryable delivery for real classic
-    // rumble START/change/STOP transitions inside it.
+    // Preserve every complete host SetStateData report as a standalone 0x31,
+    // including the full active-rumble envelope. A due batched 0x39 audio
+    // report owns its deadline; every gap between those 21.3 ms carriers
+    // remains available to this full-rate host FIFO.
     const bool audio_protected = speaker_output_enabled && audio_output_route_protected();
     const bool classic_rumble_transition = output_report_is_classic_rumble_transition(data, len);
-    bool enqueued = true;
-    if (audio_protected) {
-        if (classic_rumble_transition) {
-            enqueued = enqueue_classic_rumble_immediate_or_state_output(
-                data,
-                len,
-                OutputReasonHostPassthrough
-            );
-        }
-    } else {
-        enqueued = enqueue_urgent_output(
-            data,
-            len,
-            OutputReasonHostPassthrough
-        );
-        if (enqueued) {
-            classic_rumble_state = ControllerOutputRumbleStateMachine{};
-        }
-    }
+    const bool enqueued = enqueue_urgent_output(
+        data,
+        len,
+        OutputReasonHostPassthrough
+    );
 #ifdef ENABLE_COMPANION
     companion_note_trigger_trace_report(
         CompanionTriggerTraceBridgeOut,

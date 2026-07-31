@@ -210,14 +210,13 @@ OutputSchedulerConfig scheduler_config() {
     };
 }
 
-void scheduler_prioritizes_audio_before_state_is_starved() {
+void scheduler_prioritizes_due_audio_over_old_state() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
     inputs.coalesced_state_available = true;
-    inputs.consecutive_audio_sends =
-        static_cast<uint8_t>(config.max_consecutive_audio_sends - 1);
-    inputs.state_age_us = config.state_max_age_us - 1;
+    inputs.consecutive_audio_sends = config.max_consecutive_audio_sends;
+    inputs.state_age_us = config.state_max_age_us;
     EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
 }
 
@@ -228,7 +227,7 @@ void scheduler_sends_coalesced_state_when_audio_is_absent() {
     EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::CoalescedState);
 }
 
-void scheduler_bounds_coalesced_state_latency_during_continuous_audio() {
+void scheduler_due_audio_stays_ahead_of_coalesced_state() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
@@ -236,14 +235,14 @@ void scheduler_bounds_coalesced_state_latency_during_continuous_audio() {
     inputs.consecutive_audio_sends = config.max_consecutive_audio_sends;
     EXPECT_EQ(
         output_scheduler_choose_interrupt_packet(inputs, config),
-        OutputSchedulerChoice::CoalescedState
+        OutputSchedulerChoice::AudioStream
     );
 
     inputs.consecutive_audio_sends = 0;
     inputs.state_age_us = config.state_max_age_us;
     EXPECT_EQ(
         output_scheduler_choose_interrupt_packet(inputs, config),
-        OutputSchedulerChoice::CoalescedState
+        OutputSchedulerChoice::AudioStream
     );
 }
 
@@ -268,7 +267,7 @@ void packet_compositor_initializes_bluetooth_report_and_wraps_sequence() {
     EXPECT_EQ(int_sequence, 0x0f);
 }
 
-void scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop() {
+void scheduler_reserves_audio_and_prioritizes_one_stop() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
@@ -278,7 +277,7 @@ void scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop() {
         output_scheduler_choose_interrupt_packet(inputs, config),
         OutputSchedulerChoice::AudioStream
     );
-    EXPECT_TRUE(output_scheduler_classic_rumble_can_bypass_audio(
+    EXPECT_FALSE(output_scheduler_classic_rumble_can_bypass_audio(
         true,
         false,
         0,
@@ -302,6 +301,47 @@ void scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop() {
         1,
         1
     ));
+}
+
+void scheduler_deadline_guard_reserves_next_audio_slot() {
+    constexpr uint32_t guard_start_us = 18'000;
+    constexpr uint32_t idle_us = 35'000;
+    EXPECT_FALSE(output_scheduler_audio_deadline_guard_active(
+        false, false, 100, 18'100, guard_start_us, idle_us
+    ));
+    EXPECT_FALSE(output_scheduler_audio_deadline_guard_active(
+        true, true, 100, 18'100, guard_start_us, idle_us
+    ));
+    EXPECT_FALSE(output_scheduler_audio_deadline_guard_active(
+        true, false, 0, 18'100, guard_start_us, idle_us
+    ));
+    EXPECT_FALSE(output_scheduler_audio_deadline_guard_active(
+        true, false, 100, 18'099, guard_start_us, idle_us
+    ));
+    EXPECT_TRUE(output_scheduler_audio_deadline_guard_active(
+        true, false, 100, 18'100, guard_start_us, idle_us
+    ));
+    EXPECT_FALSE(output_scheduler_audio_deadline_guard_active(
+        true, false, 100, 35'100, guard_start_us, idle_us
+    ));
+}
+
+void scheduler_deadline_guard_is_wrap_safe() {
+    EXPECT_TRUE(output_scheduler_audio_deadline_guard_active(
+        true,
+        false,
+        0xffffc000u,
+        0x00000650u,
+        18'000u,
+        35'000u
+    ));
+}
+
+void dualsense_audio_section_mask_matches_0x39_layout() {
+    EXPECT_EQ(ds5::output::audio_section_enable_mask(true), 0x7f);
+    EXPECT_EQ(ds5::output::audio_section_enable_mask(false), 0x7e);
+    EXPECT_EQ(ds5::output::controller_microphone_transport_mask(true), 0x03);
+    EXPECT_EQ(ds5::output::controller_microphone_transport_mask(false), 0x02);
 }
 
 void classic_rumble_delivery_is_bounded_and_protects_managed_stop() {
@@ -1404,10 +1444,13 @@ struct TestCase {
 };
 
 std::vector<TestCase> tests{
-    {"scheduler prioritizes audio before state is starved", scheduler_prioritizes_audio_before_state_is_starved},
+    {"scheduler prioritizes due audio over old state", scheduler_prioritizes_due_audio_over_old_state},
     {"scheduler sends coalesced state when audio is absent", scheduler_sends_coalesced_state_when_audio_is_absent},
-    {"scheduler bounds coalesced state latency during continuous audio", scheduler_bounds_coalesced_state_latency_during_continuous_audio},
-    {"scheduler alternates rumble with audio and prioritizes one stop", scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop},
+    {"scheduler due audio stays ahead of coalesced state", scheduler_due_audio_stays_ahead_of_coalesced_state},
+    {"scheduler reserves audio and prioritizes one stop", scheduler_reserves_audio_and_prioritizes_one_stop},
+    {"scheduler deadline guard reserves next audio slot", scheduler_deadline_guard_reserves_next_audio_slot},
+    {"scheduler deadline guard is wrap safe", scheduler_deadline_guard_is_wrap_safe},
+    {"dualsense audio section mask matches 0x39 layout", dualsense_audio_section_mask_matches_0x39_layout},
     {"classic rumble delivery is bounded and protects managed stop", classic_rumble_delivery_is_bounded_and_protects_managed_stop},
     {"classic rumble coalesces latest active without crossing stop", classic_rumble_coalesces_latest_active_without_crossing_stop},
     {"packet compositor initializes bluetooth report and wraps sequence", packet_compositor_initializes_bluetooth_report_and_wraps_sequence},

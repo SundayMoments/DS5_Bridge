@@ -9,17 +9,9 @@ OutputSchedulerChoice __not_in_flash_func(output_scheduler_choose_interrupt_pack
     OutputSchedulerInputs const &inputs,
     OutputSchedulerConfig const &config
 ) {
-    // Audio wins by default, but a pending state packet gets a bounded turn.
-    // This keeps continuous speaker/haptics audio from starving companion
-    // trigger, rumble, and lighting updates.
-    const bool state_starved = inputs.coalesced_state_available
-        && (
-            inputs.consecutive_audio_sends >= config.max_consecutive_audio_sends
-            || inputs.state_age_us >= config.state_max_age_us
-        );
-    if (state_starved) {
-        return OutputSchedulerChoice::CoalescedState;
-    }
+    (void)config;
+    // A composed audio carrier has reached its transport deadline and owns
+    // this opportunity. State and rumble use every gap between carriers.
     if (inputs.audio_available) {
         return OutputSchedulerChoice::AudioStream;
     }
@@ -38,11 +30,24 @@ bool __not_in_flash_func(output_scheduler_classic_rumble_can_bypass_audio)(
     uint8_t consecutive_stop_sends,
     uint8_t consecutive_non_audio_sends
 ) {
+    (void)consecutive_non_audio_sends;
     if (!audio_available) {
         return true;
     }
-    if (terminal_stop && consecutive_stop_sends == 0) {
-        return true;
+    return terminal_stop && consecutive_stop_sends == 0;
+}
+
+bool __not_in_flash_func(output_scheduler_audio_deadline_guard_active)(
+    bool speaker_enabled,
+    bool audio_queued,
+    uint32_t last_audio_send_us,
+    uint32_t now_us,
+    uint32_t guard_start_us,
+    uint32_t idle_us
+) {
+    if (!speaker_enabled || audio_queued || last_audio_send_us == 0) {
+        return false;
     }
-    return consecutive_non_audio_sends == 0;
+    const uint32_t elapsed_us = now_us - last_audio_send_us;
+    return elapsed_us >= guard_start_us && elapsed_us < idle_us;
 }
