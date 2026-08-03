@@ -910,6 +910,25 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
         explicit_pairing.find("gap_drop_link_key_for_bd_addr(current_device_addr);");
     const auto create_connection =
         explicit_pairing.find("&hci_create_connection");
+    const std::string rejected_key_invalidation = extract_between(
+        bt_cpp,
+        "static bool invalidate_rejected_pairing_transaction_prior_key",
+        "\n}\n\nstatic bool restore_uncommitted_pairing_key"
+    );
+    const std::string authentication_complete = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_AUTHENTICATION_COMPLETE: {",
+        "\n        case HCI_EVENT_ENCRYPTION_CHANGE:"
+    );
+    const auto invalidate_rejected_transaction = authentication_complete.find(
+        "invalidate_rejected_pairing_transaction_prior_key(current_device_addr)"
+    );
+    const auto drop_rejected_key = authentication_complete.find(
+        "gap_drop_link_key_for_bd_addr(current_device_addr);"
+    );
+    const auto verify_rejected_key_absent = authentication_complete.find(
+        "gap_get_link_key_for_bd_addr("
+    );
     if (
         bt_cpp.find("static void service_acl_connection_cancel()") == std::string::npos
         || bt_cpp.find("hci_send_cmd(&hci_create_connection_cancel, current_device_addr)")
@@ -949,12 +968,33 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
         || bt_cpp.find(
             "\"disconnect before replacement key commit\""
         ) == std::string::npos
+        || rejected_key_invalidation.find(
+            "bd_addr_cmp(transaction.addr, addr) != 0"
+        ) == std::string::npos
+        || rejected_key_invalidation.find(
+            "transaction.state != pairing_transaction_state::AwaitingKey"
+        ) == std::string::npos
+        || rejected_key_invalidation.find("transaction.prior_key_valid = false;")
+            == std::string::npos
+        || rejected_key_invalidation.find("transaction.prior_type = INVALID_LINK_KEY;")
+            == std::string::npos
+        || rejected_key_invalidation.find("write_pairing_transaction(transaction)")
+            == std::string::npos
+        || rejected_key_invalidation.find("discard_pairing_transaction()")
+            == std::string::npos
+        || authentication_complete.find("status == AUTHENTICATION_PIN_OR_KEY_MISSING")
+            == std::string::npos
+        || invalidate_rejected_transaction == std::string::npos
+        || drop_rejected_key == std::string::npos
+        || verify_rejected_key_absent == std::string::npos
+        || !(invalidate_rejected_transaction < drop_rejected_key
+            && drop_rejected_key < verify_rejected_key_absent)
         || disconnect.find("connection_phase == BtConnectionPhase::Disconnecting")
             == std::string::npos
         || disconnect.find("&& acl_handle != HCI_CON_HANDLE_INVALID") == std::string::npos
     ) {
         throw std::runtime_error(
-            "Pending ACL and disconnect transactions must retain ownership until their terminal events"
+            "Pairing transactions must retain ownership and rejected roaming keys must not survive rollback"
         );
     }
 

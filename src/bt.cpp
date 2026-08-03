@@ -1059,6 +1059,58 @@ static bool mark_pairing_transaction_key_accepted(bd_addr_t addr) {
     return write_pairing_transaction(transaction);
 }
 
+static bool invalidate_rejected_pairing_transaction_prior_key(bd_addr_t addr) {
+    bool transaction_present = false;
+    if (!pairing_transaction_storage_status(transaction_present)) {
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+    if (!transaction_present) {
+        return true;
+    }
+
+    pairing_transaction transaction{};
+    if (!read_pairing_transaction(transaction)) {
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+    if (bd_addr_cmp(transaction.addr, addr) != 0) {
+        DS5_LOG(
+            "[HCI] Rejected key does not match staged pairing transaction for %s\n",
+            bd_addr_to_str(addr)
+        );
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+    if (
+        transaction.state != pairing_transaction_state::AwaitingKey
+        || !transaction.prior_key_valid
+    ) {
+        return true;
+    }
+
+    // A PIN_OR_KEY_MISSING response proves the controller no longer accepts
+    // the key saved before explicit re-pairing. Persist that fact before
+    // deleting the live BTstack copy so disconnect and boot recovery cannot
+    // resurrect the rejected key.
+    transaction.prior_key_valid = false;
+    memset(transaction.prior_key, 0, sizeof(transaction.prior_key));
+    transaction.prior_type = INVALID_LINK_KEY;
+    if (!write_pairing_transaction(transaction)) {
+        // Deleting the transaction is also safe after an explicit rejection:
+        // there is no valid prior bond left to roll back to.
+        if (discard_pairing_transaction()) {
+            DS5_LOG("[HCI] Discarded rejected pairing transaction after rewrite failure\n");
+            return true;
+        }
+        pairing_transaction_recovery_failed = true;
+        return false;
+    }
+
+    DS5_LOG("[HCI] Invalidated rejected prior pairing key for %s\n", bd_addr_to_str(addr));
+    return true;
+}
+
 static bool restore_uncommitted_pairing_key(char const *reason) {
     bool transaction_present = false;
     if (!pairing_transaction_storage_status(transaction_present)) {
@@ -3338,7 +3390,24 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                 if (status == AUTHENTICATION_PIN_OR_KEY_MISSING) {
                     DS5_LOG("[HCI] Remote reports missing key; drop stale key for %s\n",
                             bd_addr_to_str(current_device_addr));
+                    if (!invalidate_rejected_pairing_transaction_prior_key(current_device_addr)) {
+                        DS5_LOG(
+                            "[HCI] Failed to durably invalidate rejected pairing key; reconnect remains fail-closed\n"
+                        );
+                    }
                     gap_drop_link_key_for_bd_addr(current_device_addr);
+                    link_key_t rejected_key;
+                    link_key_type_t rejected_type;
+                    if (
+                        gap_get_link_key_for_bd_addr(
+                            current_device_addr,
+                            rejected_key,
+                            &rejected_type
+                        )
+                    ) {
+                        DS5_LOG("[HCI] Failed to remove rejected pairing key\n");
+                        pairing_transaction_recovery_failed = true;
+                    }
                     stored_link_key_present = bt_has_stored_link_key();
                 } else {
                     DS5_LOG("[HCI] Transient authentication failure; preserve stored pairing\n");
