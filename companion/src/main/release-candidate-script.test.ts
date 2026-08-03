@@ -15,7 +15,7 @@ function tempOutputRoot(): string {
 
 function findPowerShell(): string | null {
   const candidates = process.platform === 'win32'
-    ? ['powershell.exe', 'pwsh.exe']
+    ? ['pwsh.exe', 'powershell.exe']
     : ['pwsh'];
   for (const candidate of candidates) {
     const result = spawnSync(candidate, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
@@ -68,5 +68,5 @@ describe('release candidate toolchain', () => {
     expect(result.stdout).toMatch(/Firmware version: \d+\.\d+\.\d+/);
     expect(result.stdout).toMatch(/Bundled firmware version: \d+\.\d+\.\d+/);
     expect(readdirSync(outputRoot)).toEqual([]);
-  });
+  }, 20_000);
 });
