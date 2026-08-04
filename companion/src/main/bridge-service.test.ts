@@ -612,6 +612,41 @@ describe('BridgeService', () => {
     expect(service.getSnapshot().message).toBe('Companion firmware required');
   });
 
+  it('does not repeat full HID discovery during disconnected polling', async () => {
+    const service = serviceFixture();
+
+    await poll(service);
+    await poll(service);
+    await poll(service);
+
+    expect(hidMock.devices).toHaveBeenCalledTimes(1);
+
+    hidMock.state.devicesList = [normalFirmwareDeviceInfo()];
+    const refreshed = await service.refreshBridgeDevices();
+
+    expect(hidMock.devices).toHaveBeenCalledTimes(2);
+    expect(refreshed.state).toBe('normal-firmware');
+    expect(refreshed.message).toBe('Companion firmware required');
+  });
+
+  it('connects when the Pico enumerates after the initial HID discovery', async () => {
+    const service = serviceFixture();
+
+    await poll(service);
+    await poll(service);
+    expect(service.getSnapshot().state).toBe('no-bridge');
+    expect(hidMock.devices).toHaveBeenCalledTimes(1);
+
+    const device = new MockHidDevice();
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    expect(service.getSnapshot().state).toBe('connected');
+    expect(service.getSnapshot().message).toBe('Companion firmware connected');
+    expect(winUsbTransportMock.open).toHaveBeenCalledTimes(3);
+    expect(hidMock.devices).toHaveBeenCalledTimes(1);
+  });
+
   it('treats WinUSB transport close as a bridge disconnect', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();

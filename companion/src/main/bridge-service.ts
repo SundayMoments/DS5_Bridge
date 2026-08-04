@@ -1239,6 +1239,8 @@ export class BridgeService extends EventEmitter {
   private readonly audioHapticsSessionMonitor = new AudioHapticsSessionMonitor();
   private readonly micKeepaliveEngine = new MicKeepaliveEngine();
   private readonly hidDiscovery = new HidDiscoveryClient();
+  private unavailableDiscoveryRequested = false;
+  private unavailableDevices: HidDeviceSummary[] = [];
   private audioHapticsSessionCache: { key: string; expiresAt: number; sessions: AudioHapticsSession[] } | null = null;
   private audioHapticsSessionListInFlight: Promise<AudioHapticsSession[]> | null = null;
   private audioHapticsSessionListInFlightKey: string | null = null;
@@ -3515,7 +3517,7 @@ export class BridgeService extends EventEmitter {
     }
     await this.refreshBridgeCensusIfDue();
 
-    const rawDevices = await this.hidDiscovery.listDevices();
+    const rawDevices = await this.refreshUnavailableDevices();
     let status: BridgeStatusPayload | null;
     try {
       status = await this.openAndReadStatus();
@@ -3741,7 +3743,7 @@ export class BridgeService extends EventEmitter {
     this.closeDevice();
     let rawDevices: HidDeviceSummary[] = [];
     try {
-      rawDevices = await this.hidDiscovery.listDevices();
+      rawDevices = await this.refreshUnavailableDevices(true);
     } catch (error) {
       this.publishError(error);
     }
@@ -4235,9 +4237,31 @@ export class BridgeService extends EventEmitter {
   }
 
   async refreshBridgeDevices(): Promise<BridgeSnapshot> {
-    await this.refreshBridgeCensus();
+    const [, rawDevices] = await Promise.all([
+      this.refreshBridgeCensus(),
+      this.refreshUnavailableDevices(true)
+    ]);
+    if (!this.device) {
+      this.markBridgeUnavailableAfterDisconnect(rawDevices, rawDevices.some(isDualSenseDevice));
+    }
     this.emitSnapshot();
     return this.getSnapshot();
+  }
+
+  private async refreshUnavailableDevices(force = false): Promise<HidDeviceSummary[]> {
+    if (this.device) {
+      return this.unavailableDevices;
+    }
+    if (this.unavailableDiscoveryRequested && !force) {
+      return this.unavailableDevices;
+    }
+    // node-hid performs a full system-wide HID enumeration here. Keep the
+    // initial scan used to classify normal controller firmware, but never
+    // repeat it from the 500 ms poll. Explicit user refreshes and actual
+    // transport-loss events may force another scan.
+    this.unavailableDiscoveryRequested = true;
+    this.unavailableDevices = await this.hidDiscovery.listDevices();
+    return this.unavailableDevices;
   }
 
   private closeDevice(): void {
