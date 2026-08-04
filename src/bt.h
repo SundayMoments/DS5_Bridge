@@ -129,6 +129,10 @@ void bt_inquiry_loop();
 void bt_connection_recovery_loop();
 void bt_feature_prefetch_loop();
 void bt_output_retry_loop();
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+void bt_feature_cache_init_before_tusb();
+uint16_t bt_copy_cached_feature(uint8_t report_id, uint8_t *buffer, uint16_t requested_length);
+#endif
 std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 void init_feature();
 void set_feature_data(uint8_t reportId, uint8_t const* data,uint16_t len);
