@@ -182,6 +182,16 @@ target_compile_definitions(ds5-bridge PRIVATE
         DS5_FIRMWARE_VERSION_MINOR=${DS5_FIRMWARE_VERSION_MINOR}
         DS5_FIRMWARE_VERSION_PATCH=${DS5_FIRMWARE_VERSION_PATCH}
 )
+
+if (WAVESHARE_RP2350B_PLUS_W_BUILD)
+    target_compile_definitions(ds5-bridge PRIVATE
+            # Real hardware stalls when BTstack persists data near the end of
+            # the advertised 16 MiB flash. Keep its two-bank TLV store in the
+            # low-flash region validated by the DS5Dongle Waveshare firmware.
+            DS5_WAVESHARE_STABLE_RUNTIME=1
+            PICO_FLASH_BANK_STORAGE_OFFSET=0x003FD000
+    )
+endif ()
 # Kitsune Input intentionally enumerates as a stock DualSense only. Never turn
 # this on: DualSense Edge USB identity/descriptors are not a supported persona.
 option(ENABLE_DSE "Unsupported: do not enable DualSense Edge USB enumeration" OFF)
@@ -312,4 +322,3 @@ add_custom_command(TARGET ds5-bridge POST_BUILD
 )
 
 pico_add_extra_outputs(ds5-bridge)
-

@@ -389,6 +389,18 @@ static uint64_t bt_rssi_pending_epoch = 0;
 static uint64_t bt_rssi_last_activity_us = 0;
 static uint64_t bt_rssi_last_request_us = 0;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+static constexpr uint16_t FEATURE_CACHE_PAYLOAD_MAX = 64;
+
+struct fixed_feature_cache_entry {
+    uint8_t data[FEATURE_CACHE_PAYLOAD_MAX];
+    uint8_t size;
+    bool ready;
+};
+
+static fixed_feature_cache_entry fixed_feature_cache[256]{};
+static critical_section_t fixed_feature_cache_lock;
+#endif
 static feature_prefetch_request feature_prefetch_queue[FEATURE_PREFETCH_MAX_REQUESTS]{};
 static uint8_t feature_prefetch_count = 0;
 static uint8_t feature_prefetch_index = 0;
@@ -417,6 +429,61 @@ static uint8_t saved_lightbar_blue = 0x00;
 static uint8_t saved_lightbar_brightness = 100;
 static bool player_led_enabled = true;
 static bool lightbar_restore_enabled = true;
+
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+static void bt_feature_cache_clear() {
+    critical_section_enter_blocking(&fixed_feature_cache_lock);
+    memset(fixed_feature_cache, 0, sizeof(fixed_feature_cache));
+    critical_section_exit(&fixed_feature_cache_lock);
+}
+
+static void bt_feature_cache_store(
+    uint8_t report_id,
+    uint8_t const *payload,
+    uint16_t payload_size
+) {
+    if (payload == nullptr) {
+        return;
+    }
+    const uint8_t copy_size = static_cast<uint8_t>(
+        std::min<uint16_t>(payload_size, FEATURE_CACHE_PAYLOAD_MAX)
+    );
+    critical_section_enter_blocking(&fixed_feature_cache_lock);
+    fixed_feature_cache_entry &entry = fixed_feature_cache[report_id];
+    memcpy(entry.data, payload, copy_size);
+    if (copy_size < sizeof(entry.data)) {
+        memset(entry.data + copy_size, 0, sizeof(entry.data) - copy_size);
+    }
+    entry.size = copy_size;
+    entry.ready = true;
+    critical_section_exit(&fixed_feature_cache_lock);
+}
+
+void bt_feature_cache_init_before_tusb() {
+    critical_section_init(&fixed_feature_cache_lock);
+    bt_feature_cache_clear();
+}
+
+uint16_t bt_copy_cached_feature(
+    uint8_t report_id,
+    uint8_t *buffer,
+    uint16_t requested_length
+) {
+    if (buffer == nullptr || requested_length == 0) {
+        return 0;
+    }
+
+    uint16_t copy_size = 0;
+    critical_section_enter_blocking(&fixed_feature_cache_lock);
+    fixed_feature_cache_entry const &entry = fixed_feature_cache[report_id];
+    if (entry.ready) {
+        copy_size = std::min<uint16_t>(requested_length, entry.size);
+        memcpy(buffer, entry.data, copy_size);
+    }
+    critical_section_exit(&fixed_feature_cache_lock);
+    return copy_size;
+}
+#endif
 static bool lightbar_restore_pending = false;
 static uint32_t lightbar_restore_at_us = 0;
 static uint8_t state_report_seq = 0;
@@ -2303,6 +2370,9 @@ bool bt_forget_pairings() {
     stored_link_key_present = false;
     current_link_key_persisted = false;
     feature_data.clear();
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    bt_feature_cache_clear();
+#endif
     clear_feature_prefetch_queue();
 
     return bt_request_scan();
@@ -2347,6 +2417,9 @@ bool bt_forget_pairing(uint8_t address[6]) {
     if (targets_current_session) {
         current_link_key_persisted = false;
         feature_data.clear();
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+        bt_feature_cache_clear();
+#endif
         clear_feature_prefetch_queue();
         if (acl_handle != HCI_CON_HANDLE_INVALID || hid_interrupt_ready) {
             (void)bt_disconnect();
@@ -3403,6 +3476,9 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             hid_control_opened_at_us = 0;
             audio_handle_controller_disconnect();
             feature_data.clear();
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+            bt_feature_cache_clear();
+#endif
             clear_feature_prefetch_queue();
             controller_type = ControllerTypeUnknown;
             controller_type_check_pending = false;
@@ -3795,6 +3871,9 @@ static void l2cap_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
                 uint8_t report_id = packet[1];
                 if (feature_data.size() < 32 || feature_data.contains(report_id)) {
                     feature_data[report_id].assign(packet + 1, packet + size);
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+                    bt_feature_cache_store(report_id, packet + 2, size - 2);
+#endif
                     DS5_LOG("[L2CAP] Stored Feature Report 0x%02X, len=%u\n", report_id, size - 1);
                 }
             }
@@ -5152,6 +5231,9 @@ void set_feature_data(uint8_t reportId, uint8_t const* data,uint16_t len) {
 
 void init_feature() {
     controller_type = ControllerTypeUnknown;
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    bt_feature_cache_clear();
+#endif
     clear_feature_prefetch_queue();
     controller_type_check_pending = true;
     schedule_feature_prefetch(0x70, 64);

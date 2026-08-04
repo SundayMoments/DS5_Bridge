@@ -37,6 +37,7 @@
 
 // Pico SDK support for waiting on conditions.
 #include "pico/critical_section.h"
+#include "pico/util/queue.h"
 
 int reportSeqCounter = 0;
 static constexpr uint32_t HOST_LIGHTBAR_RESTORE_DELAY_MS = 3000;
@@ -281,6 +282,61 @@ static bool dualsense_feature_report_may_use_bt_passthrough(uint8_t report_id) {
     return bt_controller_type() != ControllerTypeDualSenseEdge;
 }
 
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+struct UsbHidSetReportWork {
+    uint8_t interface_number;
+    uint8_t report_id;
+    hid_report_type_t report_type;
+    uint8_t size;
+    uint8_t data[64];
+};
+
+struct UsbHidGetFeatureWork {
+    uint8_t report_id;
+    uint16_t requested_length;
+};
+
+static queue_t usb_hid_set_report_queue;
+static queue_t usb_hid_get_feature_queue;
+
+static void usb_hid_work_init_before_tusb() {
+    queue_init(&usb_hid_set_report_queue, sizeof(UsbHidSetReportWork), 8);
+    queue_init(&usb_hid_get_feature_queue, sizeof(UsbHidGetFeatureWork), 8);
+}
+
+static void queue_usb_hid_set_report(
+    uint8_t interface_number,
+    uint8_t report_id,
+    hid_report_type_t report_type,
+    uint8_t const *data,
+    uint16_t size
+) {
+    UsbHidSetReportWork work{};
+    work.interface_number = interface_number;
+    work.report_id = report_id;
+    work.report_type = report_type;
+    work.size = static_cast<uint8_t>(std::min<uint16_t>(size, sizeof(work.data)));
+    if (work.size > 0 && data != nullptr) {
+        memcpy(work.data, data, work.size);
+    }
+
+    if (!queue_try_add(&usb_hid_set_report_queue, &work)) {
+        UsbHidSetReportWork stale{};
+        (void)queue_try_remove(&usb_hid_set_report_queue, &stale);
+        (void)queue_try_add(&usb_hid_set_report_queue, &work);
+    }
+}
+
+static void queue_usb_hid_get_feature(uint8_t report_id, uint16_t requested_length) {
+    UsbHidGetFeatureWork work{report_id, requested_length};
+    if (!queue_try_add(&usb_hid_get_feature_queue, &work)) {
+        UsbHidGetFeatureWork stale{};
+        (void)queue_try_remove(&usb_hid_get_feature_queue, &stale);
+        (void)queue_try_add(&usb_hid_get_feature_queue, &work);
+    }
+}
+#endif
+
 void host_input_prepare_persona_switch() {
     const HostPersonaMode current_persona = host_persona_active();
     const BridgeControllerState neutral_state = neutral_controller_state();
@@ -313,7 +369,13 @@ void reset_controller_input_report_cache() {
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
     interrupt_in_state = default_state;
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    // The Waveshare build retains its enumerated USB persona across a
+    // controller reconnect, so publish one neutral report immediately.
+    report_dirty = true;
+#else
     report_dirty = false;
+#endif
     critical_section_exit(&report_cs);
 }
 
@@ -444,6 +506,17 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return 0;
     }
 
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    if (dualsense_feature_report_may_use_bt_passthrough(report_id)) {
+        const uint16_t cached_length = bt_copy_cached_feature(report_id, buffer, reqlen);
+        if (cached_length > 0) {
+            return cached_length;
+        }
+        // A USB control callback must not allocate or submit L2CAP work. Ask
+        // the main loop to refresh the cache and let the host retry.
+        queue_usb_hid_get_feature(report_id, reqlen);
+    }
+#else
     std::vector<uint8_t> feature_data;
     if (dualsense_feature_report_may_use_bt_passthrough(report_id)) {
         feature_data = get_feature_data(report_id, reqlen);
@@ -457,14 +530,13 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 
         return copy_len;
     }
+#endif
 
     return dualsense_persona_get_feature_report(report_id, buffer, reqlen);
 }
 
-// Invoked when received SET_REPORT control request or
-// received data on OUT endpoint ( Report ID = 0, Type = 0 )
-void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
-                           uint16_t bufsize) {
+static void process_hid_set_report(uint8_t itf, uint8_t report_id, hid_report_type_t report_type,
+                                   uint8_t const *buffer, uint16_t bufsize) {
     (void) itf;
     (void) report_id;
     (void) report_type;
@@ -553,6 +625,41 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     }
 }
 
+// Invoked when received SET_REPORT control request or data on the OUT endpoint.
+void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type,
+                           uint8_t const *buffer, uint16_t bufsize) {
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    // TinyUSB can invoke this while EP0/OUT state is timing-sensitive. Copy
+    // bounded input only; heap, companion and Bluetooth work runs later.
+    if (buffer == nullptr && bufsize > 0) {
+        return;
+    }
+    queue_usb_hid_set_report(itf, report_id, report_type, buffer, bufsize);
+#else
+    process_hid_set_report(itf, report_id, report_type, buffer, bufsize);
+#endif
+}
+
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+static void usb_hid_work_task() {
+    UsbHidSetReportWork set_work{};
+    while (queue_try_remove(&usb_hid_set_report_queue, &set_work)) {
+        process_hid_set_report(
+            set_work.interface_number,
+            set_work.report_id,
+            set_work.report_type,
+            set_work.data,
+            set_work.size
+        );
+    }
+
+    UsbHidGetFeatureWork get_work{};
+    while (queue_try_remove(&usb_hid_get_feature_queue, &get_work)) {
+        (void)get_feature_data(get_work.report_id, get_work.requested_length);
+    }
+}
+#endif
+
 int main() {
 #if SYS_CLOCK_KHZ != 150000
     vreg_set_voltage(VREG_VOLTAGE_1_20);
@@ -563,6 +670,11 @@ int main() {
     board_init();
     watchdog_telemetry_boot_capture();
     firmware_log_init();
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    // Windows may issue HID control requests as soon as TinyUSB starts.
+    bt_feature_cache_init_before_tusb();
+    usb_hid_work_init_before_tusb();
+#endif
     usb_device_stack_init_disconnected();
 #if DS5_DEBUG_LOGS_ENABLED
     // TinyUSB's board_init() configures its UART at 115200. Reinitialize stdio
@@ -624,6 +736,9 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
             tud_task();
         });
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+        usb_hid_work_task();
+#endif
         RUN_MAIN_PHASE(
             WatchdogMainLoopPhase::FirmwareLogFlush,
             {

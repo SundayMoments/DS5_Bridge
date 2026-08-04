@@ -226,6 +226,15 @@ void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
     usb_reconnect_requested = false;
     usb_reconnect_connect_pending = false;
     usb_controller_transport_ready = false;
+#if defined(DS5_WAVESHARE_STABLE_RUNTIME)
+    if (usb_controller_transport_attached || usb_mounted) {
+        // Retain the enumerated persona while Bluetooth reconnects. Repeated
+        // firmware-driven detach/attach cycles are unreliable on this board.
+        usb_controller_transport_disconnect_not_before_us = 0;
+        usb_controller_transport_transition_pending = false;
+        return;
+    }
+#endif
     usb_controller_transport_disconnect_not_before_us = expected_disconnect
         ? time_us_32() + USB_EXPECTED_DISCONNECT_GRACE_US
         : 0;
