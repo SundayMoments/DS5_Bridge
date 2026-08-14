@@ -616,11 +616,15 @@ describe('companion protocol', () => {
     expect(report.slice(11, 20)).toEqual(payload);
   });
 
-  it('marks Edge Fn face-button chord combos as reserved', () => {
+  it('allows Edge Fn face-button chord combos only while profile switching is blocked', () => {
     expect(isChordBindingAllowed('ps', 'triangle')).toBe(true);
+    expect(isChordBindingAllowed('mute', 'triangle')).toBe(true);
     expect(isChordBindingAllowed('lfn', 'options')).toBe(true);
     expect(isChordBindingAllowed('rfn', 'square')).toBe(false);
     expect(isChordBindingAllowed('lfn', 'circle')).toBe(false);
+    expect(isChordBindingAllowed('rfn', 'square', true)).toBe(true);
+    expect(isChordBindingAllowed('lfn', 'circle', true)).toBe(true);
+    expect(COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED).toBe(0x45);
   });
 
   it('builds sleep controller command reports', () => {

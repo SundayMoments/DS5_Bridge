@@ -1170,6 +1170,36 @@ void dualsense_persona_preserves_native_report_bytes() {
     }
 }
 
+void dualsense_edge_profile_switching_payload_sets_owned_mode_byte() {
+    auto payload = empty_payload();
+    payload[kValidFlag2Offset] = kFlag2LightbarSetupControlEnable;
+
+    EXPECT_TRUE(render_edge_profile_switching_payload(
+        payload.data(),
+        static_cast<uint16_t>(payload.size()),
+        true
+    ));
+    EXPECT_EQ(
+        payload[kValidFlag2Offset],
+        static_cast<uint8_t>(
+            kFlag2LightbarSetupControlEnable
+            | kFlag2EdgeProfileSwitchingControlEnable
+        )
+    );
+    EXPECT_EQ(
+        payload[kEdgeProfileSwitchingModeOffset],
+        kEdgeProfileSwitchingBlocked
+    );
+
+    EXPECT_TRUE(render_edge_profile_switching_payload(
+        payload.data(),
+        static_cast<uint16_t>(payload.size()),
+        false
+    ));
+    EXPECT_EQ(payload[kEdgeProfileSwitchingModeOffset], 0);
+    EXPECT_FALSE(render_edge_profile_switching_payload(nullptr, 0, true));
+}
+
 void xusb360_persona_maps_standard_gamepad_fields() {
     const auto report = sample_dualsense_input_report();
     BridgeControllerState state{};
@@ -1486,6 +1516,7 @@ std::vector<TestCase> tests{
     {"packet compositor initializes bluetooth report and wraps sequence", packet_compositor_initializes_bluetooth_report_and_wraps_sequence},
     {"usb host speaker gain does not attenuate native haptics", usb_host_speaker_gain_does_not_attenuate_native_haptics},
     {"classic rumble gain clamps rounds and touches motor payloads", classic_rumble_gain_clamps_rounds_and_touches_motor_payloads},
+    {"dualsense edge profile switching payload sets owned mode byte", dualsense_edge_profile_switching_payload_sets_owned_mode_byte},
     {"audio haptics replace tracks state without suppressing classic rumble", audio_haptics_replace_tracks_state_without_suppressing_classic_rumble},
     {"speaker sanitizer strips host amp flags and zeroes only controlled fields", speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields},
     {"mic sanitizer removes mute led and only mic power save bit", mic_sanitizer_removes_mute_led_and_only_mic_power_save_bit},

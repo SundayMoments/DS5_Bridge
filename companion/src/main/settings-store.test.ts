@@ -334,8 +334,42 @@ describe('SettingsStore', () => {
       starter: 'ps',
       button: 'triangle',
       functionId: 'media-play'
+    }, {
+      id: 'reserved-lfn-square',
+      kind: 'chord',
+      starter: 'lfn',
+      button: 'square',
+      functionId: 'media-play'
     }]);
     expect(new SettingsStore(userDataPath).get().chordAssignments).toEqual(updated.chordAssignments);
+  });
+
+  it('persists the Edge profile blocker with reserved chord assignments', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const functions: ChordFunction[] = [{
+      id: 'edge-action',
+      name: 'Edge Action',
+      type: 'keyboard',
+      keys: ['F13']
+    }];
+    const assignments: ChordAssignment[] = [{
+      id: 'lfn-triangle',
+      kind: 'chord',
+      starter: 'lfn',
+      button: 'triangle',
+      functionId: 'edge-action'
+    }];
+
+    store.update({ edgeProfileSwitchingBlocked: true });
+    const updated = store.setChordConfiguration(functions, assignments);
+
+    expect(updated.edgeProfileSwitchingBlocked).toBe(true);
+    expect(updated.chordAssignments).toEqual(assignments);
+    expect(new SettingsStore(userDataPath).get()).toMatchObject({
+      edgeProfileSwitchingBlocked: true,
+      chordAssignments: assignments
+    });
   });
 
   it('preserves notch controller-setting chord functions', () => {

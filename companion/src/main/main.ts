@@ -1228,6 +1228,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setChordConfiguration', (_event, functions: ChordFunction[], assignments: ChordAssignment[]) => (
     service.setChordConfiguration(functions, assignments)
   ));
+  ipcMain.handle('bridge:setEdgeProfileSwitchingBlocked', (_event, value: boolean) => (
+    service.setEdgeProfileSwitchingBlocked(value)
+  ));
   ipcMain.handle('bridge:setChordFunctions', (_event, functions: ChordFunction[]) => (
     service.setChordFunctions(functions)
   ));

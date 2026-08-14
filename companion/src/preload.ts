@@ -216,6 +216,9 @@ const api = {
   setChordConfiguration: (functions: ChordFunction[], assignments: ChordAssignment[]): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setChordConfiguration', functions, assignments)
   ),
+  setEdgeProfileSwitchingBlocked: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setEdgeProfileSwitchingBlocked', value)
+  ),
   setChordFunctions: (functions: ChordFunction[]): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setChordFunctions', functions)
   ),

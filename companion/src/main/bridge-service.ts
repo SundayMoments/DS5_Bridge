@@ -22,6 +22,7 @@ import {
   buildChordBindingsPayload,
   buildCommandReport,
   clampAudioInterleaveValues,
+  isChordBindingAllowed,
   parseAckReport,
   parseAudioDebugReport,
   parseAudioStatsReport,
@@ -3231,6 +3232,25 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setEdgeProfileSwitchingBlocked(enabled: boolean): Promise<BridgeSnapshot> {
+    const connected = this.snapshot.state === 'connected';
+    if (connected && !enabled) {
+      await this.applyChordBindings({
+        ...this.snapshot.settings,
+        edgeProfileSwitchingBlocked: false
+      });
+    }
+    await this.sendSettingCommand(
+      COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED,
+      enabled ? 1 : 0,
+      { edgeProfileSwitchingBlocked: enabled }
+    );
+    if (connected) {
+      await this.applyChordBindings(this.snapshot.settings);
+    }
+    return this.getSnapshot();
+  }
+
   async setChordConfiguration(functions: ChordFunction[], assignments: ChordAssignment[]): Promise<BridgeSnapshot> {
     this.snapshot.settings = this.settingsStore.setChordConfiguration(functions, assignments);
     if (this.snapshot.state === 'connected') {
@@ -3269,9 +3289,16 @@ export class BridgeService extends EventEmitter {
   }
 
   private async applyChordBindings(settings: CompanionSettings): Promise<void> {
-    await this.sendCommand(COMMAND_ID.SET_CHORD_BINDINGS, settings.chordAssignments.length, {
+    const activeAssignments = settings.chordAssignments.filter((assignment) => (
+      isChordBindingAllowed(
+        assignment.starter,
+        assignment.button,
+        settings.edgeProfileSwitchingBlocked
+      )
+    ));
+    await this.sendCommand(COMMAND_ID.SET_CHORD_BINDINGS, activeAssignments.length, {
       throwOnCommandError: false,
-      extraPayload: buildChordBindingsPayload(settings.chordAssignments)
+      extraPayload: buildChordBindingsPayload(activeAssignments)
     });
   }
 
@@ -3943,7 +3970,21 @@ export class BridgeService extends EventEmitter {
       { expectSettingsRevisionChange }
     );
     await this.applyButtonRemapping(settings, expectSettingsRevisionChange);
+    if (settings.edgeProfileSwitchingBlocked) {
+      await this.sendCommand(
+        COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED,
+        1,
+        { expectSettingsRevisionChange }
+      );
+    }
     await this.applyChordBindings(settings);
+    if (!settings.edgeProfileSwitchingBlocked) {
+      await this.sendCommand(
+        COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED,
+        0,
+        { expectSettingsRevisionChange }
+      );
+    }
     await this.sendCommand(
       COMMAND_ID.SET_POLLING_RATE_MODE,
       pollingRateModeValue(settings.pollingRateMode),

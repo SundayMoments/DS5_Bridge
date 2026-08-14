@@ -481,6 +481,9 @@ static bool lightbar_restore_enabled = true;
 static bool lightbar_restore_pending = false;
 static uint32_t lightbar_restore_at_us = 0;
 static uint8_t state_report_seq = 0;
+static bool edge_profile_switching_blocked = false;
+static bool edge_profile_switching_mode_applied = false;
+static bool edge_profile_switching_mode_applied_value = false;
 static bool speaker_output_enabled = false;
 static bool speaker_output_headset_route = false;
 static uint8_t speaker_output_gain = DS_OUTPUT_AUDIO_FLAGS2_SPEAKER_PREAMP_GAIN;
@@ -533,6 +536,7 @@ static void reset_controller_output_session_locked() {
     clear_output_queues_locked();
     controller_output_state_clear_classic_rumble();
     state_report_seq = 0;
+    edge_profile_switching_mode_applied = false;
     speaker_output_enabled = false;
     speaker_output_headset_route = false;
     lightbar_restore_pending = false;
@@ -1741,6 +1745,42 @@ static void init_state_report(uint8_t *report) {
     ds5::output::init_bt_output_report(report, 0);
 }
 
+static void service_edge_profile_switching_mode() {
+    if (
+        !bt_is_controller_connected()
+        || controller_type != ControllerTypeDualSenseEdge
+        || (
+            edge_profile_switching_mode_applied
+            && edge_profile_switching_mode_applied_value
+                == edge_profile_switching_blocked
+        )
+    ) {
+        return;
+    }
+
+    uint8_t report[DS_OUTPUT_REPORT_BT_SIZE];
+    init_state_report(report);
+    if (
+        ds5::output::render_edge_profile_switching_payload(
+            report + 3,
+            DS_OUTPUT_REPORT_COMMON_SIZE,
+            edge_profile_switching_blocked
+        )
+        && enqueue_urgent_output(report, sizeof(report), OutputReasonCriticalDirect)
+    ) {
+        edge_profile_switching_mode_applied = true;
+        edge_profile_switching_mode_applied_value = edge_profile_switching_blocked;
+    }
+}
+
+void bt_set_edge_profile_switching_blocked(bool blocked) {
+    if (edge_profile_switching_blocked != blocked) {
+        edge_profile_switching_blocked = blocked;
+        edge_profile_switching_mode_applied = false;
+    }
+    service_edge_profile_switching_mode();
+}
+
 static uint8_t trigger_strength_from_percent(uint8_t intensity_percent) {
     if (intensity_percent == 0) {
         return 0;
@@ -2617,6 +2657,7 @@ static void service_disconnect_recovery(uint32_t now) {
 }
 
 void bt_connection_recovery_loop() {
+    service_edge_profile_switching_mode();
     if (acl_handle == HCI_CON_HANDLE_INVALID) {
         return;
     }

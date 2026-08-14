@@ -201,6 +201,14 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('window.bridge.setWakeOnConnectEnabled(!snapshot.settings.wakeOnConnectEnabled)');
   });
 
+  it('exposes the DualSense Edge profile blocker and uses it to gate reserved chords', () => {
+    expect(appSource).toContain('Block Edge Profile Switching');
+    expect(appSource).toContain('snapshot.settings.edgeProfileSwitchingBlocked');
+    expect(appSource).toContain('window.bridge.setEdgeProfileSwitchingBlocked');
+    expect(appSource).toContain('edgeProfileSwitchingBlocked');
+    expect(appSource).toContain('isChordBindingAllowed(');
+  });
+
   it('distinguishes active charging from connected external power', () => {
     expect(appSource).toContain(
       'function isChargingPowerState(rawPowerState: number | undefined): boolean {'

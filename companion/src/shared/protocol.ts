@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 19;
+export const PROTOCOL_MINOR = 20;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -96,7 +96,8 @@ export const COMMAND_ID = {
   ENTER_BOOTLOADER: 0x33,
   SET_AUDIO_INTERLEAVE: 0x34,
   SET_WAKE_ON_CONNECT: 0x35,
-  SET_LIGHTBAR_RESTORE_ENABLED: 0x36
+  SET_LIGHTBAR_RESTORE_ENABLED: 0x36,
+  SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45
 } as const;
 
 export const ACK_RESULT = {
@@ -298,6 +299,7 @@ export interface ControllerProfileSettings {
   muteKeyboardModifiers: number;
   muteKeyboardBehavior: MuteKeyboardBehavior;
   muteKeyboardChordStarterEnabled: boolean;
+  edgeProfileSwitchingBlocked: boolean;
   sleepKeybindEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;
@@ -341,8 +343,20 @@ export function isChordAssignableButtonId(value: unknown): value is ChordAssigna
   return typeof value === 'string' && (CHORD_ASSIGNABLE_BUTTON_IDS as readonly string[]).includes(value);
 }
 
-export function isChordBindingAllowed(starter: ChordStarterId, button: ChordAssignableButtonId): boolean {
-  return starter === 'ps' || !(CHORD_EDGE_RESERVED_FACE_BUTTON_IDS as readonly string[]).includes(button);
+export function isChordBindingAllowed(
+  starter: ChordStarterId,
+  button: ChordAssignableButtonId,
+  edgeProfileSwitchingBlocked = false
+): boolean {
+  return edgeProfileSwitchingBlocked || !isEdgeProfileSwitchingChord(starter, button);
+}
+
+export function isEdgeProfileSwitchingChord(
+  starter: ChordStarterId,
+  button: ChordAssignableButtonId
+): boolean {
+  return (starter === 'lfn' || starter === 'rfn')
+    && (CHORD_EDGE_RESERVED_FACE_BUTTON_IDS as readonly string[]).includes(button);
 }
 
 export function defaultChordControllerSettingStepPercent(action: ChordControllerSettingAction): number {

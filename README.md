@@ -165,6 +165,11 @@ and device repair.
 Create reusable keyboard, media, and controller actions, then assign them to
 starter chords.
 
+DualSense Edge reserves LFN/RFN plus the face buttons for onboard profile
+switching. Enable **Block Edge Profile Switching** in Bridge Settings to use
+those combinations as DS5 Bridge chords; turning it off keeps the assignments
+saved but inactive.
+
 <p align="center">
   <img src="assets/readme/app-chords.png" width="680" alt="Chord assignment controls in the DS5 Bridge companion app">
 </p>

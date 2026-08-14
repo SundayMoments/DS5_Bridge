@@ -146,6 +146,7 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_SPEAKER_VOLUME_SHORTCUT_ENABLED,
   COMMAND_ID.SET_BUTTON_REMAP,
   COMMAND_ID.SET_CHORD_BINDINGS,
+  COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED,
   COMMAND_ID.SET_POLLING_RATE_MODE,
   COMMAND_ID.SET_HOST_PERSONA
 ];
@@ -1909,6 +1910,55 @@ describe('BridgeService', () => {
     expect(service.getSnapshot().settings.speakerVolumePercent).toBe(55);
     const volumeCommand = device.sentReports.filter((report) => report[7] === COMMAND_ID.SET_SPEAKER_VOLUME).at(-1);
     expect(volumeCommand?.[9]).toBe(55);
+  });
+
+  it('orders the Edge profile blocker safely and keeps reserved chords stored while inactive', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: true,
+      settingsRevision: 4
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    device.sentReports = [];
+    await service.setChordConfiguration([{
+      id: 'edge-action',
+      name: 'Edge Action',
+      type: 'keyboard',
+      keys: ['F13']
+    }], [{
+      id: 'lfn-triangle',
+      kind: 'chord',
+      starter: 'lfn',
+      button: 'triangle',
+      functionId: 'edge-action'
+    }]);
+
+    expect(device.sentReports.at(-1)?.[7]).toBe(COMMAND_ID.SET_CHORD_BINDINGS);
+    expect(device.sentReports.at(-1)?.[9]).toBe(0);
+
+    device.sentReports = [];
+    let snapshot = await service.setEdgeProfileSwitchingBlocked(true);
+    expect(device.sentReports.map((report) => [report[7], report[9]])).toEqual([
+      [COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED, 1],
+      [COMMAND_ID.SET_CHORD_BINDINGS, 1]
+    ]);
+    expect(snapshot.settings.edgeProfileSwitchingBlocked).toBe(true);
+    expect(snapshot.settings.chordAssignments).toHaveLength(1);
+
+    device.sentReports = [];
+    snapshot = await service.setEdgeProfileSwitchingBlocked(false);
+    expect(device.sentReports.map((report) => [report[7], report[9]])).toEqual([
+      [COMMAND_ID.SET_CHORD_BINDINGS, 0],
+      [COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED, 0],
+      [COMMAND_ID.SET_CHORD_BINDINGS, 0]
+    ]);
+    expect(snapshot.settings.edgeProfileSwitchingBlocked).toBe(false);
+    expect(snapshot.settings.chordAssignments).toHaveLength(1);
   });
 
   it('applies arbitrary whole-number chord steps without coarse slider notches', async () => {

@@ -72,6 +72,7 @@ const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   muteKeyboardModifiers: 0,
   muteKeyboardBehavior: 'tap',
   muteKeyboardChordStarterEnabled: false,
+  edgeProfileSwitchingBlocked: false,
   sleepKeybindEnabled: false,
   speakerVolumeShortcutEnabled: false,
   pollingRateMode: '1000',
@@ -130,6 +131,7 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
   'muteKeyboardModifiers',
   'muteKeyboardBehavior',
   'muteKeyboardChordStarterEnabled',
+  'edgeProfileSwitchingBlocked',
   'sleepKeybindEnabled',
   'speakerVolumeShortcutEnabled',
   'pollingRateMode',
@@ -183,6 +185,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   muteKeyboardModifiers: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardModifiers,
   muteKeyboardBehavior: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardBehavior,
   muteKeyboardChordStarterEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardChordStarterEnabled,
+  edgeProfileSwitchingBlocked: DEFAULT_CONTROLLER_PROFILE_SETTINGS.edgeProfileSwitchingBlocked,
   ledEnabled: true,
   playerLedEnabled: true,
   idleDisconnectEnabled: true,
@@ -378,6 +381,7 @@ export function controllerProfileSettingsFrom(settings: CompanionSettings): Cont
     muteKeyboardModifiers: settings.muteKeyboardModifiers,
     muteKeyboardBehavior: settings.muteKeyboardBehavior,
     muteKeyboardChordStarterEnabled: settings.muteKeyboardChordStarterEnabled,
+    edgeProfileSwitchingBlocked: settings.edgeProfileSwitchingBlocked,
     sleepKeybindEnabled: settings.sleepKeybindEnabled,
     speakerVolumeShortcutEnabled: settings.speakerVolumeShortcutEnabled,
     pollingRateMode: settings.pollingRateMode,
@@ -467,6 +471,9 @@ function normalizeControllerProfileSettings(value: unknown): ControllerProfileSe
     muteKeyboardChordStarterEnabled: typeof candidate.muteKeyboardChordStarterEnabled === 'boolean'
       ? candidate.muteKeyboardChordStarterEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.muteKeyboardChordStarterEnabled,
+    edgeProfileSwitchingBlocked: typeof candidate.edgeProfileSwitchingBlocked === 'boolean'
+      ? candidate.edgeProfileSwitchingBlocked
+      : DEFAULT_CONTROLLER_PROFILE_SETTINGS.edgeProfileSwitchingBlocked,
     sleepKeybindEnabled: typeof candidate.sleepKeybindEnabled === 'boolean'
       ? candidate.sleepKeybindEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
@@ -755,7 +762,7 @@ function normalizeChordAssignment(
     if (
       !isChordStarterId(candidate.starter)
       || !isChordAssignableButtonId(candidate.button)
-      || !isChordBindingAllowed(candidate.starter, candidate.button)
+      || !isChordBindingAllowed(candidate.starter, candidate.button, true)
     ) {
       return null;
     }
@@ -992,6 +999,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     muteKeyboardChordStarterEnabled: typeof value?.muteKeyboardChordStarterEnabled === 'boolean'
       ? value.muteKeyboardChordStarterEnabled
       : DEFAULT_SETTINGS.muteKeyboardChordStarterEnabled,
+    edgeProfileSwitchingBlocked: typeof value?.edgeProfileSwitchingBlocked === 'boolean'
+      ? value.edgeProfileSwitchingBlocked
+      : DEFAULT_SETTINGS.edgeProfileSwitchingBlocked,
     ledEnabled: typeof value?.ledEnabled === 'boolean' ? value.ledEnabled : DEFAULT_SETTINGS.ledEnabled,
     playerLedEnabled: typeof value?.playerLedEnabled === 'boolean'
       ? value.playerLedEnabled

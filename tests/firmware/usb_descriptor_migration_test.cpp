@@ -1373,9 +1373,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 19;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 20;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 19;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 20;")
             == std::string::npos
         || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
             == std::string::npos
@@ -1396,6 +1396,10 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
         || companion_cpp.find("CommandSetWakeOnConnect = 0x35")
             == std::string::npos
         || protocol_ts.find("SET_WAKE_ON_CONNECT: 0x35")
+            == std::string::npos
+        || companion_cpp.find("CommandSetEdgeProfileSwitchingBlocked = 0x45")
+            == std::string::npos
+        || protocol_ts.find("SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45")
             == std::string::npos
     ) {
         throw std::runtime_error(
@@ -1458,6 +1462,35 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     ) {
         throw std::runtime_error(
             "Companion controller-management commands must validate and report persistent mutation failures"
+        );
+    }
+}
+
+void assert_dualsense_edge_profile_switching_blocker(
+    std::filesystem::path const &root
+) {
+    const auto companion = read_text(root / "src" / "companion.cpp");
+    const auto bt = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+    const auto output = read_text(root / "src" / "dualsense_output.h");
+    const auto protocol = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
+    const auto service = read_text(root / "companion" / "src" / "main" / "bridge-service.ts");
+
+    if (
+        output.find("kFlag2EdgeProfileSwitchingControlEnable = 0x40") == std::string::npos
+        || output.find("kEdgeProfileSwitchingModeOffset = 40") == std::string::npos
+        || output.find("kEdgeProfileSwitchingBlocked = 0x80") == std::string::npos
+        || output.find("render_edge_profile_switching_payload") == std::string::npos
+        || bt_h.find("void bt_set_edge_profile_switching_blocked(bool blocked);") == std::string::npos
+        || bt.find("controller_type != ControllerTypeDualSenseEdge") == std::string::npos
+        || bt.find("service_edge_profile_switching_mode();") == std::string::npos
+        || companion.find("value == 0 && has_edge_profile_switching_chord()") == std::string::npos
+        || companion.find("!edge_profile_switching_blocked") == std::string::npos
+        || protocol.find("edgeProfileSwitchingBlocked = false") == std::string::npos
+        || service.find("settings.edgeProfileSwitchingBlocked") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense Edge profile switching must be blocked before reserved Fn face-button chords become active"
         );
     }
 }
@@ -2129,6 +2162,7 @@ int main() {
         assert_firmware_version_has_one_canonical_source(source_root);
         assert_bluetooth_device_management_policy(source_root);
         assert_companion_device_management_contract(source_root);
+        assert_dualsense_edge_profile_switching_blocker(source_root);
         assert_bluetooth_hid_recovery_and_encryption_watchdog(source_root);
         assert_dualsense_feature_startup_is_paced(source_root);
         assert_watchdog_and_bootsel_flash_safety(source_root);

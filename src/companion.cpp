@@ -30,7 +30,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 19;
+constexpr uint8_t kProtocolMinor = 20;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -157,6 +157,7 @@ enum CommandId : uint8_t {
     CommandEnterBootloader = 0x33,
     CommandSetWakeOnConnect = 0x35,
     CommandSetLightbarRestoreEnabled = 0x36,
+    CommandSetEdgeProfileSwitchingBlocked = 0x45,
 };
 
 enum AckResult : uint8_t {
@@ -336,6 +337,7 @@ uint8_t mute_keyboard_modifiers = 0;
 bool mute_button_last_pressed = false;
 bool sleep_keybind_enabled = false;
 bool speaker_volume_shortcut_enabled = false;
+bool edge_profile_switching_blocked = false;
 bool shortcut_binding_last_pressed[kShortcutBindingCount]{};
 uint32_t shortcut_binding_last_step_us[kShortcutBindingCount]{};
 bool home_chord_gate_active = false;
@@ -844,12 +846,14 @@ void restore_defaults() {
     mute_button_last_pressed = false;
     sleep_keybind_enabled = false;
     speaker_volume_shortcut_enabled = false;
+    edge_profile_switching_blocked = false;
     std::fill(shortcut_binding_last_pressed, shortcut_binding_last_pressed + kShortcutBindingCount, false);
     std::fill(shortcut_binding_last_step_us, shortcut_binding_last_step_us + kShortcutBindingCount, 0);
     home_chord_gate_active = false;
     home_chord_gate_until_us = 0;
     home_chord_replay_until_us = 0;
     clear_dynamic_chord_bindings();
+    bt_set_edge_profile_switching_blocked(false);
     clear_shortcut_events();
     mute_keyboard_pending = false;
     mute_keyboard_pressed = false;
@@ -1321,7 +1325,7 @@ bool valid_chord_button(uint8_t button) {
         && button != RemapHome;
 }
 
-bool reserved_edge_chord_combo(uint8_t starter, uint8_t button) {
+bool edge_profile_switching_chord_combo(uint8_t starter, uint8_t button) {
     if (starter != kChordStarterLfn && starter != kChordStarterRfn) {
         return false;
     }
@@ -1329,6 +1333,11 @@ bool reserved_edge_chord_combo(uint8_t starter, uint8_t button) {
         || button == RemapCircle
         || button == RemapCross
         || button == RemapSquare;
+}
+
+bool reserved_edge_chord_combo(uint8_t starter, uint8_t button) {
+    return !edge_profile_switching_blocked
+        && edge_profile_switching_chord_combo(starter, button);
 }
 
 bool valid_chord_bindings_payload(uint8_t const *payload, uint16_t len, uint16_t count) {
@@ -1374,6 +1383,18 @@ void set_dynamic_chord_bindings(uint8_t const *payload, uint16_t count) {
             false
         };
     }
+}
+
+bool has_edge_profile_switching_chord() {
+    for (uint8_t i = 0; i < dynamic_chord_binding_count; i++) {
+        if (edge_profile_switching_chord_combo(
+            dynamic_chord_bindings[i].starter,
+            static_cast<uint8_t>(dynamic_chord_bindings[i].button)
+        )) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool schedule_adaptive_trigger_test(uint8_t mode, uint8_t target) {
@@ -2385,6 +2406,17 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             }
             set_dynamic_chord_bindings(buffer + 10, value);
             clear_shortcut_events();
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
+        case CommandSetEdgeProfileSwitchingBlocked:
+            if (value > 1 || (value == 0 && has_edge_profile_switching_chord())) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            edge_profile_switching_blocked = value == 1;
+            bt_set_edge_profile_switching_blocked(edge_profile_switching_blocked);
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;

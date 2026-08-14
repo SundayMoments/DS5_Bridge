@@ -1577,6 +1577,7 @@ function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): Contro
     muteKeyboardModifiers: snapshot.settings.muteKeyboardModifiers,
     muteKeyboardBehavior: snapshot.settings.muteKeyboardBehavior,
     muteKeyboardChordStarterEnabled: snapshot.settings.muteKeyboardChordStarterEnabled,
+    edgeProfileSwitchingBlocked: snapshot.settings.edgeProfileSwitchingBlocked,
     sleepKeybindEnabled: snapshot.settings.sleepKeybindEnabled,
     speakerVolumeShortcutEnabled: snapshot.settings.speakerVolumeShortcutEnabled,
     pollingRateMode: snapshot.settings.pollingRateMode,
@@ -1695,6 +1696,7 @@ function SystemProfileSummary({
         <dl>
           <div><dt>Mute</dt><dd>{muteButtonSummary(settings)}</dd></div>
           <div><dt>Polling</dt><dd>{optionLabel(POLLING_RATE_OPTIONS, settings.pollingRateMode)}</dd></div>
+          <div><dt>Edge Profiles</dt><dd>{settings.edgeProfileSwitchingBlocked ? 'Blocked' : 'Available'}</dd></div>
           <div><dt>Power Save</dt><dd>{enabledLabel(settings.controllerPowerSavingEnabled)}</dd></div>
         </dl>
       </div>
@@ -3074,6 +3076,7 @@ export function App() {
   const remappingLayoutAsset = showDualSenseEdgeRemapButtons ? REMAP_EDGE_LAYOUT_ASSET : REMAP_STANDARD_LAYOUT_ASSET;
   const chordFunctions = snapshot?.settings.chordFunctions ?? [];
   const chordAssignments = snapshot?.settings.chordAssignments ?? [];
+  const edgeProfileSwitchingBlocked = Boolean(snapshot?.settings.edgeProfileSwitchingBlocked);
   const muteButtonChordStarterActive = snapshot?.settings.muteButtonMode === 'chord'
     || (
       snapshot?.settings.muteButtonMode === 'keyboard'
@@ -3115,10 +3118,19 @@ export function App() {
         conflictKeys.add(key);
         conflictCount += 1;
       }
+      if (!isChordBindingAllowed(
+        assignment.starter,
+        assignment.button,
+        edgeProfileSwitchingBlocked
+      )) {
+        conflictKeys.add(key);
+        conflictCount += 1;
+      }
     }
     return { conflictKeys, conflictCount };
   }, [
     chordAssignments,
+    edgeProfileSwitchingBlocked,
     muteButtonChordStarterActive,
     snapshot?.settings.sleepKeybindEnabled,
     snapshot?.settings.speakerVolumeShortcutEnabled
@@ -3156,18 +3168,25 @@ export function App() {
   }
   function chordButtonOptionsFor(
     starter: ChordStarterId,
-    includeUnassigned = false
+    includeUnassigned = false,
+    currentButton?: ChordAssignableButtonId
   ): Array<[string, ChordButtonSelectValue]> {
-    const ids = chordAssignableButtonIds;
+    const ids = chordAssignableButtonIds.filter((id) => (
+      isChordBindingAllowed(starter, id, edgeProfileSwitchingBlocked)
+    ));
+    if (currentButton && !ids.includes(currentButton)) {
+      ids.push(currentButton);
+    }
     const options = ids
-      .filter((id) => isChordBindingAllowed(starter, id))
       .map((id): [string, ChordButtonSelectValue] => [chordButtonLabel(id), id]);
     return includeUnassigned
       ? [['Choose Button', CHORD_UNASSIGNED_BUTTON], ...options]
       : options;
   }
   function firstAllowedChordButton(starter: ChordStarterId): ChordAssignableButtonId | null {
-    return chordAssignableButtonIds.find((id) => isChordBindingAllowed(starter, id)) ?? null;
+    return chordAssignableButtonIds.find((id) => (
+      isChordBindingAllowed(starter, id, edgeProfileSwitchingBlocked)
+    )) ?? null;
   }
   const canAddChordDraft = Boolean(defaultChordFunctionId)
     && chordAssignments.length + chordAssignmentDraftRows.length < MAX_CHORD_ASSIGNMENTS;
@@ -3271,13 +3290,19 @@ export function App() {
           : defaultChordFunctionId;
         const button = row.button
           && chordAssignableButtonIds.includes(row.button)
-          && isChordBindingAllowed(starter, row.button)
+          && isChordBindingAllowed(starter, row.button, edgeProfileSwitchingBlocked)
           ? row.button
           : null;
         return functionId ? { ...row, starter, button, functionId } : null;
       })
       .filter((row): row is ChordAssignmentDraftRow => row !== null));
-  }, [chordAssignableButtonIds, chordFunctionsSignature, chordStarterOptions, defaultChordFunctionId]);
+  }, [
+    chordAssignableButtonIds,
+    chordFunctionsSignature,
+    chordStarterOptions,
+    defaultChordFunctionId,
+    edgeProfileSwitchingBlocked
+  ]);
 
   function applySnapshot(next: BridgeSnapshot) {
     setSnapshot(next);
@@ -5505,7 +5530,11 @@ export function App() {
   }
 
   function commitChordAssignmentDraft(row: ChordAssignmentDraftRow, button: ChordAssignableButtonId) {
-    if (!row.functionId || !isChordBindingAllowed(row.starter, button)) {
+    if (!row.functionId || !isChordBindingAllowed(
+      row.starter,
+      button,
+      edgeProfileSwitchingBlocked
+    )) {
       return;
     }
     const nextAssignment: ChordAssignment = {
@@ -5525,7 +5554,11 @@ export function App() {
         ? {
           ...row,
           starter,
-          button: row.button && isChordBindingAllowed(starter, row.button) ? row.button : null
+          button: row.button && isChordBindingAllowed(
+            starter,
+            row.button,
+            edgeProfileSwitchingBlocked
+          ) ? row.button : null
         }
         : row
     )));
@@ -5556,7 +5589,11 @@ export function App() {
     if (!current) {
       return;
     }
-    const button = isChordBindingAllowed(starter, current.button)
+    const button = isChordBindingAllowed(
+      starter,
+      current.button,
+      edgeProfileSwitchingBlocked
+    )
       ? current.button
       : firstAllowedChordButton(starter);
     if (!button) {
@@ -5574,7 +5611,11 @@ export function App() {
       return;
     }
     const current = chordAssignments.find((assignment) => assignment.id === assignmentId);
-    if (!current || !isChordBindingAllowed(current.starter, button)) {
+    if (!current || !isChordBindingAllowed(
+      current.starter,
+      button,
+      edgeProfileSwitchingBlocked
+    )) {
       return;
     }
     commitChordAssignment({
@@ -9063,7 +9104,11 @@ export function App() {
                               <span className="chords-binding-connector" aria-hidden="true" />
                               <CustomSelect
                                 value={assignment.button}
-                                options={chordButtonOptionsFor(assignment.starter)}
+                                options={chordButtonOptionsFor(
+                                  assignment.starter,
+                                  false,
+                                  assignment.button
+                                )}
                                 disabled={pendingAction !== null}
                                 className="chords-inline-glyph-select chords-inline-button-select"
                                 floatingMenu
@@ -10136,6 +10181,24 @@ export function App() {
                   </button>
                 </div>
                 <div className="settings-menu-section-label">Shortcuts</div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Block Edge Profile Switching</strong>
+                    <span>Reserve LFN/RFN + face buttons for chords when a DualSense Edge connects to this bridge</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapshot.settings.edgeProfileSwitchingBlocked}
+                    className={`switch ${snapshot.settings.edgeProfileSwitchingBlocked ? 'on' : ''}`}
+                    disabled={!connected || pendingAction !== null}
+                    onClick={() => void runAction('edge-profile-switching', () => (
+                      window.bridge.setEdgeProfileSwitchingBlocked(!snapshot.settings.edgeProfileSwitchingBlocked)
+                    ))}
+                  >
+                    <span />
+                  </button>
+                </div>
                 <div className={`settings-menu-row ${settingsFocusTarget === 'sleep-shortcut' ? 'settings-menu-row-highlight' : ''}`}>
                   <div className="settings-menu-copy settings-menu-copy-tooltip">
                     <strong>Sleep Shortcut</strong>
