@@ -4096,10 +4096,6 @@ button.overview-shortcut-chip {
   margin-top: 0;
 }
 
-.deadzone-help-panel .feature-help-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 @media (max-width: 760px) {
   .deadzones-grid {
     grid-template-columns: minmax(0, 1fr);

@@ -368,6 +368,11 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
     expect(appSource).toContain("'Left Stick' : 'Right Stick'");
     expect(appSource).toContain('aria-label={`${label} radial deadzone`}');
+    expect(appSource).toContain('<FeatureTipsPanel tab="deadzones" />');
+    expect(appSource).toContain("title: 'Tune Each Stick'");
+    expect(appSource).toContain("title: 'Keep It Low'");
+    expect(appSource).not.toContain('How Radial Deadzones Work');
+    expect(appSource).not.toContain('All Personas');
     expect(appSource).not.toContain('invertHorizontal');
     expect(appSource).not.toContain('responseCurve');
     expect(appSource).not.toContain('zoneRotation');

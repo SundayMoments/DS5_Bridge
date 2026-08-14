@@ -283,7 +283,7 @@ type LightbarPaletteCell = {
   name: string;
 };
 type FeatureTipsPanelProps = {
-  tab: 'audio' | 'haptics' | 'triggers' | 'lighting';
+  tab: 'audio' | 'haptics' | 'triggers' | 'lighting' | 'deadzones';
   onSettingsFocusRequest?: (target: SettingsFocusTarget) => void;
   audioHapticsOpen?: boolean;
   triggerLabOpen?: boolean;
@@ -1426,80 +1426,97 @@ function FeatureTipsPanel({
     title: string;
     text: string;
     tone?: 'success';
-  }> = [
-    {
-      key: 'toggle',
-      icon: <IconSparkleHighlight size={16} />,
-      title: 'Feature Tiles',
-      text: 'Click the square icon tile to enable or disable that feature.'
-    },
-    {
-      key: 'unavailable',
-      icon: <Settings2 size={16} />,
-      title: 'Unavailable',
-      text: 'Dimmed controls need the bridge, controller, or matching feature enabled.'
+  }> = tab === 'deadzones'
+    ? [
+        {
+          key: 'tune-each-stick',
+          icon: <SlidersHorizontal size={16} />,
+          title: 'Tune Each Stick',
+          text: 'Raise each value only until that stick rests cleanly at center.'
+        },
+        {
+          key: 'keep-it-low',
+          icon: <IconCircleCheck size={16} />,
+          title: 'Keep It Low',
+          text: 'Use the lowest stable value; larger deadzones reduce fine movement near center.'
+        }
+      ]
+    : [
+        {
+          key: 'toggle',
+          icon: <IconSparkleHighlight size={16} />,
+          title: 'Feature Tiles',
+          text: 'Click the square icon tile to enable or disable that feature.'
+        },
+        {
+          key: 'unavailable',
+          icon: <Settings2 size={16} />,
+          title: 'Unavailable',
+          text: 'Dimmed controls need the bridge, controller, or matching feature enabled.'
+        }
+      ];
+
+  if (tab !== 'deadzones') {
+    if (tab === 'triggers' && triggerLabOpen) {
+      tips.push({
+        key: 'trigger-lab-override',
+        icon: <IconFlask2 size={16} />,
+        title: 'Lab Override',
+        text: 'Active Lab effects stay applied and ignore incoming game trigger output.'
+      });
+    } else if (tab === 'haptics' && audioHapticsOpen) {
+      tips.push({
+        key: 'audio-haptics',
+        icon: <IconDeviceAudioTape size={16} />,
+        title: 'Audio Haptics',
+        text: 'Audio Haptics turns system audio into haptic feedback.'
+      });
+    } else if (tab === 'audio') {
+      tips.push({
+        key: 'headphones',
+        icon: <Headphones size={16} />,
+        title: 'Headphones',
+        text: 'Headphones use the same Pico-local audio path as the controller speaker.'
+      });
+    } else {
+      tips.push({
+        key: 'power-saving',
+        icon: <IconBatteryEco size={16} />,
+        title: 'Green Icon',
+        text: 'Power saving is temporarily capping this setting while headphones are connected.',
+        tone: 'success'
+      });
     }
-  ];
 
-  if (tab === 'triggers' && triggerLabOpen) {
-    tips.push({
-      key: 'trigger-lab-override',
-      icon: <IconFlask2 size={16} />,
-      title: 'Lab Override',
-      text: 'Active Lab effects stay applied and ignore incoming game trigger output.'
-    });
-  } else if (tab === 'haptics' && audioHapticsOpen) {
-    tips.push({
-      key: 'audio-haptics',
-      icon: <IconDeviceAudioTape size={16} />,
-      title: 'Audio Haptics',
-      text: 'Audio Haptics turns system audio into haptic feedback.'
-    });
-  } else if (tab === 'audio') {
-    tips.push({
-      key: 'headphones',
-      icon: <Headphones size={16} />,
-      title: 'Headphones',
-      text: 'Headphones use the same Pico-local audio path as the controller speaker.'
-    });
-  } else {
-    tips.push({
-      key: 'power-saving',
-      icon: <IconBatteryEco size={16} />,
-      title: 'Green Icon',
-      text: 'Power saving is temporarily capping this setting while headphones are connected.',
-      tone: 'success'
-    });
-  }
-
-  if (tab === 'triggers' && triggerLabOpen) {
-    tips.push({
-      key: 'trigger-lab-link',
-      icon: triggerLabLinkTipSplit ? <LinkOffIcon size={16} /> : <LinkIcon size={16} />,
-      title: 'Linked / Split',
-      text: 'When Linked is on, the selected effect mirrors across L2 and R2. Split keeps each trigger separate.'
-    });
-  } else if (tab === 'haptics' && audioHapticsOpen) {
-    tips.push({
-      key: 'audio-haptics-mode',
-      icon: <IconBrandDeezer size={16} />,
-      title: 'Mix / Replace',
-      text: 'Mix adds audio feedback to native haptics and rumble; Replace uses only the derived audio feel.'
-    });
-  } else if (tab === 'lighting') {
-    tips.push({
-      key: 'custom-color',
-      icon: <Palette size={16} />,
-      title: 'Custom Color',
-      text: 'Double-click the final color swatch to choose a custom lightbar color.'
-    });
-  } else {
-    tips.push({
-      key: 'tests',
-      icon: <Play size={16} />,
-      title: 'Tests',
-      text: 'Tests may pause while a game or audio stream is actively using the controller.'
-    });
+    if (tab === 'triggers' && triggerLabOpen) {
+      tips.push({
+        key: 'trigger-lab-link',
+        icon: triggerLabLinkTipSplit ? <LinkOffIcon size={16} /> : <LinkIcon size={16} />,
+        title: 'Linked / Split',
+        text: 'When Linked is on, the selected effect mirrors across L2 and R2. Split keeps each trigger separate.'
+      });
+    } else if (tab === 'haptics' && audioHapticsOpen) {
+      tips.push({
+        key: 'audio-haptics-mode',
+        icon: <IconBrandDeezer size={16} />,
+        title: 'Mix / Replace',
+        text: 'Mix adds audio feedback to native haptics and rumble; Replace uses only the derived audio feel.'
+      });
+    } else if (tab === 'lighting') {
+      tips.push({
+        key: 'custom-color',
+        icon: <Palette size={16} />,
+        title: 'Custom Color',
+        text: 'Double-click the final color swatch to choose a custom lightbar color.'
+      });
+    } else {
+      tips.push({
+        key: 'tests',
+        icon: <Play size={16} />,
+        title: 'Tests',
+        text: 'Tests may pause while a game or audio stream is actively using the controller.'
+      });
+    }
   }
 
   return (
@@ -7466,30 +7483,7 @@ export function App() {
               })}
             </div>
 
-            <section className="feature-help-panel deadzone-help-panel" aria-label="Deadzone behavior">
-              <div className="feature-help-heading">
-                <IconBooks size={16} />
-                <h3>How Radial Deadzones Work</h3>
-              </div>
-              <div className="feature-help-grid">
-                <div className="feature-help-item">
-                  <span className="feature-help-icon"><IconCircleCheck size={16} /></span>
-                  <span className="feature-help-copy"><strong>Circular Filtering</strong><span>X and Y are measured together, so diagonal direction stays intact.</span></span>
-                </div>
-                <div className="feature-help-item">
-                  <span className="feature-help-icon"><IconAdjustmentsSpark size={16} /></span>
-                  <span className="feature-help-copy"><strong>Full Travel Preserved</strong><span>Input beyond the deadzone is rescaled back across the complete output range.</span></span>
-                </div>
-                <div className="feature-help-item">
-                  <span className="feature-help-icon"><Save size={16} /></span>
-                  <span className="feature-help-copy"><strong>Profile Aware</strong><span>Both values follow the selected controller profile and auto-save with changes.</span></span>
-                </div>
-                <div className="feature-help-item">
-                  <span className="feature-help-icon"><IconDeviceGamepad2 size={16} /></span>
-                  <span className="feature-help-copy"><strong>All Personas</strong><span>The filter runs before DS5_Bridge renders DualSense, Edge, DS4, or Xbox output.</span></span>
-                </div>
-              </div>
-            </section>
+            <FeatureTipsPanel tab="deadzones" />
           </div>
 
           <div
