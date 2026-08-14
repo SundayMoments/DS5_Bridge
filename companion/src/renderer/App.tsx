@@ -7411,7 +7411,6 @@ export function App() {
                 <h2>Stick Deadzones</h2>
                 <p>Remove center drift with independent radial deadzones for each stick.</p>
               </div>
-              <ProfileSaveStatus />
             </div>
 
             <div className="feature-card-grid deadzones-grid">

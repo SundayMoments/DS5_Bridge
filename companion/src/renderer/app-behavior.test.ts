@@ -364,7 +364,12 @@ describe('renderer behavior guards', () => {
   });
 
   it('exposes only radial stick deadzones from the premium analog controls', () => {
+    const deadzonesPanelStart = appSource.indexOf('id="control-panel-deadzones"');
+    const deadzonesPanelEnd = appSource.indexOf('<FeatureTipsPanel tab="deadzones" />', deadzonesPanelStart);
+    const deadzonesPanelSource = appSource.slice(deadzonesPanelStart, deadzonesPanelEnd);
+
     expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones'");
+    expect(deadzonesPanelSource).not.toContain('<ProfileSaveStatus />');
     expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
     expect(appSource).toContain('window.bridge.requestStickInputPreview()');
     expect(appSource).toContain('window.bridge.releaseStickInputPreview()');
