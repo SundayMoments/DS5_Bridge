@@ -369,6 +369,8 @@ describe('renderer behavior guards', () => {
     const deadzonesPanelSource = appSource.slice(deadzonesPanelStart, deadzonesPanelEnd);
 
     expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones'");
+    expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder }");
+    expect(deadzonesPanelSource).toContain('<span className="feature-icon"><IconViewfinder size={20} /></span>');
     expect(deadzonesPanelSource).not.toContain('<ProfileSaveStatus />');
     expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
     expect(appSource).toContain('window.bridge.requestStickInputPreview()');

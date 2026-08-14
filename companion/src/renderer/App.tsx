@@ -5,7 +5,7 @@ import {
   IconAdjustmentsSpark,
   IconActivity as Activity,
   IconAdjustmentsHorizontal as Settings2,
-  IconAdjustmentsHorizontal as SlidersHorizontal,
+  IconViewfinder,
   IconAlertHexagon,
   IconAlertTriangle,
   IconArrowRight as ArrowRight,
@@ -759,7 +759,7 @@ const CONTROL_TAB_DEFINITIONS: Record<SidebarControlTab, ControlTabDefinition> =
   triggers: { id: 'triggers', label: 'Adaptive Triggers', Icon: IconDeviceGamepad2 },
   'trigger-lab': { id: 'trigger-lab', label: 'Trigger Lab', Icon: IconFlask2 },
   lighting: { id: 'lighting', label: 'Lighting', Icon: IconBulb },
-  deadzones: { id: 'deadzones', label: 'Stick Deadzones', Icon: SlidersHorizontal },
+  deadzones: { id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder },
   remapping: { id: 'remapping', label: 'Button Remapping', Icon: IconDeviceGamepad3 },
   chords: { id: 'chords', label: 'Chords', Icon: IconReplace },
   system: { id: 'system', label: 'System', Icon: IconCpu }
@@ -1437,7 +1437,7 @@ function FeatureTipsPanel({
     ? [
         {
           key: 'tune-each-stick',
-          icon: <SlidersHorizontal size={16} />,
+          icon: <IconViewfinder size={16} />,
           title: 'Tune Each Stick',
           text: 'Raise each value only until that stick rests cleanly at center.'
         },
@@ -7436,7 +7436,7 @@ export function App() {
                 return (
                   <section className="feature-card deadzone-card" key={side}>
                     <div className="feature-card-title">
-                      <span className="feature-icon"><SlidersHorizontal size={20} /></span>
+                      <span className="feature-icon"><IconViewfinder size={20} /></span>
                       <div className="title-copy">
                         <h3>{label}</h3>
                         <p>Circular center filtering with full-range rescaling.</p>
