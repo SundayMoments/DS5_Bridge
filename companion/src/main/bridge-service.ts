@@ -793,13 +793,14 @@ function formatUsbDebugEvent(prefix: string, args: number[]): string {
 }
 
 function normalizeHostPersonaMode(mode: HostPersonaMode): HostPersonaMode {
-  if (mode === 'xbox' || mode === 'ds4') {
+  if (mode === 'dualsense-edge' || mode === 'xbox' || mode === 'ds4') {
     return mode;
   }
   return 'dualsense';
 }
 
 function hostPersonaModeLabel(mode: HostPersonaMode): string {
+  if (mode === 'dualsense-edge') return 'DualSense Edge';
   if (mode === 'ds4') return 'DualShock 4';
   return mode === 'xbox' ? 'Xbox Controller' : 'DualSense';
 }
@@ -2703,6 +2704,9 @@ export class BridgeService extends EventEmitter {
         return;
       case 'persona-dualsense':
         await this.setHostPersonaMode('dualsense');
+        return;
+      case 'persona-dualsense-edge':
+        await this.setHostPersonaMode('dualsense-edge');
         return;
       case 'persona-ds4':
         await this.setHostPersonaMode('ds4');

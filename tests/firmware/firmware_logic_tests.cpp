@@ -30,6 +30,7 @@ using namespace ds5::output;
 extern "C" bool host_persona_descriptors_verified(HostPersonaMode mode) {
     switch (mode) {
         case HostPersonaModeDualSense:
+        case HostPersonaModeDualSenseEdge:
         case HostPersonaModeXusb360:
         case HostPersonaModeDs4:
             return true;
@@ -1153,14 +1154,19 @@ void bootsel_gesture_policy_emits_click_double_triple_and_hold() {
 void dualsense_persona_preserves_native_report_bytes() {
     const auto report = sample_dualsense_input_report();
     BridgeControllerState state{};
-    HostPersonaInputReport encoded{};
 
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_TRUE(host_persona_encode_input(HostPersonaModeDualSense, state, encoded));
-    EXPECT_EQ(encoded.report_id, 0x01);
-    EXPECT_EQ(encoded.len, kDualSenseUsbInputReportSize);
-    for (uint8_t index = 0; index < kDualSenseUsbInputReportSize; index++) {
-        EXPECT_EQ(encoded.bytes[index], report[index]);
+    for (HostPersonaMode const mode : {
+        HostPersonaModeDualSense,
+        HostPersonaModeDualSenseEdge,
+    }) {
+        HostPersonaInputReport encoded{};
+        EXPECT_TRUE(host_persona_encode_input(mode, state, encoded));
+        EXPECT_EQ(encoded.report_id, 0x01);
+        EXPECT_EQ(encoded.len, kDualSenseUsbInputReportSize);
+        for (uint8_t index = 0; index < kDualSenseUsbInputReportSize; index++) {
+            EXPECT_EQ(encoded.bytes[index], report[index]);
+        }
     }
 }
 
@@ -1329,14 +1335,24 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     std::array<uint8_t, 63> feature{};
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x03, feature.data(), 47), 47);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x03,
+        feature.data(),
+        47
+    ), 47);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x03));
     EXPECT_EQ(feature[1], 0x28);
     EXPECT_EQ(feature[3], 0x4e);
     EXPECT_EQ(feature[19], 0x81);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x05, feature.data(), 40), 40);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x05,
+        feature.data(),
+        40
+    ), 40);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x05));
     EXPECT_EQ(feature[6], 0x00);
     EXPECT_EQ(feature[7], 0x04);
@@ -1344,7 +1360,12 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     EXPECT_EQ(feature[9], 0xfc);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x09, feature.data(), 19), 19);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x09,
+        feature.data(),
+        19
+    ), 19);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x09));
     EXPECT_EQ(feature[0], 0x00);
     EXPECT_EQ(feature[1], 0xa5);
@@ -1354,7 +1375,12 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     EXPECT_EQ(feature[5], 0x02);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x20, feature.data(), 63), 63);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x20,
+        feature.data(),
+        63
+    ), 63);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x20));
     EXPECT_EQ(feature[0], static_cast<uint8_t>('J'));
     EXPECT_EQ(feature[11], static_cast<uint8_t>('1'));
@@ -1374,7 +1400,37 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     EXPECT_EQ(feature[55], 0x06);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x22, feature.data(), 63), 63);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSenseEdge,
+        0x20,
+        feature.data(),
+        63
+    ), 63);
+    EXPECT_EQ(feature[0], static_cast<uint8_t>('S'));
+    EXPECT_EQ(feature[10], static_cast<uint8_t>('5'));
+    EXPECT_EQ(feature[11], static_cast<uint8_t>('1'));
+    EXPECT_EQ(feature[18], static_cast<uint8_t>('0'));
+    EXPECT_EQ(feature[19], 0x02);
+    EXPECT_EQ(feature[21], 0x44);
+    EXPECT_EQ(feature[23], 0x16);
+    EXPECT_EQ(feature[24], 0x02);
+    EXPECT_EQ(feature[26], 0x01);
+    EXPECT_EQ(feature[27], 0x8b);
+    EXPECT_EQ(feature[30], 0x01);
+    EXPECT_EQ(feature[43], 0x17);
+    EXPECT_EQ(feature[44], 0x02);
+    EXPECT_EQ(feature[47], 0x14);
+    EXPECT_EQ(feature[51], 0x0a);
+    EXPECT_EQ(feature[53], 0x02);
+    EXPECT_EQ(feature[55], 0x06);
+
+    feature.fill(0xaa);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x22,
+        feature.data(),
+        63
+    ), 63);
     EXPECT_FALSE(dualsense_persona_has_synthetic_feature_report(0x22));
     for (uint8_t value : feature) {
         EXPECT_EQ(value, 0);

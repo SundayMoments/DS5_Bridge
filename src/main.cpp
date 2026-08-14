@@ -385,14 +385,21 @@ static uint16_t ds4_copy_input_report_payload(uint8_t report_id, uint8_t *buffer
     return copy_len;
 }
 
-static bool dualsense_feature_report_may_use_bt_passthrough(uint8_t report_id) {
+static bool dualsense_feature_report_may_use_bt_passthrough(
+    HostPersonaMode output_persona,
+    uint8_t report_id
+) {
     if (report_id != 0x20 && report_id != 0x22) {
         return true;
     }
 
-    // We never enumerate as DualSense Edge. Do not leak DSE firmware or
-    // hardware identity through stock DualSense identity feature reports.
-    return bt_controller_type() != ControllerTypeDualSenseEdge;
+    const uint8_t upstream_type = bt_controller_type();
+    if (output_persona == HostPersonaModeDualSenseEdge) {
+        return upstream_type == ControllerTypeDualSenseEdge;
+    }
+    // Keep the two Sony identities isolated. A mismatched or non-DualSense
+    // upstream controller uses the persona's synthesized identity instead.
+    return upstream_type == ControllerTypeDualSense;
 }
 
 void host_input_prepare_persona_switch() {
@@ -550,6 +557,14 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return 0;
     }
 
+    const HostPersonaMode active_persona = host_persona_active();
+    if (
+        active_persona != HostPersonaModeDualSense
+        && active_persona != HostPersonaModeDualSenseEdge
+    ) {
+        return 0;
+    }
+
     audio_debug_note_hid_event(
         HidDebugGetReport,
         report_id,
@@ -562,7 +577,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     }
 
     std::vector<uint8_t> feature_data;
-    if (dualsense_feature_report_may_use_bt_passthrough(report_id)) {
+    if (dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)) {
         feature_data = get_feature_data(report_id, reqlen);
     }
     if (!feature_data.empty() && buffer != nullptr) {
@@ -575,7 +590,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return copy_len;
     }
 
-    return dualsense_persona_get_feature_report(report_id, buffer, reqlen);
+    return dualsense_persona_get_feature_report(active_persona, report_id, buffer, reqlen);
 }
 
 // Invoked when received SET_REPORT control request or

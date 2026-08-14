@@ -75,7 +75,7 @@ export type AudioHelperCommand = {
 };
 
 function normalizeBridgePersonaMode(mode: HostPersonaMode): HostPersonaMode {
-  if (mode === 'xbox' || mode === 'ds4') {
+  if (mode === 'dualsense-edge' || mode === 'xbox' || mode === 'ds4') {
     return mode;
   }
   return 'dualsense';

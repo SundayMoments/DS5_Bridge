@@ -227,6 +227,18 @@ describe('bridge speaker test', () => {
       '65'
     ]);
   });
+
+  it('preserves the DualSense Edge persona for endpoint isolation', async () => {
+    const play = playBridgeSpeakerTestTone(100, 'dualsense-edge');
+    const helper = childProcessMock.processes[0]!;
+
+    helper.emit('exit', 0, null);
+    await play;
+
+    const args = childProcessMock.spawn.mock.calls[0]![1] as string[];
+    expect(args).toContain('--bridge-persona');
+    expect(args[args.indexOf('--bridge-persona') + 1]).toBe('dualsense-edge');
+  });
 });
 
 describe('audio haptics session listing', () => {

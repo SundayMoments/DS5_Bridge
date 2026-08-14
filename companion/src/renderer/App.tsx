@@ -414,6 +414,7 @@ const POLLING_RATE_OPTIONS: Array<[string, PollingRateMode]> = [
 ];
 const HOST_PERSONA_OPTIONS: Array<[string, HostPersonaMode]> = [
   ['DualSense', 'dualsense'],
+  ['DualSense Edge', 'dualsense-edge'],
   ['DualShock 4', 'ds4'],
   ['Xbox', 'xbox']
 ];
@@ -585,6 +586,7 @@ const CHORD_CONTROLLER_SETTING_ACTION_OPTIONS: Array<[string, ChordControllerSet
   ['Mic Mute', 'toggle-mic-mute'],
   ['Sleep Controller', 'sleep-controller'],
   ['DualSense', 'persona-dualsense'],
+  ['DualSense Edge', 'persona-dualsense-edge'],
   ['DualShock 4', 'persona-ds4'],
   ['Xbox', 'persona-xbox'],
   ...CHORD_NOTCH_TARGETS.map((target): [string, ChordNotchTargetId] => [target.label, target.id])
@@ -2540,7 +2542,7 @@ function ChordButtonGlyphOption({ label, value }: { label: string; value: ChordB
 }
 
 function HostPersonaOption({ label, value }: { label: string; value: HostPersonaMode }) {
-  const sonyPersona = value === 'dualsense' || value === 'ds4';
+  const sonyPersona = value === 'dualsense' || value === 'dualsense-edge' || value === 'ds4';
   return (
     <span className="host-persona-option">
       {sonyPersona ? (
@@ -2678,6 +2680,8 @@ function chordControllerSettingSummary(action: ChordControllerSettingAction, ste
       return 'Sleep Controller';
     case 'persona-dualsense':
       return 'Set Persona: DualSense';
+    case 'persona-dualsense-edge':
+      return 'Set Persona: DualSense Edge';
     case 'persona-ds4':
       return 'Set Persona: DualShock 4';
     case 'persona-xbox':
@@ -10032,7 +10036,7 @@ export function App() {
                 <div className="settings-menu-row">
                   <div className="settings-menu-copy">
                     <strong>Wake PC on Controller</strong>
-                    <span>Wake through USB when a controller reconnects. Requires Windows wake permission and DualSense or DS4 mode.</span>
+                    <span>Wake through USB when a controller reconnects. Requires Windows wake permission and DualSense, DualSense Edge, or DS4 mode.</span>
                   </div>
                   <button
                     type="button"

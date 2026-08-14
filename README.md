@@ -72,7 +72,7 @@ on the controller until its lightbar rapidly blinks blue.
 - Use Audio Haptics to turn system or app audio into controller feedback.
 - Save controller setups as profiles.
 - Remap buttons and assign chord shortcuts.
-- Switch the host persona between DualSense, DualShock 4, and Xbox modes.
+- Switch the host persona between DualSense, DualSense Edge, DualShock 4, and Xbox modes.
 - See Bluetooth signal quality at a glance.
 - Mount, flash, or nuke Pico firmware from Bridge Settings.
 

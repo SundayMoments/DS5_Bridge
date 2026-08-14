@@ -80,7 +80,7 @@ void write_pairing_feature_report(uint8_t *report) {
     std::memcpy(report + 1, kDualSenseSyntheticMac, sizeof(kDualSenseSyntheticMac));
 }
 
-void write_firmware_feature_report(uint8_t *report) {
+void write_dualsense_firmware_feature_report(uint8_t *report) {
     // Stock DualSense identity, not DualSense Edge. This is used when an Edge is
     // the upstream controller but USB is enumerating as a standard DualSense.
     constexpr uint16_t kFirmwareType = 0x0002;
@@ -93,6 +93,30 @@ void write_firmware_feature_report(uint8_t *report) {
     constexpr uint32_t kSpiderFirmwareVersion = 0x00000006;
     copy_ascii_field(report + 1, 11, "Jul  4 2025");
     copy_ascii_field(report + 12, 8, "10:10:32");
+    write_u16(report + 20, kFirmwareType);
+    write_u16(report + 22, kSoftwareSeries);
+    write_u32(report + 24, kHardwareInfo);
+    write_u32(report + 28, kFirmwareVersion);
+    write_u16(report + 44, kUpdateVersion);
+    write_u32(report + 48, kSblFirmwareVersion);
+    write_u32(report + 52, kVenomFirmwareVersion);
+    write_u32(report + 56, kSpiderFirmwareVersion);
+}
+
+void write_dualsense_edge_firmware_feature_report(uint8_t *report) {
+    // Sony Type 0044 / update 0x0217 firmware identity. This report lets a
+    // standard DualSense back the Edge persona without leaking its native
+    // firmware identity through the emulated USB device.
+    constexpr uint16_t kFirmwareType = 0x0002;
+    constexpr uint16_t kSoftwareSeries = 0x0044;
+    constexpr uint32_t kHardwareInfo = 0x01000216;
+    constexpr uint32_t kFirmwareVersion = 0x0100008b;
+    constexpr uint16_t kUpdateVersion = 0x0217;
+    constexpr uint32_t kSblFirmwareVersion = 0x00000014;
+    constexpr uint32_t kVenomFirmwareVersion = 0x0002000a;
+    constexpr uint32_t kSpiderFirmwareVersion = 0x00000006;
+    copy_ascii_field(report + 1, 11, "Sep 19 2025");
+    copy_ascii_field(report + 12, 8, "10:14:30");
     write_u16(report + 20, kFirmwareType);
     write_u16(report + 22, kSoftwareSeries);
     write_u32(report + 24, kHardwareInfo);
@@ -120,6 +144,7 @@ bool dualsense_persona_encode_input(
 }
 
 uint16_t dualsense_persona_get_feature_report(
+    HostPersonaMode mode,
     uint8_t report_id,
     uint8_t *buffer,
     uint16_t reqlen
@@ -141,7 +166,11 @@ uint16_t dualsense_persona_get_feature_report(
             return copy_feature_payload(report, 20, buffer, reqlen);
 
         case kDualSenseFeatureFirmwareInfo:
-            write_firmware_feature_report(report);
+            if (mode == HostPersonaModeDualSenseEdge) {
+                write_dualsense_edge_firmware_feature_report(report);
+            } else {
+                write_dualsense_firmware_feature_report(report);
+            }
             return copy_feature_payload(report, 64, buffer, reqlen);
 
         default:

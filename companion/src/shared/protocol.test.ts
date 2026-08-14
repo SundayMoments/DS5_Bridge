@@ -184,6 +184,16 @@ describe('companion protocol', () => {
     expect(status.muteButtonMode).toBe('chord');
   });
 
+  it('parses DualSense Edge host persona reports', () => {
+    const report = baseReport(REPORT_ID.STATUS);
+    report[48] = 7;
+    report[49] = 0x80;
+
+    const status = parseStatusReport(report);
+    expect(status.hostPersonaMode).toBe('dualsense-edge');
+    expect(status.supportedHostPersonaModes).toEqual(['dualsense-edge']);
+  });
+
   it('parses retained firmware log bytes', () => {
     const report = baseReport(REPORT_ID.FIRMWARE_LOG);
     report[7] = 0x01;
@@ -263,6 +273,7 @@ describe('companion protocol', () => {
     expect(hostPersonaModeValue('dualsense')).toBe(0);
     expect(hostPersonaModeValue('xbox')).toBe(1);
     expect(hostPersonaModeValue('ds4')).toBe(2);
+    expect(hostPersonaModeValue('dualsense-edge')).toBe(7);
   });
 
   it('parses an ACK report', () => {

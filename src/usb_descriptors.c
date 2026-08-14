@@ -35,12 +35,6 @@ extern uint16_t host_bridge_get_report(uint8_t report_id, uint8_t *buffer, uint1
 extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #endif
 
-// Kitsune Input must enumerate as a stock DualSense. Never turn ENABLE_DSE on:
-// the DualSense Edge USB identity/report descriptor is intentionally unsupported.
-#ifdef ENABLE_DSE
-#error "ENABLE_DSE is intentionally disabled; Kitsune Input must never enumerate as DualSense Edge."
-#endif
-
 #define CONFIG_TOTAL_LEN_STANDARD 0x0148
 #define RAW_PCM_RETURN_DESC_LEN 0x0065
 #define KEYBOARD_HID_DESC_LEN 0x0019
@@ -58,12 +52,14 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define VENDOR_MS_OS_20_DESC_LEN_XUSB (VENDOR_MS_OS_20_DESC_LEN + MS_OS_20_XUSB_FUNCTION_DESC_LEN)
 #define BOS_TOTAL_LEN (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
 #define KEYBOARD_HID_REPORT_DESC_LEN 0x002D
-#ifdef ENABLE_DSE
-#define DUALSENSE_HID_REPORT_DESC_LEN 0x0195
-#else
 #define DUALSENSE_HID_REPORT_DESC_LEN 0x0121
-#endif
 #define DUALSENSE_HID_REPORT_DESC_FNV1A32 0x98EE8A4Au
+#define DUALSENSE_EDGE_HID_REPORT_DESC_LEN 0x01B5
+#define DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32 0x48E90EC1u
+#define DUALSENSE_EDGE_VENDOR_ID 0x054C
+#define DUALSENSE_EDGE_PRODUCT_ID 0x0DF2
+#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0100
+#define DUALSENSE_EDGE_STRING_PRODUCT "DualSense Edge Wireless Controller"
 #define XUSB_MS_OS_VENDOR_REQUEST 0x21
 #define XUSB360_CONFIG_EXTRA_LEN 0x0007
 #define XUSB360_INTERFACE_DESC_LEN 0x0028
@@ -138,11 +134,7 @@ static tusb_desc_device_t const desc_device =
     // topology. Avoid changing these casually; stale test identities need
     // cleanup with tools/windows/clean-ds5bridge-devices.ps1.
     .idVendor = 0x054C,
-#ifdef ENABLE_DSE
-    .idProduct = 0x0DF2,
-#else
     .idProduct = 0x0CE6,
-#endif
     // Remote wake changes the configuration descriptor. Bump the revision so
     // Windows does not reuse its cached non-wake descriptor.
     .bcdDevice = 0x0154,
@@ -169,6 +161,10 @@ uint8_t const *tud_descriptor_device_cb(void) {
         desc_device_runtime.idVendor = DS4_VENDOR_ID;
         desc_device_runtime.idProduct = DS4_PRODUCT_ID;
         desc_device_runtime.bcdDevice = DS4_USB_BCD_DEVICE;
+    } else if (host_persona_active() == HostPersonaModeDualSenseEdge) {
+        desc_device_runtime.idVendor = DUALSENSE_EDGE_VENDOR_ID;
+        desc_device_runtime.idProduct = DUALSENSE_EDGE_PRODUCT_ID;
+        desc_device_runtime.bcdDevice = DUALSENSE_EDGE_USB_BCD_DEVICE;
     }
     return (uint8_t const *) &desc_device_runtime;
 }
@@ -534,11 +530,7 @@ uint8_t descriptor_configuration[] = {
     0x00, // bCountryCode: Not localized
     0x01, // bNumDescriptors: 1 report descriptor
     0x22, // bDescriptorType: Report
-#ifdef ENABLE_DSE
-    0x95, 0x01, // wDescriptorLength: 405 (0x0121)
-#else
     0x21, 0x01, // wDescriptorLength: 289 (0x0121)
-#endif
 
     // Endpoint Descriptor (HID IN: EP4)
     0x07, // bLength
@@ -652,6 +644,9 @@ static uint8_t const desc_xusb360_gamepad_interface[] = {
 TU_VERIFY_STATIC(sizeof(desc_xusb360_gamepad_interface) == XUSB360_INTERFACE_DESC_LEN, "Incorrect XUSB descriptor size");
 
 static uint16_t active_gamepad_hid_report_descriptor_len(void) {
+    if (host_persona_active() == HostPersonaModeDualSenseEdge) {
+        return DUALSENSE_EDGE_HID_REPORT_DESC_LEN;
+    }
     return host_persona_active() == HostPersonaModeDs4
         ? DS4_HID_REPORT_DESC_LEN
         : DUALSENSE_HID_REPORT_DESC_LEN;
@@ -745,7 +740,7 @@ static uint16_t build_xusb_configuration_descriptor(void) {
 
     descriptor_configuration_xusb[2] = (uint8_t)(dest & 0xff);
     descriptor_configuration_xusb[3] = (uint8_t)((dest >> 8) & 0xff);
-    // The base descriptor serves DualSense and DS4. Xbox mode intentionally
+    // The base configuration serves DualSense, DualSense Edge, and DS4. Xbox mode intentionally
     // keeps its existing no-remote-wakeup configuration.
     descriptor_configuration_xusb[7] = 0xC0;
     descriptor_configuration_xusb_len = dest;
@@ -979,7 +974,6 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 // HID Report Descriptor
 //--------------------------------------------------------------------+
 
-#ifndef ENABLE_DSE
 uint8_t const desc_hid_report_ds[] = {
     0x05, 0x01, // Usage Page (Generic Desktop Ctrls)
     0x09, 0x05, // Usage (Game Pad)
@@ -1125,7 +1119,7 @@ uint8_t const desc_hid_report_ds[] = {
     0xC0, // End Collection
     // 289 bytes
 };
-#endif
+TU_VERIFY_STATIC(sizeof(desc_hid_report_ds) == DUALSENSE_HID_REPORT_DESC_LEN, "Incorrect DualSense HID report descriptor size");
 
 #ifdef ENABLE_COMPANION
 uint8_t const desc_hid_report_keyboard[] = {
@@ -1155,7 +1149,6 @@ uint8_t const desc_hid_report_keyboard[] = {
 };
 #endif
 
-#ifdef ENABLE_DSE
 uint8_t const desc_hid_report_dse[] = {
     0x05, 0x01, // Usage Page (Generic Desktop Ctrls)
     0x09, 0x05, // Usage (Game Pad)
@@ -1356,10 +1349,26 @@ uint8_t const desc_hid_report_dse[] = {
     0x85, 0x7B, //   Report ID (123)
     0x09, 0x53, //   Usage (0x53)
     0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0x85, 0xF6, //   Report ID (246)
+    0x09, 0x37, //   Usage (0x37)
+    0x95, 0x3F, //   Report Count (63)
+    0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0x85, 0xF7, //   Report ID (247)
+    0x09, 0x38, //   Usage (0x38)
+    0x95, 0x3F, //   Report Count (63)
+    0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0x85, 0xF8, //   Report ID (248)
+    0x09, 0x39, //   Usage (0x39)
+    0x95, 0x3F, //   Report Count (63)
+    0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0x85, 0xF9, //   Report ID (249)
+    0x09, 0x3A, //   Usage (0x3A)
+    0x95, 0x3F, //   Report Count (63)
+    0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
     0xC0, // End Collection
-    // 405 bytes
+    // 437 bytes
 };
-#endif
+TU_VERIFY_STATIC(sizeof(desc_hid_report_dse) == DUALSENSE_EDGE_HID_REPORT_DESC_LEN, "Incorrect DualSense Edge HID report descriptor size");
 
 uint8_t const desc_hid_report_ds4[] = {
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x09, 0x31,
@@ -1436,6 +1445,13 @@ bool host_persona_descriptors_verified(HostPersonaMode mode) {
                 DUALSENSE_HID_REPORT_DESC_LEN,
                 DUALSENSE_HID_REPORT_DESC_FNV1A32
             );
+        case HostPersonaModeDualSenseEdge:
+            return descriptor_matches_manifest(
+                desc_hid_report_dse,
+                sizeof(desc_hid_report_dse),
+                DUALSENSE_EDGE_HID_REPORT_DESC_LEN,
+                DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32
+            );
         case HostPersonaModeXusb360:
             return descriptor_matches_manifest(
                 desc_xusb360_gamepad_interface,
@@ -1469,11 +1485,10 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     if (host_persona_active() == HostPersonaModeDs4) {
         return desc_hid_report_ds4;
     }
-#ifdef ENABLE_DSE
-    return desc_hid_report_dse;
-#else
+    if (host_persona_active() == HostPersonaModeDualSenseEdge) {
+        return desc_hid_report_dse;
+    }
     return desc_hid_report_ds;
-#endif
 }
 
 //--------------------------------------------------------------------+
@@ -1485,11 +1500,7 @@ static char const *string_desc_arr[] =
 {
     (const char[]){0x09, 0x04}, // 0: is supported language is English (0x0409)
     "Sony Interactive Entertainment", // 1: Manufacturer
-#ifdef ENABLE_DSE
-    "DualSense Edge Wireless Controller",
-#else
     "DualSense Wireless Controller", // 2: Product
-#endif
     NULL, // 3: Serials will use unique ID if possible
 #ifdef ENABLE_COMPANION
     "DS5 Bridge Reserved", // 4: Reserved in companion builds
@@ -1519,6 +1530,10 @@ static char const *descriptor_string_for_index(uint8_t index) {
 
     if (index == STRID_PRODUCT && host_persona_active() == HostPersonaModeDs4) {
         return DS4_STRING_PRODUCT;
+    }
+
+    if (index == STRID_PRODUCT && host_persona_active() == HostPersonaModeDualSenseEdge) {
+        return DUALSENSE_EDGE_STRING_PRODUCT;
     }
 
     if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) {

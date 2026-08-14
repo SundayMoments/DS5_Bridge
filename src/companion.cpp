@@ -901,9 +901,7 @@ uint8_t firmware_flags() {
 #ifdef ENABLE_COMPANION
     flags |= 1 << 0;
 #endif
-#ifdef ENABLE_DSE
     flags |= 1 << 1;
-#endif
     flags |= 1 << 2;
     flags |= 1 << 3;
     flags |= 1 << 4;
@@ -923,6 +921,9 @@ uint8_t supported_host_persona_mask() {
     }
     if (host_persona_is_supported(HostPersonaModeDs4)) {
         mask |= 1 << HostPersonaModeDs4;
+    }
+    if (host_persona_is_supported(HostPersonaModeDualSenseEdge)) {
+        mask |= 1 << HostPersonaModeDualSenseEdge;
     }
     return mask;
 }

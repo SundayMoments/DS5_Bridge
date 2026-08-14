@@ -12,7 +12,7 @@
 namespace {
 
 constexpr uint16_t kExpectedUsbDeviceRevision = 0x0154;
-constexpr uint64_t kExpectedCompanionDescriptorHash = 0x57632c24ad95e61dull;
+constexpr uint64_t kExpectedCompanionDescriptorHash = 0x93930b64f2ccbc7cull;
 
 std::string read_text(std::filesystem::path const &path) {
     std::ifstream input(path, std::ios::binary);
@@ -179,6 +179,7 @@ void assert_persona_support_requires_verified_descriptors(
 
     if (
         usb_descriptors.find("#define DUALSENSE_HID_REPORT_DESC_FNV1A32 0x98EE8A4Au") == std::string::npos
+        || usb_descriptors.find("#define DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32 0x48E90EC1u") == std::string::npos
         || usb_descriptors.find("#define DS4_HID_REPORT_DESC_FNV1A32 0x9316A41Du") == std::string::npos
         || usb_descriptors.find("#define XUSB360_INTERFACE_DESC_FNV1A32 0x824C084Au") == std::string::npos
         || usb_descriptors.find("#define XUSB360_INTERFACE_DESC_FNV1A32 0xAAC10AD0u") == std::string::npos
@@ -195,9 +196,17 @@ void assert_persona_support_requires_verified_descriptors(
     ) {
         throw std::runtime_error("XUSB persona must be gated on its intended descriptor fingerprint");
     }
+
+    if (
+        usb_descriptors.find("case HostPersonaModeDualSenseEdge:") == std::string::npos
+        || usb_descriptors.find("desc_hid_report_dse") == std::string::npos
+        || usb_descriptors.find("DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge persona must be gated on its intended descriptor fingerprint");
+    }
 }
 
-void assert_dse_identity_reports_do_not_use_edge_passthrough(std::filesystem::path const &source_root) {
+void assert_dualsense_persona_identity_reports_are_isolated(std::filesystem::path const &source_root) {
     const auto bt_h = read_text(source_root / "src" / "bt.h");
     const auto main_cpp = read_text(source_root / "src" / "main.cpp");
     const auto dualsense_persona_cpp = read_text(source_root / "src" / "persona" / "dualsense_persona.cpp");
@@ -212,17 +221,87 @@ void assert_dse_identity_reports_do_not_use_edge_passthrough(std::filesystem::pa
         bt_h.find("ControllerTypeDualSenseEdge = 2") == std::string::npos
         || main_cpp.find("dualsense_feature_report_may_use_bt_passthrough") == std::string::npos
         || main_cpp.find("report_id != 0x20 && report_id != 0x22") == std::string::npos
-        || main_cpp.find("bt_controller_type() != ControllerTypeDualSenseEdge") == std::string::npos
+        || main_cpp.find("output_persona == HostPersonaModeDualSenseEdge") == std::string::npos
+        || main_cpp.find("upstream_type == ControllerTypeDualSenseEdge") == std::string::npos
+        || main_cpp.find("upstream_type == ControllerTypeDualSense") == std::string::npos
         || get_report_callback.find("report_type != HID_REPORT_TYPE_FEATURE") == std::string::npos
-        || get_report_callback.find("dualsense_feature_report_may_use_bt_passthrough(report_id)") == std::string::npos
+        || get_report_callback.find("dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)") == std::string::npos
         || get_report_callback.find("get_feature_data(report_id, reqlen)") == std::string::npos
-        || get_report_callback.find("dualsense_persona_get_feature_report(report_id, buffer, reqlen)") == std::string::npos
+        || get_report_callback.find("dualsense_persona_get_feature_report(active_persona, report_id, buffer, reqlen)") == std::string::npos
         || dualsense_persona_h.find("dualsense_persona_get_feature_report") == std::string::npos
         || dualsense_persona_cpp.find("kDualSenseFeatureFirmwareInfo = 0x20") == std::string::npos
-        || dualsense_persona_cpp.find("write_firmware_feature_report") == std::string::npos
+        || dualsense_persona_cpp.find("write_dualsense_firmware_feature_report") == std::string::npos
+        || dualsense_persona_cpp.find("write_dualsense_edge_firmware_feature_report") == std::string::npos
         || dualsense_persona_cpp.find("kFirmwareVersion = 0x0110002a") == std::string::npos
+        || dualsense_persona_cpp.find("kSoftwareSeries = 0x0044") == std::string::npos
+        || dualsense_persona_cpp.find("kUpdateVersion = 0x0217") == std::string::npos
     ) {
-        throw std::runtime_error("DualSense identity feature reports must not leak DualSense Edge identity through BT passthrough");
+        throw std::runtime_error("DualSense personas must isolate native identity passthrough and synthesize the selected firmware identity");
+    }
+}
+
+void assert_dualsense_edge_persona_is_edge_facing(
+    std::string const &source,
+    std::filesystem::path const &source_root
+) {
+    const auto cmake = read_text(source_root / "CMakeLists.txt");
+    const auto companion_cpp = read_text(source_root / "src" / "companion.cpp");
+    const auto host_persona_h = read_text(source_root / "src" / "persona" / "host_persona.h");
+
+    if (
+        cmake.find("ENABLE_DSE") != std::string::npos
+        || source.find("ENABLE_DSE") != std::string::npos
+        || host_persona_h.find("HostPersonaModeDualSenseEdge = 7") == std::string::npos
+        || companion_cpp.find("mask |= 1 << HostPersonaModeDualSenseEdge") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge must be a normal runtime-selectable persona advertised on protocol bit 7");
+    }
+
+    if (
+        source.find("#define DUALSENSE_EDGE_VENDOR_ID 0x054C") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_PRODUCT_ID 0x0DF2") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0100") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_STRING_PRODUCT \"DualSense Edge Wireless Controller\"") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_HID_REPORT_DESC_LEN 0x01B5") == std::string::npos
+        || source.find("TU_VERIFY_STATIC(sizeof(desc_hid_report_dse) == DUALSENSE_EDGE_HID_REPORT_DESC_LEN") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge USB identity and report descriptor must match the pinned stock contract");
+    }
+
+    const std::string edge_descriptor = extract_between(
+        source,
+        "uint8_t const desc_hid_report_dse[] = {",
+        "\n};\nTU_VERIFY_STATIC(sizeof(desc_hid_report_dse)"
+    );
+    for (std::string const report_id : {"0xF6", "0xF7", "0xF8", "0xF9"}) {
+        if (edge_descriptor.find("0x85, " + report_id) == std::string::npos) {
+            throw std::runtime_error("DualSense Edge descriptor is missing feature report " + report_id);
+        }
+    }
+
+    const std::string device_callback = extract_between(
+        source,
+        "uint8_t const *tud_descriptor_device_cb(void) {",
+        "\n}\n\n//--------------------------------------------------------------------+\n// Configuration Descriptor"
+    );
+    const std::string report_callback = extract_between(
+        source,
+        "uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {",
+        "\n}\n\n//--------------------------------------------------------------------+\n// String Descriptors"
+    );
+    const std::string string_helper = extract_between(
+        source,
+        "static char const *descriptor_string_for_index(uint8_t index) {",
+        "\n}\n\n// Invoked when received GET STRING DESCRIPTOR request"
+    );
+    if (
+        device_callback.find("host_persona_active() == HostPersonaModeDualSenseEdge") == std::string::npos
+        || device_callback.find("desc_device_runtime.idProduct = DUALSENSE_EDGE_PRODUCT_ID") == std::string::npos
+        || report_callback.find("return desc_hid_report_dse") == std::string::npos
+        || string_helper.find("return DUALSENSE_EDGE_STRING_PRODUCT") == std::string::npos
+        || source.find("return DUALSENSE_EDGE_HID_REPORT_DESC_LEN") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge persona must select its runtime device, HID, and product descriptors together");
     }
 }
 
@@ -2036,7 +2115,8 @@ int main() {
         const uint64_t descriptor_hash = companion_descriptor_hash(source);
         assert_xusb_descriptor_uses_endpoint_constants(source);
         assert_persona_support_requires_verified_descriptors(source, source_root);
-        assert_dse_identity_reports_do_not_use_edge_passthrough(source_root);
+        assert_dualsense_persona_identity_reports_are_isolated(source_root);
+        assert_dualsense_edge_persona_is_edge_facing(source, source_root);
         assert_xusb_persona_strings_are_xbox_facing(source);
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);

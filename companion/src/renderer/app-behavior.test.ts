@@ -55,6 +55,14 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('Pico Local');
   });
 
+  it('presents DualSense Edge as a PlayStation host persona', () => {
+    expect(appSource).toContain("['DualSense Edge', 'dualsense-edge']");
+    expect(appSource).toContain("['DualSense Edge', 'persona-dualsense-edge']");
+    const option = extractFunction('HostPersonaOption');
+    expect(option).toContain("value === 'dualsense-edge'");
+    expect(option).toContain('host-persona-brand-icon');
+  });
+
   it('requires explicit confirmation and a disconnected controller before emergency device repair', () => {
     const openFunction = extractFunction('openDeviceCleanupConfirm');
     const runFunction = extractFunction('runWindowsDeviceCleanup');

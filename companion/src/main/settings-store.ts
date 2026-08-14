@@ -230,6 +230,7 @@ function normalizePollingRateMode(value: unknown): CompanionSettings['pollingRat
 
 function normalizeHostPersonaMode(value: unknown): HostPersonaMode {
   switch (value) {
+    case 'dualsense-edge':
     case 'xbox':
     case 'ds4':
       return value;
@@ -636,6 +637,7 @@ const CHORD_CONTROLLER_SETTING_ACTIONS = new Set<ChordControllerSettingAction>([
   'toggle-mic-mute',
   'sleep-controller',
   'persona-dualsense',
+  'persona-dualsense-edge',
   'persona-ds4',
   'persona-xbox',
   'speaker-down',

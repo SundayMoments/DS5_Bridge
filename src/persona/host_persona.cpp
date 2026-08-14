@@ -25,6 +25,7 @@ extern "C" bool host_persona_set_active(HostPersonaMode mode) {
 extern "C" bool host_persona_is_supported(HostPersonaMode mode) {
     switch (mode) {
         case HostPersonaModeDualSense:
+        case HostPersonaModeDualSenseEdge:
         case HostPersonaModeXusb360:
         case HostPersonaModeDs4:
             return host_persona_descriptors_verified(mode);
@@ -56,6 +57,7 @@ bool host_persona_encode_input(
 
     switch (mode) {
         case HostPersonaModeDualSense:
+        case HostPersonaModeDualSenseEdge:
             return dualsense_persona_encode_input(state, report);
         case HostPersonaModeXusb360:
             return xusb360_persona_encode_input(state, report);
@@ -97,6 +99,7 @@ bool host_persona_decode_output_to_ds5_payload(
                 payload_len
             );
         case HostPersonaModeDualSense:
+        case HostPersonaModeDualSenseEdge:
         default:
             payload_len = 0;
             return false;

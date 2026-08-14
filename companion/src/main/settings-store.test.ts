@@ -76,6 +76,15 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(userDataPath).get().wakeOnConnectEnabled).toBe(false);
   });
 
+  it('persists the DualSense Edge persona', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    expect(store.update({ hostPersonaMode: 'dualsense-edge' }).hostPersonaMode)
+      .toBe('dualsense-edge');
+    expect(new SettingsStore(userDataPath).get().hostPersonaMode).toBe('dualsense-edge');
+  });
+
   it('migrates legacy custom-only profile data without stealing selection', () => {
     const userDataPath = tempUserDataPath();
     writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({

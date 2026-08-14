@@ -380,13 +380,6 @@ target_compile_definitions(ds5-bridge PRIVATE
         DS5_FIRMWARE_VERSION_MINOR=${DS5_FIRMWARE_VERSION_MINOR}
         DS5_FIRMWARE_VERSION_PATCH=${DS5_FIRMWARE_VERSION_PATCH}
 )
-# Kitsune Input intentionally enumerates as a stock DualSense only. Never turn
-# this on: DualSense Edge USB identity/descriptors are not a supported persona.
-option(ENABLE_DSE "Unsupported: do not enable DualSense Edge USB enumeration" OFF)
-if(ENABLE_DSE)
-    message(FATAL_ERROR "ENABLE_DSE is intentionally disabled. Kitsune Input must never enumerate as DualSense Edge.")
-endif()
-
 option(ENABLE_COMPANION "Enable the optional companion HID interface" OFF)
 if(ENABLE_COMPANION)
     target_sources(ds5-bridge PRIVATE

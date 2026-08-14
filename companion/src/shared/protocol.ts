@@ -125,7 +125,7 @@ export interface AdaptiveTriggerPreviewEffect {
   forcePercent: number;
 }
 export type PollingRateMode = '250' | '500' | '1000';
-export type HostPersonaMode = 'dualsense' | 'xbox' | 'ds4';
+export type HostPersonaMode = 'dualsense' | 'dualsense-edge' | 'xbox' | 'ds4';
 export const CHORD_FUNCTION_EVENT_BASE = 0x20;
 export const MAX_CHORD_ASSIGNMENTS = 16;
 export const MAX_CHORD_FUNCTION_NAME_LENGTH = 16;
@@ -217,6 +217,7 @@ export type ChordControllerSettingAction =
   | 'toggle-mic-mute'
   | 'sleep-controller'
   | 'persona-dualsense'
+  | 'persona-dualsense-edge'
   | 'persona-ds4'
   | 'persona-xbox'
   | 'speaker-down'
@@ -706,12 +707,14 @@ export function pollingRateModeValue(mode: PollingRateMode): number {
 }
 
 export function hostPersonaModeValue(mode: HostPersonaMode): number {
+  if (mode === 'dualsense-edge') return 7;
   if (mode === 'xbox') return 1;
   if (mode === 'ds4') return 2;
   return 0;
 }
 
 function hostPersonaMode(value: number): HostPersonaMode {
+  if (value === 7) return 'dualsense-edge';
   if (value === 2) return 'ds4';
   return value === 1 ? 'xbox' : 'dualsense';
 }
@@ -726,6 +729,9 @@ function supportedHostPersonaModes(mask: number): HostPersonaMode[] {
   }
   if ((mask & 0x04) !== 0) {
     modes.push('ds4');
+  }
+  if ((mask & 0x80) !== 0) {
+    modes.push('dualsense-edge');
   }
   return modes.length === 0 ? ['dualsense'] : modes;
 }

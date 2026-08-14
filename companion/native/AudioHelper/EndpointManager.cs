@@ -14,6 +14,7 @@ sealed class EndpointManager
     private static readonly string[] BridgeEndpointAliases =
     [
         "DS5 Bridge",
+        "DualSense Edge Wireless Controller",
         "DualSense Wireless Controller",
         "Wireless Controller",
         "Xbox 360 Controller for Windows"
@@ -452,6 +453,7 @@ sealed class EndpointManager
     {
         return hostPersonaMode?.ToLowerInvariant() switch
         {
+            "dualsense-edge" => ["DualSense Edge Wireless Controller"],
             "ds4" => ["Wireless Controller"],
             "xbox" => ["Xbox 360 Controller for Windows"],
             _ => ["DualSense Wireless Controller", "DS5 Bridge"]
