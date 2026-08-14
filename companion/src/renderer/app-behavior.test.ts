@@ -386,6 +386,16 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('maxRangePercent');
   });
 
+  it('keeps all four abbreviated personas on the overview quick-actions row', () => {
+    expect(stylesSource).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(appSource).toContain("dualsense: 'DS'");
+    expect(appSource).toContain("'dualsense-edge': 'DSE'");
+    expect(appSource).toContain("ds4: 'DS4'");
+    expect(appSource).toContain("xbox: 'XBOX'");
+    expect(appSource).toContain('<span>{HOST_PERSONA_SHORT_LABELS[mode]}</span>');
+    expect(appSource).toContain('aria-label={`Switch to ${label} mode`}');
+  });
+
   it('keeps Audio Haptics page enablement aligned with its feature tile', () => {
     expect(appSource).toContain(
       'aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}'

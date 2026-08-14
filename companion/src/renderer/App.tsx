@@ -423,6 +423,12 @@ const HOST_PERSONA_OPTIONS: Array<[string, HostPersonaMode]> = [
   ['DualShock 4', 'ds4'],
   ['Xbox', 'xbox']
 ];
+const HOST_PERSONA_SHORT_LABELS: Record<HostPersonaMode, string> = {
+  dualsense: 'DS',
+  'dualsense-edge': 'DSE',
+  ds4: 'DS4',
+  xbox: 'XBOX'
+};
 const SPEAKER_GAIN_OPTIONS: Array<[string, number]> = [
   ['1', 1],
   ['2', 2],
@@ -7083,6 +7089,7 @@ export function App() {
                         type="button"
                         className={`overview-persona-button persona-${mode} ${active ? 'active' : ''}`}
                         aria-pressed={active}
+                        aria-label={`Switch to ${label} mode`}
                         disabled={disabled}
                         title={`Switch to ${label} mode`}
                         onClick={() => {
@@ -7100,7 +7107,7 @@ export function App() {
                             aria-hidden="true"
                           />
                         )}
-                        <span>{label}</span>
+                        <span>{HOST_PERSONA_SHORT_LABELS[mode]}</span>
                       </button>
                     );
                   })}

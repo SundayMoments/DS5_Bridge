@@ -3211,7 +3211,7 @@ button {
 .overview-persona-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
   align-self: stretch;
   gap: 6px;
@@ -3253,7 +3253,10 @@ button {
 .overview-persona-button span:last-child {
   min-width: 0;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  text-wrap: balance;
 }
 
 .overview-persona-button:hover {
