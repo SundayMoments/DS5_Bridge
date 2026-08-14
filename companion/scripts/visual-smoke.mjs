@@ -6,7 +6,7 @@ import { _electron as electron } from 'playwright';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const outputDir = path.join(root, 'artifacts', 'ui');
-const tabs = ['Overview', 'Devices', 'Audio', 'Haptics', 'Triggers', 'Lighting', 'Button Remapping', 'Chords', 'System'];
+const tabs = ['Overview', 'Devices', 'Audio', 'Haptics', 'Adaptive Triggers', 'Lighting', 'Stick Deadzones', 'Button Remapping', 'Chords', 'System'];
 const remapProfileName = process.env.VISUAL_SMOKE_REMAP_PROFILE?.trim();
 
 await mkdir(outputDir, { recursive: true });
@@ -50,15 +50,22 @@ try {
   }
   await page.waitForTimeout(300);
 
-  const controlsNav = page.getByRole('tablist', { name: 'Controls' });
+  const controlsNav = page.getByRole('navigation', { name: 'Controls' });
   await page.getByRole('button', { name: 'Open Devices' }).click();
   await page.locator('#control-panel-devices.active').waitFor();
 
   for (const tab of tabs) {
-    if (tab === 'Chords') {
-      await page.getByRole('button', { name: 'Chords' }).click();
+    if (tab === 'System') {
+      await page.getByRole('button', { name: 'System', exact: true }).click();
     } else {
-      await controlsNav.getByRole('tab', { name: tab }).click();
+      const tabButton = controlsNav.getByRole('tab', { name: tab, exact: true });
+      if (!(await tabButton.isVisible())) {
+        const group = ['Stick Deadzones', 'Button Remapping', 'Chords'].includes(tab)
+          ? 'Input'
+          : 'Controller';
+        await controlsNav.getByRole('button', { name: group, exact: true }).click();
+      }
+      await tabButton.click();
     }
     await page.waitForTimeout(150);
 
@@ -84,25 +91,31 @@ try {
     }
 
     if (tab === 'Haptics') {
-      await page.getByRole('switch', { name: 'Enter Audio Haptics' }).click();
-      await page.waitForTimeout(150);
-      await page.screenshot({
-        path: path.join(outputDir, 'audio-haptics.png'),
-        animations: 'disabled'
-      });
-      await page.getByRole('switch', { name: 'Exit Audio Haptics' }).click();
-      await page.waitForTimeout(150);
+      const enterAudioHaptics = page.getByRole('switch', { name: 'Enter Audio Haptics' });
+      if (await enterAudioHaptics.count()) {
+        await enterAudioHaptics.click();
+        await page.waitForTimeout(150);
+        await page.screenshot({
+          path: path.join(outputDir, 'audio-haptics.png'),
+          animations: 'disabled'
+        });
+        await page.getByRole('switch', { name: 'Exit Audio Haptics' }).click();
+        await page.waitForTimeout(150);
+      }
     }
 
-    if (tab === 'Triggers') {
-      await page.getByRole('switch', { name: 'Enter Trigger Lab' }).click();
-      await page.waitForTimeout(150);
-      await page.screenshot({
-        path: path.join(outputDir, 'trigger-lab.png'),
-        animations: 'disabled'
-      });
-      await page.getByRole('switch', { name: 'Exit Trigger Lab' }).click();
-      await page.waitForTimeout(150);
+    if (tab === 'Adaptive Triggers') {
+      const enterTriggerLab = page.getByRole('switch', { name: 'Enter Trigger Lab' });
+      if (await enterTriggerLab.count()) {
+        await enterTriggerLab.click();
+        await page.waitForTimeout(150);
+        await page.screenshot({
+          path: path.join(outputDir, 'trigger-lab.png'),
+          animations: 'disabled'
+        });
+        await page.getByRole('switch', { name: 'Exit Trigger Lab' }).click();
+        await page.waitForTimeout(150);
+      }
     }
   }
 

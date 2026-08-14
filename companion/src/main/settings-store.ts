@@ -16,7 +16,8 @@ import {
   isChordBindingAllowed,
   isRemapButtonId,
   normalizeChordControllerSettingStepPercent,
-  normalizeBridgePresetId
+  normalizeBridgePresetId,
+  normalizeRadialDeadzonePercent
 } from '../shared/protocol';
 import type {
   BridgePresetId,
@@ -42,6 +43,8 @@ import type {
 import type { CompanionSettings, UiScalePercent, UiThemePreset } from '../shared/types';
 
 const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
+  leftStickRadialDeadzonePercent: 0,
+  rightStickRadialDeadzonePercent: 0,
   hapticsEnabled: true,
   hapticsGainPercent: 100,
   feedbackBoostEnabled: false,
@@ -101,6 +104,8 @@ const CUSTOM_BUTTON_REMAP_PROFILE: ButtonRemapProfile = {
 };
 
 const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>([
+  'leftStickRadialDeadzonePercent',
+  'rightStickRadialDeadzonePercent',
   'hapticsEnabled',
   'hapticsGainPercent',
   'feedbackBoostEnabled',
@@ -147,6 +152,8 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
   firmwareLogDirectory: null,
+  leftStickRadialDeadzonePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.leftStickRadialDeadzonePercent,
+  rightStickRadialDeadzonePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.rightStickRadialDeadzonePercent,
   hapticsEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsEnabled,
   hapticsGainPercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsGainPercent,
   feedbackBoostEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.feedbackBoostEnabled,
@@ -351,6 +358,8 @@ function cloneControllerProfileSettings(settings: ControllerProfileSettings): Co
 
 export function controllerProfileSettingsFrom(settings: CompanionSettings): ControllerProfileSettings {
   return {
+    leftStickRadialDeadzonePercent: settings.leftStickRadialDeadzonePercent,
+    rightStickRadialDeadzonePercent: settings.rightStickRadialDeadzonePercent,
     hapticsEnabled: settings.hapticsEnabled,
     hapticsGainPercent: settings.hapticsGainPercent,
     feedbackBoostEnabled: settings.feedbackBoostEnabled,
@@ -394,6 +403,8 @@ export function controllerProfileSettingsFrom(settings: CompanionSettings): Cont
 function normalizeControllerProfileSettings(value: unknown): ControllerProfileSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<ControllerProfileSettings> : {};
   return {
+    leftStickRadialDeadzonePercent: normalizeRadialDeadzonePercent(candidate.leftStickRadialDeadzonePercent ?? 0),
+    rightStickRadialDeadzonePercent: normalizeRadialDeadzonePercent(candidate.rightStickRadialDeadzonePercent ?? 0),
     hapticsEnabled: typeof candidate.hapticsEnabled === 'boolean'
       ? candidate.hapticsEnabled
       : DEFAULT_CONTROLLER_PROFILE_SETTINGS.hapticsEnabled,
@@ -888,6 +899,12 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     firmwareLogDirectory: typeof value?.firmwareLogDirectory === 'string' && value.firmwareLogDirectory.trim()
       ? value.firmwareLogDirectory.trim()
       : DEFAULT_SETTINGS.firmwareLogDirectory,
+    leftStickRadialDeadzonePercent: normalizeRadialDeadzonePercent(
+      value?.leftStickRadialDeadzonePercent ?? DEFAULT_SETTINGS.leftStickRadialDeadzonePercent
+    ),
+    rightStickRadialDeadzonePercent: normalizeRadialDeadzonePercent(
+      value?.rightStickRadialDeadzonePercent ?? DEFAULT_SETTINGS.rightStickRadialDeadzonePercent
+    ),
     hapticsEnabled: typeof value?.hapticsEnabled === 'boolean'
       ? value.hapticsEnabled
       : DEFAULT_SETTINGS.hapticsEnabled,

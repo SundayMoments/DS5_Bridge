@@ -85,6 +85,28 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(userDataPath).get().hostPersonaMode).toBe('dualsense-edge');
   });
 
+  it('persists per-stick radial deadzones in the selected controller profile', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    const updated = store.update({
+      leftStickRadialDeadzonePercent: 12.4,
+      rightStickRadialDeadzonePercent: 99
+    });
+
+    expect(updated.leftStickRadialDeadzonePercent).toBe(12);
+    expect(updated.rightStickRadialDeadzonePercent).toBe(50);
+    expect(updated.selectedControllerProfileId).toBe('custom');
+    expect(updated.controllerProfiles.find((profile) => profile.id === 'custom')?.settings).toMatchObject({
+      leftStickRadialDeadzonePercent: 12,
+      rightStickRadialDeadzonePercent: 50
+    });
+    expect(new SettingsStore(userDataPath).get()).toMatchObject({
+      leftStickRadialDeadzonePercent: 12,
+      rightStickRadialDeadzonePercent: 50
+    });
+  });
+
   it('migrates legacy custom-only profile data without stealing selection', () => {
     const userDataPath = tempUserDataPath();
     writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({

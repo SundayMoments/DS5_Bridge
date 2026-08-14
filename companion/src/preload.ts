@@ -45,6 +45,9 @@ const api = {
     ipcRenderer.invoke('bridge:deleteControllerProfile', profileId)
   ),
   setHapticsGain: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setHapticsGain', value),
+  setRadialDeadzones: (leftPercent: number, rightPercent: number): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setRadialDeadzones', leftPercent, rightPercent)
+  ),
   setHapticsEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setHapticsEnabled', value),
   setFeedbackBoostEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setFeedbackBoostEnabled', value)

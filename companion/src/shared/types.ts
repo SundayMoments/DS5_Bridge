@@ -33,6 +33,8 @@ export interface CompanionSettings {
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
   firmwareLogDirectory: string | null;
+  leftStickRadialDeadzonePercent: number;
+  rightStickRadialDeadzonePercent: number;
   hapticsEnabled: boolean;
   hapticsGainPercent: number;
   feedbackBoostEnabled: boolean;

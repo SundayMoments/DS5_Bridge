@@ -71,7 +71,7 @@ describe('companion layout CSS', () => {
   it('keeps system columns equal height on the shared card height', () => {
     expect(cssBlock('.system-page .feature-card-grid', 'align-items: stretch;')).toContain('align-items: stretch;');
     expect(cssBlock('.system-page .system-card', 'align-self: stretch;')).toContain('align-self: stretch;');
-    expect(normalizedStyles).toContain('.lighting-page .feature-card, .system-page .system-card');
+    expect(normalizedStyles).toContain('.lighting-page .feature-card, .deadzones-page .feature-card, .system-page .system-card');
     expect(cssBlock('.device-diagnostics', 'flex: 1 1 0;')).toContain('flex: 1 1 0;');
     expect(cssBlock('.device-diagnostics', 'overflow: auto;')).toContain('overflow: auto;');
   });

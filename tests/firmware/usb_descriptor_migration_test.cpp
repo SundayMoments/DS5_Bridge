@@ -1373,9 +1373,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 20;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 21;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 20;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 21;")
             == std::string::npos
         || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
             == std::string::npos
@@ -1400,6 +1400,10 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
         || companion_cpp.find("CommandSetEdgeProfileSwitchingBlocked = 0x45")
             == std::string::npos
         || protocol_ts.find("SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45")
+            == std::string::npos
+        || companion_cpp.find("CommandSetRadialDeadzones = 0x37")
+            == std::string::npos
+        || protocol_ts.find("SET_RADIAL_DEADZONES: 0x37")
             == std::string::npos
     ) {
         throw std::runtime_error(

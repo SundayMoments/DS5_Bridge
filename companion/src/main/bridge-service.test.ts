@@ -124,6 +124,7 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_LIGHTBAR_COLOR,
   COMMAND_ID.SET_LIGHTBAR_OVERRIDE,
   COMMAND_ID.SET_MUTE_BUTTON_ACTION,
+  COMMAND_ID.SET_RADIAL_DEADZONES,
   COMMAND_ID.SET_HAPTICS_GAIN,
   COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH,
   COMMAND_ID.SET_AUDIO_INTERLEAVE,
@@ -1959,6 +1960,27 @@ describe('BridgeService', () => {
     ]);
     expect(snapshot.settings.edgeProfileSwitchingBlocked).toBe(false);
     expect(snapshot.settings.chordAssignments).toHaveLength(1);
+  });
+
+  it('applies only the two radial deadzone percentages to firmware', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    device.sentReports = [];
+
+    const snapshot = await service.setRadialDeadzones(12.4, 99);
+    const report = device.sentReports.at(-1);
+    expect(report?.[7]).toBe(COMMAND_ID.SET_RADIAL_DEADZONES);
+    expect(report?.slice(9, 13)).toEqual([0, 0, 12, 50]);
+    expect(snapshot.settings).toMatchObject({
+      leftStickRadialDeadzonePercent: 12,
+      rightStickRadialDeadzonePercent: 50
+    });
   });
 
   it('applies arbitrary whole-number chord steps without coarse slider notches', async () => {

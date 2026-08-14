@@ -19,6 +19,7 @@
 #include "haptics_test_signal.h"
 #include "kitsune_button_gesture.h"
 #include "output_scheduler.h"
+#include "radial_deadzone.h"
 #include "usb_audio_render_gain.h"
 #include "persona/ds4_persona.h"
 #include "persona/dualsense_persona.h"
@@ -1499,6 +1500,31 @@ void ds4_feature_reports_cover_native_probe_surface() {
     EXPECT_EQ(feature[4], 0x00);
 }
 
+void radial_deadzone_preserves_direction_and_rescales_remaining_travel() {
+    using ds5::radial_deadzone::apply;
+
+    const auto unchanged = apply(140, 116, 0);
+    EXPECT_EQ(unchanged.x, 140);
+    EXPECT_EQ(unchanged.y, 116);
+
+    const auto centered = apply(140, 128, 10);
+    EXPECT_EQ(centered.x, 128);
+    EXPECT_EQ(centered.y, 128);
+
+    const auto halfway = apply(192, 128, 20);
+    EXPECT_EQ(halfway.x, 176);
+    EXPECT_EQ(halfway.y, 128);
+
+    const auto full_axis = apply(255, 128, 20);
+    EXPECT_EQ(full_axis.x, 255);
+    EXPECT_EQ(full_axis.y, 128);
+
+    const auto diagonal = apply(192, 192, 20);
+    EXPECT_EQ(diagonal.x, diagonal.y);
+    EXPECT_TRUE(diagonal.x > 128);
+    EXPECT_TRUE(diagonal.x < 192);
+}
+
 struct TestCase {
     char const *name;
     void (*run)();
@@ -1551,6 +1577,7 @@ std::vector<TestCase> tests{
     {"ds4 output decodes to ds5 rumble and lightbar payload", ds4_output_decodes_to_ds5_rumble_and_lightbar_payload},
     {"dualsense persona feature reports cover identity probe surface", dualsense_persona_feature_reports_cover_identity_probe_surface},
     {"ds4 feature reports cover native probe surface", ds4_feature_reports_cover_native_probe_surface},
+    {"radial deadzone preserves direction and rescales remaining travel", radial_deadzone_preserves_direction_and_rescales_remaining_travel},
 };
 
 } // namespace

@@ -13,6 +13,7 @@
 #include "firmware_log.h"
 #include "host_input.h"
 #include "persona/host_persona.h"
+#include "radial_deadzone.h"
 #include "pico/critical_section.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
@@ -30,7 +31,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 20;
+constexpr uint8_t kProtocolMinor = 21;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -157,6 +158,7 @@ enum CommandId : uint8_t {
     CommandEnterBootloader = 0x33,
     CommandSetWakeOnConnect = 0x35,
     CommandSetLightbarRestoreEnabled = 0x36,
+    CommandSetRadialDeadzones = 0x37,
     CommandSetEdgeProfileSwitchingBlocked = 0x45,
 };
 
@@ -338,6 +340,8 @@ bool mute_button_last_pressed = false;
 bool sleep_keybind_enabled = false;
 bool speaker_volume_shortcut_enabled = false;
 bool edge_profile_switching_blocked = false;
+uint8_t left_stick_radial_deadzone_percent = 0;
+uint8_t right_stick_radial_deadzone_percent = 0;
 bool shortcut_binding_last_pressed[kShortcutBindingCount]{};
 uint32_t shortcut_binding_last_step_us[kShortcutBindingCount]{};
 bool home_chord_gate_active = false;
@@ -847,6 +851,8 @@ void restore_defaults() {
     sleep_keybind_enabled = false;
     speaker_volume_shortcut_enabled = false;
     edge_profile_switching_blocked = false;
+    left_stick_radial_deadzone_percent = 0;
+    right_stick_radial_deadzone_percent = 0;
     std::fill(shortcut_binding_last_pressed, shortcut_binding_last_pressed + kShortcutBindingCount, false);
     std::fill(shortcut_binding_last_step_us, shortcut_binding_last_step_us + kShortcutBindingCount, 0);
     home_chord_gate_active = false;
@@ -2421,6 +2427,21 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             set_ack(command_id, sequence, AckOk);
             return;
 
+        case CommandSetRadialDeadzones:
+            if (
+                value != 0
+                || buffer[10] > ds5::radial_deadzone::kMaxPercent
+                || buffer[11] > ds5::radial_deadzone::kMaxPercent
+            ) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            left_stick_radial_deadzone_percent = buffer[10];
+            right_stick_radial_deadzone_percent = buffer[11];
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
         case CommandSetPollingRateMode:
             if (value > 2 || !usb_set_hid_polling_rate_mode(static_cast<uint8_t>(value))) {
                 set_ack(command_id, sequence, AckInvalidValue);
@@ -3139,6 +3160,20 @@ void companion_process_controller_report(uint8_t *report, uint16_t len) {
 
     mute_button_last_pressed = mute_pressed;
     apply_button_remap(report, len);
+    const auto left_stick = ds5::radial_deadzone::apply(
+        report[0],
+        report[1],
+        left_stick_radial_deadzone_percent
+    );
+    const auto right_stick = ds5::radial_deadzone::apply(
+        report[2],
+        report[3],
+        right_stick_radial_deadzone_percent
+    );
+    report[0] = left_stick.x;
+    report[1] = left_stick.y;
+    report[2] = right_stick.x;
+    report[3] = right_stick.y;
 }
 
 void companion_update_controller_report(uint8_t const *report, uint16_t len) {

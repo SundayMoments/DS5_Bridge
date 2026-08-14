@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 20;
+export const PROTOCOL_MINOR = 21;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -97,8 +97,24 @@ export const COMMAND_ID = {
   SET_AUDIO_INTERLEAVE: 0x34,
   SET_WAKE_ON_CONNECT: 0x35,
   SET_LIGHTBAR_RESTORE_ENABLED: 0x36,
+  SET_RADIAL_DEADZONES: 0x37,
   SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45
 } as const;
+
+export const RADIAL_DEADZONE_MAX_PERCENT = 50;
+
+export function normalizeRadialDeadzonePercent(value: number): number {
+  return Math.max(0, Math.min(RADIAL_DEADZONE_MAX_PERCENT, Math.round(
+    Number.isFinite(value) ? value : 0
+  )));
+}
+
+export function buildRadialDeadzonePayload(leftPercent: number, rightPercent: number): number[] {
+  return [
+    normalizeRadialDeadzonePercent(leftPercent),
+    normalizeRadialDeadzonePercent(rightPercent)
+  ];
+}
 
 export const ACK_RESULT = {
   OK: 0x00,
@@ -269,6 +285,8 @@ export interface ButtonRemapProfile {
 }
 
 export interface ControllerProfileSettings {
+  leftStickRadialDeadzonePercent: number;
+  rightStickRadialDeadzonePercent: number;
   hapticsEnabled: boolean;
   hapticsGainPercent: number;
   feedbackBoostEnabled: boolean;

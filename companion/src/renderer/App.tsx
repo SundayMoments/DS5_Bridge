@@ -101,10 +101,12 @@ import {
   MAX_CHORD_ASSIGNMENTS,
   MAX_CHORD_FUNCTION_NAME_LENGTH,
   MAX_KEYBOARD_FUNCTION_KEYS,
+  RADIAL_DEADZONE_MAX_PERCENT,
   REMAP_BUTTON_IDS,
   ackResultName,
   normalizeChordControllerSettingStepPercent,
-  isChordBindingAllowed
+  isChordBindingAllowed,
+  normalizeRadialDeadzonePercent
 } from '../shared/protocol';
 import type {
   AudioReactiveHapticsBassFocus,
@@ -147,7 +149,7 @@ import {
   type ControllerDeviceRenameDialog
 } from './ControllerDevicesPage';
 
-type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio-haptics' | 'audio' | 'triggers' | 'trigger-lab' | 'lighting' | 'remapping' | 'chords' | 'system';
+type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio-haptics' | 'audio' | 'triggers' | 'trigger-lab' | 'lighting' | 'deadzones' | 'remapping' | 'chords' | 'system';
 type SidebarControlTab = ControlTab;
 type ControlTabDefinition = Readonly<{ id: SidebarControlTab; label: string; Icon: TablerIcon }>;
 type ControlTabGroupId = 'controller' | 'input' | 'labs';
@@ -301,6 +303,8 @@ const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
 const LIGHTBAR_BRIGHTNESS_STEP = 10;
 const TRIGGER_EFFECT_STEP = 10;
 const CONTROLLER_POWER_SAVING_CAP_PERCENT = 60;
+const RADIAL_DEADZONE_PRESETS = [0, 5, 10, 20] as const;
+const RADIAL_DEADZONE_TICKS = Array.from({ length: 11 }, (_, index) => index * 5);
 const TEST_HAPTICS_LOCK_MS = 1100;
 const TEST_SPEAKER_LOCK_MS = 900;
 const TEST_MIC_LISTEN_MS = 5000;
@@ -748,6 +752,7 @@ const CONTROL_TAB_DEFINITIONS: Record<SidebarControlTab, ControlTabDefinition> =
   triggers: { id: 'triggers', label: 'Adaptive Triggers', Icon: IconDeviceGamepad2 },
   'trigger-lab': { id: 'trigger-lab', label: 'Trigger Lab', Icon: IconFlask2 },
   lighting: { id: 'lighting', label: 'Lighting', Icon: IconBulb },
+  deadzones: { id: 'deadzones', label: 'Stick Deadzones', Icon: SlidersHorizontal },
   remapping: { id: 'remapping', label: 'Button Remapping', Icon: IconDeviceGamepad3 },
   chords: { id: 'chords', label: 'Chords', Icon: IconReplace },
   system: { id: 'system', label: 'System', Icon: IconCpu }
@@ -771,6 +776,7 @@ const CONTROL_TAB_GROUPS: readonly ControlTabGroupDefinition[] = [
     label: 'Input',
     Icon: IconReplace,
     tabs: [
+      CONTROL_TAB_DEFINITIONS.deadzones,
       CONTROL_TAB_DEFINITIONS.remapping,
       CONTROL_TAB_DEFINITIONS.chords
     ]
@@ -1555,6 +1561,8 @@ function FeatureTipsPanel({
 
 function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): ControllerProfileSettings {
   return {
+    leftStickRadialDeadzonePercent: snapshot.settings.leftStickRadialDeadzonePercent,
+    rightStickRadialDeadzonePercent: snapshot.settings.rightStickRadialDeadzonePercent,
     hapticsEnabled: snapshot.settings.hapticsEnabled,
     hapticsGainPercent: snapshot.settings.hapticsGainPercent,
     feedbackBoostEnabled: snapshot.settings.feedbackBoostEnabled,
@@ -1673,6 +1681,7 @@ function SystemProfileSummary({
           <div><dt>Haptics</dt><dd className={ecoValueClass(hapticsEcoLimited)}>{settings.hapticsEnabled ? (hapticsEcoLimited ? effectiveEcoPercent(settings.hapticsGainPercent) : percentLabel(settings.hapticsGainPercent)) : 'Off'}</dd></div>
           <div><dt>Rumble</dt><dd className={ecoValueClass(rumbleEcoLimited)}>{settings.classicRumbleEnabled ? (rumbleEcoLimited ? effectiveEcoPercent(settings.classicRumbleGainPercent) : percentLabel(settings.classicRumbleGainPercent)) : 'Off'}</dd></div>
           <div><dt>Triggers</dt><dd className={ecoValueClass(triggersEcoLimited)}>{settings.adaptiveTriggersEnabled ? (triggersEcoLimited ? effectiveEcoPercent(settings.triggerEffectIntensityPercent) : percentLabel(settings.triggerEffectIntensityPercent)) : 'Off'}</dd></div>
+          <div><dt>Stick DZ</dt><dd>{`${settings.leftStickRadialDeadzonePercent}% / ${settings.rightStickRadialDeadzonePercent}%`}</dd></div>
         </dl>
       </div>
 
@@ -2843,6 +2852,8 @@ export function App() {
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const [openControlGroupId, setOpenControlGroupId] = useState<ControlTabGroupId | null>(null);
   const [hapticsValue, setHapticsValue] = useState(100);
+  const [leftStickRadialDeadzoneValue, setLeftStickRadialDeadzoneValue] = useState(0);
+  const [rightStickRadialDeadzoneValue, setRightStickRadialDeadzoneValue] = useState(0);
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
   const [micVolumeValue, setMicVolumeValue] = useState(100);
@@ -2922,6 +2933,7 @@ export function App() {
   const [micTestError, setMicTestError] = useState<string | null>(null);
   const [triggerTestLocked, setTriggerTestLocked] = useState(false);
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
+  const [radialDeadzoneCommitPending, setRadialDeadzoneCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
   const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
   const [feedbackBoostCommitPending, setFeedbackBoostCommitPending] = useState(false);
@@ -2940,6 +2952,7 @@ export function App() {
   const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
   const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
   const hapticsEditingRef = useRef(false);
+  const radialDeadzoneEditingRef = useRef({ left: false, right: false });
   const classicRumbleEditingRef = useRef(false);
   const speakerVolumeEditingRef = useRef(false);
   const micVolumeEditingRef = useRef(false);
@@ -3309,6 +3322,12 @@ export function App() {
     setRemapDraft(next.settings.buttonRemappingDraft);
     if (!hapticsEditingRef.current) {
       setHapticsValue(displayHapticsValue(next));
+    }
+    if (!radialDeadzoneEditingRef.current.left) {
+      setLeftStickRadialDeadzoneValue(next.settings.leftStickRadialDeadzonePercent);
+    }
+    if (!radialDeadzoneEditingRef.current.right) {
+      setRightStickRadialDeadzoneValue(next.settings.rightStickRadialDeadzonePercent);
     }
     if (!classicRumbleEditingRef.current) {
       setClassicRumbleValue(displayClassicRumbleValue(next));
@@ -4249,6 +4268,42 @@ export function App() {
     } catch {
       const next = await window.bridge.getStatus();
       setSnapshot(next);
+    }
+  }
+
+  async function commitRadialDeadzone(side: 'left' | 'right', value: number) {
+    const percent = normalizeRadialDeadzonePercent(value);
+    const leftPercent = side === 'left' ? percent : leftStickRadialDeadzoneValue;
+    const rightPercent = side === 'right' ? percent : rightStickRadialDeadzoneValue;
+    radialDeadzoneEditingRef.current[side] = true;
+    if (
+      !snapshot
+      || snapshot.state !== 'connected'
+      || radialDeadzoneCommitPending
+      || (
+        leftPercent === snapshot.settings.leftStickRadialDeadzonePercent
+        && rightPercent === snapshot.settings.rightStickRadialDeadzonePercent
+      )
+    ) {
+      radialDeadzoneEditingRef.current[side] = false;
+      return;
+    }
+
+    setRadialDeadzoneCommitPending(true);
+    try {
+      const next = await window.bridge.setRadialDeadzones(leftPercent, rightPercent);
+      setSnapshot(next);
+      setLeftStickRadialDeadzoneValue(next.settings.leftStickRadialDeadzonePercent);
+      setRightStickRadialDeadzoneValue(next.settings.rightStickRadialDeadzonePercent);
+    } catch {
+      const next = await window.bridge.getStatus();
+      setSnapshot(next);
+      setLeftStickRadialDeadzoneValue(next.settings.leftStickRadialDeadzonePercent);
+      setRightStickRadialDeadzoneValue(next.settings.rightStickRadialDeadzonePercent);
+    } finally {
+      setRadialDeadzoneCommitPending(false);
+      radialDeadzoneEditingRef.current.left = false;
+      radialDeadzoneEditingRef.current.right = false;
     }
   }
 
@@ -7303,6 +7358,139 @@ export function App() {
             onCloseForget={closeControllerDeviceForget}
             onConfirmForget={() => void confirmControllerDeviceForget()}
           />
+
+          <div
+            className={`control-page deadzones-page ${activeControlTab === 'deadzones' ? 'active' : ''}`}
+            role="tabpanel"
+            id="control-panel-deadzones"
+            aria-labelledby="control-tab-deadzones"
+            aria-hidden={activeControlTab !== 'deadzones'}
+          >
+            <div className="feature-heading">
+              <div>
+                <h2>Stick Deadzones</h2>
+                <p>Remove center drift with independent radial deadzones for each stick.</p>
+              </div>
+              <ProfileSaveStatus />
+            </div>
+
+            <div className="feature-card-grid deadzones-grid">
+              {(['left', 'right'] as const).map((side) => {
+                const value = side === 'left'
+                  ? leftStickRadialDeadzoneValue
+                  : rightStickRadialDeadzoneValue;
+                const setValue = side === 'left'
+                  ? setLeftStickRadialDeadzoneValue
+                  : setRightStickRadialDeadzoneValue;
+                const label = side === 'left' ? 'Left Stick' : 'Right Stick';
+                const disabled = !controllerControlsAvailable
+                  || pendingAction !== null
+                  || radialDeadzoneCommitPending;
+                return (
+                  <section className="feature-card deadzone-card" key={side}>
+                    <div className="feature-card-title">
+                      <span className="feature-icon"><SlidersHorizontal size={20} /></span>
+                      <div className="title-copy">
+                        <h3>{label}</h3>
+                        <p>Circular center filtering with full-range rescaling.</p>
+                      </div>
+                    </div>
+
+                    <div className="deadzone-stick-preview" aria-hidden="true">
+                      <div
+                        className="deadzone-stick-field"
+                        style={{ '--deadzone-diameter': `${Math.max(3, value * 2)}%` } as CSSProperties}
+                      >
+                        <span className="deadzone-axis horizontal" />
+                        <span className="deadzone-axis vertical" />
+                        <span className="deadzone-radius" />
+                        <span className="deadzone-center" />
+                      </div>
+                      <div className="deadzone-preview-copy">
+                        <strong>{value}%</strong>
+                        <span>{value === 0 ? 'Native input' : 'Filtered radius'}</span>
+                      </div>
+                    </div>
+
+                    <label className={`slider-row deadzone-slider-row ${disabled ? 'disabled' : ''}`}>
+                      <span>Radius</span>
+                      <div className="range-control">
+                        <input
+                          aria-label={`${label} radial deadzone`}
+                          type="range"
+                          min={0}
+                          max={RADIAL_DEADZONE_MAX_PERCENT}
+                          step={1}
+                          value={value}
+                          disabled={disabled}
+                          style={{ '--range-fill': `${value * 2}%` } as CSSProperties}
+                          onChange={(event) => {
+                            radialDeadzoneEditingRef.current[side] = true;
+                            setValue(normalizeRadialDeadzonePercent(Number(event.target.value)));
+                          }}
+                          onPointerUp={(event) => void commitRadialDeadzone(side, Number(event.currentTarget.value))}
+                          onKeyUp={(event) => {
+                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+                              void commitRadialDeadzone(side, Number(event.currentTarget.value));
+                            }
+                          }}
+                          onBlur={(event) => void commitRadialDeadzone(side, Number(event.currentTarget.value))}
+                        />
+                        <div className="range-ticks" aria-hidden="true">
+                          {RADIAL_DEADZONE_TICKS.map((tick) => (
+                            <span key={tick} className={sliderTickClass(tick, RADIAL_DEADZONE_MAX_PERCENT)} />
+                          ))}
+                        </div>
+                      </div>
+                      <strong>{value}%</strong>
+                    </label>
+
+                    <div className="segmented-row deadzone-presets" aria-label={`${label} deadzone presets`}>
+                      {RADIAL_DEADZONE_PRESETS.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          className={value === preset ? 'active' : ''}
+                          disabled={disabled}
+                          onClick={() => {
+                            setValue(preset);
+                            void commitRadialDeadzone(side, preset);
+                          }}
+                        >
+                          {preset === 0 ? 'Off' : `${preset}%`}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+
+            <section className="feature-help-panel deadzone-help-panel" aria-label="Deadzone behavior">
+              <div className="feature-help-heading">
+                <IconBooks size={16} />
+                <h3>How Radial Deadzones Work</h3>
+              </div>
+              <div className="feature-help-grid">
+                <div className="feature-help-item">
+                  <span className="feature-help-icon"><IconCircleCheck size={16} /></span>
+                  <span className="feature-help-copy"><strong>Circular Filtering</strong><span>X and Y are measured together, so diagonal direction stays intact.</span></span>
+                </div>
+                <div className="feature-help-item">
+                  <span className="feature-help-icon"><IconAdjustmentsSpark size={16} /></span>
+                  <span className="feature-help-copy"><strong>Full Travel Preserved</strong><span>Input beyond the deadzone is rescaled back across the complete output range.</span></span>
+                </div>
+                <div className="feature-help-item">
+                  <span className="feature-help-icon"><Save size={16} /></span>
+                  <span className="feature-help-copy"><strong>Profile Aware</strong><span>Both values follow the selected controller profile and auto-save with changes.</span></span>
+                </div>
+                <div className="feature-help-item">
+                  <span className="feature-help-icon"><IconDeviceGamepad2 size={16} /></span>
+                  <span className="feature-help-copy"><strong>All Personas</strong><span>The filter runs before DS5_Bridge renders DualSense, Edge, DS4, or Xbox output.</span></span>
+                </div>
+              </div>
+            </section>
+          </div>
 
           <div
             className={`control-page haptics-page ${activeControlTab === 'haptics' || audioHapticsOpen ? 'active' : ''}`}

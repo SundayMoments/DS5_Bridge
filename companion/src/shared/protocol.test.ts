@@ -19,10 +19,12 @@ import {
   buildButtonRemapPayload,
   buildChordBindingsPayload,
   buildCommandReport,
+  buildRadialDeadzonePayload,
   clampAudioInterleaveValues,
   hostPersonaModeValue,
   isChordBindingAllowed,
   normalizeBridgePresetId,
+  normalizeRadialDeadzonePercent,
   parseAudioDebugReport,
   parseAudioStatusReport,
   parseAudioStatsReport,
@@ -784,6 +786,13 @@ describe('companion protocol', () => {
     const report = buildCommandReport(COMMAND_ID.SET_POLLING_RATE_MODE, 8, 1);
     expect(report[7]).toBe(COMMAND_ID.SET_POLLING_RATE_MODE);
     expect(report[9]).toBe(1);
+  });
+
+  it('normalizes the isolated radial deadzone payload to whole percentages', () => {
+    expect(normalizeRadialDeadzonePercent(-4)).toBe(0);
+    expect(normalizeRadialDeadzonePercent(12.6)).toBe(13);
+    expect(normalizeRadialDeadzonePercent(99)).toBe(50);
+    expect(buildRadialDeadzonePayload(12.4, 99)).toEqual([12, 50]);
   });
 
   it('normalizes deleted or unknown bridge presets to a fallback', () => {

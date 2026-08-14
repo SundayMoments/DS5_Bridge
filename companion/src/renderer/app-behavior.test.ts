@@ -363,6 +363,18 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('setAudioHapticsOpen');
   });
 
+  it('exposes only radial stick deadzones from the premium analog controls', () => {
+    expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones'");
+    expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
+    expect(appSource).toContain("'Left Stick' : 'Right Stick'");
+    expect(appSource).toContain('aria-label={`${label} radial deadzone`}');
+    expect(appSource).not.toContain('invertHorizontal');
+    expect(appSource).not.toContain('responseCurve');
+    expect(appSource).not.toContain('zoneRotation');
+    expect(appSource).not.toContain('zoneOuterLimits');
+    expect(appSource).not.toContain('maxRangePercent');
+  });
+
   it('keeps Audio Haptics page enablement aligned with its feature tile', () => {
     expect(appSource).toContain(
       'aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}'

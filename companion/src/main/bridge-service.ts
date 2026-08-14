@@ -21,6 +21,7 @@ import {
   bluetoothAddressPayload,
   buildChordBindingsPayload,
   buildCommandReport,
+  buildRadialDeadzonePayload,
   clampAudioInterleaveValues,
   isChordBindingAllowed,
   parseAckReport,
@@ -2605,6 +2606,23 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setRadialDeadzones(leftPercent: number, rightPercent: number): Promise<BridgeSnapshot> {
+    const [leftStickRadialDeadzonePercent, rightStickRadialDeadzonePercent] = buildRadialDeadzonePayload(
+      leftPercent,
+      rightPercent
+    );
+    await this.sendSettingCommand(
+      COMMAND_ID.SET_RADIAL_DEADZONES,
+      0,
+      customSettingUpdate({
+        leftStickRadialDeadzonePercent,
+        rightStickRadialDeadzonePercent
+      }),
+      [leftStickRadialDeadzonePercent, rightStickRadialDeadzonePercent]
+    );
+    return this.getSnapshot();
+  }
+
   async setAudioInterleave(
     maxConsecutiveAudioSends: number,
     stateMaxAgeUs: number
@@ -3897,6 +3915,13 @@ export class BridgeService extends EventEmitter {
           settings.muteButtonMode === 'keyboard' && settings.muteKeyboardChordStarterEnabled
         )
       ]
+    });
+    await this.sendCommand(COMMAND_ID.SET_RADIAL_DEADZONES, 0, {
+      expectSettingsRevisionChange,
+      extraPayload: buildRadialDeadzonePayload(
+        settings.leftStickRadialDeadzonePercent,
+        settings.rightStickRadialDeadzonePercent
+      )
     });
     await this.sendCommand(COMMAND_ID.SET_HAPTICS_GAIN, this.effectiveHapticsGain(settings), {
       expectSettingsRevisionChange
