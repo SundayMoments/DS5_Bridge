@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 21;
+export const PROTOCOL_MINOR = 22;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -130,6 +130,20 @@ export const ACK_RESULT = {
 
 export type AckResultCode = typeof ACK_RESULT[keyof typeof ACK_RESULT];
 export type ShortcutEvent = typeof SHORTCUT_EVENT[keyof typeof SHORTCUT_EVENT];
+export interface RawStickAxes {
+  lx: number;
+  ly: number;
+  rx: number;
+  ry: number;
+}
+export interface StickInputPreviewPayload {
+  sequence: number;
+  raw: RawStickAxes;
+}
+export interface CompanionInputReportPayload {
+  shortcutEvent: number;
+  stickPreview: StickInputPreviewPayload | null;
+}
 export type MuteButtonMode = 'normal' | 'keyboard' | 'quiet' | 'chord';
 export type MuteKeyboardBehavior = 'tap' | 'hold';
 export type TriggerTestMode = 'feedback' | 'weapon' | 'vibration';
@@ -699,6 +713,41 @@ function readU32(report: ArrayLike<number>, offset: number): number {
     | (report[offset + 2] << 16)
     | (report[offset + 3] << 24)
   ) >>> 0;
+}
+
+export function parseCompanionInputReport(report: ArrayLike<number>): CompanionInputReportPayload {
+  if (report.length !== REPORT_LENGTH) {
+    throw new ProtocolError(`Expected ${REPORT_LENGTH} bytes, received ${report.length}.`, 'bad-length');
+  }
+  if (report[0] !== REPORT_ID.INPUT) {
+    throw new ProtocolError(
+      `Expected report ID 0x${REPORT_ID.INPUT.toString(16)}, received 0x${report[0].toString(16)}.`,
+      'bad-report-id'
+    );
+  }
+
+  const schemaVersion = report[2];
+  if (schemaVersion === 0) {
+    return { shortcutEvent: report[1], stickPreview: null };
+  }
+  if (schemaVersion !== 1) {
+    throw new ProtocolError(`Unsupported companion input schema ${schemaVersion}.`, 'bad-schema');
+  }
+
+  return {
+    shortcutEvent: report[1],
+    stickPreview: (report[3] & 0x01) !== 0
+      ? {
+          sequence: readU32(report, 8),
+          raw: {
+            lx: report[4],
+            ly: report[5],
+            rx: report[6],
+            ry: report[7]
+          }
+        }
+      : null
+  };
 }
 
 export interface FirmwareLogPayload {

@@ -31,7 +31,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 21;
+constexpr uint8_t kProtocolMinor = 22;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -266,6 +266,9 @@ struct DynamicChordProcessingResult {
 critical_section_t companion_report_cs;
 uint8_t last_controller_report[63]{};
 bool have_controller_report = false;
+uint8_t last_raw_stick_axes[4]{128, 128, 128, 128};
+bool have_raw_stick_sample = false;
+uint32_t raw_stick_sequence = 0;
 uint16_t settings_revision = 0;
 uint8_t lightbar_red = 0xff;
 uint8_t lightbar_green = 0xd7;
@@ -1792,13 +1795,23 @@ uint16_t build_device_identity(uint8_t *buffer, uint16_t reqlen) {
     return COMPANION_PAYLOAD_SIZE;
 }
 
-uint16_t build_shortcut_event(uint8_t *buffer, uint16_t reqlen) {
+uint16_t build_input_report(uint8_t *buffer, uint16_t reqlen) {
     if (reqlen < COMPANION_PAYLOAD_SIZE) {
         return 0;
     }
 
     memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
     buffer[0] = take_shortcut_event();
+    buffer[1] = 1;
+
+    critical_section_enter_blocking(&companion_report_cs);
+    const bool has_stick_sample = have_raw_stick_sample && bt_is_controller_connected();
+    if (has_stick_sample) {
+        buffer[2] |= 0x01;
+        memcpy(buffer + 3, last_raw_stick_axes, sizeof(last_raw_stick_axes));
+        write_u32(buffer + 7, raw_stick_sequence);
+    }
+    critical_section_exit(&companion_report_cs);
     return COMPANION_PAYLOAD_SIZE;
 }
 
@@ -3115,9 +3128,15 @@ void companion_loop() {
 }
 
 void companion_process_controller_report(uint8_t *report, uint16_t len) {
-    if (len <= 9) {
+    if (report == nullptr || len <= 9) {
         return;
     }
+
+    critical_section_enter_blocking(&companion_report_cs);
+    memcpy(last_raw_stick_axes, report, sizeof(last_raw_stick_axes));
+    have_raw_stick_sample = true;
+    raw_stick_sequence++;
+    critical_section_exit(&companion_report_cs);
 
     const bool home_pressed = (report[9] & kHomeButtonBit) != 0;
     const uint8_t dpad_direction = report[7] & kDpadMask;
@@ -3391,7 +3410,7 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
         case COMPANION_REPORT_ACK:
             return build_ack(buffer, reqlen);
         case COMPANION_REPORT_INPUT:
-            return build_shortcut_event(buffer, reqlen);
+            return build_input_report(buffer, reqlen);
 #if DS5_AUDIO_DEBUG_ENABLED
         case COMPANION_REPORT_AUDIO_DEBUG:
             return build_audio_debug(buffer, reqlen);

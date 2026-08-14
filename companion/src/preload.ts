@@ -48,6 +48,12 @@ const api = {
   setRadialDeadzones: (leftPercent: number, rightPercent: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setRadialDeadzones', leftPercent, rightPercent)
   ),
+  requestStickInputPreview: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:requestStickInputPreview')
+  ),
+  releaseStickInputPreview: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:releaseStickInputPreview')
+  ),
   setHapticsEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setHapticsEnabled', value),
   setFeedbackBoostEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setFeedbackBoostEnabled', value)

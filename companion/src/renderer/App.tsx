@@ -148,6 +148,7 @@ import {
   type ControllerDeviceForgetDialog,
   type ControllerDeviceRenameDialog
 } from './ControllerDevicesPage';
+import { radialDeadzonePreview, stickPositionPercent } from './radial-deadzone-preview';
 
 type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio-haptics' | 'audio' | 'triggers' | 'trigger-lab' | 'lighting' | 'deadzones' | 'remapping' | 'chords' | 'system';
 type SidebarControlTab = ControlTab;
@@ -3442,6 +3443,21 @@ export function App() {
       window.removeEventListener('blur', finishWindowDrag);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeControlTab !== 'deadzones') {
+      return undefined;
+    }
+
+    void window.bridge.requestStickInputPreview();
+    const heartbeat = window.setInterval(() => {
+      void window.bridge.requestStickInputPreview();
+    }, 1000);
+    return () => {
+      window.clearInterval(heartbeat);
+      void window.bridge.releaseStickInputPreview();
+    };
+  }, [activeControlTab]);
 
   useEffect(() => {
     const controllerAudioReady = connected && controllerConnected;
@@ -7400,6 +7416,14 @@ export function App() {
                   ? setLeftStickRadialDeadzoneValue
                   : setRightStickRadialDeadzoneValue;
                 const label = side === 'left' ? 'Left Stick' : 'Right Stick';
+                const rawAxes = snapshot?.stickInputPreview?.raw;
+                const livePreview = rawAxes
+                  ? radialDeadzonePreview(
+                      side === 'left' ? rawAxes.lx : rawAxes.rx,
+                      side === 'left' ? rawAxes.ly : rawAxes.ry,
+                      value
+                    )
+                  : null;
                 const disabled = !controllerControlsAvailable
                   || pendingAction !== null
                   || radialDeadzoneCommitPending;
@@ -7413,19 +7437,36 @@ export function App() {
                       </div>
                     </div>
 
-                    <div className="deadzone-stick-preview" aria-hidden="true">
+                    <div className="deadzone-stick-preview">
                       <div
                         className="deadzone-stick-field"
-                        style={{ '--deadzone-diameter': `${Math.max(3, value * 2)}%` } as CSSProperties}
+                        role="img"
+                        aria-label={`${label} physical and deadzone-adjusted output position`}
+                        style={{ '--deadzone-diameter': `${Math.max(3, value)}%` } as CSSProperties}
                       >
                         <span className="deadzone-axis horizontal" />
                         <span className="deadzone-axis vertical" />
                         <span className="deadzone-radius" />
-                        <span className="deadzone-center" />
+                        {livePreview ? (
+                          <>
+                            <span
+                              className="deadzone-position-dot output"
+                              style={stickPositionPercent(livePreview.output)}
+                            />
+                            <span
+                              className="deadzone-position-dot physical"
+                              style={stickPositionPercent(livePreview.physical)}
+                            />
+                          </>
+                        ) : <span className="deadzone-center" />}
                       </div>
                       <div className="deadzone-preview-copy">
                         <strong>{value}%</strong>
-                        <span>{value === 0 ? 'Native input' : 'Filtered radius'}</span>
+                        <span>{value === 0 ? 'Native input' : 'Center radius'}</span>
+                        <div className="deadzone-position-legend" aria-label="Stick position legend">
+                          <span><i className="physical" />Physical</span>
+                          <span><i className="output" />Output</span>
+                        </div>
                       </div>
                     </div>
 

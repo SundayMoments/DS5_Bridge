@@ -1065,6 +1065,8 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setRadialDeadzones', (_event, leftPercent: number, rightPercent: number) => (
     service.setRadialDeadzones(leftPercent, rightPercent)
   ));
+  ipcMain.handle('bridge:requestStickInputPreview', () => service.requestStickInputPreview());
+  ipcMain.handle('bridge:releaseStickInputPreview', () => service.releaseStickInputPreview());
   ipcMain.handle('bridge:setHapticsEnabled', (_event, value: boolean) => service.setHapticsEnabled(value));
   ipcMain.handle('bridge:setFeedbackBoostEnabled', (_event, value: boolean) => (
     service.setFeedbackBoostEnabled(value)

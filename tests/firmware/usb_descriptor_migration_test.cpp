@@ -1373,9 +1373,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 21;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 22;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 21;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 22;")
             == std::string::npos
         || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
             == std::string::npos
@@ -1405,6 +1405,14 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
             == std::string::npos
         || protocol_ts.find("SET_RADIAL_DEADZONES: 0x37")
             == std::string::npos
+        || companion_cpp.find("uint16_t build_input_report")
+            == std::string::npos
+        || companion_cpp.find("memcpy(last_raw_stick_axes, report, sizeof(last_raw_stick_axes));")
+            == std::string::npos
+        || companion_cpp.find("write_u32(buffer + 7, raw_stick_sequence);")
+            == std::string::npos
+        || protocol_ts.find("export function parseCompanionInputReport")
+            == std::string::npos
     ) {
         throw std::runtime_error(
             "Firmware and companion controller-management protocol identifiers must remain in parity"
@@ -1414,7 +1422,7 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const std::string identity = extract_between(
         companion_cpp,
         "uint16_t build_device_identity",
-        "\n}\n\nuint16_t build_shortcut_event"
+        "\n}\n\nuint16_t build_input_report"
     );
     if (
         identity.find("bt_get_device_identity(&identity)") == std::string::npos

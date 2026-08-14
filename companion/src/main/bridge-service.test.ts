@@ -161,6 +161,7 @@ class MockHidDevice extends EventEmitter {
   firmwareLogReports: number[][] = [];
   deviceIdentity = deviceIdentityReport();
   shortcutEvents: number[] = [];
+  inputReports: number[][] = [];
   shortcutReadError: Error | null = null;
   featureReportIds: number[] = [];
   sentReports: number[][] = [];
@@ -229,7 +230,7 @@ class MockHidDevice extends EventEmitter {
       if (this.shortcutReadError) {
         throw this.shortcutReadError;
       }
-      return shortcutEventReport(this.shortcutEvents.shift() ?? 0);
+      return [...(this.inputReports.shift() ?? shortcutEventReport(this.shortcutEvents.shift() ?? 0))];
     }
     throw new Error(`Unexpected report ID: ${reportId}`);
   }
@@ -505,6 +506,22 @@ function audioStatusReport(overrides: Partial<{
   return report;
 }
 
+function stickInputReport(
+  raw: { lx: number; ly: number; rx: number; ry: number },
+  sequence: number,
+  event = 0
+): number[] {
+  const report = shortcutEventReport(event);
+  report[2] = 1;
+  report[3] = 0x01;
+  report[4] = raw.lx;
+  report[5] = raw.ly;
+  report[6] = raw.rx;
+  report[7] = raw.ry;
+  writeU32(report, 8, sequence);
+  return report;
+}
+
 function firmwareLogReport(bytes: number[], options: {
   enabled?: boolean;
   sequence?: number;
@@ -714,6 +731,28 @@ describe('BridgeService', () => {
     await poll(service);
 
     expect(device.listenerCount('data')).toBe(0);
+  });
+
+  it('publishes raw stick movement only while the deadzone preview lease is active', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    device.inputReports.push(stickInputReport({ lx: 140, ly: 128, rx: 200, ry: 64 }, 7));
+    service.requestStickInputPreview();
+    await pollShortcut(service);
+
+    expect(service.getSnapshot().stickInputPreview).toEqual({
+      sequence: 7,
+      raw: { lx: 140, ly: 128, rx: 200, ry: 64 }
+    });
+    expect(service.releaseStickInputPreview().stickInputPreview).toBeNull();
+
+    device.inputReports.push(stickInputReport({ lx: 255, ly: 255, rx: 0, ry: 0 }, 8));
+    await pollShortcut(service);
+    expect(service.getSnapshot().stickInputPreview).toBeNull();
   });
 
   it('blocks emergency Windows device repair while a controller is connected to the bridge', async () => {

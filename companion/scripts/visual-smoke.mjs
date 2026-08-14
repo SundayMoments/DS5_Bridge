@@ -32,6 +32,14 @@ try {
   await page.waitForSelector('.hero-card', { timeout: 10000 });
   await page.waitForTimeout(250);
 
+  const featureTutorial = page.getByRole('dialog', { name: 'Feature tile tutorial' });
+  if (await featureTutorial.isVisible()) {
+    await featureTutorial.getByRole('button', { name: 'Toggle example effect' }).click();
+    await featureTutorial.getByRole('button', { name: 'Next' }).click();
+    const supportTutorial = page.getByRole('dialog', { name: 'Support DS5 Bridge' });
+    await supportTutorial.getByRole('button', { name: 'Continue' }).click({ timeout: 7000 });
+  }
+
   const originalSettings = await page.evaluate(async () => {
     const snapshot = await window.bridge.getStatus();
     return {

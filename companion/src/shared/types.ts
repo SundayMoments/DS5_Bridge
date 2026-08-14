@@ -20,6 +20,7 @@ import type {
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
+  StickInputPreviewPayload,
   TriggerTestMode
 } from './protocol';
 
@@ -168,6 +169,7 @@ export interface BridgeSnapshot {
   diagnostics: BridgeDiagnostics;
   personaTransition?: HostPersonaTransition | null;
   bridgeDevices?: BridgeDeviceCensus | null;
+  stickInputPreview?: StickInputPreviewPayload | null;
 }
 
 export interface BridgeDeviceInfo {

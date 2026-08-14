@@ -32,6 +32,7 @@ import {
   parseFeedbackTraceReport,
   parseFirmwareLogReport,
   parseDeviceIdentityReport,
+  parseCompanionInputReport,
   parseTriggerTraceReport,
   parseStatusReport,
   remapButtonIdValue
@@ -793,6 +794,38 @@ describe('companion protocol', () => {
     expect(normalizeRadialDeadzonePercent(12.6)).toBe(13);
     expect(normalizeRadialDeadzonePercent(99)).toBe(50);
     expect(buildRadialDeadzonePayload(12.4, 99)).toEqual([12, 50]);
+  });
+
+  it('parses shortcut and raw stick telemetry from the companion input report', () => {
+    const report = new Array<number>(64).fill(0);
+    report[0] = REPORT_ID.INPUT;
+    report[1] = 0x04;
+    report[2] = 1;
+    report[3] = 0x01;
+    report[4] = 140;
+    report[5] = 121;
+    report[6] = 210;
+    report[7] = 45;
+    writeU32(report, 8, 0x12345678);
+
+    expect(parseCompanionInputReport(report)).toEqual({
+      shortcutEvent: 0x04,
+      stickPreview: {
+        sequence: 0x12345678,
+        raw: { lx: 140, ly: 121, rx: 210, ry: 45 }
+      }
+    });
+  });
+
+  it('accepts legacy input reports without stick telemetry', () => {
+    const report = new Array<number>(64).fill(0);
+    report[0] = REPORT_ID.INPUT;
+    report[1] = 0x02;
+
+    expect(parseCompanionInputReport(report)).toEqual({
+      shortcutEvent: 0x02,
+      stickPreview: null
+    });
   });
 
   it('normalizes deleted or unknown bridge presets to a fallback', () => {

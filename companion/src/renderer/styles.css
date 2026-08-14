@@ -4011,7 +4011,7 @@ button.overview-shortcut-chip {
   height: 112px;
   border: 1px solid var(--surface-border-strong);
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   background: radial-gradient(circle, var(--surface-control) 0 3px, transparent 4px), var(--surface-card);
   box-shadow: inset 0 0 0 8px var(--surface-control-soft), var(--shadow-panel);
 }
@@ -4064,6 +4064,32 @@ button.overview-shortcut-chip {
   transform: translate(-50%, -50%);
 }
 
+.deadzone-position-dot {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: left 50ms linear, top 50ms linear;
+}
+
+.deadzone-position-dot.output {
+  z-index: 4;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface-card);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-soft);
+}
+
+.deadzone-position-dot.physical {
+  z-index: 5;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--text-primary);
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--surface-card);
+}
+
 .deadzone-preview-copy {
   min-width: 0;
   display: grid;
@@ -4080,6 +4106,38 @@ button.overview-shortcut-chip {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 650;
+}
+
+.deadzone-position-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin-top: 5px;
+}
+
+.deadzone-position-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.deadzone-position-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.deadzone-position-legend i.physical {
+  border: 2px solid var(--text-primary);
+  background: transparent;
+}
+
+.deadzone-position-legend i.output {
+  border: 1px solid var(--surface-card);
+  background: var(--accent);
 }
 
 .slider-row.deadzone-slider-row {

@@ -32,6 +32,7 @@ import {
   parseTriggerTraceReport,
   parseFeedbackTraceReport,
   parseFirmwareLogReport,
+  parseCompanionInputReport,
   parseStatusReport,
   readReportProtocolVersion,
   SHORTCUT_EVENT,
@@ -68,6 +69,7 @@ import type {
   PollingRateMode,
   ReportProtocolVersion,
   ShortcutEvent,
+  StickInputPreviewPayload,
   TriggerTestMode,
   TriggerTestTarget
 } from '../shared/protocol';
@@ -105,6 +107,7 @@ import { WinUsbCompanionTransport } from './winusb-companion-transport';
 const POLL_INTERVAL_MS = 500;
 const SHORTCUT_POLL_INTERVAL_MS = 50;
 const SHORTCUT_POLL_ERROR_RETRY_MS = 250;
+const STICK_INPUT_PREVIEW_LEASE_MS = 1500;
 const AUDIO_STATUS_READ_INTERVAL_MS = 500;
 const AUDIO_DEBUG_READ_INTERVAL_MS = 500;
 const TRIGGER_TRACE_READ_INTERVAL_MS = 250;
@@ -635,9 +638,7 @@ type InputShortcutEvent =
   | { kind: 'shortcut'; event: ShortcutEvent }
   | { kind: 'chord-function'; slot: number };
 
-function parseShortcutEvent(data: Buffer | number[]): InputShortcutEvent | null {
-  const report = Array.from(data);
-  const event = report[0] === REPORT_ID.INPUT ? report[1] : report[0];
+function parseShortcutEvent(event: number): InputShortcutEvent | null {
   if (event >= CHORD_FUNCTION_EVENT_BASE && event < CHORD_FUNCTION_EVENT_BASE + MAX_CHORD_ASSIGNMENTS) {
     return {
       kind: 'chord-function',
@@ -1238,6 +1239,8 @@ export class BridgeService extends EventEmitter {
   private pollAgainRequested = false;
   private shortcutPollTimer: NodeJS.Timeout | null = null;
   private shortcutPollInFlight = false;
+  private stickInputPreviewLeaseUntil = 0;
+  private stickInputPreview: StickInputPreviewPayload | null = null;
   private readonly systemAudioHapticsEngine = new SystemAudioHapticsEngine();
   private readonly audioHapticsSessionMonitor = new AudioHapticsSessionMonitor();
   private readonly micKeepaliveEngine = new MicKeepaliveEngine();
@@ -1358,16 +1361,41 @@ export class BridgeService extends EventEmitter {
   }
 
   private async pollShortcutEvent(): Promise<void> {
+    const now = Date.now();
+    if (this.stickInputPreviewLeaseUntil > 0 && this.stickInputPreviewLeaseUntil <= now) {
+      this.stickInputPreviewLeaseUntil = 0;
+      if (this.stickInputPreview !== null) {
+        this.stickInputPreview = null;
+        this.emitSnapshot();
+      }
+    }
+
     const device = this.device;
-    if (!device || Date.now() < this.shortcutFeaturePollRetryAt) {
+    if (!device || now < this.shortcutFeaturePollRetryAt) {
       return;
     }
 
     try {
-      const event = parseShortcutEvent(await device.getFeatureReport(REPORT_ID.INPUT, REPORT_LENGTH));
+      const input = parseCompanionInputReport(
+        await device.getFeatureReport(REPORT_ID.INPUT, REPORT_LENGTH)
+      );
       this.shortcutFeaturePollRetryAt = 0;
+      const event = parseShortcutEvent(input.shortcutEvent);
       if (event !== null) {
         this.enqueueShortcutEvent(event);
+      }
+      if (this.stickInputPreviewLeaseUntil > now) {
+        const nextPreview = input.stickPreview;
+        if (
+          nextPreview?.sequence !== this.stickInputPreview?.sequence
+          || nextPreview?.raw.lx !== this.stickInputPreview?.raw.lx
+          || nextPreview?.raw.ly !== this.stickInputPreview?.raw.ly
+          || nextPreview?.raw.rx !== this.stickInputPreview?.raw.rx
+          || nextPreview?.raw.ry !== this.stickInputPreview?.raw.ry
+        ) {
+          this.stickInputPreview = nextPreview;
+          this.emitSnapshot();
+        }
       }
     } catch {
       // Shortcut polling is optional and should never make the bridge look
@@ -1421,7 +1449,27 @@ export class BridgeService extends EventEmitter {
   }
 
   getSnapshot(): BridgeSnapshot {
-    return structuredClone(this.snapshot);
+    return structuredClone({
+      ...this.snapshot,
+      stickInputPreview: this.stickInputPreviewLeaseUntil > Date.now()
+        ? this.stickInputPreview
+        : null
+    });
+  }
+
+  requestStickInputPreview(): BridgeSnapshot {
+    this.stickInputPreviewLeaseUntil = Date.now() + STICK_INPUT_PREVIEW_LEASE_MS;
+    return this.getSnapshot();
+  }
+
+  releaseStickInputPreview(): BridgeSnapshot {
+    const hadPreview = this.stickInputPreview !== null;
+    this.stickInputPreviewLeaseUntil = 0;
+    this.stickInputPreview = null;
+    if (hadPreview) {
+      this.emitSnapshot();
+    }
+    return this.getSnapshot();
   }
 
   listDevices(): Promise<HidDeviceSummary[]> {
@@ -4340,6 +4388,7 @@ export class BridgeService extends EventEmitter {
     this.connectedBridgeUniqueId = null;
     this.connectedControllerMac = null;
     this.bindingAppliedForMac = null;
+    this.stickInputPreview = null;
     if (device) {
       try {
         device.removeAllListeners();
@@ -4393,6 +4442,7 @@ export class BridgeService extends EventEmitter {
       personaTransition,
       bridgeDevices: this.bridgeDevicesSnapshot()
     };
+    const publicSnapshot = this.getSnapshot();
     const signature = JSON.stringify({
       state: this.snapshot.state,
       message: this.snapshot.message,
@@ -4405,6 +4455,7 @@ export class BridgeService extends EventEmitter {
       settings: this.snapshot.settings,
       personaTransition: this.snapshot.personaTransition,
       bridgeDevices: this.snapshot.bridgeDevices,
+      stickInputPreview: publicSnapshot.stickInputPreview,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,
@@ -4435,6 +4486,6 @@ export class BridgeService extends EventEmitter {
       return;
     }
     this.lastEmittedSnapshotSignature = signature;
-    this.emit('snapshot', this.getSnapshot());
+    this.emit('snapshot', publicSnapshot);
   }
 }

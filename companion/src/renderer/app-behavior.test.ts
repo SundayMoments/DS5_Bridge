@@ -366,6 +366,12 @@ describe('renderer behavior guards', () => {
   it('exposes only radial stick deadzones from the premium analog controls', () => {
     expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones'");
     expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
+    expect(appSource).toContain('window.bridge.requestStickInputPreview()');
+    expect(appSource).toContain('window.bridge.releaseStickInputPreview()');
+    expect(appSource).toContain("`${Math.max(3, value)}%`");
+    expect(appSource).toContain('radialDeadzonePreview(');
+    expect(appSource).toContain('Physical</span>');
+    expect(appSource).toContain('Output</span>');
     expect(appSource).toContain("'Left Stick' : 'Right Stick'");
     expect(appSource).toContain('aria-label={`${label} radial deadzone`}');
     expect(appSource).toContain('<FeatureTipsPanel tab="deadzones" />');
