@@ -36,6 +36,7 @@
 #include "pico/stdio.h"
 #include "usb.h"
 #include "utils.h"
+#include "wolwifi.h"
 #include "bsp/board_api.h"
 #include "hardware/watchdog.h"
 #include "pico/sync.h"
@@ -479,6 +480,28 @@ static bool player_led_enabled = true;
 static bool lightbar_restore_enabled = true;
 static bool lightbar_restore_pending = false;
 static uint32_t lightbar_restore_at_us = 0;
+
+// WOL indicator state: a pulsing/solid green sequence overlaid on the
+// lightbar while wolwifi.cpp resends a magic packet, independent of the
+// normal restore-to-last-set-color mechanism above (bt_set_lightbar_color()
+// overwrites saved_lightbar_* immediately, so it can't itself remember
+// "what was showing before the indicator started" -- this snapshot exists
+// for exactly that purpose).
+enum class WolIndicatorPhase : uint8_t { Idle, Pulsing, Confirmed };
+static WolIndicatorPhase wol_indicator_phase = WolIndicatorPhase::Idle;
+static uint8_t wol_indicator_pre_red = 0;
+static uint8_t wol_indicator_pre_green = 0;
+static uint8_t wol_indicator_pre_blue = 0;
+static uint8_t wol_indicator_pre_brightness = 0;
+static uint32_t wol_indicator_phase_started_us = 0;
+static constexpr uint32_t WOL_INDICATOR_PULSE_PERIOD_MS = 1500;
+static constexpr uint32_t WOL_INDICATOR_CONFIRMED_HOLD_MS = 2000;
+// "Dark"/"light" green endpoints of the pulse, and the solid confirmed
+// color -- distinct from the existing blue (0x00,0x00,0xff) controller-wake
+// flash used elsewhere, so the two signals don't look alike.
+static constexpr uint8_t WOL_INDICATOR_DARK_GREEN = 0x20;
+static constexpr uint8_t WOL_INDICATOR_LIGHT_GREEN = 0xff;
+static constexpr uint8_t WOL_INDICATOR_BRIGHTNESS = 100;
 static uint8_t state_report_seq = 0;
 static bool edge_profile_switching_blocked = false;
 static bool edge_profile_switching_mode_applied = false;
@@ -2278,6 +2301,87 @@ void bt_lightbar_loop() {
     );
 }
 
+// Called once when a WOL resend cycle starts sending (see wolwifi.cpp
+// begin_resend_cycle()). Snapshots the color showing right now -- not
+// necessarily saved_lightbar_*'s eventual restore target, but literally
+// what's on the controller at this instant -- so it can be restored
+// exactly once the indicator sequence ends, regardless of what the normal
+// restore-pending mechanism above is doing at the same time.
+void bt_wol_indicator_begin() {
+    if (hid_interrupt_cid == 0) {
+        return;
+    }
+    wol_indicator_pre_red = saved_lightbar_red;
+    wol_indicator_pre_green = saved_lightbar_green;
+    wol_indicator_pre_blue = saved_lightbar_blue;
+    wol_indicator_pre_brightness = saved_lightbar_brightness;
+    wol_indicator_phase = WolIndicatorPhase::Pulsing;
+    wol_indicator_phase_started_us = time_us_32();
+    // A WOL-triggered indicator always takes priority over any pending
+    // ordinary restore (e.g. a wake-flash from the same connect event) --
+    // cancel it so bt_lightbar_loop() doesn't fight the pulse.
+    lightbar_restore_pending = false;
+}
+
+// Called once when the target confirms it's awake (ARP reply seen). Ends
+// the pulse and holds solid light green for WOL_INDICATOR_CONFIRMED_HOLD_MS
+// before restoring the pre-indicator color.
+void bt_wol_indicator_confirm() {
+    if (wol_indicator_phase != WolIndicatorPhase::Pulsing) {
+        return;
+    }
+    wol_indicator_phase = WolIndicatorPhase::Confirmed;
+    wol_indicator_phase_started_us = time_us_32();
+    bt_set_lightbar_color(0x00, WOL_INDICATOR_LIGHT_GREEN, 0x00, WOL_INDICATOR_BRIGHTNESS);
+}
+
+// Called if the resend budget runs out with no confirmation. Restores
+// immediately, no distinct failure color (kept as a purely positive
+// signal, matching the decision not to add extra complexity for the
+// unconfirmed case -- see decisions.md).
+void bt_wol_indicator_cancel() {
+    if (wol_indicator_phase == WolIndicatorPhase::Idle) {
+        return;
+    }
+    wol_indicator_phase = WolIndicatorPhase::Idle;
+    bt_set_lightbar_color(
+        wol_indicator_pre_red, wol_indicator_pre_green, wol_indicator_pre_blue,
+        wol_indicator_pre_brightness
+    );
+}
+
+// Drives the pulse animation and the confirmed-hold-then-restore timing;
+// polled every main-loop iteration alongside bt_lightbar_loop().
+void bt_wol_indicator_loop() {
+    if (wol_indicator_phase == WolIndicatorPhase::Idle || hid_interrupt_cid == 0) {
+        return;
+    }
+
+    const uint32_t elapsed_ms = (time_us_32() - wol_indicator_phase_started_us) / 1000;
+
+    if (wol_indicator_phase == WolIndicatorPhase::Confirmed) {
+        if (elapsed_ms >= WOL_INDICATOR_CONFIRMED_HOLD_MS) {
+            wol_indicator_phase = WolIndicatorPhase::Idle;
+            bt_set_lightbar_color(
+                wol_indicator_pre_red, wol_indicator_pre_green, wol_indicator_pre_blue,
+                wol_indicator_pre_brightness
+            );
+        }
+        return;
+    }
+
+    // Pulsing: triangle-wave green level between dark and light green over
+    // WOL_INDICATOR_PULSE_PERIOD_MS, updated at whatever cadence the main
+    // loop polls this at (no fixed frame rate needed for a slow breathing
+    // pulse).
+    const uint32_t phase_ms = elapsed_ms % WOL_INDICATOR_PULSE_PERIOD_MS;
+    const uint32_t half_period = WOL_INDICATOR_PULSE_PERIOD_MS / 2;
+    const uint32_t ramp = phase_ms < half_period ? phase_ms : (WOL_INDICATOR_PULSE_PERIOD_MS - phase_ms);
+    const uint32_t span = WOL_INDICATOR_LIGHT_GREEN - WOL_INDICATOR_DARK_GREEN;
+    const uint8_t green = static_cast<uint8_t>(WOL_INDICATOR_DARK_GREEN + (ramp * span) / half_period);
+    bt_set_lightbar_color(0x00, green, 0x00, WOL_INDICATOR_BRIGHTNESS);
+}
+
 void bt_signal_strength_loop() {
     if (acl_handle == HCI_CON_HANDLE_INVALID || hid_interrupt_cid == 0) {
         reset_signal_strength_session();
@@ -3916,6 +4020,11 @@ static void finish_hid_session_if_ready() {
     connection_phase = BtConnectionPhase::Ready;
     connection_phase_started_us = 0;
     cancel_hid_channel_recovery_if_ready();
+    // Wake-on-LAN: this function only reaches here once per connection (see
+    // the `connection_phase == BtConnectionPhase::Ready` early-return above),
+    // so this is an edge trigger -- fires once per DISCONNECTED->CONNECTED
+    // transition, not on every input report or while already connected.
+    wolwifi_on_controller_connect();
     critical_section_enter_blocking(&queue_lock);
     reset_controller_output_session_locked();
     critical_section_exit(&queue_lock);

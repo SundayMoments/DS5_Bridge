@@ -125,9 +125,19 @@ void bt_replay_adaptive_trigger_effect(
     bool motor_power_valid
 );
 void bt_reset_adaptive_triggers();
+
 void bt_set_lightbar_restore_enabled(bool enabled);
 void bt_schedule_lightbar_restore(uint32_t delay_ms);
 void bt_lightbar_loop();
+// WOL send-in-progress lightbar indicator (see decisions.md): pulsing green
+// while wolwifi.cpp is resending a magic packet, solid light green for a
+// short hold once the target confirms it woke up, then a true restore to
+// whatever color was showing before the indicator started. All are no-ops
+// if the controller isn't connected (hid_interrupt_cid == 0).
+void bt_wol_indicator_begin();
+void bt_wol_indicator_confirm();
+void bt_wol_indicator_cancel();
+void bt_wol_indicator_loop();
 void bt_signal_strength_loop();
 void bt_inquiry_loop();
 void bt_connection_recovery_loop();

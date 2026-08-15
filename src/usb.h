@@ -25,6 +25,7 @@ void usb_pm_poll();
 void usb_set_suspend_disconnect_enabled(bool enabled);
 bool usb_suspend_disconnect_enabled();
 bool usb_host_suspended_active();
+bool usb_host_active();
 bool usb_speaker_streaming_active();
 bool usb_mic_streaming_active();
 bool usb_line_streaming_active();

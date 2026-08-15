@@ -40,6 +40,24 @@ endif ()
 # ====================================================================================
 option(WAVESHARE_RP2350B_PLUS_W_BUILD "Build for Waveshare RP2350B-Plus-W (USB-C, 16MB flash, RM2 wireless)" OFF)
 
+# Wake-on-LAN over Wi-Fi: sends a UDP magic packet to a configured target PC
+# when a controller connects. Requires a CYW43 radio and lwIP, so it only
+# defaults on for the Waveshare RP2350B-Plus-W target. It can also be turned
+# on for the default pico2_w target (same CYW43439 radio), but that's opt-in
+# and untested -- Waveshare is the only board this has actually been run on.
+# See src/wolwifi.h for the isolated module.
+option(ENABLE_WOLWIFI "Enable Wake-on-LAN over Wi-Fi (requires CYW43 Wi-Fi + lwIP)" ${WAVESHARE_RP2350B_PLUS_W_BUILD})
+# The board's USB persona is plugged into the same target PC WOL wakes, so
+# usb_mounted && !usb_host_suspended_active() is used to skip sending WOL
+# (and the lightbar's in-progress pulse) when that PC is already running.
+# Some motherboards/BIOS settings ("power on by USB keyboard/mouse",
+# always-on charging ports) or Modern Standby (S0ix) keep the USB bus
+# enumerated and active even with the PC nominally off, which would make
+# that check permanently see "host active" and block every wake -- this
+# option skips the check entirely for those boards. Matches
+# awalol/DS5Dongle#207's WOL_ALWAYS option (same escape hatch, same name).
+option(WOL_ALWAYS "Skip the host-alive gate and always send WOL on a debounced controller connect (required on boards/BIOS settings that keep USB active in S5 or Modern Standby)" OFF)
+
 if (WAVESHARE_RP2350B_PLUS_W_BUILD)
     set(PICO_BOARD waveshare_rp2350b_plus_w CACHE STRING "Board type")
     # Waveshare board header is not in upstream pico-sdk; ship it here and
@@ -92,6 +110,12 @@ add_executable(ds5-bridge
         src/firmware_log.cpp
         src/watchdog_telemetry.cpp
 )
+
+if (ENABLE_WOLWIFI)
+    target_sources(ds5-bridge PRIVATE
+            src/wolwifi.cpp
+    )
+endif ()
 
 # Cockos WDLResampler
 add_library(wdl_resampler STATIC
@@ -365,7 +389,6 @@ if(TARGET bs2_default)
     )
 endif()
 target_compile_definitions(ds5-bridge PRIVATE
-        CYW43_LWIP=0
         PICO_EMBED_XIP_SETUP=1
         # BOOTSEL polling floats QSPI CSn briefly; flash_safe_execute() must
         # park core 1 while that happens.
@@ -486,13 +509,41 @@ target_link_libraries(ds5-bridge
         hardware_timer
         pico_rand
         pico_btstack_classic
-        pico_cyw43_arch_poll
         pico_btstack_cyw43
         tinyusb_device
         tinyusb_board
         wdl_resampler
         opus
 )
+
+if (ENABLE_WOLWIFI)
+    # Swaps in lwIP support on top of the same CYW43 poll-mode arch already
+    # used for Bluetooth (pico_cyw43_arch_lwip_poll depends on
+    # pico_cyw43_arch_poll and additionally links pico_lwip_nosys, setting
+    # CYW43_LWIP=1 via its headers interface). BTstack keeps using the CYW43
+    # HCI transport independently of lwIP/UDP traffic on the same radio.
+    target_include_directories(ds5-bridge PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/boards/headers
+    )
+    target_compile_definitions(ds5-bridge PRIVATE
+            ENABLE_WOLWIFI
+    )
+    if (WOL_ALWAYS)
+        target_compile_definitions(ds5-bridge PRIVATE
+                WOL_ALWAYS
+        )
+    endif ()
+    target_link_libraries(ds5-bridge
+            pico_cyw43_arch_lwip_poll
+    )
+else ()
+    target_compile_definitions(ds5-bridge PRIVATE
+            CYW43_LWIP=0
+    )
+    target_link_libraries(ds5-bridge
+            pico_cyw43_arch_poll
+    )
+endif ()
 
 # The exact-capacity audio queues use static storage. Codec and resampler
 # startup still allocate 79,120 bytes; retain another 8 KiB after those known
