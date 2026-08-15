@@ -82,6 +82,10 @@ export interface CompanionSettings {
   idleDisconnectTimeoutMinutes: number;
   usbSuspendDisconnectEnabled: boolean;
   wakeOnConnectEnabled: boolean;
+  wolEnabled: boolean;
+  wolWifiSsid: string;
+  wolWifiPassword: string;
+  wolTargetMac: string;
   sleepKeybindEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;

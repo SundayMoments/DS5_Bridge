@@ -140,6 +140,18 @@ const api = {
   setWakeOnConnectEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setWakeOnConnectEnabled', value)
   ),
+  setWolEnabled: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setWolEnabled', value)
+  ),
+  setWolWifiSsid: (value: string): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setWolWifiSsid', value)
+  ),
+  setWolWifiPassword: (value: string): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setWolWifiPassword', value)
+  ),
+  setWolTargetMac: (value: string): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setWolTargetMac', value)
+  ),
   setSleepKeybindEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setSleepKeybindEnabled', value)
   ),

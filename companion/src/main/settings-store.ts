@@ -11,6 +11,8 @@ import {
   MAX_CHORD_FUNCTION_NAME_LENGTH,
   MAX_KEYBOARD_FUNCTION_KEYS,
   REMAP_BUTTON_IDS,
+  WOL_WIFI_PASSWORD_MAX_LENGTH,
+  WOL_WIFI_SSID_MAX_LENGTH,
   clampAudioInterleaveValues,
   defaultChordControllerSettingStepPercent,
   isChordBindingAllowed,
@@ -200,6 +202,10 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   idleDisconnectTimeoutMinutes: 15,
   usbSuspendDisconnectEnabled: true,
   wakeOnConnectEnabled: true,
+  wolEnabled: false,
+  wolWifiSsid: '',
+  wolWifiPassword: '',
+  wolTargetMac: '',
   sleepKeybindEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.sleepKeybindEnabled,
   speakerVolumeShortcutEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumeShortcutEnabled,
   pollingRateMode: DEFAULT_CONTROLLER_PROFILE_SETTINGS.pollingRateMode,
@@ -1039,6 +1045,18 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     wakeOnConnectEnabled: typeof value?.wakeOnConnectEnabled === 'boolean'
       ? value.wakeOnConnectEnabled
       : DEFAULT_SETTINGS.wakeOnConnectEnabled,
+    wolEnabled: typeof value?.wolEnabled === 'boolean'
+      ? value.wolEnabled
+      : DEFAULT_SETTINGS.wolEnabled,
+    wolWifiSsid: typeof value?.wolWifiSsid === 'string'
+      ? value.wolWifiSsid.slice(0, WOL_WIFI_SSID_MAX_LENGTH)
+      : DEFAULT_SETTINGS.wolWifiSsid,
+    wolWifiPassword: typeof value?.wolWifiPassword === 'string'
+      ? value.wolWifiPassword.slice(0, WOL_WIFI_PASSWORD_MAX_LENGTH)
+      : DEFAULT_SETTINGS.wolWifiPassword,
+    wolTargetMac: typeof value?.wolTargetMac === 'string'
+      ? value.wolTargetMac.trim()
+      : DEFAULT_SETTINGS.wolTargetMac,
     sleepKeybindEnabled: typeof value?.sleepKeybindEnabled === 'boolean'
       ? value.sleepKeybindEnabled
       : DEFAULT_SETTINGS.sleepKeybindEnabled,

@@ -1138,6 +1138,18 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setWakeOnConnectEnabled', (_event, value: boolean) => (
     service.setWakeOnConnectEnabled(value)
   ));
+  ipcMain.handle('bridge:setWolEnabled', (_event, value: boolean) => (
+    service.setWolEnabled(value)
+  ));
+  ipcMain.handle('bridge:setWolWifiSsid', (_event, value: string) => (
+    service.setWolWifiSsid(value)
+  ));
+  ipcMain.handle('bridge:setWolWifiPassword', (_event, value: string) => (
+    service.setWolWifiPassword(value)
+  ));
+  ipcMain.handle('bridge:setWolTargetMac', (_event, value: string) => (
+    service.setWolTargetMac(value)
+  ));
   ipcMain.handle('bridge:setSleepKeybindEnabled', (_event, value: boolean) => (
     service.setSleepKeybindEnabled(value)
   ));

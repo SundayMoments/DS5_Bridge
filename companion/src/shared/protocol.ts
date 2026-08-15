@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 22;
+export const PROTOCOL_MINOR = 23;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -98,7 +98,11 @@ export const COMMAND_ID = {
   SET_WAKE_ON_CONNECT: 0x35,
   SET_LIGHTBAR_RESTORE_ENABLED: 0x36,
   SET_RADIAL_DEADZONES: 0x37,
-  SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45
+  SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45,
+  SET_WOL_ENABLED: 0x46,
+  SET_WOL_WIFI_SSID: 0x47,
+  SET_WOL_WIFI_PASSWORD: 0x48,
+  SET_WOL_TARGET_MAC: 0x49
 } as const;
 
 export const RADIAL_DEADZONE_MAX_PERCENT = 50;
@@ -516,6 +520,7 @@ export interface BridgeStatusPayload {
     hostPersonaControl: boolean;
     audioReactiveHapticsControl: boolean;
     wakeOnConnectControl: boolean;
+    wolControl: boolean;
   };
   hostPersonaMode: HostPersonaMode;
   supportedHostPersonaModes: HostPersonaMode[];
@@ -890,7 +895,13 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
       pollingRateControl: true,
       hostPersonaControl: report[49] !== 0,
       audioReactiveHapticsControl: report[6] >= 7,
-      wakeOnConnectControl: report[6] >= 19
+      wakeOnConnectControl: report[6] >= 19,
+      // Protocol-minor gate, same pattern as the other *Control flags above.
+      // WOL is compile-time Waveshare-only (ENABLE_WOLWIFI); a non-Waveshare
+      // board on firmware >= 20 will still show this as "supported" here,
+      // but commands simply have no effect on boards without the feature
+      // compiled in -- see wolwifi.h's no-op stubs.
+      wolControl: report[6] >= 20
     },
     hostPersonaMode: hostPersonaMode(report[48]),
     supportedHostPersonaModes: supportedHostPersonaModes(report[49]),
@@ -1159,6 +1170,44 @@ export function bluetoothAddressPayload(address: string): number[] {
     throw new ProtocolError('Invalid controller Bluetooth address.', 'bad-bluetooth-address');
   }
   return payload;
+}
+
+// Wake-on-LAN target MAC uses the same 6-byte "AA:BB:CC:DD:EE:FF" wire format
+// as a controller Bluetooth address, but a null/broadcast MAC is invalid for
+// a WOL target in a way a Bluetooth address check doesn't need to express.
+export function wolTargetMacPayload(mac: string): number[] {
+  const parts = mac.trim().split(':');
+  if (parts.length !== 6 || parts.some((part) => !/^[\da-f]{2}$/i.test(part))) {
+    throw new ProtocolError('Invalid Wake-on-LAN target MAC address.', 'bad-wol-mac');
+  }
+  const payload = parts.map((part) => Number.parseInt(part, 16));
+  if (payload.every((value) => value === 0) || payload.every((value) => value === 0xff)) {
+    throw new ProtocolError('Invalid Wake-on-LAN target MAC address.', 'bad-wol-mac');
+  }
+  return payload;
+}
+
+// Matches the firmware's wire budget: REPORT_LENGTH(64) - 11-byte command
+// header = 53 bytes available for extraPayload. SSID is further capped by
+// the 802.11 SSID limit; password by what fits on the wire (firmware also
+// enforces WPA2's 63-character passphrase max where lower).
+export const WOL_WIFI_SSID_MAX_LENGTH = 32;
+export const WOL_WIFI_PASSWORD_MAX_LENGTH = 53;
+
+function utf8BytePayload(value: string, maxLength: number, errorMessage: string): number[] {
+  const bytes = Array.from(new TextEncoder().encode(value));
+  if (bytes.length > maxLength) {
+    throw new ProtocolError(errorMessage, 'bad-wol-wifi-credential');
+  }
+  return bytes;
+}
+
+export function wolWifiSsidPayload(ssid: string): number[] {
+  return utf8BytePayload(ssid, WOL_WIFI_SSID_MAX_LENGTH, 'Wi-Fi SSID is too long.');
+}
+
+export function wolWifiPasswordPayload(password: string): number[] {
+  return utf8BytePayload(password, WOL_WIFI_PASSWORD_MAX_LENGTH, 'Wi-Fi password is too long.');
 }
 
 export function buildCommandReport(

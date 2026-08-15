@@ -139,4 +139,19 @@ describe('IPC contract', () => {
     expect(mainSource).toContain("ipcMain.handle('bridge:setWakeOnConnectEnabled'");
     expect(bridgeServiceSource).toContain('setWakeOnConnectEnabled(enabled: boolean): Promise<BridgeSnapshot>');
   });
+
+  it('exposes the Wake-on-LAN over Wi-Fi preferences', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setWolEnabled', value)");
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setWolWifiSsid', value)");
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setWolWifiPassword', value)");
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setWolTargetMac', value)");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setWolEnabled'");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setWolWifiSsid'");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setWolWifiPassword'");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setWolTargetMac'");
+    expect(bridgeServiceSource).toContain('async setWolEnabled(enabled: boolean): Promise<BridgeSnapshot>');
+    expect(bridgeServiceSource).toContain('async setWolWifiSsid(ssid: string): Promise<BridgeSnapshot>');
+    expect(bridgeServiceSource).toContain('async setWolWifiPassword(password: string): Promise<BridgeSnapshot>');
+    expect(bridgeServiceSource).toContain('async setWolTargetMac(mac: string): Promise<BridgeSnapshot>');
+  });
 });

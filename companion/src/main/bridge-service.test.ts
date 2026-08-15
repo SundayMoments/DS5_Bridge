@@ -143,6 +143,7 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT,
   COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED,
   COMMAND_ID.SET_WAKE_ON_CONNECT,
+  COMMAND_ID.SET_WOL_ENABLED,
   COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED,
   COMMAND_ID.SET_SPEAKER_VOLUME_SHORTCUT_ENABLED,
   COMMAND_ID.SET_BUTTON_REMAP,
@@ -2694,6 +2695,33 @@ describe('BridgeService', () => {
       COMMAND_ID.FORGET_CONTROLLER_PAIRING
     ]);
     expect(commands[2]?.slice(11, 17)).toEqual([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+  });
+
+  it('sends the SSID/password byte length in the command value, not 0', async () => {
+    // Regression test: setWolWifiSsid/setWolWifiPassword used to hardcode
+    // the command's value field to 0 instead of the payload length, so
+    // firmware (which reads value as the byte count to copy) always saw a
+    // zero-length string and silently kept have_ssid=false no matter what
+    // was typed in the UI -- Wi-Fi never got the actual SSID.
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.setWolWifiSsid('Sweet-Home');
+    await service.setWolWifiPassword('correct horse battery staple');
+
+    const ssidReport = device.sentReports.find((report) => report[7] === COMMAND_ID.SET_WOL_WIFI_SSID);
+    const passwordReport = device.sentReports.find((report) => report[7] === COMMAND_ID.SET_WOL_WIFI_PASSWORD);
+
+    expect(ssidReport?.[9]).toBe('Sweet-Home'.length);
+    expect(ssidReport?.slice(11, 11 + 'Sweet-Home'.length).map((byte) => String.fromCharCode(byte)).join('')).toBe('Sweet-Home');
+
+    const password = 'correct horse battery staple';
+    expect(passwordReport?.[9]).toBe(password.length);
+    expect(passwordReport?.slice(11, 11 + password.length).map((byte) => String.fromCharCode(byte)).join('')).toBe(password);
   });
 
   it('sends Pico bootloader command and tolerates the expected transport drop', async () => {

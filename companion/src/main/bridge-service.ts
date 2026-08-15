@@ -40,7 +40,10 @@ import {
   hostPersonaModeValue,
   normalizeChordControllerSettingStepPercent,
   normalizeBridgePresetId,
-  pollingRateModeValue
+  pollingRateModeValue,
+  wolTargetMacPayload,
+  wolWifiPasswordPayload,
+  wolWifiSsidPayload
 } from '../shared/protocol';
 import type {
   AdaptiveTriggerPreviewEffect,
@@ -1304,7 +1307,9 @@ export class BridgeService extends EventEmitter {
     [SHORTCUT_EVENT.MIC_MUTE_OFF]: () => this.applyControllerMicMuteEvent(false)
   };
 
-  constructor(private readonly settingsStore: SettingsStore) {
+  constructor(
+    private readonly settingsStore: SettingsStore
+  ) {
     super();
     this.snapshot = {
       state: 'no-bridge',
@@ -2954,6 +2959,45 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setWolEnabled(enabled: boolean): Promise<BridgeSnapshot> {
+    await this.sendSettingCommand(COMMAND_ID.SET_WOL_ENABLED, enabled ? 1 : 0, {
+      wolEnabled: enabled
+    });
+    return this.getSnapshot();
+  }
+
+  async setWolWifiSsid(ssid: string): Promise<BridgeSnapshot> {
+    const payload = wolWifiSsidPayload(ssid);
+    await this.sendSettingCommand(
+      COMMAND_ID.SET_WOL_WIFI_SSID,
+      payload.length,
+      { wolWifiSsid: ssid },
+      payload
+    );
+    return this.getSnapshot();
+  }
+
+  async setWolWifiPassword(password: string): Promise<BridgeSnapshot> {
+    const payload = wolWifiPasswordPayload(password);
+    await this.sendSettingCommand(
+      COMMAND_ID.SET_WOL_WIFI_PASSWORD,
+      payload.length,
+      { wolWifiPassword: password },
+      payload
+    );
+    return this.getSnapshot();
+  }
+
+  async setWolTargetMac(mac: string): Promise<BridgeSnapshot> {
+    await this.sendSettingCommand(
+      COMMAND_ID.SET_WOL_TARGET_MAC,
+      0,
+      { wolTargetMac: mac },
+      wolTargetMacPayload(mac)
+    );
+    return this.getSnapshot();
+  }
+
   async setSleepKeybindEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     await this.sendSettingCommand(COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED, enabled ? 1 : 0, {
       sleepKeybindEnabled: enabled
@@ -4040,6 +4084,31 @@ export class BridgeService extends EventEmitter {
       settings.wakeOnConnectEnabled ? 1 : 0,
       { expectSettingsRevisionChange }
     );
+    await this.sendCommand(
+      COMMAND_ID.SET_WOL_ENABLED,
+      settings.wolEnabled ? 1 : 0,
+      { expectSettingsRevisionChange }
+    );
+    if (settings.wolWifiSsid) {
+      const ssidPayload = wolWifiSsidPayload(settings.wolWifiSsid);
+      await this.sendCommand(COMMAND_ID.SET_WOL_WIFI_SSID, ssidPayload.length, {
+        expectSettingsRevisionChange,
+        extraPayload: ssidPayload
+      });
+    }
+    if (settings.wolWifiPassword) {
+      const passwordPayload = wolWifiPasswordPayload(settings.wolWifiPassword);
+      await this.sendCommand(COMMAND_ID.SET_WOL_WIFI_PASSWORD, passwordPayload.length, {
+        expectSettingsRevisionChange,
+        extraPayload: passwordPayload
+      });
+    }
+    if (settings.wolTargetMac) {
+      await this.sendCommand(COMMAND_ID.SET_WOL_TARGET_MAC, 0, {
+        expectSettingsRevisionChange,
+        extraPayload: wolTargetMacPayload(settings.wolTargetMac)
+      });
+    }
     await this.sendCommand(
       COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED,
       settings.sleepKeybindEnabled ? 1 : 0,
