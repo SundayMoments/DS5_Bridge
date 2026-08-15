@@ -75,6 +75,8 @@ on the controller until its lightbar rapidly blinks blue.
 - Switch the host persona between DualSense, DualSense Edge, DualShock 4, and Xbox modes.
 - See Bluetooth signal quality at a glance.
 - Mount, flash, or nuke Pico firmware from Bridge Settings.
+- Wake your PC over Wi-Fi (Wake-on-LAN) just by connecting your controller
+  (Waveshare RP2350B-Plus-W only).
 
 ## Explore Kitsune Input
 
@@ -187,11 +189,68 @@ saved but inactive.
 ### Bridge Settings
 
 Set theme, UI scale, tray and startup behavior, firmware maintenance, power
-saving, LEDs, shortcuts, idle disconnect, and PC sleep disconnect.
+saving, LEDs, shortcuts, idle disconnect, PC sleep disconnect, and Wake-on-LAN.
 
 <p align="center">
   <img src="assets/readme/app-bridge-settings.png" width="680" alt="Bridge Settings dialog in the DS5 Bridge companion app">
 </p>
+
+## Wake-on-LAN
+
+On the Waveshare RP2350B-Plus-W board, DS5 Bridge can wake your PC over Wi-Fi
+the moment your DualSense controller connects — no keyboard, mouse, or
+Ethernet magic-packet utility needed. This is a separate mechanism from the
+existing USB-based "Wake PC on Controller" toggle: that one relies on USB
+remote wake and only works while the Pico stays connected to a PC that is
+merely asleep, not fully powered off. Wake-on-LAN instead sends a real network
+magic packet, so it can wake a PC that's been shut down, as long as the PC's
+network adapter has Wake-on-LAN enabled.
+
+### How it works
+
+1. When your controller connects to the Pico, the firmware first checks
+   whether the target PC already looks awake over USB (so it never sends an
+   unnecessary wake packet, or interrupts you with a lightbar pulse, while
+   you're already at your desk with everything on).
+2. If the PC looks like it needs waking, the Pico connects to your Wi-Fi
+   network using the CYW43 radio it already has onboard for Bluetooth, and
+   sends a standard UDP Wake-on-LAN magic packet addressed to your PC's MAC
+   address.
+3. The firmware watches for the target to come back on the network (via ARP)
+   and resends the magic packet a few times if needed, so a single dropped
+   packet on a slow-to-associate Wi-Fi network doesn't leave your PC asleep.
+4. All of this runs alongside normal Bluetooth/controller operation. A
+   missing Wi-Fi network, wrong credentials, or an unreachable target PC never
+   blocks or delays controller pairing, input, or audio — Wake-on-LAN is
+   strictly best-effort.
+
+### Setup
+
+1. Open **Bridge Settings** in the companion app and find the **Wake-on-LAN**
+   section.
+2. Turn on **Wake PC over Wi-Fi**.
+3. Enter the **Wi-Fi Network** name (SSID) and **Wi-Fi Password** the Pico
+   should use to reach your PC's network. This can be the same network your
+   PC is on, or any network that can route a magic packet to it.
+4. Enter your PC's **Target MAC Address** (`AA:BB:CC:DD:EE:FF`) — use the MAC
+   address of the network adapter you want to wake, not necessarily the one
+   currently active.
+5. In Windows, make sure Wake-on-LAN is enabled for that network adapter
+   (Device Manager → adapter **Properties** → **Power Management** → *Allow
+   this device to wake the computer*, and, for wired adapters, the matching
+   *Wake on Magic Packet* option in **Advanced**) and that fast startup is
+   configured in a way that's compatible with your adapter's wake support.
+
+### Requirements
+
+- A board with a CYW43 Wi-Fi radio: on by default for Waveshare
+  RP2350B-Plus-W, or build with `-DENABLE_WOLWIFI=ON` on the default Pico
+  2 W target (only tested on Waveshare so far). Boards without a radio
+  simply don't show the Wake-on-LAN section in the app.
+- A Wi-Fi network that can reach your PC's network segment.
+- Wake-on-LAN enabled on the target PC's network adapter and in its BIOS/UEFI
+  power settings, and the adapter's wake support has to survive a full
+  shutdown (not just sleep) for the "wake from off" case.
 
 ## Troubleshooting
 
@@ -233,6 +292,7 @@ steps.
 | `src/companion.cpp` | Vendor HID companion protocol, status reports, command ACKs, and runtime setting dispatch. |
 | `src/usb.cpp` | TinyUSB audio control callbacks and runtime settings fallback. |
 | `src/usb_descriptors.c` | USB device, configuration, HID report, audio, and string descriptors. |
+| `src/wolwifi.cpp` | Wake-on-LAN over Wi-Fi: host-alive gate, Wi-Fi connect, and magic-packet send/resend. On by default for Waveshare RP2350B-Plus-W, opt-in via `ENABLE_WOLWIFI` on other CYW43 boards. |
 | `companion/` | Electron companion app source, protocol parser, HID service, assets, and UI. |
 | `companion/native/AudioHelper/` | Windows audio helper used by the companion app for audio sessions, haptics mirroring, endpoint setup, and media integrations. |
 | `.github/workflows` | CI and release builds. |

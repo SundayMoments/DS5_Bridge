@@ -1443,6 +1443,16 @@ button {
   animation: modal-panel-in 160ms ease-out;
 }
 
+/* Wake-on-LAN adds a text-input section (SSID/password/target MAC) to the
+   preferences modal's left column: taller than the other modal variants
+   need (extra rows), and wider (side-by-side label + text input rows need
+   more horizontal room than the toggle/select rows the column was sized
+   for, or the input gets squeezed to the point of overflowing the column). */
+.bridge-settings-preferences-modal {
+  width: min(880px, calc(100vw - 48px));
+  max-height: min(740px, calc(100vh - 48px));
+}
+
 .bridge-settings-modal-heading {
   justify-content: space-between;
   padding: 4px 4px 6px 8px;
@@ -2361,6 +2371,71 @@ button {
 
 .settings-menu-row .switch {
   flex: 0 0 48px;
+}
+
+/* Wake-on-LAN SSID/password/target-MAC fields: label left, input right, on
+   one row -- same label-left/control-right shape as a toggle or select row,
+   just with a text input as the control. The input column is a fixed ~45%
+   of the row (not sized to the label text) so all three inputs -- SSID,
+   password, MAC -- line up at the same width and right edge regardless of
+   label length. Input sizing follows the modal's compact control scale
+   (.settings-timeout-select is the closest reference: 26px tall, 12px text)
+   rather than the larger .remap-profile-name-field dialog input, since this
+   lives inline in the settings columns, not a standalone dialog. The
+   optional error message wraps to its own full-width line below when
+   present. */
+.wol-settings-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 45%;
+  column-gap: 10px;
+  row-gap: 4px;
+}
+
+.wol-settings-row .settings-menu-copy {
+  gap: 2px;
+}
+
+.wol-settings-input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  margin-left: auto;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  padding: 0 9px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+}
+
+.wol-settings-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.wol-settings-input:focus {
+  border-color: var(--accent-border-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.wol-settings-input:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.wol-settings-input.invalid {
+  border-color: var(--danger-border-strong);
+}
+
+.wol-settings-error {
+  grid-column: 1 / -1;
+  color: var(--danger);
+  font-size: 10.5px;
+  line-height: 1.16;
 }
 
 .settings-menu-controls {

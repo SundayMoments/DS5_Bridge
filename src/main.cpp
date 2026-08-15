@@ -16,6 +16,7 @@
 #include "audio.h"
 #include "usb.h"
 #include "host_input.h"
+#include "wolwifi.h"
 #include "controller_report.h"
 #include "dualsense_input_decoder.h"
 #include "dualsense_output.h"
@@ -746,6 +747,10 @@ int main() {
     bt_init();
     bt_register_data_callback(on_bt_data);
 
+    // Shares the CYW43 radio cyw43_arch_init() already brought up for
+    // Bluetooth above; a no-op on boards without ENABLE_WOLWIFI.
+    wolwifi_init();
+
     watchdog_enable(1000, true);
 
     while (1) {
@@ -771,6 +776,9 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::UsbPower, {
             usb_pm_poll();
         });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Wolwifi, {
+            wolwifi_task();
+        });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Audio, {
             audio_loop();
         });
@@ -779,6 +787,7 @@ int main() {
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Lightbar, {
             bt_lightbar_loop();
+            bt_wol_indicator_loop();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Rssi, {
             bt_signal_strength_loop();

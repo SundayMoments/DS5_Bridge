@@ -20,6 +20,7 @@
 #include "pico/unique_id.h"
 #include "pico/time.h"
 #include "usb.h"
+#include "wolwifi.h"
 
 namespace {
 
@@ -31,7 +32,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 22;
+constexpr uint8_t kProtocolMinor = 23;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -160,6 +161,10 @@ enum CommandId : uint8_t {
     CommandSetLightbarRestoreEnabled = 0x36,
     CommandSetRadialDeadzones = 0x37,
     CommandSetEdgeProfileSwitchingBlocked = 0x45,
+    CommandSetWolEnabled = 0x46,
+    CommandSetWolWifiSsid = 0x47,
+    CommandSetWolWifiPassword = 0x48,
+    CommandSetWolTargetMac = 0x49,
 };
 
 enum AckResult : uint8_t {
@@ -2353,6 +2358,61 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;
+
+        case CommandSetWolEnabled:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            wolwifi_set_enabled(value == 1);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
+        case CommandSetWolWifiSsid: {
+            // value carries the byte length; the SSID bytes themselves follow
+            // the 10-byte command header, same framing SET_CHORD_BINDINGS uses
+            // for its variable-length payload. bufsize is always
+            // COMPANION_PAYLOAD_SIZE here (enforced above), so the available
+            // payload is always COMPANION_PAYLOAD_SIZE - 10 bytes.
+            if (value > COMPANION_PAYLOAD_SIZE - 10) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            const char *ssid = reinterpret_cast<const char *>(buffer + 10);
+            if (!wolwifi_set_wifi_ssid(ssid, static_cast<uint8_t>(value))) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+        }
+
+        case CommandSetWolWifiPassword: {
+            if (value > COMPANION_PAYLOAD_SIZE - 10) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            const char *password = reinterpret_cast<const char *>(buffer + 10);
+            if (!wolwifi_set_wifi_password(password, static_cast<uint8_t>(value))) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+        }
+
+        case CommandSetWolTargetMac: {
+            if (!wolwifi_set_target_mac(buffer + 10)) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+        }
 
         case CommandSetIdleDisconnectEnabled:
             if (value > 1) {
