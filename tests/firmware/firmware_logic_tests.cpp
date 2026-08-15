@@ -295,6 +295,14 @@ void dualsense_audio_section_mask_matches_0x39_layout() {
     EXPECT_EQ(ds5::output::controller_microphone_transport_mask(false), 0x02);
 }
 
+void dualsense_mic_volume_percent_uses_0x30_ceiling() {
+    EXPECT_EQ(mic_volume_from_percent(0), 0x00);
+    EXPECT_EQ(mic_volume_from_percent(50), 0x18);
+    EXPECT_EQ(mic_volume_from_percent(75), 0x24);
+    EXPECT_EQ(mic_volume_from_percent(100), 0x30);
+    EXPECT_EQ(mic_volume_from_percent(255), 0x30);
+}
+
 void classic_rumble_delivery_is_bounded_and_protects_managed_stop() {
     using ds5::classic_rumble::AdmissionResult;
     using ds5::classic_rumble::DeliveryKind;
@@ -1537,6 +1545,7 @@ std::vector<TestCase> tests{
     {"scheduler fifo orders host output and audio by arrival", scheduler_fifo_orders_host_output_and_audio_by_arrival},
     {"scheduler fifo timestamp order is wrap safe", scheduler_fifo_timestamp_order_is_wrap_safe},
     {"dualsense audio section mask matches 0x39 layout", dualsense_audio_section_mask_matches_0x39_layout},
+    {"dualsense mic volume percent uses 0x30 ceiling", dualsense_mic_volume_percent_uses_0x30_ceiling},
     {"classic rumble delivery is bounded and protects managed stop", classic_rumble_delivery_is_bounded_and_protects_managed_stop},
     {"classic rumble coalesces latest active without crossing stop", classic_rumble_coalesces_latest_active_without_crossing_stop},
     {"packet compositor initializes bluetooth report and wraps sequence", packet_compositor_initializes_bluetooth_report_and_wraps_sequence},

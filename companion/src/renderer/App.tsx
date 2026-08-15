@@ -91,6 +91,11 @@ import triangleGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/s
 import kitsuneInputLogoUrl from './assets/kitsune-input-logo.svg';
 import testSpeakerToneUrl from './assets/test-speaker-tone-silence-tail.mp3';
 import {
+  bridgeAudioInputLabelScore,
+  bridgeAudioOutputLabelScore,
+  isBridgeAudioDeviceLabel
+} from './audio-endpoint-matching';
+import {
   DEFAULT_UI_THEME_PRESET,
   UI_THEME_KOFI_BADGES,
   UI_THEME_OPTIONS,
@@ -365,10 +370,8 @@ const PERCENT_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 10
 const TRIGGER_LAB_SLIDER_STEP = 5;
 const TRIGGER_LAB_SLIDER_TICKS = Array.from({ length: 21 }, (_, index) => index * TRIGGER_LAB_SLIDER_STEP);
 const STANDARD_HAPTICS_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 20);
-const BRIDGE_AUDIO_OUTPUT_RE = /ds5|dualsense|dual sense|wireless controller|bridge/i;
-const BRIDGE_AUDIO_INPUT_RE = /ds5|dualsense|dual sense|wireless controller|bridge/i;
-const BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE = 'DualSense audio endpoint unavailable';
-const BRIDGE_MIC_ENDPOINT_UNAVAILABLE = 'DualSense microphone unavailable';
+const BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE = 'Controller audio endpoint unavailable';
+const BRIDGE_MIC_ENDPOINT_UNAVAILABLE = 'Controller microphone unavailable';
 const MUTE_KEY_OPTIONS: Array<[string, number]> = [
   ['F1', 0x3A], ['F2', 0x3B], ['F3', 0x3C], ['F4', 0x3D], ['F5', 0x3E], ['F6', 0x3F],
   ['F7', 0x40], ['F8', 0x41], ['F9', 0x42], ['F10', 0x43], ['F11', 0x44], ['F12', 0x45],
@@ -1997,38 +2000,12 @@ function hexByte(value: number): string {
   return value.toString(16).padStart(2, '0').toUpperCase();
 }
 
-function normalizeAudioDeviceLabel(label: string): string {
-  return label
-    .toLowerCase()
-    .replace(/^\s*\d+\s*-\s*/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isBridgeAudioLabel(label: string): boolean {
-  return BRIDGE_AUDIO_OUTPUT_RE.test(normalizeAudioDeviceLabel(label));
-}
-
 function bridgeAudioOutputScore(device: MediaDeviceInfo): number {
-  const label = normalizeAudioDeviceLabel(device.label);
-  let score = 1;
-  if (label.includes('dualsense') || label.includes('dual sense')) score += 4;
-  if (label.includes('wireless controller')) score += 3;
-  if (label.includes('speaker') || label.includes('headphone') || label.includes('headset')) score += 2;
-  if (label.includes('microphone') || label.includes('mic')) score -= 4;
-  if (label.includes('ds5') || label.includes('bridge')) score += 1;
-  return score;
+  return bridgeAudioOutputLabelScore(device.label);
 }
 
 function bridgeAudioInputScore(device: MediaDeviceInfo): number {
-  const label = normalizeAudioDeviceLabel(device.label);
-  let score = 1;
-  if (label.includes('dualsense') || label.includes('dual sense')) score += 4;
-  if (label.includes('wireless controller')) score += 3;
-  if (label.includes('microphone') || label.includes('mic')) score += 2;
-  if (label.includes('speaker') || label.includes('headphone')) score -= 4;
-  if (label.includes('ds5') || label.includes('bridge')) score += 1;
-  return score;
+  return bridgeAudioInputLabelScore(device.label);
 }
 
 async function findBridgeAudioOutputIdOnce(): Promise<string | null> {
@@ -2040,7 +2017,7 @@ async function findBridgeAudioOutputIdOnce(): Promise<string | null> {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const outputs = devices.filter((device) => (
       device.kind === 'audiooutput'
-      && isBridgeAudioLabel(device.label)
+      && isBridgeAudioDeviceLabel(device.label)
       && device.deviceId
       && device.deviceId !== 'default'
       && device.deviceId !== 'communications'
@@ -2062,7 +2039,7 @@ async function findBridgeAudioInputIdOnce(): Promise<string | null> {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const inputs = devices.filter((device) => (
       device.kind === 'audioinput'
-      && BRIDGE_AUDIO_INPUT_RE.test(normalizeAudioDeviceLabel(device.label))
+      && isBridgeAudioDeviceLabel(device.label)
       && device.deviceId
       && device.deviceId !== 'default'
       && device.deviceId !== 'communications'

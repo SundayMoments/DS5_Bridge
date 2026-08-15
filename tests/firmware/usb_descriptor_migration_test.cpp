@@ -11,8 +11,8 @@
 
 namespace {
 
-constexpr uint16_t kExpectedUsbDeviceRevision = 0x0154;
-constexpr uint64_t kExpectedCompanionDescriptorHash = 0x93930b64f2ccbc7cull;
+constexpr uint16_t kExpectedUsbDeviceRevision = 0x0155;
+constexpr uint64_t kExpectedCompanionDescriptorHash = 0xbf4f9410baf82bc4ull;
 
 std::string read_text(std::filesystem::path const &path) {
     std::ifstream input(path, std::ios::binary);
@@ -247,6 +247,8 @@ void assert_dualsense_edge_persona_is_edge_facing(
     const auto cmake = read_text(source_root / "CMakeLists.txt");
     const auto companion_cpp = read_text(source_root / "src" / "companion.cpp");
     const auto host_persona_h = read_text(source_root / "src" / "persona" / "host_persona.h");
+    const auto audio_cpp = read_text(source_root / "src" / "audio.cpp");
+    const auto tusb_config_h = read_text(source_root / "src" / "tusb_config.h");
 
     if (
         cmake.find("ENABLE_DSE") != std::string::npos
@@ -260,12 +262,12 @@ void assert_dualsense_edge_persona_is_edge_facing(
     if (
         source.find("#define DUALSENSE_EDGE_VENDOR_ID 0x054C") == std::string::npos
         || source.find("#define DUALSENSE_EDGE_PRODUCT_ID 0x0DF2") == std::string::npos
-        || source.find("#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0100") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0101") == std::string::npos
         || source.find("#define DUALSENSE_EDGE_STRING_PRODUCT \"DualSense Edge Wireless Controller\"") == std::string::npos
         || source.find("#define DUALSENSE_EDGE_HID_REPORT_DESC_LEN 0x01B5") == std::string::npos
         || source.find("TU_VERIFY_STATIC(sizeof(desc_hid_report_dse) == DUALSENSE_EDGE_HID_REPORT_DESC_LEN") == std::string::npos
     ) {
-        throw std::runtime_error("DualSense Edge USB identity and report descriptor must match the pinned stock contract");
+        throw std::runtime_error("DualSense Edge USB identity, report descriptor, and cache revision must match the pinned contract");
     }
 
     const std::string edge_descriptor = extract_between(
@@ -303,6 +305,20 @@ void assert_dualsense_edge_persona_is_edge_facing(
     ) {
         throw std::runtime_error("DualSense Edge persona must select its runtime device, HID, and product descriptors together");
     }
+
+    if (
+        tusb_config_h.find("#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX              2") == std::string::npos
+        || source.find("#define CONTROLLER_MIC_MONO_EP_SIZE 0x0060") == std::string::npos
+        || source.find("build_dualsense_edge_configuration_descriptor") == std::string::npos
+        || source.find("descriptor_configuration_dualsense_edge") == std::string::npos
+        || source.find("source_interface == 2") == std::string::npos
+        || audio_cpp.find("host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1") == std::string::npos
+        || audio_cpp.find("host_mic_usb_channel_count()") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense Edge must expose its stereo microphone contract without changing the mono contract of other personas"
+        );
+    }
 }
 
 void assert_xusb_persona_strings_are_xbox_facing(std::string const &source) {
@@ -314,7 +330,7 @@ void assert_xusb_persona_strings_are_xbox_facing(std::string const &source) {
         throw std::runtime_error("Xbox persona must expose a non-Sony composite-safe USB product ID");
     }
 
-    if (source.find("#define XUSB360_USB_BCD_DEVICE 0x0156") == std::string::npos) {
+    if (source.find("#define XUSB360_USB_BCD_DEVICE 0x0157") == std::string::npos) {
         throw std::runtime_error("Xbox persona USB revision must be bumped for Windows descriptor cache separation");
     }
 
@@ -366,8 +382,8 @@ void assert_ds4_persona_identity_is_ds4_facing(std::string const &source) {
         throw std::runtime_error("DS4 persona must expose the DS4 v2 USB product ID");
     }
 
-    if (source.find("#define DS4_USB_BCD_DEVICE 0x0103") == std::string::npos) {
-        throw std::runtime_error("DS4 persona must bump its USB revision for the remote-wake descriptor");
+    if (source.find("#define DS4_USB_BCD_DEVICE 0x0104") == std::string::npos) {
+        throw std::runtime_error("DS4 persona must bump its USB revision when its shared audio descriptor changes");
     }
 
     if (source.find("#define DS4_HID_REPORT_DESC_LEN 0x01FB") == std::string::npos) {
