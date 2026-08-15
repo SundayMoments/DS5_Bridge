@@ -76,6 +76,16 @@ on the controller until its lightbar rapidly blinks blue.
 - See Bluetooth signal quality at a glance.
 - Mount, flash, or nuke Pico firmware from Bridge Settings.
 
+## Explore Kitsune Input
+
+DS5 Bridge is a complete, free, and open-source bridge experience. For deeper
+controller customization, explore [Kitsune Input](https://kitsuneinput.com/),
+with advanced stick and trigger tuning, gyro aim, touchpad gestures, per-game
+profiles, multi-actions, Kitsune Game Bar, and expanded controller personas.
+
+[Learn more](https://kitsuneinput.com/) ·
+[Purchase Kitsune Input](https://ko-fi.com/s/d1f0a3b26f)
+
 ## Companion App Tour
 
 The companion app is where you check the bridge, adjust the controller, and save
