@@ -13,6 +13,7 @@
 #include "audio.h"
 #include "bt.h"
 #include "host_input.h"
+#include "persona/host_persona.h"
 #include "usb.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
@@ -38,6 +39,9 @@ static volatile bool usb_mounted = false;
 static volatile bool usb_host_suspended = false;
 static volatile uint32_t usb_suspend_at_us = 0;
 static volatile uint32_t usb_reconnect_grace_until_us = 0;
+static volatile bool usb_remote_wakeup_armed = false;
+static volatile bool usb_remote_wakeup_pending = false;
+static volatile bool usb_wake_on_connect = true;
 
 extern "C" {
 uint8_t usb_hid_polling_interval_ms_value = 1;
@@ -92,6 +96,11 @@ static bool reconnect_grace_active(uint32_t now) {
 
 static bool usb_bus_suspended() {
     return usb_host_suspended || (tud_inited() && tud_suspended());
+}
+
+static bool usb_wake_retention_enabled_for_persona() {
+    return usb_wake_on_connect
+        && host_persona_active() != HostPersonaModeXusb360;
 }
 
 static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
@@ -210,16 +219,48 @@ bool usb_host_suspended_active() {
     return usb_bus_suspended();
 }
 
-bool usb_speaker_streaming_active() {
+bool __not_in_flash_func(usb_speaker_streaming_active)() {
     return usb_speaker_streaming;
 }
 
-bool usb_mic_streaming_active() {
+bool __not_in_flash_func(usb_mic_streaming_active)() {
     return usb_mic_streaming;
 }
 
 bool usb_line_streaming_active() {
     return usb_line_streaming;
+}
+
+void usb_wake_host_if_suspended() {
+    // This function is called from BTstack callbacks. Publish the request here,
+    // then let usb_pm_poll issue it from the normal TinyUSB task context.
+    if (
+        usb_bus_suspended()
+        && usb_wake_retention_enabled_for_persona()
+        && usb_remote_wakeup_armed
+    ) {
+        usb_remote_wakeup_pending = true;
+    }
+}
+
+void usb_set_wake_on_connect(bool enabled) {
+    usb_wake_on_connect = enabled;
+    if (!enabled) {
+        usb_remote_wakeup_pending = false;
+        if (!usb_controller_transport_ready && usb_controller_transport_attached) {
+            usb_controller_transport_transition_pending = true;
+        }
+    }
+}
+
+bool usb_wake_on_connect_enabled() {
+    return usb_wake_on_connect;
+}
+
+bool usb_controller_transport_retained_for_wake() {
+    return usb_controller_transport_attached
+        && !usb_controller_transport_ready
+        && usb_wake_retention_enabled_for_persona();
 }
 
 void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
@@ -236,6 +277,7 @@ void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
 }
 
 void usb_handle_controller_transport_ready() {
+    usb_wake_host_if_suspended();
     if (
         usb_controller_transport_ready
         && !usb_controller_transport_transition_pending
@@ -250,6 +292,8 @@ void usb_handle_controller_transport_ready() {
 extern "C" void tud_mount_cb(void) {
     usb_mounted = true;
     usb_host_suspended = false;
+    usb_remote_wakeup_armed = false;
+    usb_remote_wakeup_pending = false;
     usb_suspend_at_us = 0;
     usb_reconnect_grace_until_us = 0;
     host_input_note_usb_mounted();
@@ -257,6 +301,8 @@ extern "C" void tud_mount_cb(void) {
 
 extern "C" void tud_umount_cb(void) {
     usb_mounted = false;
+    usb_remote_wakeup_armed = false;
+    usb_remote_wakeup_pending = false;
     usb_speaker_streaming = false;
     usb_mic_streaming = false;
     usb_line_streaming = false;
@@ -286,7 +332,7 @@ extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t cons
 }
 
 extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
-    (void) remote_wakeup_en;
+    usb_remote_wakeup_armed = remote_wakeup_en;
     const uint32_t now = time_us_32();
     if (reconnect_grace_active(now)) {
         usb_suspend_at_us = 0;
@@ -305,6 +351,8 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
 
 extern "C" void tud_resume_cb(void) {
     usb_host_suspended = false;
+    usb_remote_wakeup_armed = false;
+    usb_remote_wakeup_pending = false;
     usb_suspend_at_us = 0;
 }
 
@@ -323,8 +371,31 @@ void usb_pm_poll() {
         usb_suspend_at_us = 0;
     }
 
+    if (usb_remote_wakeup_pending) {
+        usb_remote_wakeup_pending = false;
+        if (
+            usb_wake_on_connect
+            && usb_remote_wakeup_armed
+            && usb_bus_suspended()
+            && tud_inited()
+        ) {
+            (void)tud_remote_wakeup();
+        }
+    }
+
     if (usb_bus_suspended()) {
         return;
+    }
+
+    if (
+        !usb_controller_transport_ready
+        && usb_controller_transport_attached
+        && !usb_wake_retention_enabled_for_persona()
+        && !usb_controller_transport_transition_pending
+        && !usb_reconnect_connect_pending
+        && !usb_reconnect_requested
+    ) {
+        usb_controller_transport_transition_pending = true;
     }
 
     if (usb_controller_transport_transition_pending) {
@@ -348,11 +419,18 @@ void usb_pm_poll() {
             // now runs only from this top-level poll, never a packet callback.
             usb_connect_controller_transport(now);
         } else if (usb_controller_transport_attached && tud_inited()) {
-            // A soft detach hides the emulated controller while preserving the
-            // initialized TinyUSB state used by the first connection.
+            usb_reset_audio_class_state();
+            if (usb_wake_retention_enabled_for_persona()) {
+                // Keep the full native controller persona enumerated as the
+                // wake target after the physical controller goes to sleep.
+                // Controller state is still reported as disconnected, and a
+                // neutral input report clears any held controls.
+                return;
+            }
+            // Wake is disabled or unsupported by this persona. A soft detach
+            // hides the emulated controller while preserving TinyUSB state.
             usb_controller_transport_attached = false;
             usb_mounted = false;
-            usb_reset_audio_class_state();
             tud_disconnect();
         }
         return;

@@ -48,8 +48,10 @@ describe('IPC contract', () => {
 
   it('allowlists every external link shown by the companion', () => {
     expect(mainSource).toContain('/^https:\\/\\/ko-fi\\.com\\/sundaymoments\\/?$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/ko-fi\\.com\\/s\\/d1f0a3b26f\\/?$/i.test(url)');
     expect(mainSource).toContain('/^https:\\/\\/github\\.com\\/SundayMoments\\/?$/i.test(url)');
     expect(mainSource).toContain('/^https:\\/\\/discord\\.gg\\/By5jhh73wr\\/?$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/kitsuneinput\\.com\\/?$/i.test(url)');
   });
 
   it('maps chord keyboard shortcuts to Windows virtual-key codes', () => {
@@ -130,5 +132,11 @@ describe('IPC contract', () => {
     expect(mainSource).toContain('TRAY_BATTERY_ICON_EXTERNAL_POWER');
     expect(mainSource).toContain("if (rawPowerState === 0x01) return 'charging';");
     expect(mainSource).toContain("if (rawPowerState === 0x02) return 'external-power';");
+  });
+
+  it('exposes the wake-on-connect preference', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:setWakeOnConnectEnabled', value)");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setWakeOnConnectEnabled'");
+    expect(bridgeServiceSource).toContain('setWakeOnConnectEnabled(enabled: boolean): Promise<BridgeSnapshot>');
   });
 });

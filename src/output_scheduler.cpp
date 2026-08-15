@@ -1,20 +1,17 @@
 #include "output_scheduler.h"
+#ifdef PICO_ON_DEVICE
+#include "pico.h"
+#else
+#define __not_in_flash_func(function_name) function_name
+#endif
 
-OutputSchedulerChoice output_scheduler_choose_interrupt_packet(
+OutputSchedulerChoice __not_in_flash_func(output_scheduler_choose_interrupt_packet)(
     OutputSchedulerInputs const &inputs,
     OutputSchedulerConfig const &config
 ) {
-    // Audio wins by default, but a pending state packet gets a bounded turn.
-    // This keeps continuous speaker/haptics audio from starving companion
-    // trigger, rumble, and lighting updates.
-    const bool state_starved = inputs.coalesced_state_available
-        && (
-            inputs.consecutive_audio_sends >= config.max_consecutive_audio_sends
-            || inputs.state_age_us >= config.state_max_age_us
-        );
-    if (state_starved) {
-        return OutputSchedulerChoice::CoalescedState;
-    }
+    (void)config;
+    // A composed audio carrier has reached its transport deadline and owns
+    // this opportunity. State and rumble use every gap between carriers.
     if (inputs.audio_available) {
         return OutputSchedulerChoice::AudioStream;
     }
@@ -27,17 +24,24 @@ OutputSchedulerChoice output_scheduler_choose_interrupt_packet(
     return OutputSchedulerChoice::None;
 }
 
-bool output_scheduler_classic_rumble_can_bypass_audio(
+bool __not_in_flash_func(output_scheduler_fifo_prefers_urgent)(
+    bool urgent_ready,
+    uint32_t urgent_enqueue_time_us,
     bool audio_available,
-    bool terminal_stop,
-    uint8_t consecutive_stop_sends,
-    uint8_t consecutive_non_audio_sends
+    uint32_t audio_enqueue_time_us
 ) {
+    if (!urgent_ready) {
+        return false;
+    }
     if (!audio_available) {
         return true;
     }
-    if (terminal_stop && consecutive_stop_sends == 0) {
-        return true;
-    }
-    return consecutive_non_audio_sends == 0;
+    return output_scheduler_timestamp_at_or_before(
+        urgent_enqueue_time_us,
+        audio_enqueue_time_us
+    );
+}
+
+bool output_scheduler_timestamp_at_or_before(uint32_t timestamp, uint32_t reference) {
+    return static_cast<int32_t>(timestamp - reference) <= 0;
 }

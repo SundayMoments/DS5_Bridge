@@ -20,6 +20,7 @@ import type {
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
+  StickInputPreviewPayload,
   TriggerTestMode
 } from './protocol';
 
@@ -32,10 +33,16 @@ export interface CompanionSettings {
   uiThemePreset: UiThemePreset;
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
+  kitsuneInputPromotionDismissed: boolean;
+  firmwareLogDirectory: string | null;
+  leftStickRadialDeadzonePercent: number;
+  rightStickRadialDeadzonePercent: number;
   hapticsEnabled: boolean;
   hapticsGainPercent: number;
   feedbackBoostEnabled: boolean;
   hapticsBufferLength: number;
+  audioInterleaveMaxConsecutiveAudioSends: number;
+  audioInterleaveStateMaxAgeUs: number;
   classicRumbleEnabled: boolean;
   classicRumbleGainPercent: number;
   classicRumbleV1Enabled: boolean;
@@ -45,6 +52,9 @@ export interface CompanionSettings {
   speakerEnabled: boolean;
   speakerVolumePercent: number;
   speakerGainLevel: number;
+  selectedBridgePath: string | null;
+  bridgeIdentities: Record<string, BridgeIdentityRecord>;
+  controllerBindings: Record<string, string>;
   micVolumePercent: number;
   micMuted: boolean;
   audioReactiveHapticsEnabled: boolean;
@@ -65,11 +75,13 @@ export interface CompanionSettings {
   muteKeyboardModifiers: number;
   muteKeyboardBehavior: MuteKeyboardBehavior;
   muteKeyboardChordStarterEnabled: boolean;
+  edgeProfileSwitchingBlocked: boolean;
   ledEnabled: boolean;
   playerLedEnabled: boolean;
   idleDisconnectEnabled: boolean;
   idleDisconnectTimeoutMinutes: number;
   usbSuspendDisconnectEnabled: boolean;
+  wakeOnConnectEnabled: boolean;
   sleepKeybindEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;
@@ -134,6 +146,11 @@ export interface BridgeDiagnostics {
   lastPollAt: number | null;
   rawDevices: HidDeviceSummary[];
   deviceIdentity: CompanionDeviceIdentityPayload | null;
+  firmwareLogDirectory: string | null;
+  firmwareLogPath: string | null;
+  firmwareLogEnabled: boolean | null;
+  firmwareLogDroppedBytes: number;
+  firmwareLogLastError: string | null;
   audioDebugLogPath: string | null;
   audioDebugLogLines: string[];
   audioDebugDroppedCount: number;
@@ -152,6 +169,34 @@ export interface BridgeSnapshot {
   settings: CompanionSettings;
   diagnostics: BridgeDiagnostics;
   personaTransition?: HostPersonaTransition | null;
+  bridgeDevices?: BridgeDeviceCensus | null;
+  stickInputPreview?: StickInputPreviewPayload | null;
+}
+
+export interface BridgeDeviceInfo {
+  path: string;
+  containerId: string | null;
+  selected: boolean;
+  connected: boolean;
+  uniqueId: string | null;
+  name: string | null;
+}
+
+export interface DirectControllerInfo {
+  path: string;
+  product: string | null;
+  productId: number;
+}
+
+export interface BridgeIdentityRecord {
+  label: string | null;
+  containerId: string | null;
+}
+
+export interface BridgeDeviceCensus {
+  bridges: BridgeDeviceInfo[];
+  directControllers: DirectControllerInfo[];
+  selectedBridgePath: string | null;
 }
 
 export interface HostPersonaTransition {

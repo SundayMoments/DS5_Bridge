@@ -45,12 +45,27 @@ const api = {
     ipcRenderer.invoke('bridge:deleteControllerProfile', profileId)
   ),
   setHapticsGain: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setHapticsGain', value),
+  setRadialDeadzones: (leftPercent: number, rightPercent: number): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setRadialDeadzones', leftPercent, rightPercent)
+  ),
+  requestStickInputPreview: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:requestStickInputPreview')
+  ),
+  releaseStickInputPreview: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:releaseStickInputPreview')
+  ),
   setHapticsEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setHapticsEnabled', value),
   setFeedbackBoostEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setFeedbackBoostEnabled', value)
   ),
   setHapticsBufferLength: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setHapticsBufferLength', value)
+  ),
+  setAudioInterleave: (
+    maxConsecutiveAudioSends: number,
+    stateMaxAgeUs: number
+  ): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setAudioInterleave', maxConsecutiveAudioSends, stateMaxAgeUs)
   ),
   setClassicRumbleGain: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setClassicRumbleGain', value)
@@ -73,6 +88,15 @@ const api = {
   setSpeakerVolume: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setSpeakerVolume', value),
   setSpeakerGainLevel: (value: number): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setSpeakerGainLevel', value)
+  ),
+  selectBridge: (devicePath: string | null): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:selectBridge', devicePath)
+  ),
+  refreshBridgeDevices: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:refreshBridgeDevices')
+  ),
+  setBridgeLabel: (uniqueId: string, label: string | null): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setBridgeLabel', uniqueId, label)
   ),
   setSpeakerEnabled: (value: boolean): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setSpeakerEnabled', value),
   setMicVolume: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setMicVolume', value),
@@ -113,6 +137,9 @@ const api = {
   setUsbSuspendDisconnectEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setUsbSuspendDisconnectEnabled', value)
   ),
+  setWakeOnConnectEnabled: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setWakeOnConnectEnabled', value)
+  ),
   setSleepKeybindEnabled: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setSleepKeybindEnabled', value)
   ),
@@ -127,6 +154,9 @@ const api = {
   ),
   setShowBatteryPercentTrayIcon: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setShowBatteryPercentTrayIcon', value)
+  ),
+  setKitsuneInputPromotionDismissed: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setKitsuneInputPromotionDismissed', value)
   ),
   setUiScalePercent: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiScalePercent', value),
   setUiThemePreset: (value: UiThemePreset): Promise<BridgeSnapshot> => (
@@ -198,6 +228,9 @@ const api = {
   setChordConfiguration: (functions: ChordFunction[], assignments: ChordAssignment[]): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setChordConfiguration', functions, assignments)
   ),
+  setEdgeProfileSwitchingBlocked: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setEdgeProfileSwitchingBlocked', value)
+  ),
   setChordFunctions: (functions: ChordFunction[]): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setChordFunctions', functions)
   ),
@@ -206,6 +239,12 @@ const api = {
   ),
   repairWindowsDeviceCache: (): Promise<WindowsDeviceCleanupResult> => (
     ipcRenderer.invoke('bridge:repairWindowsDeviceCache')
+  ),
+  selectFirmwareLogDirectory: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:selectFirmwareLogDirectory')
+  ),
+  clearFirmwareLogDirectory: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:clearFirmwareLogDirectory')
   ),
   getDiagnostics: (): Promise<BridgeDiagnostics> => ipcRenderer.invoke('bridge:getDiagnostics'),
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),

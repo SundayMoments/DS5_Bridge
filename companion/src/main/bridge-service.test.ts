@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -43,7 +43,16 @@ const hidMock = vi.hoisted(() => {
 });
 
 const winUsbTransportMock = vi.hoisted(() => ({
-  open: vi.fn(async () => {
+  open: vi.fn(async (options?: { devicePath?: string }) => {
+    if (options?.devicePath) {
+      const selected = [...hidMock.state.openDevices.values()].find((candidate) => (
+        candidate.path.toLowerCase() === options.devicePath!.toLowerCase()
+      ));
+      if (!selected) {
+        throw new Error('Selected WinUSB bridge transport is unavailable');
+      }
+      return selected;
+    }
     const listedPath = hidMock.state.devicesList[0]?.path;
     const device = (typeof listedPath === 'string' ? hidMock.state.openDevices.get(listedPath) : null)
       ?? hidMock.state.openDevices.values().next().value;
@@ -56,7 +65,9 @@ const winUsbTransportMock = vi.hoisted(() => ({
 
 const audioHelperMock = vi.hoisted(() => ({
   playBridgeHapticsTestPattern: vi.fn(async () => undefined),
-  playBridgeSpeakerTestTone: vi.fn(async () => undefined)
+  playBridgeSpeakerTestTone: vi.fn(async () => undefined),
+  listBridges: vi.fn(async () => ({ bridges: [], hidDevices: [] })),
+  setAudioHelperBridgeTarget: vi.fn()
 }));
 
 vi.mock('node-hid', () => ({
@@ -77,7 +88,9 @@ vi.mock('./audio-helper', async (importOriginal) => {
   return {
     ...actual,
     playBridgeHapticsTestPattern: audioHelperMock.playBridgeHapticsTestPattern,
-    playBridgeSpeakerTestTone: audioHelperMock.playBridgeSpeakerTestTone
+    playBridgeSpeakerTestTone: audioHelperMock.playBridgeSpeakerTestTone,
+    listBridges: audioHelperMock.listBridges,
+    setAudioHelperBridgeTarget: audioHelperMock.setAudioHelperBridgeTarget
   };
 });
 
@@ -100,9 +113,10 @@ type StatusOverrides = {
   firmwarePatch?: number;
   firmwareFlags?: number;
   statusFlags?: number;
-  hostPersonaMode?: 'dualsense' | 'xbox' | 'ds4';
+  hostPersonaMode?: 'dualsense' | 'dualsense-edge' | 'xbox' | 'ds4';
   supportedHostPersonaModesMask?: number;
   micMuted?: boolean;
+  wakeOnConnectEnabled?: boolean;
 };
 
 const FULL_REAPPLY_COMMANDS = [
@@ -110,8 +124,10 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_LIGHTBAR_COLOR,
   COMMAND_ID.SET_LIGHTBAR_OVERRIDE,
   COMMAND_ID.SET_MUTE_BUTTON_ACTION,
+  COMMAND_ID.SET_RADIAL_DEADZONES,
   COMMAND_ID.SET_HAPTICS_GAIN,
   COMMAND_ID.SET_HAPTICS_BUFFER_LENGTH,
+  COMMAND_ID.SET_AUDIO_INTERLEAVE,
   COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS,
   COMMAND_ID.SET_CLASSIC_RUMBLE_GAIN,
   COMMAND_ID.SET_CLASSIC_RUMBLE_V1,
@@ -126,10 +142,12 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED,
   COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT,
   COMMAND_ID.SET_USB_SUSPEND_DISCONNECT_ENABLED,
+  COMMAND_ID.SET_WAKE_ON_CONNECT,
   COMMAND_ID.SET_SLEEP_KEYBIND_ENABLED,
   COMMAND_ID.SET_SPEAKER_VOLUME_SHORTCUT_ENABLED,
   COMMAND_ID.SET_BUTTON_REMAP,
   COMMAND_ID.SET_CHORD_BINDINGS,
+  COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED,
   COMMAND_ID.SET_POLLING_RATE_MODE,
   COMMAND_ID.SET_HOST_PERSONA
 ];
@@ -140,8 +158,10 @@ class MockHidDevice extends EventEmitter {
   audioDebugReports: number[][] = [];
   audioStatsReports: number[][] = [];
   audioStatusReports: number[][] = [];
+  firmwareLogReports: number[][] = [];
   deviceIdentity = deviceIdentityReport();
   shortcutEvents: number[] = [];
+  inputReports: number[][] = [];
   shortcutReadError: Error | null = null;
   featureReportIds: number[] = [];
   sentReports: number[][] = [];
@@ -203,11 +223,14 @@ class MockHidDevice extends EventEmitter {
     if (reportId === REPORT_ID.DEVICE_IDENTITY) {
       return [...this.deviceIdentity];
     }
+    if (reportId === REPORT_ID.FIRMWARE_LOG) {
+      return [...(this.firmwareLogReports.shift() ?? firmwareLogReport([], { enabled: false }))];
+    }
     if (reportId === REPORT_ID.INPUT) {
       if (this.shortcutReadError) {
         throw this.shortcutReadError;
       }
-      return shortcutEventReport(this.shortcutEvents.shift() ?? 0);
+      return [...(this.inputReports.shift() ?? shortcutEventReport(this.shortcutEvents.shift() ?? 0))];
     }
     throw new Error(`Unexpected report ID: ${reportId}`);
   }
@@ -314,14 +337,20 @@ function statusReport(overrides: StatusOverrides = {}): number[] {
   report[28] = overrides.firmwareFlags ?? 1;
   writeU16(report, 29, overrides.speakerVolumePercent ?? 30);
   writeU16(report, 43, overrides.idleDisconnectTimeoutMinutes ?? 15);
-  report[48] = overrides.hostPersonaMode === 'xbox' ? 1 : overrides.hostPersonaMode === 'ds4' ? 2 : 0;
+  report[48] = overrides.hostPersonaMode === 'dualsense-edge'
+    ? 7
+    : overrides.hostPersonaMode === 'xbox'
+      ? 1
+      : overrides.hostPersonaMode === 'ds4' ? 2 : 0;
   report[49] = overrides.supportedHostPersonaModesMask ?? 0;
+  report[50] = overrides.wakeOnConnectEnabled === false ? 0 : 1;
   report[51] = overrides.micMuted ? 1 : 0;
   report[57] = overrides.speakerGainLevel ?? 4;
   return report;
 }
 
 function deviceIdentityReport(options: {
+  bridgeId?: string | null;
   address?: string | null;
   name?: string;
   connected?: boolean;
@@ -335,7 +364,7 @@ function deviceIdentityReport(options: {
   report[0] = REPORT_ID.DEVICE_IDENTITY;
   writeMagic(report);
   writeVersion(report);
-  report[7] = 1;
+  report[7] = options.bridgeId === undefined ? 1 : 2;
   const address = options.address === undefined ? 'AA:BB:CC:DD:EE:FF' : options.address;
   report[8] = (address ? 0x01 : 0)
     | (options.linkKeyKnown === false ? 0 : 0x02)
@@ -352,6 +381,12 @@ function deviceIdentityReport(options: {
   });
   writeU16(report, 52, options.vendorId ?? 0x054c);
   writeU16(report, 54, options.productId ?? 0x0ce6);
+  if (options.bridgeId) {
+    const bytes = options.bridgeId.match(/.{2}/g) ?? [];
+    bytes.slice(0, 8).forEach((value, index) => {
+      report[56 + index] = Number.parseInt(value, 16);
+    });
+  }
   return report;
 }
 
@@ -471,6 +506,43 @@ function audioStatusReport(overrides: Partial<{
   return report;
 }
 
+function stickInputReport(
+  raw: { lx: number; ly: number; rx: number; ry: number },
+  sequence: number,
+  event = 0
+): number[] {
+  const report = shortcutEventReport(event);
+  report[2] = 1;
+  report[3] = 0x01;
+  report[4] = raw.lx;
+  report[5] = raw.ly;
+  report[6] = raw.rx;
+  report[7] = raw.ry;
+  writeU32(report, 8, sequence);
+  return report;
+}
+
+function firmwareLogReport(bytes: number[], options: {
+  enabled?: boolean;
+  sequence?: number;
+  nextSequence?: number;
+  droppedBytes?: number;
+} = {}): number[] {
+  const report = new Array<number>(REPORT_LENGTH).fill(0);
+  report[0] = REPORT_ID.FIRMWARE_LOG;
+  writeMagic(report);
+  writeVersion(report);
+  report[7] = options.enabled === false ? 0 : 0x01;
+  report[8] = Math.min(bytes.length, 43);
+  writeU32(report, 9, options.sequence ?? 0);
+  writeU32(report, 13, options.nextSequence ?? bytes.length);
+  writeU32(report, 17, options.droppedBytes ?? 0);
+  bytes.slice(0, 43).forEach((value, index) => {
+    report[21 + index] = value;
+  });
+  return report;
+}
+
 function createService(initialSettings?: Parameters<SettingsStore['update']>[0]): { service: BridgeService; tempDir: string } {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'ds5-bridge-companion-'));
   const settingsStore = new SettingsStore(tempDir);
@@ -523,6 +595,9 @@ describe('BridgeService', () => {
     winUsbTransportMock.open.mockClear();
     audioHelperMock.playBridgeHapticsTestPattern.mockClear();
     audioHelperMock.playBridgeSpeakerTestTone.mockClear();
+    audioHelperMock.listBridges.mockReset();
+    audioHelperMock.listBridges.mockResolvedValue({ bridges: [], hidDevices: [] });
+    audioHelperMock.setAudioHelperBridgeTarget.mockClear();
     tempDirs = [];
     services = [];
   });
@@ -558,6 +633,41 @@ describe('BridgeService', () => {
 
     expect(service.getSnapshot().state).toBe('normal-firmware');
     expect(service.getSnapshot().message).toBe('Companion firmware required');
+  });
+
+  it('does not repeat full HID discovery during disconnected polling', async () => {
+    const service = serviceFixture();
+
+    await poll(service);
+    await poll(service);
+    await poll(service);
+
+    expect(hidMock.devices).toHaveBeenCalledTimes(1);
+
+    hidMock.state.devicesList = [normalFirmwareDeviceInfo()];
+    const refreshed = await service.refreshBridgeDevices();
+
+    expect(hidMock.devices).toHaveBeenCalledTimes(2);
+    expect(refreshed.state).toBe('normal-firmware');
+    expect(refreshed.message).toBe('Companion firmware required');
+  });
+
+  it('connects when the Pico enumerates after the initial HID discovery', async () => {
+    const service = serviceFixture();
+
+    await poll(service);
+    await poll(service);
+    expect(service.getSnapshot().state).toBe('no-bridge');
+    expect(hidMock.devices).toHaveBeenCalledTimes(1);
+
+    const device = new MockHidDevice();
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    expect(service.getSnapshot().state).toBe('connected');
+    expect(service.getSnapshot().message).toBe('Companion firmware connected');
+    expect(winUsbTransportMock.open).toHaveBeenCalledTimes(3);
+    expect(hidMock.devices).toHaveBeenCalledTimes(1);
   });
 
   it('treats WinUSB transport close as a bridge disconnect', async () => {
@@ -621,6 +731,28 @@ describe('BridgeService', () => {
     await poll(service);
 
     expect(device.listenerCount('data')).toBe(0);
+  });
+
+  it('publishes raw stick movement only while the deadzone preview lease is active', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    device.inputReports.push(stickInputReport({ lx: 140, ly: 128, rx: 200, ry: 64 }, 7));
+    service.requestStickInputPreview();
+    await pollShortcut(service);
+
+    expect(service.getSnapshot().stickInputPreview).toEqual({
+      sequence: 7,
+      raw: { lx: 140, ly: 128, rx: 200, ry: 64 }
+    });
+    expect(service.releaseStickInputPreview().stickInputPreview).toBeNull();
+
+    device.inputReports.push(stickInputReport({ lx: 255, ly: 255, rx: 0, ry: 0 }, 8));
+    await pollShortcut(service);
+    expect(service.getSnapshot().stickInputPreview).toBeNull();
   });
 
   it('blocks emergency Windows device repair while a controller is connected to the bridge', async () => {
@@ -730,14 +862,14 @@ describe('BridgeService', () => {
     expect(snapshot.diagnostics.lastError).toBeNull();
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toEqual({
       currentVersion: '1.6.3',
-      availableVersion: '1.6.4'
+      availableVersion: '1.7.0'
     });
   });
 
   it('does not surface an available update for the bundled bridge firmware', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
-    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 6, firmwarePatch: 4 });
+    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 7, firmwarePatch: 0 });
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
@@ -745,7 +877,7 @@ describe('BridgeService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.state).toBe('connected');
-    expect(snapshot.status?.firmwareVersion).toBe('1.6.4');
+    expect(snapshot.status?.firmwareVersion).toBe('1.7.0');
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toBeNull();
   });
 
@@ -780,6 +912,56 @@ describe('BridgeService', () => {
     await poll(service);
     await flushReapply();
     expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length * 2);
+  });
+
+  it('reapplies settings and restarts audio haptics after reconnecting in the same companion session', async () => {
+    const service = serviceFixture({ audioReactiveHapticsEnabled: true });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => undefined);
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start: typeof start;
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+    };
+    internals.systemAudioHapticsEngine = {
+      start,
+      stop,
+      isActive: () => false
+    };
+
+    await poll(service);
+    await flushReapply();
+    expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length);
+    expect(start).toHaveBeenCalledOnce();
+
+    device.status = statusReport({
+      controllerConnected: false,
+      settingsRevision: device.settingsRevision,
+      uptimeSeconds: 31
+    });
+    await poll(service);
+    await poll(service);
+
+    device.status = statusReport({
+      controllerConnected: true,
+      settingsRevision: device.settingsRevision,
+      uptimeSeconds: 32
+    });
+    await poll(service);
+    await flushReapply();
+    await poll(service);
+    await flushReapply();
+
+    expect(device.sentReports).toHaveLength(FULL_REAPPLY_COMMANDS.length * 2);
+    expect(start).toHaveBeenCalledTimes(2);
   });
 
   it('starts saved audio haptics after startup settings reapply', async () => {
@@ -922,6 +1104,7 @@ describe('BridgeService', () => {
   });
 
   it.each([
+    ['dualsense-edge' as const],
     ['ds4' as const],
     ['xbox' as const]
   ])('plays test haptics through the %s persona audio endpoint', async (hostPersonaMode) => {
@@ -1499,6 +1682,39 @@ describe('BridgeService', () => {
     expect(snapshot.settings.usbSuspendDisconnectEnabled).toBe(false);
   });
 
+  it('plays test speaker through the isolated DualSense Edge audio endpoint', async () => {
+    const service = serviceFixture({ speakerVolumePercent: 65 });
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      hostPersonaMode: 'dualsense-edge',
+      supportedHostPersonaModesMask: 0x80
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await service.testSpeaker();
+
+    expect(audioHelperMock.playBridgeSpeakerTestTone).toHaveBeenCalledWith(65, 'dualsense-edge');
+  });
+
+  it('sends and stores wake-on-connect settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setWakeOnConnectEnabled(false);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_WAKE_ON_CONNECT);
+    expect(command?.[9]).toBe(0);
+    expect(snapshot.settings.wakeOnConnectEnabled).toBe(false);
+    expect(snapshot.status?.wakeOnConnectEnabled).toBe(false);
+  });
+
   it('sends and stores idle disconnect timeout settings', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
@@ -1531,6 +1747,77 @@ describe('BridgeService', () => {
     expect(command?.[7]).toBe(COMMAND_ID.SET_PLAYER_LED_ENABLED);
     expect(command?.[9]).toBe(0);
     expect(snapshot.settings.playerLedEnabled).toBe(false);
+  });
+
+  it('sends and stores clamped audio interleave values', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setAudioInterleave(1000, 999999);
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_AUDIO_INTERLEAVE);
+    expect(command?.[9]).toBe(64);
+    expect(command?.[11]).toBe(60000 & 0xff);
+    expect(command?.[12]).toBe((60000 >> 8) & 0xff);
+    expect(snapshot.settings.audioInterleaveMaxConsecutiveAudioSends).toBe(64);
+    expect(snapshot.settings.audioInterleaveStateMaxAgeUs).toBe(60000);
+  });
+
+  it('writes retained UART firmware bytes into the selected folder', async () => {
+    const fixture = createService();
+    tempDirs.push(fixture.tempDir);
+    const logDirectory = path.join(fixture.tempDir, 'firmware-logs');
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    const bytes = [...Buffer.from('[FirmwareLog] ready\n')];
+    device.firmwareLogReports.push(
+      firmwareLogReport(bytes, {
+        sequence: 12,
+        nextSequence: 12 + bytes.length,
+        droppedBytes: 5
+      }),
+      firmwareLogReport([], {
+        sequence: 12 + bytes.length,
+        nextSequence: 12 + bytes.length,
+        droppedBytes: 5
+      })
+    );
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(fixture.service);
+    await fixture.service.setFirmwareLogDirectory(logDirectory);
+
+    const snapshot = fixture.service.getSnapshot();
+    expect(snapshot.settings.firmwareLogDirectory).toBe(path.resolve(logDirectory));
+    expect(snapshot.diagnostics.firmwareLogEnabled).toBe(true);
+    expect(snapshot.diagnostics.firmwareLogDroppedBytes).toBe(5);
+    expect(snapshot.diagnostics.firmwareLogPath).toMatch(/ds5-bridge-firmware-.+\.log$/);
+    expect(readFileSync(snapshot.diagnostics.firmwareLogPath!, 'utf8')).toBe('[FirmwareLog] ready\n');
+  });
+
+  it('does not create a file when firmware UART logging is compiled out', async () => {
+    const fixture = createService();
+    tempDirs.push(fixture.tempDir);
+    const logDirectory = path.join(fixture.tempDir, 'firmware-logs');
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    device.firmwareLogReports.push(firmwareLogReport([], { enabled: false }));
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(fixture.service);
+    await fixture.service.setFirmwareLogDirectory(logDirectory);
+
+    const snapshot = fixture.service.getSnapshot();
+    expect(snapshot.diagnostics.firmwareLogEnabled).toBe(false);
+    expect(snapshot.diagnostics.firmwareLogPath).toBeNull();
+    expect(existsSync(logDirectory)).toBe(false);
   });
 
   it('sends and stores automatic lightbar restore settings', async () => {
@@ -1663,6 +1950,76 @@ describe('BridgeService', () => {
     expect(service.getSnapshot().settings.speakerVolumePercent).toBe(55);
     const volumeCommand = device.sentReports.filter((report) => report[7] === COMMAND_ID.SET_SPEAKER_VOLUME).at(-1);
     expect(volumeCommand?.[9]).toBe(55);
+  });
+
+  it('orders the Edge profile blocker safely and keeps reserved chords stored while inactive', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: true,
+      settingsRevision: 4
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    device.sentReports = [];
+    await service.setChordConfiguration([{
+      id: 'edge-action',
+      name: 'Edge Action',
+      type: 'keyboard',
+      keys: ['F13']
+    }], [{
+      id: 'lfn-triangle',
+      kind: 'chord',
+      starter: 'lfn',
+      button: 'triangle',
+      functionId: 'edge-action'
+    }]);
+
+    expect(device.sentReports.at(-1)?.[7]).toBe(COMMAND_ID.SET_CHORD_BINDINGS);
+    expect(device.sentReports.at(-1)?.[9]).toBe(0);
+
+    device.sentReports = [];
+    let snapshot = await service.setEdgeProfileSwitchingBlocked(true);
+    expect(device.sentReports.map((report) => [report[7], report[9]])).toEqual([
+      [COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED, 1],
+      [COMMAND_ID.SET_CHORD_BINDINGS, 1]
+    ]);
+    expect(snapshot.settings.edgeProfileSwitchingBlocked).toBe(true);
+    expect(snapshot.settings.chordAssignments).toHaveLength(1);
+
+    device.sentReports = [];
+    snapshot = await service.setEdgeProfileSwitchingBlocked(false);
+    expect(device.sentReports.map((report) => [report[7], report[9]])).toEqual([
+      [COMMAND_ID.SET_CHORD_BINDINGS, 0],
+      [COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED, 0],
+      [COMMAND_ID.SET_CHORD_BINDINGS, 0]
+    ]);
+    expect(snapshot.settings.edgeProfileSwitchingBlocked).toBe(false);
+    expect(snapshot.settings.chordAssignments).toHaveLength(1);
+  });
+
+  it('applies only the two radial deadzone percentages to firmware', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    device.sentReports = [];
+
+    const snapshot = await service.setRadialDeadzones(12.4, 99);
+    const report = device.sentReports.at(-1);
+    expect(report?.[7]).toBe(COMMAND_ID.SET_RADIAL_DEADZONES);
+    expect(report?.slice(9, 13)).toEqual([0, 0, 12, 50]);
+    expect(snapshot.settings).toMatchObject({
+      leftStickRadialDeadzonePercent: 12,
+      rightStickRadialDeadzonePercent: 50
+    });
   });
 
   it('applies arbitrary whole-number chord steps without coarse slider notches', async () => {
@@ -2160,6 +2517,27 @@ describe('BridgeService', () => {
     expect(snapshot.diagnostics.lastAck?.resultCode).toBe(ACK_RESULT.OK);
   });
 
+  it('sends and stores DualSense Edge host persona settings', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      supportedHostPersonaModesMask: 0x80
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    const snapshot = await service.setHostPersonaMode('dualsense-edge');
+
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_HOST_PERSONA);
+    expect(command?.[9]).toBe(7);
+    expect(snapshot.settings.hostPersonaMode).toBe('dualsense-edge');
+    expect(snapshot.message).toBe('Switching to DualSense Edge mode');
+    expect(snapshot.personaTransition?.to).toBe('dualsense-edge');
+  });
+
   it('polls controller identity as supplementary bridge diagnostics', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
@@ -2186,6 +2564,111 @@ describe('BridgeService', () => {
       productId: 0x0df2
     });
     expect(device.featureReportIds).toContain(REPORT_ID.DEVICE_IDENTITY);
+  });
+
+  it('selects one enumerated bridge and exposes the full device census', async () => {
+    const service = serviceFixture();
+    const bridgeA = new MockHidDevice();
+    bridgeA.path = 'winusb://bridge-a';
+    const bridgeB = new MockHidDevice();
+    bridgeB.path = 'winusb://bridge-b';
+    bridgeB.deviceIdentity = deviceIdentityReport({ bridgeId: '0011223344556677' });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('bridge-a', bridgeA);
+    hidMock.state.openDevices.set('bridge-b', bridgeB);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [
+        { path: bridgeA.path, containerId: '11111111-1111-1111-1111-111111111111' },
+        { path: bridgeB.path, containerId: '22222222-2222-2222-2222-222222222222' }
+      ],
+      hidDevices: [{
+        path: 'hid://direct-controller',
+        productId: 0x0df2,
+        product: 'DualSense Edge',
+        containerId: '33333333-3333-3333-3333-333333333333',
+        isBridge: false
+      }]
+    });
+
+    await service.selectBridge(bridgeB.path);
+    await poll(service);
+
+    const snapshot = service.getSnapshot();
+    expect(winUsbTransportMock.open).toHaveBeenCalledWith(expect.objectContaining({ devicePath: bridgeB.path }));
+    expect(snapshot.settings.selectedBridgePath).toBe(bridgeB.path);
+    expect(snapshot.bridgeDevices?.bridges.find((bridge) => bridge.path === bridgeB.path)).toMatchObject({
+      selected: true,
+      connected: true,
+      uniqueId: '0011223344556677'
+    });
+    expect(snapshot.bridgeDevices?.directControllers).toEqual([{
+      path: 'hid://direct-controller',
+      productId: 0x0df2,
+      product: 'DualSense Edge'
+    }]);
+    expect(audioHelperMock.setAudioHelperBridgeTarget).toHaveBeenLastCalledWith({
+      devicePath: bridgeB.path,
+      containerId: '22222222-2222-2222-2222-222222222222'
+    });
+
+    const named = await service.setBridgeLabel('0011223344556677', 'Desk');
+    expect(named.bridgeDevices?.bridges.find((bridge) => bridge.path === bridgeB.path)?.name).toBe('Desk');
+  });
+
+  it('adopts the only connected bridge when the saved device path is stale', async () => {
+    const stalePath = 'winusb://disconnected-waveshare';
+    const currentPath = 'winusb://regular-pico';
+    const service = serviceFixture({ selectedBridgePath: stalePath });
+    const device = new MockHidDevice();
+    device.path = currentPath;
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set(currentPath, device);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [{
+        path: currentPath,
+        containerId: '11111111-1111-1111-1111-111111111111'
+      }],
+      hidDevices: []
+    });
+
+    await poll(service);
+
+    expect(winUsbTransportMock.open).toHaveBeenCalledWith(expect.objectContaining({
+      devicePath: currentPath
+    }));
+    expect(service.getSnapshot()).toMatchObject({
+      state: 'connected',
+      settings: { selectedBridgePath: currentPath }
+    });
+  });
+
+  it('rejects bridge paths and identities that were not enumerated', async () => {
+    const service = serviceFixture();
+
+    await expect(service.selectBridge('winusb://injected')).rejects.toThrow('no longer connected');
+    await expect(service.setBridgeLabel('0011223344556677', 'Unknown')).rejects.toThrow('not known');
+  });
+
+  it('applies the profile bound to the connected controller identity', async () => {
+    const service = serviceFixture();
+    const settingsStore = (service as unknown as { settingsStore: SettingsStore }).settingsStore;
+    const saved = settingsStore.saveControllerProfile('Racing');
+    const racingProfileId = saved.selectedControllerProfileId;
+    settingsStore.selectControllerProfile(DEFAULT_CONTROLLER_PROFILE_ID);
+    settingsStore.update({ controllerBindings: { aabbccddeeff: racingProfileId } });
+    const device = new MockHidDevice();
+    device.deviceIdentity = deviceIdentityReport({
+      bridgeId: '8899aabbccddeeff',
+      address: 'AA:BB:CC:DD:EE:FF'
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    expect(service.getSnapshot().settings.selectedControllerProfileId).toBe(racingProfileId);
+    const manuallySelected = await service.selectControllerProfile(DEFAULT_CONTROLLER_PROFILE_ID);
+    expect(manuallySelected.settings.controllerBindings.aabbccddeeff).toBe(DEFAULT_CONTROLLER_PROFILE_ID);
   });
 
   it('sends scan, forget-all, and address-specific forget commands', async () => {
@@ -2285,6 +2768,14 @@ describe('BridgeService', () => {
 
     snapshot = await service.setNotifyLowBattery(true);
     expect(snapshot.settings.notifyLowBattery).toBe(true);
+  });
+
+  it('stores permanent Kitsune Input promotion dismissal without firmware traffic', () => {
+    const service = serviceFixture();
+
+    const snapshot = service.setKitsuneInputPromotionDismissed(true);
+
+    expect(snapshot.settings.kitsuneInputPromotionDismissed).toBe(true);
   });
 
   it('emits controller connect and disconnect toasts on status transitions', async () => {

@@ -14,6 +14,7 @@ typedef enum HostPersonaMode {
     HostPersonaModeDualSense = 0,
     HostPersonaModeXusb360 = 1,
     HostPersonaModeDs4 = 2,
+    HostPersonaModeDualSenseEdge = 7,
 } HostPersonaMode;
 
 HostPersonaMode host_persona_active(void);

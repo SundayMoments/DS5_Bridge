@@ -12,14 +12,14 @@
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
 
-void flash_do_cmd(const uint8_t *txbuf, uint8_t *rxbuf, size_t count);
+void flash_nuke_do_cmd(const uint8_t *txbuf, uint8_t *rxbuf, size_t count);
 
 int main() {
     uint8_t txbuf[4] = {0};
     uint8_t rxbuf[4] = {0};
     txbuf[0] = 0x9f;
 
-    flash_do_cmd(txbuf, rxbuf, 4);
+    flash_nuke_do_cmd(txbuf, rxbuf, 4);
     const uint flash_size_bytes = 1u << rxbuf[3];
 
     flash_range_erase(0, flash_size_bytes);

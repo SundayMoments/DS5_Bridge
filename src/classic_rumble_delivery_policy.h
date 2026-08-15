@@ -104,6 +104,33 @@ AdmissionResult enqueue_with_soft_cap(
     return AdmissionResult::Enqueued;
 }
 
+// Replace an unsent active rumble update with the newest one, but never cross
+// a STOP boundary. This prevents stale amplitude envelopes from accumulating
+// behind audio while retaining ordered START -> STOP -> START transitions.
+template <typename Queue, typename Packet, typename KindOf>
+bool coalesce_latest_managed_active(
+    Queue &queue,
+    Packet &&packet,
+    KindOf kind_of
+) {
+    if (kind_of(packet) != DeliveryKind::ManagedActive) {
+        return false;
+    }
+
+    for (auto it = queue.end(); it != queue.begin();) {
+        --it;
+        const DeliveryKind queued_kind = kind_of(*it);
+        if (queued_kind == DeliveryKind::ManagedStop) {
+            break;
+        }
+        if (queued_kind == DeliveryKind::ManagedActive) {
+            *it = std::forward<Packet>(packet);
+            return true;
+        }
+    }
+    return false;
+}
+
 template <typename Queue, typename Packet>
 void requeue_failed_front(Queue &queue, Packet &&packet) {
     queue.push_front(std::forward<Packet>(packet));

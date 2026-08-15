@@ -80,6 +80,7 @@ struct audio_debug_stats {
     uint32_t usb_audio_gap_over_1500_count;
     uint32_t opus_encode_max_us;
     uint32_t opus_encode_over_budget_count;
+    uint32_t opus_encode_count;
     uint32_t audio_generation_drop_count;
 };
 void audio_debug_get_stats(audio_debug_stats *stats);

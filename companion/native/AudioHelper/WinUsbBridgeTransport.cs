@@ -12,6 +12,11 @@ sealed class WinUsbBridgeTransport : IDisposable
     private const uint BridgeOutTransferTimeoutMs = 35;
     private static readonly Guid DeviceInterfaceGuid = new("E4C8B2A9-87F5-4C4C-9E52-2B4C1B8B4F62");
     private static readonly Guid LegacySharedDeviceInterfaceGuid = new("D5B7C5F4-8A68-4A86-9E31-1E5FA7B1D5B0");
+    internal static readonly Guid[] BridgeDeviceInterfaceGuids =
+    [
+        DeviceInterfaceGuid,
+        LegacySharedDeviceInterfaceGuid
+    ];
 
     private readonly SafeFileHandle deviceHandle;
     private readonly IntPtr winUsbHandle;
@@ -28,7 +33,9 @@ sealed class WinUsbBridgeTransport : IDisposable
 
     public string DevicePath { get; }
 
-    public static WinUsbBridgeTransport Open()
+    public static WinUsbBridgeTransport Open() => Open(null);
+
+    public static WinUsbBridgeTransport Open(string? devicePath)
     {
         Exception? lastError = null;
         foreach (var deviceInterfaceGuid in new[] { DeviceInterfaceGuid, LegacySharedDeviceInterfaceGuid })
@@ -36,6 +43,11 @@ sealed class WinUsbBridgeTransport : IDisposable
             foreach (var path in NativeMethods.EnumerateDeviceInterfacePaths(deviceInterfaceGuid))
             {
                 if (!IsBridgeInterfacePath(path))
+                {
+                    continue;
+                }
+                if (devicePath is not null
+                    && !string.Equals(path, devicePath, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -100,11 +112,13 @@ sealed class WinUsbBridgeTransport : IDisposable
                 : $"DS5 Bridge WinUSB interface could not be opened: {lastError.Message}");
     }
 
-    public static WinUsbBridgeTransport? TryOpen()
+    public static WinUsbBridgeTransport? TryOpen() => TryOpen(null);
+
+    public static WinUsbBridgeTransport? TryOpen(string? devicePath)
     {
         try
         {
-            return Open();
+            return Open(devicePath);
         }
         catch
         {
@@ -242,7 +256,7 @@ sealed class WinUsbBridgeTransport : IDisposable
         return false;
     }
 
-    private static bool IsBridgeInterfacePath(string path)
+    internal static bool IsBridgeInterfacePath(string path)
     {
         return path.Contains(BridgeInterfaceMarker, StringComparison.OrdinalIgnoreCase);
     }

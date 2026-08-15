@@ -48,6 +48,11 @@ TinyUSB, Bluetooth, watchdog, and early companion-interface failures. The
 firmware stream uses `921600` baud, 8 data bits, no parity, one stop bit, and no
 flow control.
 
+Live UART output uses a bounded DMA queue, so firmware never waits for the wire
+to transmit a diagnostic line. If the live queue fills, that UART copy is
+dropped instead of delaying input, Bluetooth, or audio work; the independent
+8 KiB SRAM history remains available to the companion app.
+
 Wire a 3.3 V USB-to-UART adapter as follows:
 
 | Pico 2 W | USB-to-UART adapter | Required |
@@ -73,8 +78,15 @@ Flash this artifact through BOOTSEL:
 build/diagnostics/pico2-w-debug-uart-companion-on/ds5-bridge.uf2
 ```
 
-This preset also enables the feedback trace and drains it asynchronously through
-the retained UART logger. Rumble and haptic records use compact CSV-style lines:
+This preset leaves the high-volume feedback trace disabled so normal lifecycle,
+warning, and error logs remain useful. To explicitly capture per-packet rumble
+and haptic records, opt in when configuring:
+
+```powershell
+cmake --preset pico2-w-debug-uart-companion-on -DENABLE_FEEDBACK_TRACE_REPORTS=ON
+```
+
+Feedback trace builds stream compact CSV-style lines through the physical UART:
 
 ```text
 [FB] seq,t_ms,stage,report,len,tag,decision,flag0,flag1,flag2,motor_r,motor_l,haptic_peak,haptic_mean,haptic_nonzero,detail0,detail1,detail2,detail3

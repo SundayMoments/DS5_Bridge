@@ -417,8 +417,10 @@ function isAppFileUrl(url: string, appIndexPath: string): boolean {
 
 function isAllowedExternalUrl(url: string): boolean {
   return /^https:\/\/ko-fi\.com\/sundaymoments\/?$/i.test(url)
+    || /^https:\/\/ko-fi\.com\/s\/d1f0a3b26f\/?$/i.test(url)
     || /^https:\/\/github\.com\/SundayMoments\/?$/i.test(url)
-    || /^https:\/\/discord\.gg\/By5jhh73wr\/?$/i.test(url);
+    || /^https:\/\/discord\.gg\/By5jhh73wr\/?$/i.test(url)
+    || /^https:\/\/kitsuneinput\.com\/?$/i.test(url);
 }
 
 function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
@@ -908,6 +910,18 @@ async function selectPicoFirmwareUf2Path(): Promise<string | null> {
   return result.canceled ? null : result.filePaths[0] ?? null;
 }
 
+async function selectFirmwareLogDirectory(currentDirectory: string | null): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = {
+    title: 'Choose firmware log folder',
+    properties: ['openDirectory', 'createDirectory'],
+    ...(currentDirectory && fs.existsSync(currentDirectory) ? { defaultPath: currentDirectory } : {})
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
 function picoFirmwareOptions(service: BridgeService, includeNukeUf2 = false) {
   return {
     enterBootloader: () => service.mountPicoBootloader(),
@@ -1050,11 +1064,19 @@ function registerIpc(service: BridgeService): void {
     service.deleteControllerProfile(profileId)
   ));
   ipcMain.handle('bridge:setHapticsGain', (_event, value: number) => service.setHapticsGain(value));
+  ipcMain.handle('bridge:setRadialDeadzones', (_event, leftPercent: number, rightPercent: number) => (
+    service.setRadialDeadzones(leftPercent, rightPercent)
+  ));
+  ipcMain.handle('bridge:requestStickInputPreview', () => service.requestStickInputPreview());
+  ipcMain.handle('bridge:releaseStickInputPreview', () => service.releaseStickInputPreview());
   ipcMain.handle('bridge:setHapticsEnabled', (_event, value: boolean) => service.setHapticsEnabled(value));
   ipcMain.handle('bridge:setFeedbackBoostEnabled', (_event, value: boolean) => (
     service.setFeedbackBoostEnabled(value)
   ));
   ipcMain.handle('bridge:setHapticsBufferLength', (_event, value: number) => service.setHapticsBufferLength(value));
+  ipcMain.handle('bridge:setAudioInterleave', (_event, maxConsecutiveAudioSends: number, stateMaxAgeUs: number) => (
+    service.setAudioInterleave(maxConsecutiveAudioSends, stateMaxAgeUs)
+  ));
   ipcMain.handle('bridge:setClassicRumbleGain', (_event, value: number) => service.setClassicRumbleGain(value));
   ipcMain.handle('bridge:setClassicRumbleEnabled', (_event, value: boolean) => service.setClassicRumbleEnabled(value));
   ipcMain.handle('bridge:setClassicRumbleV1Enabled', (_event, value: boolean) => (
@@ -1069,6 +1091,11 @@ function registerIpc(service: BridgeService): void {
   ));
   ipcMain.handle('bridge:setSpeakerVolume', (_event, value: number) => service.setSpeakerVolume(value));
   ipcMain.handle('bridge:setSpeakerGainLevel', (_event, value: number) => service.setSpeakerGainLevel(value));
+  ipcMain.handle('bridge:selectBridge', (_event, devicePath: string | null) => service.selectBridge(devicePath));
+  ipcMain.handle('bridge:refreshBridgeDevices', () => service.refreshBridgeDevices());
+  ipcMain.handle('bridge:setBridgeLabel', (_event, uniqueId: string, label: string | null) => (
+    service.setBridgeLabel(uniqueId, label)
+  ));
   ipcMain.handle('bridge:setSpeakerEnabled', (_event, value: boolean) => service.setSpeakerEnabled(value));
   ipcMain.handle('bridge:setMicVolume', (_event, value: number) => service.setMicVolume(value));
   ipcMain.handle('bridge:setMicMute', (_event, value: boolean) => service.setMicMute(value));
@@ -1108,6 +1135,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setUsbSuspendDisconnectEnabled', (_event, value: boolean) => (
     service.setUsbSuspendDisconnectEnabled(value)
   ));
+  ipcMain.handle('bridge:setWakeOnConnectEnabled', (_event, value: boolean) => (
+    service.setWakeOnConnectEnabled(value)
+  ));
   ipcMain.handle('bridge:setSleepKeybindEnabled', (_event, value: boolean) => (
     service.setSleepKeybindEnabled(value)
   ));
@@ -1132,6 +1162,9 @@ function registerIpc(service: BridgeService): void {
   });
   ipcMain.handle('bridge:setShowBatteryPercentTrayIcon', (_event, value: boolean) => (
     service.setShowBatteryPercentTrayIcon(Boolean(value))
+  ));
+  ipcMain.handle('bridge:setKitsuneInputPromotionDismissed', (_event, value: boolean) => (
+    service.setKitsuneInputPromotionDismissed(Boolean(value))
   ));
   ipcMain.handle('bridge:setPollingRateMode', (_event, value: PollingRateMode) => (
     service.setPollingRateMode(value)
@@ -1205,6 +1238,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setChordConfiguration', (_event, functions: ChordFunction[], assignments: ChordAssignment[]) => (
     service.setChordConfiguration(functions, assignments)
   ));
+  ipcMain.handle('bridge:setEdgeProfileSwitchingBlocked', (_event, value: boolean) => (
+    service.setEdgeProfileSwitchingBlocked(value)
+  ));
   ipcMain.handle('bridge:setChordFunctions', (_event, functions: ChordFunction[]) => (
     service.setChordFunctions(functions)
   ));
@@ -1212,6 +1248,14 @@ function registerIpc(service: BridgeService): void {
     service.setChordAssignments(assignments)
   ));
   ipcMain.handle('bridge:repairWindowsDeviceCache', () => service.repairWindowsDeviceCache());
+  ipcMain.handle('bridge:selectFirmwareLogDirectory', async () => {
+    const currentDirectory = service.getSnapshot().settings.firmwareLogDirectory;
+    const selectedDirectory = await selectFirmwareLogDirectory(currentDirectory);
+    return selectedDirectory === null
+      ? service.getSnapshot()
+      : service.setFirmwareLogDirectory(selectedDirectory);
+  });
+  ipcMain.handle('bridge:clearFirmwareLogDirectory', () => service.setFirmwareLogDirectory(null));
   ipcMain.handle('bridge:getDiagnostics', () => service.getSnapshot().diagnostics);
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:toggleMaximize', () => {

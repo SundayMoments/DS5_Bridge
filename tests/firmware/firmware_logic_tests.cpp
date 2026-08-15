@@ -19,6 +19,7 @@
 #include "haptics_test_signal.h"
 #include "kitsune_button_gesture.h"
 #include "output_scheduler.h"
+#include "radial_deadzone.h"
 #include "usb_audio_render_gain.h"
 #include "persona/ds4_persona.h"
 #include "persona/dualsense_persona.h"
@@ -30,6 +31,7 @@ using namespace ds5::output;
 extern "C" bool host_persona_descriptors_verified(HostPersonaMode mode) {
     switch (mode) {
         case HostPersonaModeDualSense:
+        case HostPersonaModeDualSenseEdge:
         case HostPersonaModeXusb360:
         case HostPersonaModeDs4:
             return true;
@@ -210,14 +212,13 @@ OutputSchedulerConfig scheduler_config() {
     };
 }
 
-void scheduler_prioritizes_audio_before_state_is_starved() {
+void scheduler_prioritizes_due_audio_over_old_state() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
     inputs.coalesced_state_available = true;
-    inputs.consecutive_audio_sends =
-        static_cast<uint8_t>(config.max_consecutive_audio_sends - 1);
-    inputs.state_age_us = config.state_max_age_us - 1;
+    inputs.consecutive_audio_sends = config.max_consecutive_audio_sends;
+    inputs.state_age_us = config.state_max_age_us;
     EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::AudioStream);
 }
 
@@ -228,7 +229,7 @@ void scheduler_sends_coalesced_state_when_audio_is_absent() {
     EXPECT_EQ(output_scheduler_choose_interrupt_packet(inputs, config), OutputSchedulerChoice::CoalescedState);
 }
 
-void scheduler_bounds_coalesced_state_latency_during_continuous_audio() {
+void scheduler_due_audio_stays_ahead_of_coalesced_state() {
     auto inputs = scheduler_inputs();
     auto config = scheduler_config();
     inputs.audio_available = true;
@@ -236,14 +237,14 @@ void scheduler_bounds_coalesced_state_latency_during_continuous_audio() {
     inputs.consecutive_audio_sends = config.max_consecutive_audio_sends;
     EXPECT_EQ(
         output_scheduler_choose_interrupt_packet(inputs, config),
-        OutputSchedulerChoice::CoalescedState
+        OutputSchedulerChoice::AudioStream
     );
 
     inputs.consecutive_audio_sends = 0;
     inputs.state_age_us = config.state_max_age_us;
     EXPECT_EQ(
         output_scheduler_choose_interrupt_packet(inputs, config),
-        OutputSchedulerChoice::CoalescedState
+        OutputSchedulerChoice::AudioStream
     );
 }
 
@@ -268,40 +269,30 @@ void packet_compositor_initializes_bluetooth_report_and_wraps_sequence() {
     EXPECT_EQ(int_sequence, 0x0f);
 }
 
-void scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop() {
-    auto inputs = scheduler_inputs();
-    auto config = scheduler_config();
-    inputs.audio_available = true;
-    inputs.urgent_available = true;
+void scheduler_fifo_orders_host_output_and_audio_by_arrival() {
+    EXPECT_TRUE(output_scheduler_fifo_prefers_urgent(true, 100, true, 200));
+    EXPECT_FALSE(output_scheduler_fifo_prefers_urgent(true, 200, true, 100));
+    EXPECT_TRUE(output_scheduler_fifo_prefers_urgent(true, 100, true, 100));
+    EXPECT_TRUE(output_scheduler_fifo_prefers_urgent(true, 100, false, 0));
+    EXPECT_FALSE(output_scheduler_fifo_prefers_urgent(false, 100, true, 200));
+    EXPECT_TRUE(output_scheduler_fifo_prefers_urgent(
+        true,
+        0xfffffff0u,
+        true,
+        0x20u
+    ));
+}
 
-    EXPECT_EQ(
-        output_scheduler_choose_interrupt_packet(inputs, config),
-        OutputSchedulerChoice::AudioStream
-    );
-    EXPECT_TRUE(output_scheduler_classic_rumble_can_bypass_audio(
-        true,
-        false,
-        0,
-        0
-    ));
-    EXPECT_FALSE(output_scheduler_classic_rumble_can_bypass_audio(
-        true,
-        false,
-        0,
-        1
-    ));
-    EXPECT_TRUE(output_scheduler_classic_rumble_can_bypass_audio(
-        true,
-        true,
-        0,
-        1
-    ));
-    EXPECT_FALSE(output_scheduler_classic_rumble_can_bypass_audio(
-        true,
-        true,
-        1,
-        1
-    ));
+void scheduler_fifo_timestamp_order_is_wrap_safe() {
+    EXPECT_TRUE(output_scheduler_timestamp_at_or_before(0xfffffff0u, 0x20u));
+    EXPECT_FALSE(output_scheduler_timestamp_at_or_before(0x20u, 0xfffffff0u));
+}
+
+void dualsense_audio_section_mask_matches_0x39_layout() {
+    EXPECT_EQ(ds5::output::audio_section_enable_mask(true), 0x7f);
+    EXPECT_EQ(ds5::output::audio_section_enable_mask(false), 0x7e);
+    EXPECT_EQ(ds5::output::controller_microphone_transport_mask(true), 0x03);
+    EXPECT_EQ(ds5::output::controller_microphone_transport_mask(false), 0x02);
 }
 
 void classic_rumble_delivery_is_bounded_and_protects_managed_stop() {
@@ -343,6 +334,47 @@ void classic_rumble_delivery_is_bounded_and_protects_managed_stop() {
     EXPECT_EQ(ds5::classic_rumble::retry_delay_us(5), 80'000u);
     EXPECT_FALSE(ds5::classic_rumble::retry_requires_fail_closed(7));
     EXPECT_TRUE(ds5::classic_rumble::retry_requires_fail_closed(8));
+}
+
+void classic_rumble_coalesces_latest_active_without_crossing_stop() {
+    using ds5::classic_rumble::DeliveryKind;
+    struct Packet {
+        uint8_t id;
+        DeliveryKind kind;
+    };
+    auto kind_of = [](Packet const &packet) {
+        return packet.kind;
+    };
+    std::deque<Packet> queue{
+        {1, DeliveryKind::ManagedActive},
+        {2, DeliveryKind::Other},
+        {3, DeliveryKind::ManagedActive},
+    };
+
+    EXPECT_TRUE(ds5::classic_rumble::coalesce_latest_managed_active(
+        queue,
+        Packet{4, DeliveryKind::ManagedActive},
+        kind_of
+    ));
+    EXPECT_EQ(queue.size(), 3u);
+    EXPECT_EQ(queue[0].id, 1);
+    EXPECT_EQ(queue[2].id, 4);
+
+    queue.push_back(Packet{5, DeliveryKind::ManagedStop});
+    EXPECT_FALSE(ds5::classic_rumble::coalesce_latest_managed_active(
+        queue,
+        Packet{6, DeliveryKind::ManagedActive},
+        kind_of
+    ));
+    queue.push_back(Packet{6, DeliveryKind::ManagedActive});
+    EXPECT_EQ(queue[3].id, 5);
+    EXPECT_EQ(queue[4].id, 6);
+
+    EXPECT_FALSE(ds5::classic_rumble::coalesce_latest_managed_active(
+        queue,
+        Packet{7, DeliveryKind::ManagedStop},
+        kind_of
+    ));
 }
 
 void usb_host_speaker_gain_does_not_attenuate_native_haptics() {
@@ -436,7 +468,10 @@ void audio_haptics_replace_tracks_state_without_suppressing_classic_rumble() {
 
 void speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields() {
     auto payload = empty_payload();
-    payload[kValidFlag0Offset] = kFlag0SpeakerVolumeEnable | kFlag0AudioControlEnable | kFlag0CompatibleVibration;
+    payload[kValidFlag0Offset] = kFlag0HeadphoneVolumeEnable
+        | kFlag0SpeakerVolumeEnable
+        | kFlag0AudioControlEnable
+        | kFlag0CompatibleVibration;
     payload[kValidFlag1Offset] = kFlag1AudioControl2Enable | kFlag1LightbarControlEnable;
     payload[kHeadphoneVolumeOffset] = 0x44;
     payload[kSpeakerVolumeOffset] = 0x55;
@@ -546,6 +581,7 @@ void output_state_audio_snapshot_routes_to_speaker_and_headphones_safely() {
     AudioSnapshot headset{};
     controller_output_state_copy_audio_snapshot(headset.data(), true);
     EXPECT_TRUE((headset[kValidFlag0Offset] & kFlag0AudioControlEnable) != 0);
+    EXPECT_TRUE((headset[kValidFlag0Offset] & kFlag0HeadphoneVolumeEnable) != 0);
     EXPECT_FALSE((headset[kValidFlag0Offset] & kFlag0SpeakerVolumeEnable) != 0);
     EXPECT_TRUE((headset[kValidFlag1Offset] & kFlag1AudioControl2Enable) != 0);
     EXPECT_EQ(headset[kHeadphoneVolumeOffset], kHeadphoneVolumeMax);
@@ -863,8 +899,7 @@ void rumble_state_machine_sends_real_stops_immediately() {
     EXPECT_EQ(state.classic_rumble_right, 10);
 
     payload = empty_payload();
-    payload[kValidFlag0Offset] = kFlag0HapticsSelect;
-    payload[kValidFlag2Offset] = kFlag2EnableImprovedRumbleEmulation;
+    payload[kValidFlag0Offset] = kFlag0CompatibleVibration;
     EXPECT_TRUE(controller_output_rumble_payload_requires_immediate_send(
         state,
         payload.data(),
@@ -1039,7 +1074,7 @@ void dualsense_decoder_extracts_normalized_controller_state() {
     EXPECT_EQ(state.dualsense_report[7], report[7]);
 }
 
-void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
+void dualsense_decoder_interprets_battery_power_states() {
     auto report = sample_dualsense_input_report();
     BridgeControllerState state{};
 
@@ -1050,7 +1085,7 @@ void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
 
     report[52] = 0x28;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 85);
+    EXPECT_EQ(state.battery_percent, 100);
     EXPECT_EQ(state.raw_power_state, 2);
 
     report[52] = 0x2a;
@@ -1060,8 +1095,28 @@ void dualsense_decoder_preserves_valid_battery_bucket_across_power_states() {
 
     report[52] = 0x2f;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.battery_percent, 100);
     EXPECT_EQ(state.raw_power_state, 2);
+
+    report[52] = 0xa8;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 0x0a);
+
+    report[52] = 0xb8;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 0x0b);
+
+    report[52] = 0xf8;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 0x0f);
+
+    report[52] = 0x38;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 0xff);
+    EXPECT_EQ(state.raw_power_state, 3);
 }
 
 void bootsel_gesture_policy_emits_click_double_triple_and_hold() {
@@ -1100,15 +1155,50 @@ void bootsel_gesture_policy_emits_click_double_triple_and_hold() {
 void dualsense_persona_preserves_native_report_bytes() {
     const auto report = sample_dualsense_input_report();
     BridgeControllerState state{};
-    HostPersonaInputReport encoded{};
 
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_TRUE(host_persona_encode_input(HostPersonaModeDualSense, state, encoded));
-    EXPECT_EQ(encoded.report_id, 0x01);
-    EXPECT_EQ(encoded.len, kDualSenseUsbInputReportSize);
-    for (uint8_t index = 0; index < kDualSenseUsbInputReportSize; index++) {
-        EXPECT_EQ(encoded.bytes[index], report[index]);
+    for (HostPersonaMode const mode : {
+        HostPersonaModeDualSense,
+        HostPersonaModeDualSenseEdge,
+    }) {
+        HostPersonaInputReport encoded{};
+        EXPECT_TRUE(host_persona_encode_input(mode, state, encoded));
+        EXPECT_EQ(encoded.report_id, 0x01);
+        EXPECT_EQ(encoded.len, kDualSenseUsbInputReportSize);
+        for (uint8_t index = 0; index < kDualSenseUsbInputReportSize; index++) {
+            EXPECT_EQ(encoded.bytes[index], report[index]);
+        }
     }
+}
+
+void dualsense_edge_profile_switching_payload_sets_owned_mode_byte() {
+    auto payload = empty_payload();
+    payload[kValidFlag2Offset] = kFlag2LightbarSetupControlEnable;
+
+    EXPECT_TRUE(render_edge_profile_switching_payload(
+        payload.data(),
+        static_cast<uint16_t>(payload.size()),
+        true
+    ));
+    EXPECT_EQ(
+        payload[kValidFlag2Offset],
+        static_cast<uint8_t>(
+            kFlag2LightbarSetupControlEnable
+            | kFlag2EdgeProfileSwitchingControlEnable
+        )
+    );
+    EXPECT_EQ(
+        payload[kEdgeProfileSwitchingModeOffset],
+        kEdgeProfileSwitchingBlocked
+    );
+
+    EXPECT_TRUE(render_edge_profile_switching_payload(
+        payload.data(),
+        static_cast<uint16_t>(payload.size()),
+        false
+    ));
+    EXPECT_EQ(payload[kEdgeProfileSwitchingModeOffset], 0);
+    EXPECT_FALSE(render_edge_profile_switching_payload(nullptr, 0, true));
 }
 
 void xusb360_persona_maps_standard_gamepad_fields() {
@@ -1175,6 +1265,29 @@ void classic_rumble_renderer_can_emit_v1_classic_rumble() {
     EXPECT_EQ(payload[kMotorRightOffset], 0x30);
 
     reset_policy_state();
+}
+
+void classic_rumble_renderer_restores_audio_haptics_on_stop() {
+    reset_policy_state();
+
+    Payload payload{};
+    payload[kValidFlag0Offset] = kFlag0HapticsSelect;
+    payload[kValidFlag2Offset] = kFlag2EnableImprovedRumbleEmulation;
+    payload[kMotorRightOffset] = 0x30;
+    payload[kMotorLeftOffset] = 0x90;
+
+    EXPECT_TRUE(controller_output_policy_render_classic_rumble_payload(
+        payload.data(),
+        payload.size(),
+        0,
+        0
+    ));
+    EXPECT_FALSE((payload[kValidFlag0Offset] & kFlag0HapticsSelect) != 0);
+    EXPECT_TRUE((payload[kValidFlag0Offset] & kFlag0CompatibleVibration) != 0);
+    EXPECT_FALSE((payload[kValidFlag2Offset] & kFlag2EnableImprovedRumbleEmulation) != 0);
+    EXPECT_FALSE((payload[kValidFlag2Offset] & kFlag2UseRumbleNotHaptics2) != 0);
+    EXPECT_EQ(payload[kMotorRightOffset], 0);
+    EXPECT_EQ(payload[kMotorLeftOffset], 0);
 }
 
 void ds4_persona_maps_standard_gamepad_fields() {
@@ -1253,14 +1366,24 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     std::array<uint8_t, 63> feature{};
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x03, feature.data(), 47), 47);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x03,
+        feature.data(),
+        47
+    ), 47);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x03));
     EXPECT_EQ(feature[1], 0x28);
     EXPECT_EQ(feature[3], 0x4e);
     EXPECT_EQ(feature[19], 0x81);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x05, feature.data(), 40), 40);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x05,
+        feature.data(),
+        40
+    ), 40);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x05));
     EXPECT_EQ(feature[6], 0x00);
     EXPECT_EQ(feature[7], 0x04);
@@ -1268,7 +1391,12 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     EXPECT_EQ(feature[9], 0xfc);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x09, feature.data(), 19), 19);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x09,
+        feature.data(),
+        19
+    ), 19);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x09));
     EXPECT_EQ(feature[0], 0x00);
     EXPECT_EQ(feature[1], 0xa5);
@@ -1278,7 +1406,12 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     EXPECT_EQ(feature[5], 0x02);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x20, feature.data(), 63), 63);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x20,
+        feature.data(),
+        63
+    ), 63);
     EXPECT_TRUE(dualsense_persona_has_synthetic_feature_report(0x20));
     EXPECT_EQ(feature[0], static_cast<uint8_t>('J'));
     EXPECT_EQ(feature[11], static_cast<uint8_t>('1'));
@@ -1298,7 +1431,37 @@ void dualsense_persona_feature_reports_cover_identity_probe_surface() {
     EXPECT_EQ(feature[55], 0x06);
 
     feature.fill(0xaa);
-    EXPECT_EQ(dualsense_persona_get_feature_report(0x22, feature.data(), 63), 63);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSenseEdge,
+        0x20,
+        feature.data(),
+        63
+    ), 63);
+    EXPECT_EQ(feature[0], static_cast<uint8_t>('S'));
+    EXPECT_EQ(feature[10], static_cast<uint8_t>('5'));
+    EXPECT_EQ(feature[11], static_cast<uint8_t>('1'));
+    EXPECT_EQ(feature[18], static_cast<uint8_t>('0'));
+    EXPECT_EQ(feature[19], 0x02);
+    EXPECT_EQ(feature[21], 0x44);
+    EXPECT_EQ(feature[23], 0x16);
+    EXPECT_EQ(feature[24], 0x02);
+    EXPECT_EQ(feature[26], 0x01);
+    EXPECT_EQ(feature[27], 0x8b);
+    EXPECT_EQ(feature[30], 0x01);
+    EXPECT_EQ(feature[43], 0x17);
+    EXPECT_EQ(feature[44], 0x02);
+    EXPECT_EQ(feature[47], 0x14);
+    EXPECT_EQ(feature[51], 0x0a);
+    EXPECT_EQ(feature[53], 0x02);
+    EXPECT_EQ(feature[55], 0x06);
+
+    feature.fill(0xaa);
+    EXPECT_EQ(dualsense_persona_get_feature_report(
+        HostPersonaModeDualSense,
+        0x22,
+        feature.data(),
+        63
+    ), 63);
     EXPECT_FALSE(dualsense_persona_has_synthetic_feature_report(0x22));
     for (uint8_t value : feature) {
         EXPECT_EQ(value, 0);
@@ -1337,20 +1500,49 @@ void ds4_feature_reports_cover_native_probe_surface() {
     EXPECT_EQ(feature[4], 0x00);
 }
 
+void radial_deadzone_preserves_direction_and_rescales_remaining_travel() {
+    using ds5::radial_deadzone::apply;
+
+    const auto unchanged = apply(140, 116, 0);
+    EXPECT_EQ(unchanged.x, 140);
+    EXPECT_EQ(unchanged.y, 116);
+
+    const auto centered = apply(140, 128, 10);
+    EXPECT_EQ(centered.x, 128);
+    EXPECT_EQ(centered.y, 128);
+
+    const auto halfway = apply(192, 128, 20);
+    EXPECT_EQ(halfway.x, 176);
+    EXPECT_EQ(halfway.y, 128);
+
+    const auto full_axis = apply(255, 128, 20);
+    EXPECT_EQ(full_axis.x, 255);
+    EXPECT_EQ(full_axis.y, 128);
+
+    const auto diagonal = apply(192, 192, 20);
+    EXPECT_EQ(diagonal.x, diagonal.y);
+    EXPECT_TRUE(diagonal.x > 128);
+    EXPECT_TRUE(diagonal.x < 192);
+}
+
 struct TestCase {
     char const *name;
     void (*run)();
 };
 
 std::vector<TestCase> tests{
-    {"scheduler prioritizes audio before state is starved", scheduler_prioritizes_audio_before_state_is_starved},
+    {"scheduler prioritizes due audio over old state", scheduler_prioritizes_due_audio_over_old_state},
     {"scheduler sends coalesced state when audio is absent", scheduler_sends_coalesced_state_when_audio_is_absent},
-    {"scheduler bounds coalesced state latency during continuous audio", scheduler_bounds_coalesced_state_latency_during_continuous_audio},
-    {"scheduler alternates rumble with audio and prioritizes one stop", scheduler_alternates_rumble_with_audio_and_prioritizes_one_stop},
+    {"scheduler due audio stays ahead of coalesced state", scheduler_due_audio_stays_ahead_of_coalesced_state},
+    {"scheduler fifo orders host output and audio by arrival", scheduler_fifo_orders_host_output_and_audio_by_arrival},
+    {"scheduler fifo timestamp order is wrap safe", scheduler_fifo_timestamp_order_is_wrap_safe},
+    {"dualsense audio section mask matches 0x39 layout", dualsense_audio_section_mask_matches_0x39_layout},
     {"classic rumble delivery is bounded and protects managed stop", classic_rumble_delivery_is_bounded_and_protects_managed_stop},
+    {"classic rumble coalesces latest active without crossing stop", classic_rumble_coalesces_latest_active_without_crossing_stop},
     {"packet compositor initializes bluetooth report and wraps sequence", packet_compositor_initializes_bluetooth_report_and_wraps_sequence},
     {"usb host speaker gain does not attenuate native haptics", usb_host_speaker_gain_does_not_attenuate_native_haptics},
     {"classic rumble gain clamps rounds and touches motor payloads", classic_rumble_gain_clamps_rounds_and_touches_motor_payloads},
+    {"dualsense edge profile switching payload sets owned mode byte", dualsense_edge_profile_switching_payload_sets_owned_mode_byte},
     {"audio haptics replace tracks state without suppressing classic rumble", audio_haptics_replace_tracks_state_without_suppressing_classic_rumble},
     {"speaker sanitizer strips host amp flags and zeroes only controlled fields", speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields},
     {"mic sanitizer removes mute led and only mic power save bit", mic_sanitizer_removes_mute_led_and_only_mic_power_save_bit},
@@ -1374,16 +1566,18 @@ std::vector<TestCase> tests{
     {"haptics test signal drives left and right actuators opposite phase", haptics_test_signal_drives_left_and_right_actuators_opposite_phase},
     {"haptics test signal allows carrier paced packets without wall clock gap", haptics_test_signal_allows_carrier_paced_packets_without_wall_clock_gap},
     {"dualsense decoder extracts normalized controller state", dualsense_decoder_extracts_normalized_controller_state},
-    {"dualsense decoder preserves valid battery bucket across power states", dualsense_decoder_preserves_valid_battery_bucket_across_power_states},
+    {"dualsense decoder interprets battery power states", dualsense_decoder_interprets_battery_power_states},
     {"bootsel gesture policy emits click double triple and hold", bootsel_gesture_policy_emits_click_double_triple_and_hold},
     {"dualsense persona preserves native report bytes", dualsense_persona_preserves_native_report_bytes},
     {"xusb360 persona maps standard gamepad fields", xusb360_persona_maps_standard_gamepad_fields},
     {"xusb360 rumble decodes to ds5 classic rumble payload", xusb360_rumble_decodes_to_ds5_classic_rumble_payload},
     {"classic rumble renderer can emit v1 classic rumble", classic_rumble_renderer_can_emit_v1_classic_rumble},
+    {"classic rumble renderer restores audio haptics on stop", classic_rumble_renderer_restores_audio_haptics_on_stop},
     {"ds4 persona maps standard gamepad fields", ds4_persona_maps_standard_gamepad_fields},
     {"ds4 output decodes to ds5 rumble and lightbar payload", ds4_output_decodes_to_ds5_rumble_and_lightbar_payload},
     {"dualsense persona feature reports cover identity probe surface", dualsense_persona_feature_reports_cover_identity_probe_surface},
     {"ds4 feature reports cover native probe surface", ds4_feature_reports_cover_native_probe_surface},
+    {"radial deadzone preserves direction and rescales remaining travel", radial_deadzone_preserves_direction_and_rescales_remaining_travel},
 };
 
 } // namespace

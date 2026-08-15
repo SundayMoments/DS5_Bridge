@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACK_RESULT,
+  AUDIO_INTERLEAVE_DEFAULT,
   AUDIO_DEBUG_EVENT,
   CHORD_MUTE_STARTER_ID,
   COMMAND_ID,
@@ -14,18 +15,24 @@ import {
   REMAP_BUTTON_IDS,
   REPORT_ID,
   bluetoothAddressPayload,
+  buildAudioInterleaveCommand,
   buildButtonRemapPayload,
   buildChordBindingsPayload,
   buildCommandReport,
+  buildRadialDeadzonePayload,
+  clampAudioInterleaveValues,
   hostPersonaModeValue,
   isChordBindingAllowed,
   normalizeBridgePresetId,
+  normalizeRadialDeadzonePercent,
   parseAudioDebugReport,
   parseAudioStatusReport,
   parseAudioStatsReport,
   parseAckReport,
   parseFeedbackTraceReport,
+  parseFirmwareLogReport,
   parseDeviceIdentityReport,
+  parseCompanionInputReport,
   parseTriggerTraceReport,
   parseStatusReport,
   remapButtonIdValue
@@ -129,6 +136,7 @@ describe('companion protocol', () => {
     report[47] = 1;
     report[48] = 2;
     report[49] = 0x07;
+    report[50] = 1;
     report[51] = 1;
     report[57] = 6;
     report[60] = 1;
@@ -152,6 +160,8 @@ describe('companion protocol', () => {
     expect(status.firmwareFlags.sleepControllerControl).toBe(true);
     expect(status.firmwareFlags.pollingRateControl).toBe(true);
     expect(status.usbSuspendDisconnectEnabled).toBe(true);
+    expect(status.wakeOnConnectEnabled).toBe(true);
+    expect(status.firmwareFlags.wakeOnConnectControl).toBe(true);
     expect(status.sleepKeybindEnabled).toBe(true);
     expect(status.testAdaptiveTriggersBusy).toBe(true);
     expect(status.adaptiveTriggerOutputRecent).toBe(true);
@@ -177,9 +187,43 @@ describe('companion protocol', () => {
     expect(status.muteButtonMode).toBe('chord');
   });
 
+  it('parses DualSense Edge host persona reports', () => {
+    const report = baseReport(REPORT_ID.STATUS);
+    report[48] = 7;
+    report[49] = 0x80;
+
+    const status = parseStatusReport(report);
+    expect(status.hostPersonaMode).toBe('dualsense-edge');
+    expect(status.supportedHostPersonaModes).toEqual(['dualsense-edge']);
+  });
+
+  it('parses retained firmware log bytes', () => {
+    const report = baseReport(REPORT_ID.FIRMWARE_LOG);
+    report[7] = 0x01;
+    report[8] = 4;
+    writeU32(report, 9, 120);
+    writeU32(report, 13, 124);
+    writeU32(report, 17, 7);
+    report.splice(21, 4, ...Buffer.from('test'));
+
+    expect(parseFirmwareLogReport(report)).toEqual({
+      enabled: true,
+      sequence: 120,
+      nextSequence: 124,
+      droppedBytes: 7,
+      bytes: [...Buffer.from('test')]
+    });
+  });
+
+  it('rejects oversized retained firmware log payloads', () => {
+    const report = baseReport(REPORT_ID.FIRMWARE_LOG);
+    report[8] = 44;
+    expect(() => parseFirmwareLogReport(report)).toThrowError(ProtocolError);
+  });
+
   it('parses controller device identity and pairing state', () => {
     const report = baseReport(REPORT_ID.DEVICE_IDENTITY);
-    report[7] = 1;
+    report[7] = 2;
     report[8] = 0x0f;
     report[9] = 5;
     for (const [index, value] of [...'AA:BB:CC:DD:EE:FF'].entries()) {
@@ -190,9 +234,11 @@ describe('companion protocol', () => {
     }
     writeU16(report, 52, 0x054c);
     writeU16(report, 54, 0x0df2);
+    report.splice(56, 8, 0xde, 0xad, 0xbe, 0xef, 0x01, 0x23, 0x45, 0x67);
 
     expect(parseDeviceIdentityReport(report)).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      bridgeId: 'deadbeef01234567',
       controllerConnected: true,
       pairingActive: true,
       addressKnown: true,
@@ -204,6 +250,12 @@ describe('companion protocol', () => {
       productId: 0x0df2,
       protocolVersion: `${PROTOCOL_MAJOR}.${PROTOCOL_MINOR}`
     });
+  });
+
+  it('keeps bridge identity optional for schema-one firmware', () => {
+    const report = baseReport(REPORT_ID.DEVICE_IDENTITY);
+    report[7] = 1;
+    expect(parseDeviceIdentityReport(report).bridgeId).toBeNull();
   });
 
   it('parses pairing identity without exposing an unknown address', () => {
@@ -224,6 +276,7 @@ describe('companion protocol', () => {
     expect(hostPersonaModeValue('dualsense')).toBe(0);
     expect(hostPersonaModeValue('xbox')).toBe(1);
     expect(hostPersonaModeValue('ds4')).toBe(2);
+    expect(hostPersonaModeValue('dualsense-edge')).toBe(7);
   });
 
   it('parses an ACK report', () => {
@@ -435,6 +488,28 @@ describe('companion protocol', () => {
     expect(report[10]).toBe(0);
   });
 
+  it('builds and clamps an audio interleave command', () => {
+    const report = buildAudioInterleaveCommand(9, 4, 3000);
+    expect(report[7]).toBe(COMMAND_ID.SET_AUDIO_INTERLEAVE);
+    expect(report[8]).toBe(9);
+    expect(report[9]).toBe(4);
+    expect(report[11]).toBe(3000 & 0xff);
+    expect(report[12]).toBe((3000 >> 8) & 0xff);
+
+    expect(clampAudioInterleaveValues(0, 10)).toEqual({
+      maxConsecutiveAudioSends: 1,
+      stateMaxAgeUs: 250
+    });
+    expect(clampAudioInterleaveValues(1000, 999999)).toEqual({
+      maxConsecutiveAudioSends: 64,
+      stateMaxAgeUs: 60000
+    });
+    expect(clampAudioInterleaveValues(
+      AUDIO_INTERLEAVE_DEFAULT.maxConsecutiveAudioSends,
+      AUDIO_INTERLEAVE_DEFAULT.stateMaxAgeUs
+    )).toEqual(AUDIO_INTERLEAVE_DEFAULT);
+  });
+
   it('encodes a canonical Bluetooth address for targeted forget', () => {
     expect(bluetoothAddressPayload('aa:BB:0c:0D:ee:Ff')).toEqual([
       0xaa,
@@ -488,6 +563,13 @@ describe('companion protocol', () => {
     expect(report[9]).toBe(1);
   });
 
+  it('builds a wake-on-connect setting command report', () => {
+    const report = buildCommandReport(COMMAND_ID.SET_WAKE_ON_CONNECT, 6, 1);
+    expect(report[7]).toBe(COMMAND_ID.SET_WAKE_ON_CONNECT);
+    expect(report[8]).toBe(6);
+    expect(report[9]).toBe(1);
+  });
+
   it('builds an idle disconnect timeout command report', () => {
     const report = buildCommandReport(COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT, 6, 15);
     expect(report[7]).toBe(COMMAND_ID.SET_IDLE_DISCONNECT_TIMEOUT);
@@ -537,11 +619,15 @@ describe('companion protocol', () => {
     expect(report.slice(11, 20)).toEqual(payload);
   });
 
-  it('marks Edge Fn face-button chord combos as reserved', () => {
+  it('allows Edge Fn face-button chord combos only while profile switching is blocked', () => {
     expect(isChordBindingAllowed('ps', 'triangle')).toBe(true);
+    expect(isChordBindingAllowed('mute', 'triangle')).toBe(true);
     expect(isChordBindingAllowed('lfn', 'options')).toBe(true);
     expect(isChordBindingAllowed('rfn', 'square')).toBe(false);
     expect(isChordBindingAllowed('lfn', 'circle')).toBe(false);
+    expect(isChordBindingAllowed('rfn', 'square', true)).toBe(true);
+    expect(isChordBindingAllowed('lfn', 'circle', true)).toBe(true);
+    expect(COMMAND_ID.SET_EDGE_PROFILE_SWITCHING_BLOCKED).toBe(0x45);
   });
 
   it('builds sleep controller command reports', () => {
@@ -701,6 +787,45 @@ describe('companion protocol', () => {
     const report = buildCommandReport(COMMAND_ID.SET_POLLING_RATE_MODE, 8, 1);
     expect(report[7]).toBe(COMMAND_ID.SET_POLLING_RATE_MODE);
     expect(report[9]).toBe(1);
+  });
+
+  it('normalizes the isolated radial deadzone payload to whole percentages', () => {
+    expect(normalizeRadialDeadzonePercent(-4)).toBe(0);
+    expect(normalizeRadialDeadzonePercent(12.6)).toBe(13);
+    expect(normalizeRadialDeadzonePercent(99)).toBe(50);
+    expect(buildRadialDeadzonePayload(12.4, 99)).toEqual([12, 50]);
+  });
+
+  it('parses shortcut and raw stick telemetry from the companion input report', () => {
+    const report = new Array<number>(64).fill(0);
+    report[0] = REPORT_ID.INPUT;
+    report[1] = 0x04;
+    report[2] = 1;
+    report[3] = 0x01;
+    report[4] = 140;
+    report[5] = 121;
+    report[6] = 210;
+    report[7] = 45;
+    writeU32(report, 8, 0x12345678);
+
+    expect(parseCompanionInputReport(report)).toEqual({
+      shortcutEvent: 0x04,
+      stickPreview: {
+        sequence: 0x12345678,
+        raw: { lx: 140, ly: 121, rx: 210, ry: 45 }
+      }
+    });
+  });
+
+  it('accepts legacy input reports without stick telemetry', () => {
+    const report = new Array<number>(64).fill(0);
+    report[0] = REPORT_ID.INPUT;
+    report[1] = 0x02;
+
+    expect(parseCompanionInputReport(report)).toEqual({
+      shortcutEvent: 0x02,
+      stickPreview: null
+    });
   });
 
   it('normalizes deleted or unknown bridge presets to a fallback', () => {

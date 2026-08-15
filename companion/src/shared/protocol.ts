@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 17;
+export const PROTOCOL_MINOR = 22;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -16,7 +16,8 @@ export const REPORT_ID = {
   AUDIO_STATUS: 0x08,
   TRIGGER_TRACE: 0x09,
   FEEDBACK_TRACE: 0x0a,
-  DEVICE_IDENTITY: 0x0d
+  DEVICE_IDENTITY: 0x0d,
+  FIRMWARE_LOG: 0x0e
 } as const;
 
 export const SHORTCUT_EVENT = {
@@ -93,8 +94,27 @@ export const COMMAND_ID = {
   FORGET_CONTROLLER_PAIRING: 0x2e,
   SET_SPEAKER_GAIN: 0x32,
   ENTER_BOOTLOADER: 0x33,
-  SET_LIGHTBAR_RESTORE_ENABLED: 0x36
+  SET_AUDIO_INTERLEAVE: 0x34,
+  SET_WAKE_ON_CONNECT: 0x35,
+  SET_LIGHTBAR_RESTORE_ENABLED: 0x36,
+  SET_RADIAL_DEADZONES: 0x37,
+  SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45
 } as const;
+
+export const RADIAL_DEADZONE_MAX_PERCENT = 50;
+
+export function normalizeRadialDeadzonePercent(value: number): number {
+  return Math.max(0, Math.min(RADIAL_DEADZONE_MAX_PERCENT, Math.round(
+    Number.isFinite(value) ? value : 0
+  )));
+}
+
+export function buildRadialDeadzonePayload(leftPercent: number, rightPercent: number): number[] {
+  return [
+    normalizeRadialDeadzonePercent(leftPercent),
+    normalizeRadialDeadzonePercent(rightPercent)
+  ];
+}
 
 export const ACK_RESULT = {
   OK: 0x00,
@@ -110,6 +130,20 @@ export const ACK_RESULT = {
 
 export type AckResultCode = typeof ACK_RESULT[keyof typeof ACK_RESULT];
 export type ShortcutEvent = typeof SHORTCUT_EVENT[keyof typeof SHORTCUT_EVENT];
+export interface RawStickAxes {
+  lx: number;
+  ly: number;
+  rx: number;
+  ry: number;
+}
+export interface StickInputPreviewPayload {
+  sequence: number;
+  raw: RawStickAxes;
+}
+export interface CompanionInputReportPayload {
+  shortcutEvent: number;
+  stickPreview: StickInputPreviewPayload | null;
+}
 export type MuteButtonMode = 'normal' | 'keyboard' | 'quiet' | 'chord';
 export type MuteKeyboardBehavior = 'tap' | 'hold';
 export type TriggerTestMode = 'feedback' | 'weapon' | 'vibration';
@@ -122,7 +156,7 @@ export interface AdaptiveTriggerPreviewEffect {
   forcePercent: number;
 }
 export type PollingRateMode = '250' | '500' | '1000';
-export type HostPersonaMode = 'dualsense' | 'xbox' | 'ds4';
+export type HostPersonaMode = 'dualsense' | 'dualsense-edge' | 'xbox' | 'ds4';
 export const CHORD_FUNCTION_EVENT_BASE = 0x20;
 export const MAX_CHORD_ASSIGNMENTS = 16;
 export const MAX_CHORD_FUNCTION_NAME_LENGTH = 16;
@@ -214,6 +248,7 @@ export type ChordControllerSettingAction =
   | 'toggle-mic-mute'
   | 'sleep-controller'
   | 'persona-dualsense'
+  | 'persona-dualsense-edge'
   | 'persona-ds4'
   | 'persona-xbox'
   | 'speaker-down'
@@ -264,6 +299,8 @@ export interface ButtonRemapProfile {
 }
 
 export interface ControllerProfileSettings {
+  leftStickRadialDeadzonePercent: number;
+  rightStickRadialDeadzonePercent: number;
   hapticsEnabled: boolean;
   hapticsGainPercent: number;
   feedbackBoostEnabled: boolean;
@@ -294,6 +331,7 @@ export interface ControllerProfileSettings {
   muteKeyboardModifiers: number;
   muteKeyboardBehavior: MuteKeyboardBehavior;
   muteKeyboardChordStarterEnabled: boolean;
+  edgeProfileSwitchingBlocked: boolean;
   sleepKeybindEnabled: boolean;
   speakerVolumeShortcutEnabled: boolean;
   pollingRateMode: PollingRateMode;
@@ -337,8 +375,20 @@ export function isChordAssignableButtonId(value: unknown): value is ChordAssigna
   return typeof value === 'string' && (CHORD_ASSIGNABLE_BUTTON_IDS as readonly string[]).includes(value);
 }
 
-export function isChordBindingAllowed(starter: ChordStarterId, button: ChordAssignableButtonId): boolean {
-  return starter === 'ps' || !(CHORD_EDGE_RESERVED_FACE_BUTTON_IDS as readonly string[]).includes(button);
+export function isChordBindingAllowed(
+  starter: ChordStarterId,
+  button: ChordAssignableButtonId,
+  edgeProfileSwitchingBlocked = false
+): boolean {
+  return edgeProfileSwitchingBlocked || !isEdgeProfileSwitchingChord(starter, button);
+}
+
+export function isEdgeProfileSwitchingChord(
+  starter: ChordStarterId,
+  button: ChordAssignableButtonId
+): boolean {
+  return (starter === 'lfn' || starter === 'rfn')
+    && (CHORD_EDGE_RESERVED_FACE_BUTTON_IDS as readonly string[]).includes(button);
 }
 
 export function defaultChordControllerSettingStepPercent(action: ChordControllerSettingAction): number {
@@ -441,6 +491,7 @@ export interface BridgeStatusPayload {
   signalStrengthDbm: number | null;
   usbSuspendDisconnectEnabled: boolean;
   sleepKeybindEnabled: boolean;
+  wakeOnConnectEnabled: boolean;
   settingsRevision: number;
   lastCommandResult: AckResultCode;
   testHapticsBusy: boolean;
@@ -464,6 +515,7 @@ export interface BridgeStatusPayload {
     pollingRateControl: boolean;
     hostPersonaControl: boolean;
     audioReactiveHapticsControl: boolean;
+    wakeOnConnectControl: boolean;
   };
   hostPersonaMode: HostPersonaMode;
   supportedHostPersonaModes: HostPersonaMode[];
@@ -482,6 +534,7 @@ export interface BridgeAckPayload {
 
 export interface CompanionDeviceIdentityPayload {
   schemaVersion: number;
+  bridgeId: string | null;
   controllerConnected: boolean;
   pairingActive: boolean;
   addressKnown: boolean;
@@ -662,6 +715,49 @@ function readU32(report: ArrayLike<number>, offset: number): number {
   ) >>> 0;
 }
 
+export function parseCompanionInputReport(report: ArrayLike<number>): CompanionInputReportPayload {
+  if (report.length !== REPORT_LENGTH) {
+    throw new ProtocolError(`Expected ${REPORT_LENGTH} bytes, received ${report.length}.`, 'bad-length');
+  }
+  if (report[0] !== REPORT_ID.INPUT) {
+    throw new ProtocolError(
+      `Expected report ID 0x${REPORT_ID.INPUT.toString(16)}, received 0x${report[0].toString(16)}.`,
+      'bad-report-id'
+    );
+  }
+
+  const schemaVersion = report[2];
+  if (schemaVersion === 0) {
+    return { shortcutEvent: report[1], stickPreview: null };
+  }
+  if (schemaVersion !== 1) {
+    throw new ProtocolError(`Unsupported companion input schema ${schemaVersion}.`, 'bad-schema');
+  }
+
+  return {
+    shortcutEvent: report[1],
+    stickPreview: (report[3] & 0x01) !== 0
+      ? {
+          sequence: readU32(report, 8),
+          raw: {
+            lx: report[4],
+            ly: report[5],
+            rx: report[6],
+            ry: report[7]
+          }
+        }
+      : null
+  };
+}
+
+export interface FirmwareLogPayload {
+  enabled: boolean;
+  sequence: number;
+  nextSequence: number;
+  droppedBytes: number;
+  bytes: number[];
+}
+
 function readAscii(report: ArrayLike<number>, offset: number, length: number): string {
   const chars: number[] = [];
   for (let index = 0; index < length; index += 1) {
@@ -692,12 +788,14 @@ export function pollingRateModeValue(mode: PollingRateMode): number {
 }
 
 export function hostPersonaModeValue(mode: HostPersonaMode): number {
+  if (mode === 'dualsense-edge') return 7;
   if (mode === 'xbox') return 1;
   if (mode === 'ds4') return 2;
   return 0;
 }
 
 function hostPersonaMode(value: number): HostPersonaMode {
+  if (value === 7) return 'dualsense-edge';
   if (value === 2) return 'ds4';
   return value === 1 ? 'xbox' : 'dualsense';
 }
@@ -712,6 +810,9 @@ function supportedHostPersonaModes(mask: number): HostPersonaMode[] {
   }
   if ((mask & 0x04) !== 0) {
     modes.push('ds4');
+  }
+  if ((mask & 0x80) !== 0) {
+    modes.push('dualsense-edge');
   }
   return modes.length === 0 ? ['dualsense'] : modes;
 }
@@ -765,6 +866,7 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
     idleDisconnectEnabled: report[16] === 1,
     usbSuspendDisconnectEnabled: (statusFlags & 0x10) !== 0,
     sleepKeybindEnabled: (statusFlags & 0x40) !== 0,
+    wakeOnConnectEnabled: report[50] === 1,
     settingsRevision: readU16(report, 17),
     lastCommandResult: report[19] as AckResultCode,
     testHapticsBusy: (statusFlags & 0x01) !== 0,
@@ -787,7 +889,8 @@ export function parseStatusReport(report: ArrayLike<number>): BridgeStatusPayloa
       sleepControllerControl: (statusFlags & 0x80) !== 0,
       pollingRateControl: true,
       hostPersonaControl: report[49] !== 0,
-      audioReactiveHapticsControl: report[6] >= 7
+      audioReactiveHapticsControl: report[6] >= 7,
+      wakeOnConnectControl: report[6] >= 19
     },
     hostPersonaMode: hostPersonaMode(report[48]),
     supportedHostPersonaModes: supportedHostPersonaModes(report[49]),
@@ -996,6 +1099,24 @@ export function parseAudioStatusReport(report: ArrayLike<number>): AudioStatusPa
   };
 }
 
+export function parseFirmwareLogReport(report: ArrayLike<number>): FirmwareLogPayload {
+  assertReport(report, REPORT_ID.FIRMWARE_LOG);
+  assertVersion(report);
+
+  const length = report[8];
+  const dataOffset = 21;
+  if (length > REPORT_LENGTH - dataOffset) {
+    throw new ProtocolError(`Firmware log payload length ${length} is too large.`, 'bad-firmware-log-length');
+  }
+  return {
+    enabled: (report[7] & 0x01) !== 0,
+    sequence: readU32(report, 9),
+    nextSequence: readU32(report, 13),
+    droppedBytes: readU32(report, 17),
+    bytes: Array.from({ length }, (_, index) => report[dataOffset + index])
+  };
+}
+
 export function parseDeviceIdentityReport(
   report: ArrayLike<number>
 ): CompanionDeviceIdentityPayload {
@@ -1007,10 +1128,14 @@ export function parseDeviceIdentityReport(
   const controllerName = readAscii(report, 28, 24);
   const vendorId = readU16(report, 52);
   const productId = readU16(report, 54);
+  const bridgeId = report[7] >= 2
+    ? Array.from({ length: 8 }, (_, index) => report[56 + index].toString(16).padStart(2, '0')).join('')
+    : null;
   const addressKnown = (flags & 0x01) !== 0 && address.length > 0;
   const linkKeyKnown = (flags & 0x02) !== 0;
   return {
     schemaVersion: report[7],
+    bridgeId: bridgeId && !/^0+$/.test(bridgeId) ? bridgeId : null,
     controllerConnected: (flags & 0x04) !== 0,
     pairingActive: (flags & 0x08) !== 0,
     addressKnown,
@@ -1059,6 +1184,50 @@ export function buildCommandReport(
     report[11 + index] = extraPayload[index] & 0xff;
   }
   return report;
+}
+
+export const AUDIO_INTERLEAVE_DEFAULT = {
+  maxConsecutiveAudioSends: 4,
+  stateMaxAgeUs: 3000
+} as const;
+
+export const AUDIO_INTERLEAVE_LIMITS = {
+  maxConsecutiveAudioSends: { min: 1, max: 64 },
+  stateMaxAgeUs: { min: 250, max: 60000 }
+} as const;
+
+export const AUDIO_INTERLEAVE_PRESETS = {
+  smooth: { maxConsecutiveAudioSends: 8, stateMaxAgeUs: 6000 },
+  balanced: { maxConsecutiveAudioSends: 4, stateMaxAgeUs: 3000 },
+  responsive: { maxConsecutiveAudioSends: 2, stateMaxAgeUs: 1500 }
+} as const;
+
+export function clampAudioInterleaveValues(
+  maxConsecutiveAudioSends: number,
+  stateMaxAgeUs: number
+): { maxConsecutiveAudioSends: number; stateMaxAgeUs: number } {
+  const runLimits = AUDIO_INTERLEAVE_LIMITS.maxConsecutiveAudioSends;
+  const ageLimits = AUDIO_INTERLEAVE_LIMITS.stateMaxAgeUs;
+  const run = Math.round(Number.isFinite(maxConsecutiveAudioSends) ? maxConsecutiveAudioSends : runLimits.min);
+  const age = Math.round(Number.isFinite(stateMaxAgeUs) ? stateMaxAgeUs : ageLimits.min);
+  return {
+    maxConsecutiveAudioSends: Math.min(runLimits.max, Math.max(runLimits.min, run)),
+    stateMaxAgeUs: Math.min(ageLimits.max, Math.max(ageLimits.min, age))
+  };
+}
+
+export function buildAudioInterleaveCommand(
+  sequence: number,
+  maxConsecutiveAudioSends: number,
+  stateMaxAgeUs: number
+): number[] {
+  const clamped = clampAudioInterleaveValues(maxConsecutiveAudioSends, stateMaxAgeUs);
+  return buildCommandReport(
+    COMMAND_ID.SET_AUDIO_INTERLEAVE,
+    sequence,
+    clamped.maxConsecutiveAudioSends,
+    [clamped.stateMaxAgeUs & 0xff, (clamped.stateMaxAgeUs >> 8) & 0xff]
+  );
 }
 
 export function ackResultName(result: number): string {

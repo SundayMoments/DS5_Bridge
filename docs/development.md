@@ -9,13 +9,14 @@ Install these tools before building:
 
 - Git with submodule support.
 - CMake and Ninja.
-- Arm GNU toolchain for embedded builds, such as `gcc-arm-none-eabi`.
-- Raspberry Pi Pico SDK `2.2.0`.
+- Arm GNU Toolchain `15.2.Rel1` (`arm-none-eabi-gcc` `15.2.1`).
+- Raspberry Pi Pico SDK `2.3.0`.
 - Node.js `22`.
 - .NET SDK `9.0`.
 - Windows, for building and running the companion app.
 
-The firmware CI currently builds with Pico SDK `2.2.0` and TinyUSB `0.20.0`.
+The firmware CI currently builds with Pico SDK `2.3.0` and TinyUSB commit
+`2d56dc533e45e4e91b15e93fdab5e22e964f328d`.
 For the closest local match, use the same versions.
 
 For debug presets and runtime diagnostic flags, see `docs/diagnostics.md`.
@@ -175,6 +176,24 @@ Useful options:
 .\tools\create-release-candidate.ps1 -SkipBuild
 .\tools\create-release-candidate.ps1 -NoZip
 ```
+
+## Beta Releases
+
+Run the `Publish beta release` workflow manually and enter the next positive
+beta number. The workflow always tags the current `port-dev` head and derives
+the version from `firmware-version.txt`; for example, base version `1.7.0` and
+beta number `2` produce `v1.7.0-beta.2`.
+
+The workflow creates a draft GitHub prerelease, calls the shared release build
+for both firmware targets plus the Windows installer and portable app, and only
+publishes the prerelease after every artifact and the release metadata upload
+succeeds. A failed build remains a draft for inspection. Beta tags are
+immutable inputs: rerunning the same beta is allowed only while its tag still
+points at the same `port-dev` commit and its release remains a draft.
+
+The workflow definition must be present on the repository's default branch for
+GitHub's **Run workflow** button to expose it, but all beta source and submodules
+are checked out from `port-dev`.
 
 ## Audio Helper Runtime
 

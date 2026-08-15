@@ -9,6 +9,7 @@ bool dualsense_persona_encode_input(
 );
 
 uint16_t dualsense_persona_get_feature_report(
+    HostPersonaMode mode,
     uint8_t report_id,
     uint8_t *buffer,
     uint16_t reqlen

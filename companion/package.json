@@ -1,6 +1,6 @@
 {
   "name": "ds5-bridge-companion",
-  "version": "1.6.4",
+  "version": "1.7.0",
   "private": true,
   "description": "Windows companion app for the Pico DS5 Bridge companion firmware.",
   "author": "SundayMoments",
@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",
-    "build:audio-helper": "dotnet publish native/AudioHelper/AudioHelper.csproj -c Release -r win-x64 --self-contained true -o native/AudioHelper/bin/publish/win-x64",
+    "build:audio-helper": "node scripts/run-dotnet-sdk.mjs publish native/AudioHelper/AudioHelper.csproj -c Release -r win-x64 --self-contained true -o native/AudioHelper/bin/publish/win-x64",
     "build:firmware-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File ../tools/build-pico-universal-flash-nuke.ps1",
     "build:app": "tsc -p tsconfig.main.json && vite build",
     "build": "npm run build:audio-helper && npm run build:app",
@@ -19,7 +19,7 @@
     "test": "npm run test:companion && npm run test:installer && npm run test:native && npm run test:firmware",
     "test:companion": "vitest run src",
     "test:installer": "node scripts/check-installer-upgrade-config.mjs",
-    "test:native": "dotnet test native/AudioHelper.Tests/AudioHelper.Tests.csproj --nologo",
+    "test:native": "node scripts/run-dotnet-sdk.mjs test native/AudioHelper.Tests/AudioHelper.Tests.csproj --nologo",
     "test:firmware": "cmake -S ../tests/firmware -B ../build-firmware-tests -G Ninja && cmake --build ../build-firmware-tests && ctest --test-dir ../build-firmware-tests --output-on-failure",
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
     "layout:check": "npm run build && node scripts/layout-check.mjs"
@@ -106,9 +106,11 @@
     }
   },
   "dependencies": {
+    "@fontsource/montserrat": "^5.2.8",
     "node-hid": "^3.2.0"
   },
   "devDependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
     "@tabler/icons-react": "^3.44.0",
     "@types/node": "^25.0.3",
     "@types/node-hid": "^1.3.4",

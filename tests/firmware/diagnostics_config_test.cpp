@@ -58,15 +58,21 @@ int main() {
         const std::string utils = read_text(root / "src" / "utils.h");
         const std::string firmware_log =
             read_text(root / "src" / "firmware_log.cpp");
+        const std::string btstack_config =
+            read_text(root / "src" / "btstack_config.h");
         const std::string companion =
             read_text(root / "src" / "companion.cpp");
         const std::string watchdog_telemetry =
             read_text(root / "src" / "watchdog_telemetry.cpp");
+        const std::string debug_config =
+            read_text(root / "src" / "debug_config.h");
+        const std::string audio = read_text(root / "src" / "audio.cpp");
+        const std::string bt = read_text(root / "src" / "bt.cpp");
 
         require_contains(
             cmake,
             "PICO_DEFAULT_UART_BAUD_RATE=921600",
-            "Diagnostic UART firmware must match the persistent host collector"
+            "Diagnostic UART firmware must match the host collector"
         );
         require_contains(
             cmake,
@@ -82,6 +88,12 @@ int main() {
             main,
             "stdio_init_all();",
             "The debug build must reinitialize stdio at the configured UART baud"
+        );
+        require_before(
+            main,
+            "stdio_init_all();",
+            "firmware_log_init();",
+            "The direct UART logger must start only after stdio configures the UART"
         );
         require_before(
             main,
@@ -111,8 +123,8 @@ int main() {
         );
         require_contains(
             presets,
-            "\"ENABLE_FEEDBACK_TRACE_REPORTS\": \"ON\"",
-            "The UART preset must compile rumble and haptics tracing in"
+            "\"ENABLE_FEEDBACK_TRACE_REPORTS\": \"OFF\"",
+            "The UART preset must keep per-packet feedback tracing opt-in"
         );
         require_contains(
             presets,
@@ -122,37 +134,80 @@ int main() {
         require_contains(
             cmake,
             "src/firmware_log.cpp",
-            "The retained firmware logger must be linked"
+            "The direct firmware logger must be linked"
         );
         require_contains(
             utils,
             "firmware_log_printf(__VA_ARGS__)",
-            "Firmware logs must append to the nonblocking retained logger"
+            "Firmware logs must use the dedicated physical-UART logger"
         );
         require_contains(
             utils,
             "firmware_log_hexdump((data), (size))",
-            "Firmware hexdumps must avoid direct UART writes"
+            "Firmware hexdumps must use the central logger"
         );
         require_contains(
             firmware_log,
-            "constexpr uint32_t kFirmwareLogRingSize = 8u * 1024u;",
-            "The retained log ring must preserve Kitsune Input's RAM-safe size"
+            "kFirmwareLogUartSlotCount = 8",
+            "Live UART diagnostics must use a bounded queue"
         );
         require_contains(
             firmware_log,
-            "while (written < copied && uart_is_writable(uart_default))",
-            "UART draining must be bounded by currently writable FIFO space"
+            "dma_claim_unused_channel(false)",
+            "Live UART diagnostics must use a non-blocking DMA channel"
+        );
+        require_contains(
+            firmware_log,
+            "Diagnostic overload must lose live UART output",
+            "UART overload must drop output instead of delaying firmware work"
+        );
+        if (
+            firmware_log.find("uart_write_blocking(") != std::string::npos
+            || firmware_log.find("uart_putc_raw(") != std::string::npos
+        ) {
+            throw std::runtime_error(
+                "Firmware logging must never synchronously wait on physical UART"
+            );
+        }
+        require_contains(
+            cmake,
+            "target_link_libraries(ds5-bridge hardware_dma)",
+            "UART diagnostic builds must link the DMA driver"
+        );
+        require_contains(
+            firmware_log,
+            "kFirmwareLogRingSize = 8 * 1024",
+            "UART diagnostics must retain an 8 KiB SRAM ring"
+        );
+        require_contains(
+            firmware_log,
+            "firmware_log_read_sequence",
+            "The companion must drain the retained UART ring incrementally"
+        );
+        require_contains(
+            companion,
+            "build_firmware_log",
+            "The companion protocol must expose retained UART bytes"
         );
         require_contains(
             firmware_log,
             "hci_dump_enable_packet_log(false);",
             "The BTstack sink must exclude raw pairing packets"
         );
+        if (btstack_config.find("ENABLE_LOG_INFO") != std::string::npos) {
+            throw std::runtime_error(
+                "UART diagnostics must not enable BTstack INFO spam"
+            );
+        }
+        require_contains(
+            btstack_config,
+            "#define ENABLE_LOG_ERROR",
+            "UART diagnostics must retain BTstack error reporting"
+        );
         require_contains(
             main,
             "firmware_log_flush_live();",
-            "The main loop must service the nonblocking UART drain"
+            "The main loop compatibility hook must remain available"
         );
         require_contains(
             companion,
@@ -172,7 +227,7 @@ int main() {
         require_contains(
             companion,
             "\"[FB] lost=%lu\\n\"",
-            "Feedback UART overruns must be visible in the persistent log"
+            "Feedback UART overruns must be visible in the diagnostic stream"
         );
         require_contains(
             cmake,
@@ -208,6 +263,31 @@ int main() {
             watchdog_telemetry,
             "kScratchSignature | scratch_crc(word1, word2, word3);",
             "Watchdog telemetry must publish a checksummed commit marker last"
+        );
+        require_contains(
+            debug_config,
+            "#if DS5_AUDIO_DEBUG_ENABLED || DS5_DEBUG_LOGS_ENABLED",
+            "UART builds must collect transport counters without companion audio reports"
+        );
+        require_contains(
+            audio,
+            "audio_debug_increment_u32(audio_stats.opus_encode_count);",
+            "Audio diagnostics must count every encoded Opus frame"
+        );
+        require_contains(
+            bt,
+            "output_counters.audio_l2cap_send_fail_count++",
+            "Bluetooth diagnostics must count failed audio submissions"
+        );
+        require_contains(
+            main,
+            "report=0x39 encMax=%lu",
+            "UART diagnostics must identify the batched DualSense audio report"
+        );
+        require_contains(
+            main,
+            "stateRx=%lu stateSent=%lu",
+            "UART diagnostics must expose complete host-output throughput"
         );
 
         std::cout << "Diagnostics configuration checks passed.\n";

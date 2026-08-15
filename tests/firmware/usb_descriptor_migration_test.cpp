@@ -11,8 +11,8 @@
 
 namespace {
 
-constexpr uint16_t kExpectedUsbDeviceRevision = 0x0153;
-constexpr uint64_t kExpectedCompanionDescriptorHash = 0x4f0540e7fbbbddcbull;
+constexpr uint16_t kExpectedUsbDeviceRevision = 0x0154;
+constexpr uint64_t kExpectedCompanionDescriptorHash = 0x93930b64f2ccbc7cull;
 
 std::string read_text(std::filesystem::path const &path) {
     std::ifstream input(path, std::ios::binary);
@@ -179,6 +179,7 @@ void assert_persona_support_requires_verified_descriptors(
 
     if (
         usb_descriptors.find("#define DUALSENSE_HID_REPORT_DESC_FNV1A32 0x98EE8A4Au") == std::string::npos
+        || usb_descriptors.find("#define DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32 0x48E90EC1u") == std::string::npos
         || usb_descriptors.find("#define DS4_HID_REPORT_DESC_FNV1A32 0x9316A41Du") == std::string::npos
         || usb_descriptors.find("#define XUSB360_INTERFACE_DESC_FNV1A32 0x824C084Au") == std::string::npos
         || usb_descriptors.find("#define XUSB360_INTERFACE_DESC_FNV1A32 0xAAC10AD0u") == std::string::npos
@@ -195,9 +196,17 @@ void assert_persona_support_requires_verified_descriptors(
     ) {
         throw std::runtime_error("XUSB persona must be gated on its intended descriptor fingerprint");
     }
+
+    if (
+        usb_descriptors.find("case HostPersonaModeDualSenseEdge:") == std::string::npos
+        || usb_descriptors.find("desc_hid_report_dse") == std::string::npos
+        || usb_descriptors.find("DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge persona must be gated on its intended descriptor fingerprint");
+    }
 }
 
-void assert_dse_identity_reports_do_not_use_edge_passthrough(std::filesystem::path const &source_root) {
+void assert_dualsense_persona_identity_reports_are_isolated(std::filesystem::path const &source_root) {
     const auto bt_h = read_text(source_root / "src" / "bt.h");
     const auto main_cpp = read_text(source_root / "src" / "main.cpp");
     const auto dualsense_persona_cpp = read_text(source_root / "src" / "persona" / "dualsense_persona.cpp");
@@ -212,17 +221,87 @@ void assert_dse_identity_reports_do_not_use_edge_passthrough(std::filesystem::pa
         bt_h.find("ControllerTypeDualSenseEdge = 2") == std::string::npos
         || main_cpp.find("dualsense_feature_report_may_use_bt_passthrough") == std::string::npos
         || main_cpp.find("report_id != 0x20 && report_id != 0x22") == std::string::npos
-        || main_cpp.find("bt_controller_type() != ControllerTypeDualSenseEdge") == std::string::npos
+        || main_cpp.find("output_persona == HostPersonaModeDualSenseEdge") == std::string::npos
+        || main_cpp.find("upstream_type == ControllerTypeDualSenseEdge") == std::string::npos
+        || main_cpp.find("upstream_type == ControllerTypeDualSense") == std::string::npos
         || get_report_callback.find("report_type != HID_REPORT_TYPE_FEATURE") == std::string::npos
-        || get_report_callback.find("dualsense_feature_report_may_use_bt_passthrough(report_id)") == std::string::npos
+        || get_report_callback.find("dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)") == std::string::npos
         || get_report_callback.find("get_feature_data(report_id, reqlen)") == std::string::npos
-        || get_report_callback.find("dualsense_persona_get_feature_report(report_id, buffer, reqlen)") == std::string::npos
+        || get_report_callback.find("dualsense_persona_get_feature_report(active_persona, report_id, buffer, reqlen)") == std::string::npos
         || dualsense_persona_h.find("dualsense_persona_get_feature_report") == std::string::npos
         || dualsense_persona_cpp.find("kDualSenseFeatureFirmwareInfo = 0x20") == std::string::npos
-        || dualsense_persona_cpp.find("write_firmware_feature_report") == std::string::npos
+        || dualsense_persona_cpp.find("write_dualsense_firmware_feature_report") == std::string::npos
+        || dualsense_persona_cpp.find("write_dualsense_edge_firmware_feature_report") == std::string::npos
         || dualsense_persona_cpp.find("kFirmwareVersion = 0x0110002a") == std::string::npos
+        || dualsense_persona_cpp.find("kSoftwareSeries = 0x0044") == std::string::npos
+        || dualsense_persona_cpp.find("kUpdateVersion = 0x0217") == std::string::npos
     ) {
-        throw std::runtime_error("DualSense identity feature reports must not leak DualSense Edge identity through BT passthrough");
+        throw std::runtime_error("DualSense personas must isolate native identity passthrough and synthesize the selected firmware identity");
+    }
+}
+
+void assert_dualsense_edge_persona_is_edge_facing(
+    std::string const &source,
+    std::filesystem::path const &source_root
+) {
+    const auto cmake = read_text(source_root / "CMakeLists.txt");
+    const auto companion_cpp = read_text(source_root / "src" / "companion.cpp");
+    const auto host_persona_h = read_text(source_root / "src" / "persona" / "host_persona.h");
+
+    if (
+        cmake.find("ENABLE_DSE") != std::string::npos
+        || source.find("ENABLE_DSE") != std::string::npos
+        || host_persona_h.find("HostPersonaModeDualSenseEdge = 7") == std::string::npos
+        || companion_cpp.find("mask |= 1 << HostPersonaModeDualSenseEdge") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge must be a normal runtime-selectable persona advertised on protocol bit 7");
+    }
+
+    if (
+        source.find("#define DUALSENSE_EDGE_VENDOR_ID 0x054C") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_PRODUCT_ID 0x0DF2") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0100") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_STRING_PRODUCT \"DualSense Edge Wireless Controller\"") == std::string::npos
+        || source.find("#define DUALSENSE_EDGE_HID_REPORT_DESC_LEN 0x01B5") == std::string::npos
+        || source.find("TU_VERIFY_STATIC(sizeof(desc_hid_report_dse) == DUALSENSE_EDGE_HID_REPORT_DESC_LEN") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge USB identity and report descriptor must match the pinned stock contract");
+    }
+
+    const std::string edge_descriptor = extract_between(
+        source,
+        "uint8_t const desc_hid_report_dse[] = {",
+        "\n};\nTU_VERIFY_STATIC(sizeof(desc_hid_report_dse)"
+    );
+    for (std::string const report_id : {"0xF6", "0xF7", "0xF8", "0xF9"}) {
+        if (edge_descriptor.find("0x85, " + report_id) == std::string::npos) {
+            throw std::runtime_error("DualSense Edge descriptor is missing feature report " + report_id);
+        }
+    }
+
+    const std::string device_callback = extract_between(
+        source,
+        "uint8_t const *tud_descriptor_device_cb(void) {",
+        "\n}\n\n//--------------------------------------------------------------------+\n// Configuration Descriptor"
+    );
+    const std::string report_callback = extract_between(
+        source,
+        "uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {",
+        "\n}\n\n//--------------------------------------------------------------------+\n// String Descriptors"
+    );
+    const std::string string_helper = extract_between(
+        source,
+        "static char const *descriptor_string_for_index(uint8_t index) {",
+        "\n}\n\n// Invoked when received GET STRING DESCRIPTOR request"
+    );
+    if (
+        device_callback.find("host_persona_active() == HostPersonaModeDualSenseEdge") == std::string::npos
+        || device_callback.find("desc_device_runtime.idProduct = DUALSENSE_EDGE_PRODUCT_ID") == std::string::npos
+        || report_callback.find("return desc_hid_report_dse") == std::string::npos
+        || string_helper.find("return DUALSENSE_EDGE_STRING_PRODUCT") == std::string::npos
+        || source.find("return DUALSENSE_EDGE_HID_REPORT_DESC_LEN") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense Edge persona must select its runtime device, HID, and product descriptors together");
     }
 }
 
@@ -287,8 +366,8 @@ void assert_ds4_persona_identity_is_ds4_facing(std::string const &source) {
         throw std::runtime_error("DS4 persona must expose the DS4 v2 USB product ID");
     }
 
-    if (source.find("#define DS4_USB_BCD_DEVICE 0x0102") == std::string::npos) {
-        throw std::runtime_error("DS4 persona must expose the DS4 v2 USB device revision");
+    if (source.find("#define DS4_USB_BCD_DEVICE 0x0103") == std::string::npos) {
+        throw std::runtime_error("DS4 persona must bump its USB revision for the remote-wake descriptor");
     }
 
     if (source.find("#define DS4_HID_REPORT_DESC_LEN 0x01FB") == std::string::npos) {
@@ -542,6 +621,71 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
     ) {
         throw std::runtime_error(
             "Normal controller disconnects must keep the Pico alive, including while USB is suspended"
+        );
+    }
+}
+
+void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path const &root) {
+    const auto descriptors = read_text(root / "src" / "usb_descriptors.c");
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+    const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const auto main_cpp = read_text(root / "src" / "main.cpp");
+
+    if (
+        descriptors.find("0xE0, // bmAttributes: SELF-POWERED, REMOTE-WAKEUP") == std::string::npos
+        || descriptors.find("descriptor_configuration_xusb[7] = 0xC0;") == std::string::npos
+    ) {
+        throw std::runtime_error("Remote wake must be advertised by DualSense/DS4 without leaking into Xbox mode");
+    }
+
+    const std::string wake = extract_between(
+        usb_cpp,
+        "void usb_wake_host_if_suspended() {",
+        "\n}\n\nvoid usb_set_wake_on_connect"
+    );
+    const std::string suspend = extract_between(
+        usb_cpp,
+        "extern \"C\" void tud_suspend_cb(bool remote_wakeup_en) {",
+        "\n}\n\nextern \"C\" void tud_resume_cb(void) {"
+    );
+    const std::string pm_poll = extract_between(
+        usb_cpp,
+        "void usb_pm_poll() {",
+        "\n}\n\nstatic UsbAudioVolumeRange"
+    );
+    const std::string ready = extract_between(
+        usb_cpp,
+        "void usb_handle_controller_transport_ready() {",
+        "\n}\n\nextern \"C\" void tud_mount_cb(void) {"
+    );
+    if (
+        wake.find("usb_bus_suspended()") == std::string::npos
+        || wake.find("usb_wake_retention_enabled_for_persona()") == std::string::npos
+        || wake.find("usb_remote_wakeup_armed") == std::string::npos
+        || wake.find("usb_remote_wakeup_pending = true;") == std::string::npos
+        || wake.find("tud_remote_wakeup()") != std::string::npos
+        || pm_poll.find("if (usb_remote_wakeup_pending)") == std::string::npos
+        || pm_poll.find("usb_wake_on_connect") == std::string::npos
+        || pm_poll.find("usb_remote_wakeup_armed") == std::string::npos
+        || pm_poll.find("usb_bus_suspended()") == std::string::npos
+        || pm_poll.find("(void)tud_remote_wakeup();") == std::string::npos
+        || pm_poll.find("if (usb_bus_suspended())") < pm_poll.find("(void)tud_remote_wakeup();")
+        || suspend.find("usb_remote_wakeup_armed = remote_wakeup_en;") == std::string::npos
+        || ready.find("usb_wake_host_if_suspended();") == std::string::npos
+        || bt_cpp.find("usb_wake_host_if_suspended();") == std::string::npos
+        || usb_cpp.find("usb_wake_retention_enabled_for_persona()") == std::string::npos
+        || usb_cpp.find("host_persona_active() != HostPersonaModeXusb360") == std::string::npos
+        || usb_cpp.find("usb_controller_transport_retained_for_wake()") == std::string::npos
+        || usb_cpp.find("Keep the full native controller persona enumerated as the") == std::string::npos
+        || usb_cpp.find("if (!usb_controller_transport_ready && usb_controller_transport_attached)") == std::string::npos
+        || main_cpp.find("report_dirty = usb_controller_transport_retained_for_wake();") == std::string::npos
+        || companion_cpp.find("CommandSetWakeOnConnect = 0x35") == std::string::npos
+        || companion_cpp.find("usb_set_wake_on_connect(value == 1);") == std::string::npos
+        || companion_cpp.find("buffer[49] = usb_wake_on_connect_enabled() ? 1 : 0;") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Wake-on-connect must retain a neutral native persona and require suspend, host arming, and the companion setting"
         );
     }
 }
@@ -845,6 +989,25 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
         explicit_pairing.find("gap_drop_link_key_for_bd_addr(current_device_addr);");
     const auto create_connection =
         explicit_pairing.find("&hci_create_connection");
+    const std::string rejected_key_invalidation = extract_between(
+        bt_cpp,
+        "static bool invalidate_rejected_pairing_transaction_prior_key",
+        "\n}\n\nstatic bool restore_uncommitted_pairing_key"
+    );
+    const std::string authentication_complete = extract_between(
+        bt_cpp,
+        "case HCI_EVENT_AUTHENTICATION_COMPLETE: {",
+        "\n        case HCI_EVENT_ENCRYPTION_CHANGE:"
+    );
+    const auto invalidate_rejected_transaction = authentication_complete.find(
+        "invalidate_rejected_pairing_transaction_prior_key(current_device_addr)"
+    );
+    const auto drop_rejected_key = authentication_complete.find(
+        "gap_drop_link_key_for_bd_addr(current_device_addr);"
+    );
+    const auto verify_rejected_key_absent = authentication_complete.find(
+        "gap_get_link_key_for_bd_addr("
+    );
     if (
         bt_cpp.find("static void service_acl_connection_cancel()") == std::string::npos
         || bt_cpp.find("hci_send_cmd(&hci_create_connection_cancel, current_device_addr)")
@@ -884,12 +1047,33 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
         || bt_cpp.find(
             "\"disconnect before replacement key commit\""
         ) == std::string::npos
+        || rejected_key_invalidation.find(
+            "bd_addr_cmp(transaction.addr, addr) != 0"
+        ) == std::string::npos
+        || rejected_key_invalidation.find(
+            "transaction.state != pairing_transaction_state::AwaitingKey"
+        ) == std::string::npos
+        || rejected_key_invalidation.find("transaction.prior_key_valid = false;")
+            == std::string::npos
+        || rejected_key_invalidation.find("transaction.prior_type = INVALID_LINK_KEY;")
+            == std::string::npos
+        || rejected_key_invalidation.find("write_pairing_transaction(transaction)")
+            == std::string::npos
+        || rejected_key_invalidation.find("discard_pairing_transaction()")
+            == std::string::npos
+        || authentication_complete.find("status == AUTHENTICATION_PIN_OR_KEY_MISSING")
+            == std::string::npos
+        || invalidate_rejected_transaction == std::string::npos
+        || drop_rejected_key == std::string::npos
+        || verify_rejected_key_absent == std::string::npos
+        || !(invalidate_rejected_transaction < drop_rejected_key
+            && drop_rejected_key < verify_rejected_key_absent)
         || disconnect.find("connection_phase == BtConnectionPhase::Disconnecting")
             == std::string::npos
         || disconnect.find("&& acl_handle != HCI_CON_HANDLE_INVALID") == std::string::npos
     ) {
         throw std::runtime_error(
-            "Pending ACL and disconnect transactions must retain ownership until their terminal events"
+            "Pairing transactions must retain ownership and rejected roaming keys must not survive rollback"
         );
     }
 
@@ -939,7 +1123,7 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
     const std::string finish_hid = extract_between(
         bt_cpp,
         "static void finish_hid_session_if_ready() {",
-        "\n}\n\nstatic void l2cap_packet_handler"
+        "\n}\n\nstatic __attribute__((optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
     );
     const auto transaction_accept =
         link_key_notification.find("mark_pairing_transaction_key_accepted(addr)");
@@ -1017,6 +1201,12 @@ void assert_firmware_version_has_one_canonical_source(
     if (
         cmake.find(
             "pico_set_program_version(ds5-bridge \"${DS5_FIRMWARE_VERSION}\")"
+        ) == std::string::npos
+        || cmake.find(
+            "PROPERTY CMAKE_CONFIGURE_DEPENDS"
+        ) == std::string::npos
+        || cmake.find(
+            "\"${DS5_FIRMWARE_VERSION_FILE}\""
         ) == std::string::npos
         || cmake.find(
             "DS5_FIRMWARE_VERSION_MAJOR=${DS5_FIRMWARE_VERSION_MAJOR}"
@@ -1152,7 +1342,7 @@ void assert_bluetooth_device_management_policy(std::filesystem::path const &root
     const std::string finish_hid = extract_between(
         bt_cpp,
         "static void finish_hid_session_if_ready() {",
-        "\n}\n\nstatic void l2cap_packet_handler"
+        "\n}\n\nstatic __attribute__((optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
     );
     const auto durable_key_gate =
         finish_hid.find("pairing_link_key_required && !current_link_key_persisted");
@@ -1183,9 +1373,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 17;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 22;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 17;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 22;")
             == std::string::npos
         || companion_h.find("#define COMPANION_REPORT_DEVICE_IDENTITY 0x0D")
             == std::string::npos
@@ -1203,6 +1393,26 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
             == std::string::npos
         || protocol_ts.find("FORGET_CONTROLLER_PAIRING: 0x2e")
             == std::string::npos
+        || companion_cpp.find("CommandSetWakeOnConnect = 0x35")
+            == std::string::npos
+        || protocol_ts.find("SET_WAKE_ON_CONNECT: 0x35")
+            == std::string::npos
+        || companion_cpp.find("CommandSetEdgeProfileSwitchingBlocked = 0x45")
+            == std::string::npos
+        || protocol_ts.find("SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45")
+            == std::string::npos
+        || companion_cpp.find("CommandSetRadialDeadzones = 0x37")
+            == std::string::npos
+        || protocol_ts.find("SET_RADIAL_DEADZONES: 0x37")
+            == std::string::npos
+        || companion_cpp.find("uint16_t build_input_report")
+            == std::string::npos
+        || companion_cpp.find("memcpy(last_raw_stick_axes, report, sizeof(last_raw_stick_axes));")
+            == std::string::npos
+        || companion_cpp.find("write_u32(buffer + 7, raw_stick_sequence);")
+            == std::string::npos
+        || protocol_ts.find("export function parseCompanionInputReport")
+            == std::string::npos
     ) {
         throw std::runtime_error(
             "Firmware and companion controller-management protocol identifiers must remain in parity"
@@ -1212,7 +1422,7 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const std::string identity = extract_between(
         companion_cpp,
         "uint16_t build_device_identity",
-        "\n}\n\nuint16_t build_shortcut_event"
+        "\n}\n\nuint16_t build_input_report"
     );
     if (
         identity.find("bt_get_device_identity(&identity)") == std::string::npos
@@ -1224,6 +1434,10 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
         || identity.find("write_u16(buffer + 51, identity.vendor_id);")
             == std::string::npos
         || identity.find("write_u16(buffer + 53, identity.product_id);")
+            == std::string::npos
+        || identity.find("pico_get_unique_board_id(&board_id);")
+            == std::string::npos
+        || identity.find("memcpy(buffer + 55, board_id.id")
             == std::string::npos
         || protocol_ts.find("export function parseDeviceIdentityReport")
             == std::string::npos
@@ -1264,6 +1478,35 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     }
 }
 
+void assert_dualsense_edge_profile_switching_blocker(
+    std::filesystem::path const &root
+) {
+    const auto companion = read_text(root / "src" / "companion.cpp");
+    const auto bt = read_text(root / "src" / "bt.cpp");
+    const auto bt_h = read_text(root / "src" / "bt.h");
+    const auto output = read_text(root / "src" / "dualsense_output.h");
+    const auto protocol = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
+    const auto service = read_text(root / "companion" / "src" / "main" / "bridge-service.ts");
+
+    if (
+        output.find("kFlag2EdgeProfileSwitchingControlEnable = 0x40") == std::string::npos
+        || output.find("kEdgeProfileSwitchingModeOffset = 40") == std::string::npos
+        || output.find("kEdgeProfileSwitchingBlocked = 0x80") == std::string::npos
+        || output.find("render_edge_profile_switching_payload") == std::string::npos
+        || bt_h.find("void bt_set_edge_profile_switching_blocked(bool blocked);") == std::string::npos
+        || bt.find("controller_type != ControllerTypeDualSenseEdge") == std::string::npos
+        || bt.find("service_edge_profile_switching_mode();") == std::string::npos
+        || companion.find("value == 0 && has_edge_profile_switching_chord()") == std::string::npos
+        || companion.find("!edge_profile_switching_blocked") == std::string::npos
+        || protocol.find("edgeProfileSwitchingBlocked = false") == std::string::npos
+        || service.find("settings.edgeProfileSwitchingBlocked") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense Edge profile switching must be blocked before reserved Fn face-button chords become active"
+        );
+    }
+}
+
 void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path const &root) {
     const auto bt_cpp = read_text(root / "src" / "bt.cpp");
 
@@ -1292,7 +1535,7 @@ void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path
         "void init_feature() {",
         "\n}\n"
     );
-    const auto edge_probe = init_feature.find("schedule_feature_prefetch(0x70, 64);");
+    const auto edge_probe = init_feature.find("schedule_feature_prefetch(0x20, 64);");
     const auto informational_probe = init_feature.find("schedule_feature_prefetch(0x09, 20);");
     const std::string control_data = extract_between(
         bt_cpp,
@@ -1303,8 +1546,11 @@ void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path
         edge_probe == std::string::npos
         || informational_probe == std::string::npos
         || edge_probe > informational_probe
-        || control_data.find("const bool edge_type_response =")
+        || control_data.find("const bool firmware_type_response =")
             == std::string::npos
+        || control_data.find("size > 23") == std::string::npos
+        || control_data.find("packet[23] == 0x44") == std::string::npos
+        || init_feature.find("schedule_feature_prefetch(0x70, 64);") != std::string::npos
         || control_data.find("controller_type == ControllerTypeDualSense")
             == std::string::npos
         || control_data.find(
@@ -1312,7 +1558,7 @@ void assert_bluetooth_hid_recovery_and_encryption_watchdog(std::filesystem::path
         ) == std::string::npos
     ) {
         throw std::runtime_error(
-            "Initial feature pacing must prioritize Edge detection and accept a delayed authoritative reply"
+            "Initial feature pacing must prioritize firmware-report controller detection and accept a delayed authoritative reply"
         );
     }
 
@@ -1387,7 +1633,7 @@ void assert_dualsense_feature_startup_is_paced(std::filesystem::path const &root
         || bt_h.find("void bt_feature_prefetch_loop();") == std::string::npos
         || init_feature_block.find("schedule_feature_prefetch(0x09, 20);")
             == std::string::npos
-        || init_feature_block.find("schedule_feature_prefetch(0x70, 64);")
+        || init_feature_block.find("schedule_feature_prefetch(0x20, 64);")
             == std::string::npos
         || init_feature_block.find("get_feature_data(") != std::string::npos
         || prefetch_loop.find("get_feature_data(request.report_id, request.len)")
@@ -1421,6 +1667,7 @@ void assert_dualsense_feature_startup_is_paced(std::filesystem::path const &root
 void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root) {
     const auto cmake = read_text(root / "CMakeLists.txt");
     const auto audio_cpp = read_text(root / "src" / "audio.cpp");
+    const auto audio_exact_queue_h = read_text(root / "src" / "audio_exact_queue.h");
     const auto audio_h = read_text(root / "src" / "audio.h");
     const auto ram_mem_c = read_text(root / "src" / "ram_mem.c");
     const auto relocate_cmake = read_text(root / "cmake" / "relocate_to_ram.cmake");
@@ -1430,10 +1677,68 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
     if (
         cmake.find("src/ram_mem.c") == std::string::npos
         || cmake.find(".text.queue_try_add=.time_critical.queue_try_add")
-            == std::string::npos
+            != std::string::npos
         || cmake.find(".text.queue_try_remove=.time_critical.queue_try_remove")
+            != std::string::npos
+        || cmake.find(".text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset")
             == std::string::npos
+        || cmake.find("target_compile_options(opus PRIVATE -O2)") == std::string::npos
+        || cmake.find("\"-DOBJDUMP=${CMAKE_OBJDUMP}\"") == std::string::npos
+        || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 79120)")
+            == std::string::npos
+        || cmake.find("set(DS5_MIN_POST_STARTUP_HEAP_BYTES 8192)")
+            == std::string::npos
+        || cmake.find("\"-DMIN_HEAP_BYTES=${DS5_MIN_RUNTIME_HEAP_BYTES}\"")
+            == std::string::npos
+        || cmake.find(
+            "\"-DKNOWN_STARTUP_HEAP_BYTES=${DS5_KNOWN_STARTUP_HEAP_BYTES}\""
+        ) == std::string::npos
+        || audio_cpp.find("AUDIO_CORE1_STACK_WORDS = 7000") == std::string::npos
+        || audio_cpp.find("AUDIO_CORE1_STACK_GUARD_WORDS = 64") == std::string::npos
+        || audio_cpp.find("audio_core1_stack_init_watermark();") == std::string::npos
+        || audio_cpp.find("audio_core1_stack_poll(now);") == std::string::npos
+        || audio_cpp.find("ExactAudioQueue<audio_raw_element, 2> audio_fifo")
+            == std::string::npos
+        || audio_cpp.find("ExactAudioQueue<mic_packet_element, HOST_MIC_QUEUE_DEPTH> mic_fifo")
+            == std::string::npos
+        || audio_cpp.find("if (!did_speaker && !did_mic)") == std::string::npos
+        || audio_cpp.find("sleep_us(10);") == std::string::npos
+        || audio_cpp.find(
+            "static bool __not_in_flash_func(process_usb_audio_packet)() {"
+        ) == std::string::npos
+        || audio_exact_queue_h.find("T storage_[Capacity]{};") == std::string::npos
+        || audio_exact_queue_h.find("critical_section_init_with_lock_num(")
+            == std::string::npos
+        || audio_exact_queue_h.find("next_striped_spin_lock_num()")
+            == std::string::npos
+        || audio_exact_queue_h.find("count_ == Capacity") == std::string::npos
         || cmake.find("verify_core1_sram.cmake") == std::string::npos
+        || cmake.find(".text.tud_audio_n_available=.time_critical.tud_audio_n_available")
+            == std::string::npos
+        || cmake.find(".text.tud_audio_n_get_ep_in_ff=.time_critical.tud_audio_n_get_ep_in_ff")
+            == std::string::npos
+        || verify_cmake.find("_ZL25send_audio_haptics_packetPKabb") == std::string::npos
+        || verify_cmake.find("_ZL28try_send_pending_audio_batchv") == std::string::npos
+        || verify_cmake.find("_Z21bt_write_audio_streamPht") == std::string::npos
+        || verify_cmake.find("_Z10on_bt_data12CHANNEL_TYPEPht") == std::string::npos
+        || verify_cmake.find("_Z35companion_process_controller_reportPht")
+            == std::string::npos
+        || verify_cmake.find(
+            "_Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState"
+        ) == std::string::npos
+        || verify_cmake.find(
+            "_Z25host_persona_encode_input15HostPersonaModeRK21BridgeControllerStateR22HostPersonaInputReport"
+        ) == std::string::npos
+        || verify_cmake.find("_Z20audio_mic_add_packetPKht") == std::string::npos
+        || verify_cmake.find("_Z36output_scheduler_fifo_prefers_urgentbmbm")
+            == std::string::npos
+        || verify_cmake.find("_ZL22process_mic_usb_outputv") == std::string::npos
+        || verify_cmake.find("_ZL27write_mic_usb_pending_frameR18mic_decode_elementRtS1_")
+            == std::string::npos
+        || verify_cmake.find("_Z26bt_is_controller_connectedv") == std::string::npos
+        || verify_cmake.find("_Z24usb_mic_streaming_activev") == std::string::npos
+        || verify_cmake.find("tud_audio_n_available") == std::string::npos
+        || verify_cmake.find("tud_audio_n_get_ep_in_ff") == std::string::npos
         || cmake.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4")
             == std::string::npos
         || cmake.find("PICO_FLASH_ASSUME_CORE1_SAFE=0") == std::string::npos
@@ -1467,9 +1772,17 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         || ram_mem_c.find("__not_in_flash_func(memset)") == std::string::npos
         || ram_mem_c.find("__not_in_flash_func(memmove)") == std::string::npos
         || relocate_cmake.find("--rename-section") == std::string::npos
+        || relocate_cmake.find("destination_section_index") == std::string::npos
+        || verify_cmake.find("\"_ZL24process_usb_audio_packetv\"") == std::string::npos
         || verify_cmake.find("\"_ZL11core1_entryv\"") == std::string::npos
-        || verify_cmake.find("\"queue_try_add\"") == std::string::npos
-        || verify_cmake.find("\"queue_try_remove\"") == std::string::npos
+        || verify_cmake.find("\"_ZL22audio_core1_stack_pollm\"") == std::string::npos
+        || verify_cmake.find("\"crc32_lookup_table\"") == std::string::npos
+        || verify_cmake.find("\"queue_try_add\"") != std::string::npos
+        || verify_cmake.find("\"queue_try_remove\"") != std::string::npos
+        || verify_cmake.find(
+            "foreach(required_value NM ELF MIN_HEAP_BYTES KNOWN_STARTUP_HEAP_BYTES)"
+        ) == std::string::npos
+        || verify_cmake.find("post_startup_heap_bytes") == std::string::npos
         || verify_cmake.find("\"memcpy\"") == std::string::npos
         || verify_cmake.find("\"memset\"") == std::string::npos
         || verify_cmake.find("\"memmove\"") == std::string::npos
@@ -1631,18 +1944,23 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
     const std::string classified = extract_between(
         bt_cpp,
         "bool bt_write_classified_output",
-        "\n}\n\nbool bt_write_audio_stream"
+        "\n}\n\nbool __not_in_flash_func(bt_write_audio_stream)"
     );
     if (
         classified.find("OutputReasonHostPassthrough") == std::string::npos
         || classified.find("enqueue_urgent_output") == std::string::npos
+        || classified.find("audio_output_route_protected") == std::string::npos
+        || classified.find("output_report_is_classic_rumble_transition") == std::string::npos
+        || classified.find("const bool enqueued = enqueue_urgent_output") == std::string::npos
+        || classified.find("enqueue_classic_rumble_immediate_or_state_output") != std::string::npos
+        || classified.find("if (audio_protected)") != std::string::npos
         || classified.find("apply_classic_rumble_gain") != std::string::npos
         || classified.find("strip_redundant_classic_rumble_from_output")
             != std::string::npos
         || classified.find("split_state_from_mixed_output") != std::string::npos
     ) {
         throw std::runtime_error(
-            "Normal host/persona reports must stay complete pass-through packets without inferred START/STOP rewriting"
+            "Host/persona reports must retain complete full-rate pass-through while deadline-scheduled audio owns only its due Bluetooth slots"
         );
     }
 
@@ -1658,25 +1976,26 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
     );
     if (
         enqueue.find("enqueue_with_soft_cap") == std::string::npos
+        || enqueue.find("coalesce_latest_managed_active") == std::string::npos
         || enqueue.find("URGENT_SEND_QUEUE_HARD_MAX_DEPTH") == std::string::npos
         || retry.find("retry_delay_us") == std::string::npos
         || retry.find("retry_requires_fail_closed") == std::string::npos
         || retry.find("requeue_failed_front") == std::string::npos
         || delivery_policy.find("DeliveryKind::ManagedStop") == std::string::npos
         || delivery_policy.find("return is_terminal_stop(kind);") == std::string::npos
-        || scheduler_cpp.find("output_scheduler_classic_rumble_can_bypass_audio")
+        || scheduler_cpp.find("output_scheduler_fifo_prefers_urgent")
             == std::string::npos
         || bt_h.find("void bt_output_retry_loop();") == std::string::npos
         || main_cpp.find("bt_output_retry_loop();") == std::string::npos
     ) {
         throw std::runtime_error(
-            "Managed rumble STOP delivery must remain bounded, retryable, and fair to native audio"
+            "Managed rumble delivery must coalesce stale active updates while keeping STOP bounded, retryable, and ordered with native audio"
         );
     }
 
     const std::string select_output = extract_between(
         bt_cpp,
-        "static bool select_next_output_packet_locked(output_packet &packet, uint32_t now) {",
+        "static __attribute__((noinline, noclone, optimize(\"O2\"))) bool __not_in_flash_func(select_next_output_packet_locked)(",
         "\n}\n\nstatic bool select_next_control_packet_locked"
     );
     const std::string enqueue_state = extract_between(
@@ -1693,18 +2012,20 @@ void assert_host_rumble_passes_through_with_bounded_delivery(
             == std::string::npos
         || select_output.find("state_age_us")
             == std::string::npos
-        || scheduler_cpp.find("const bool state_starved")
+        || scheduler_cpp.find("output_scheduler_fifo_prefers_urgent")
             == std::string::npos
-        || scheduler_cpp.find(
-            "return OutputSchedulerChoice::CoalescedState;"
-        ) == std::string::npos
+        || scheduler_cpp.find("const bool state_starved")
+            != std::string::npos
+        || select_output.find("urgent_precedes_audio")
+            == std::string::npos
+        || select_output.find("audio_deadline_guard") != std::string::npos
         || bt_cpp.find("state_send_blocked_by_audio_locked")
             != std::string::npos
         || enqueue_state.find("request_can_send_if_needed(true);")
             == std::string::npos
     ) {
         throw std::runtime_error(
-            "Companion feedback must receive a bounded scheduler turn during continuous audio"
+            "Batched audio and full-rate rumble must share arrival-ordered Bluetooth scheduling"
         );
     }
 }
@@ -1713,6 +2034,7 @@ void assert_companion_trigger_tests_survive_continuous_audio(
     std::filesystem::path const &root
 ) {
     const auto bt_cpp = read_text(root / "src" / "bt.cpp");
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
     const std::string state_submit = extract_between(
         bt_cpp,
         "static void queue_adaptive_trigger_state_report",
@@ -1744,9 +2066,20 @@ void assert_companion_trigger_tests_survive_continuous_audio(
         || custom_test.find("queue_adaptive_trigger_state_report(report, 0)")
             == std::string::npos
         || custom_test.find("bt_write(") != std::string::npos
+        || companion_cpp.find("bool replay_cached_game_trigger_effect(")
+            == std::string::npos
+        || companion_cpp.find("restore_cached_game_trigger_effect_or_reset();")
+            == std::string::npos
+        || companion_cpp.find("!persistent_trigger_effect_right.active,")
+            == std::string::npos
+        || companion_cpp.find("!persistent_trigger_effect_left.active,")
+            == std::string::npos
+        || companion_cpp.find(
+            "clear_persistent_trigger_effect();\n    restore_cached_game_trigger_effect_or_reset();"
+        ) == std::string::npos
     ) {
         throw std::runtime_error(
-            "Companion trigger tests must update the audio-carried output state and use the bounded feedback queue"
+            "Companion trigger tests must use bounded output and restore cached game effects when Lab overrides stop"
         );
     }
 }
@@ -1802,16 +2135,17 @@ void assert_dualsense_battery_buckets_preserve_power_state(
 ) {
     const auto decoder = read_text(root / "src" / "dualsense_input_decoder.cpp");
     const auto companion = read_text(root / "src" / "companion.cpp");
-    constexpr auto midpoint_formula = "battery == 10 ? 100 : battery * 10 + 5";
+    const auto battery = read_text(root / "src" / "dualsense_battery_status.h");
 
     if (
-        decoder.find(midpoint_formula) == std::string::npos
-        || companion.find(midpoint_formula) == std::string::npos
-        || decoder.find("raw_power_state == 0x02") != std::string::npos
-        || companion.find("raw_power_state == 0x02") != std::string::npos
+        decoder.find("dualsense_battery::decode_status(report[52])") == std::string::npos
+        || companion.find("dualsense_battery::decode_status(report[52])") == std::string::npos
+        || battery.find("case kPowerFull:") == std::string::npos
+        || battery.find("reading.percent = 100;") == std::string::npos
+        || battery.find("kUnknownPercent = 0xff") == std::string::npos
     ) {
         throw std::runtime_error(
-            "DualSense battery buckets must map to midpoint percentages independently of charging or external-power state"
+            "DualSense battery decoding must centralize full, fault, and unknown power-state semantics"
         );
     }
 }
@@ -1826,11 +2160,13 @@ int main() {
         const uint64_t descriptor_hash = companion_descriptor_hash(source);
         assert_xusb_descriptor_uses_endpoint_constants(source);
         assert_persona_support_requires_verified_descriptors(source, source_root);
-        assert_dse_identity_reports_do_not_use_edge_passthrough(source_root);
+        assert_dualsense_persona_identity_reports_are_isolated(source_root);
+        assert_dualsense_edge_persona_is_edge_facing(source, source_root);
         assert_xusb_persona_strings_are_xbox_facing(source);
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);
         assert_usb_suspend_poweroff_is_debounced(source_root);
+        assert_wake_on_connect_is_gated_and_persona_safe(source_root);
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);
@@ -1838,6 +2174,7 @@ int main() {
         assert_firmware_version_has_one_canonical_source(source_root);
         assert_bluetooth_device_management_policy(source_root);
         assert_companion_device_management_contract(source_root);
+        assert_dualsense_edge_profile_switching_blocker(source_root);
         assert_bluetooth_hid_recovery_and_encryption_watchdog(source_root);
         assert_dualsense_feature_startup_is_paced(source_root);
         assert_watchdog_and_bootsel_flash_safety(source_root);

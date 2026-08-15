@@ -62,6 +62,60 @@ describe('SettingsStore', () => {
     expect(settings.micMuted).toBe(false);
     expect(settings.lightbarColor).toBe('#0000ff');
     expect(settings.showBatteryPercentTrayIcon).toBe(false);
+    expect(settings.kitsuneInputPromotionDismissed).toBe(false);
+    expect(settings.wakeOnConnectEnabled).toBe(true);
+  });
+
+  it('persists the app-wide Kitsune Input promotion dismissal across controller resets', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    expect(store.update({ kitsuneInputPromotionDismissed: true }).kitsuneInputPromotionDismissed).toBe(true);
+    expect(persistedSettings(userDataPath).kitsuneInputPromotionDismissed).toBe(true);
+    expect(new SettingsStore(userDataPath).get().kitsuneInputPromotionDismissed).toBe(true);
+    expect(store.restoreDefaults().kitsuneInputPromotionDismissed).toBe(true);
+  });
+
+  it('persists the wake-on-connect preference', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    const updated = store.update({ wakeOnConnectEnabled: false });
+
+    expect(updated.wakeOnConnectEnabled).toBe(false);
+    expect(persistedSettings(userDataPath).wakeOnConnectEnabled).toBe(false);
+    expect(new SettingsStore(userDataPath).get().wakeOnConnectEnabled).toBe(false);
+  });
+
+  it('persists the DualSense Edge persona', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    expect(store.update({ hostPersonaMode: 'dualsense-edge' }).hostPersonaMode)
+      .toBe('dualsense-edge');
+    expect(new SettingsStore(userDataPath).get().hostPersonaMode).toBe('dualsense-edge');
+  });
+
+  it('persists per-stick radial deadzones in the selected controller profile', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    const updated = store.update({
+      leftStickRadialDeadzonePercent: 12.4,
+      rightStickRadialDeadzonePercent: 99
+    });
+
+    expect(updated.leftStickRadialDeadzonePercent).toBe(12);
+    expect(updated.rightStickRadialDeadzonePercent).toBe(50);
+    expect(updated.selectedControllerProfileId).toBe('custom');
+    expect(updated.controllerProfiles.find((profile) => profile.id === 'custom')?.settings).toMatchObject({
+      leftStickRadialDeadzonePercent: 12,
+      rightStickRadialDeadzonePercent: 50
+    });
+    expect(new SettingsStore(userDataPath).get()).toMatchObject({
+      leftStickRadialDeadzonePercent: 12,
+      rightStickRadialDeadzonePercent: 50
+    });
   });
 
   it('migrates legacy custom-only profile data without stealing selection', () => {
@@ -230,6 +284,33 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(userDataPath).get().showBatteryPercentTrayIcon).toBe(true);
   });
 
+  it('normalizes and persists audio interleave settings', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    store.update({
+      audioInterleaveMaxConsecutiveAudioSends: 1000,
+      audioInterleaveStateMaxAgeUs: 10
+    });
+
+    const reloaded = new SettingsStore(userDataPath).get();
+    expect(reloaded.audioInterleaveMaxConsecutiveAudioSends).toBe(64);
+    expect(reloaded.audioInterleaveStateMaxAgeUs).toBe(250);
+  });
+
+  it('persists the firmware log folder across restarts and controller default restores', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const firmwareLogDirectory = path.join(userDataPath, 'firmware logs');
+
+    store.update({ firmwareLogDirectory });
+    expect(new SettingsStore(userDataPath).get().firmwareLogDirectory).toBe(firmwareLogDirectory);
+
+    const restored = store.restoreDefaults();
+    expect(restored.firmwareLogDirectory).toBe(firmwareLogDirectory);
+    expect(persistedSettings(userDataPath).firmwareLogDirectory).toBe(firmwareLogDirectory);
+  });
+
   it('normalizes and persists chord functions and assignments', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);
@@ -286,8 +367,42 @@ describe('SettingsStore', () => {
       starter: 'ps',
       button: 'triangle',
       functionId: 'media-play'
+    }, {
+      id: 'reserved-lfn-square',
+      kind: 'chord',
+      starter: 'lfn',
+      button: 'square',
+      functionId: 'media-play'
     }]);
     expect(new SettingsStore(userDataPath).get().chordAssignments).toEqual(updated.chordAssignments);
+  });
+
+  it('persists the Edge profile blocker with reserved chord assignments', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const functions: ChordFunction[] = [{
+      id: 'edge-action',
+      name: 'Edge Action',
+      type: 'keyboard',
+      keys: ['F13']
+    }];
+    const assignments: ChordAssignment[] = [{
+      id: 'lfn-triangle',
+      kind: 'chord',
+      starter: 'lfn',
+      button: 'triangle',
+      functionId: 'edge-action'
+    }];
+
+    store.update({ edgeProfileSwitchingBlocked: true });
+    const updated = store.setChordConfiguration(functions, assignments);
+
+    expect(updated.edgeProfileSwitchingBlocked).toBe(true);
+    expect(updated.chordAssignments).toEqual(assignments);
+    expect(new SettingsStore(userDataPath).get()).toMatchObject({
+      edgeProfileSwitchingBlocked: true,
+      chordAssignments: assignments
+    });
   });
 
   it('preserves notch controller-setting chord functions', () => {
@@ -554,5 +669,41 @@ describe('SettingsStore', () => {
     expect(updated.uiThemePreset).toBe('kiwi');
     expect(persistedSettings(userDataPath).uiThemePreset).toBe('kiwi');
     expect(new SettingsStore(userDataPath).get().uiThemePreset).toBe('kiwi');
+  });
+
+  it('normalizes and clones persisted bridge metadata and controller bindings', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const savedProfile = store.saveControllerProfile('David');
+    const profileId = savedProfile.selectedControllerProfileId;
+
+    const updated = store.update({
+      selectedBridgePath: 'winusb://bridge-a',
+      bridgeIdentities: {
+        AABBCCDDEEFF0011: {
+          label: '  Living Room  ',
+          containerId: '11111111-2222-3333-4444-555555555555'
+        },
+        invalid: { label: 'ignored', containerId: null }
+      },
+      controllerBindings: {
+        AABBCCDDEEFF: profileId,
+        '001122334455': 'missing-profile'
+      }
+    });
+
+    expect(updated.selectedBridgePath).toBe('winusb://bridge-a');
+    expect(updated.bridgeIdentities).toEqual({
+      aabbccddeeff0011: {
+        label: 'Living Room',
+        containerId: '11111111-2222-3333-4444-555555555555'
+      }
+    });
+    expect(updated.controllerBindings).toEqual({ aabbccddeeff: profileId });
+
+    updated.bridgeIdentities.aabbccddeeff0011!.label = 'mutated';
+    updated.controllerBindings.aabbccddeeff = DEFAULT_CONTROLLER_PROFILE_ID;
+    expect(store.get().bridgeIdentities.aabbccddeeff0011?.label).toBe('Living Room');
+    expect(store.get().controllerBindings.aabbccddeeff).toBe(profileId);
   });
 });

@@ -53,16 +53,44 @@ vi.mock('node:fs', () => ({
 
 import {
   AudioHapticsSessionMonitor,
+  getDefaultRenderEndpointStatus,
+  MicKeepaliveEngine,
   playBridgeHapticsTestPattern,
   playBridgeSpeakerTestTone,
+  setAudioHelperBridgeTarget,
   SystemAudioHapticsEngine
 } from './audio-helper';
 
 beforeEach(() => {
+  setAudioHelperBridgeTarget({});
   childProcessMock.processes.length = 0;
   childProcessMock.spawn.mockClear();
   fsMock.existsSync.mockClear();
   fsMock.existsSync.mockReturnValue(true);
+});
+
+describe('Windows host endpoint enumeration', () => {
+  it('uses the longer endpoint timeout without changing the general command timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      fsMock.existsSync.mockImplementation((candidate) => String(candidate).endsWith('.exe'));
+      const request = getDefaultRenderEndpointStatus();
+      const rejection = expect(request).rejects.toThrow(
+        'Audio helper command timed out after 8000ms.'
+      );
+      const helper = childProcessMock.processes[0]!;
+
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(helper.killed).toBe(false);
+      await vi.advanceTimersByTimeAsync(5499);
+      expect(helper.killed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejection;
+      expect(helper.kill).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('SystemAudioHapticsEngine app source', () => {
@@ -104,6 +132,59 @@ describe('SystemAudioHapticsEngine app source', () => {
     await engine.stop();
   });
 
+  it('restarts the helper when the selected physical bridge changes', async () => {
+    const engine = new SystemAudioHapticsEngine();
+    const config = {
+      source: 'system-audio' as const,
+      gainPercent: 100,
+      bassFocus: 'balanced' as const,
+      response: 'balanced' as const,
+      attack: 'balanced' as const,
+      release: 'balanced' as const
+    };
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-a', containerId: 'container-a' });
+    const firstStart = engine.start(config);
+    childProcessMock.processes[0]!.stderr.emit('data', Buffer.from('status: recording-started\n'));
+    await firstStart;
+
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-b', containerId: 'container-b' });
+    const secondStart = engine.start(config);
+    await vi.waitFor(() => expect(childProcessMock.processes).toHaveLength(2));
+    childProcessMock.processes[1]!.stderr.emit('data', Buffer.from('status: recording-started\n'));
+    await secondStart;
+
+    expect(childProcessMock.spawn).toHaveBeenCalledTimes(2);
+    expect(childProcessMock.spawn.mock.calls[1]![1]).toEqual(expect.arrayContaining([
+      '--device-path',
+      'bridge-b',
+      '--bridge-container',
+      'container-b'
+    ]));
+    await engine.stop();
+  });
+
+});
+
+describe('mic keepalive targeting', () => {
+  it('restarts against the newly selected bridge', async () => {
+    const engine = new MicKeepaliveEngine();
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-a', containerId: 'container-a' });
+    await engine.start();
+    setAudioHelperBridgeTarget({ devicePath: 'bridge-b', containerId: 'container-b' });
+    await engine.start();
+
+    expect(childProcessMock.spawn).toHaveBeenCalledTimes(2);
+    expect(childProcessMock.spawn.mock.calls[1]![1]).toEqual([
+      '--mic-keepalive-only',
+      '--mic-device-name',
+      'DS5 Bridge',
+      '--bridge-container',
+      'container-b',
+      '--device-path',
+      'bridge-b'
+    ]);
+    await engine.stop();
+  });
 });
 
 describe('bridge haptics test', () => {
@@ -145,6 +226,18 @@ describe('bridge speaker test', () => {
       '--speaker-volume',
       '65'
     ]);
+  });
+
+  it('preserves the DualSense Edge persona for endpoint isolation', async () => {
+    const play = playBridgeSpeakerTestTone(100, 'dualsense-edge');
+    const helper = childProcessMock.processes[0]!;
+
+    helper.emit('exit', 0, null);
+    await play;
+
+    const args = childProcessMock.spawn.mock.calls[0]![1] as string[];
+    expect(args).toContain('--bridge-persona');
+    expect(args[args.indexOf('--bridge-persona') + 1]).toBe('dualsense-edge');
   });
 });
 

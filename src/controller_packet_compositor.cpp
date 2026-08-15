@@ -2,6 +2,11 @@
 
 #include "controller_output_state.h"
 #include "dualsense_output.h"
+#ifdef PICO_ON_DEVICE
+#include "pico.h"
+#else
+#define __not_in_flash_func(function_name) function_name
+#endif
 
 namespace {
 
@@ -21,6 +26,6 @@ void controller_packet_init_bt_output_report(uint8_t *report, int &sequence_coun
     sequence_counter = (sequence_counter + 1) & 0x0F;
 }
 
-void controller_packet_copy_audio_snapshot(uint8_t *destination, bool headset_plugged) {
+void __not_in_flash_func(controller_packet_copy_audio_snapshot)(uint8_t *destination, bool headset_plugged) {
     controller_output_state_copy_audio_snapshot(destination, headset_plugged);
 }

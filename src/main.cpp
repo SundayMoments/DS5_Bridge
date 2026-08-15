@@ -51,6 +51,120 @@ enum HidDebugKind : uint8_t {
 static uint32_t last_input_debug_us = 0;
 static uint8_t input_debug_burst_remaining = 0;
 
+#if DS5_DEBUG_LOGS_ENABLED
+static constexpr uint32_t AUDIO_TRANSPORT_UART_LOG_INTERVAL_US = 10'000'000u;
+static constexpr uint32_t AUDIO_TRANSPORT_UART_PROBE_INTERVAL_US = 250'000u;
+static constexpr uint32_t AUDIO_TRANSPORT_UART_INITIAL_DELAY_US = 2'500'000u;
+
+struct AudioTransportUartSnapshot {
+    audio_debug_stats audio{};
+    bt_output_debug_stats bt{};
+};
+
+static AudioTransportUartSnapshot audio_transport_uart_previous{};
+static uint32_t audio_transport_uart_next_log_us = 0;
+static uint32_t audio_transport_uart_next_probe_us = 0;
+static bool audio_transport_uart_armed = false;
+
+static uint32_t audio_transport_uart_counter_delta(uint32_t current, uint32_t previous) {
+    return current - previous;
+}
+
+static void audio_transport_uart_capture(AudioTransportUartSnapshot &snapshot) {
+    audio_debug_get_stats(&snapshot.audio);
+    bt_get_output_debug_stats(&snapshot.bt);
+}
+
+static void audio_transport_uart_log_if_due(uint32_t now) {
+    if (
+        audio_transport_uart_next_probe_us != 0
+        && static_cast<int32_t>(now - audio_transport_uart_next_probe_us) < 0
+    ) {
+        return;
+    }
+    audio_transport_uart_next_probe_us = now + AUDIO_TRANSPORT_UART_PROBE_INTERVAL_US;
+
+    if (!audio_recent()) {
+        audio_transport_uart_armed = false;
+        audio_transport_uart_next_log_us = 0;
+        return;
+    }
+
+    if (!audio_transport_uart_armed) {
+        audio_transport_uart_capture(audio_transport_uart_previous);
+        audio_transport_uart_next_log_us = now + AUDIO_TRANSPORT_UART_INITIAL_DELAY_US;
+        audio_transport_uart_armed = true;
+        return;
+    }
+
+    if (static_cast<int32_t>(now - audio_transport_uart_next_log_us) < 0) {
+        return;
+    }
+
+    AudioTransportUartSnapshot current{};
+    audio_transport_uart_capture(current);
+    DS5_LOG(
+        "[AUDUSB] readGap=%lu readLate=%lu genDrop=%lu\n",
+        static_cast<unsigned long>(current.audio.usb_audio_gap_max_us),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.usb_audio_gap_over_1500_count,
+            audio_transport_uart_previous.audio.usb_audio_gap_over_1500_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.audio_generation_drop_count,
+            audio_transport_uart_previous.audio.audio_generation_drop_count
+        ))
+    );
+    DS5_LOG(
+        "[AUDBT] report=0x39 encMax=%lu encLate=%lu enc=%lu ageMax=%lu sendGap=%lu late=%lu drop=%lu qMax=%lu nonAudio=%lu fail=%lu enq=%lu sent=%lu stateRx=%lu stateSent=%lu\n",
+        static_cast<unsigned long>(current.audio.opus_encode_max_us),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.opus_encode_over_budget_count,
+            audio_transport_uart_previous.audio.opus_encode_over_budget_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.audio.opus_encode_count,
+            audio_transport_uart_previous.audio.opus_encode_count
+        )),
+        static_cast<unsigned long>(current.bt.audio_0x36_enqueue_to_send_max_us),
+        static_cast<unsigned long>(current.bt.audio_0x36_send_gap_max_us),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_late_count_over_12000_us,
+            audio_transport_uart_previous.bt.audio_0x36_late_count_over_12000_us
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_drop_oldest_count,
+            audio_transport_uart_previous.bt.audio_0x36_drop_oldest_count
+        )),
+        static_cast<unsigned long>(current.bt.bt_audio_queue_depth_max),
+        static_cast<unsigned long>(current.bt.non_audio_reports_between_audio_max),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_l2cap_send_fail_count,
+            audio_transport_uart_previous.bt.audio_l2cap_send_fail_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_enqueued_count,
+            audio_transport_uart_previous.bt.audio_0x36_enqueued_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.audio_0x36_sent_count,
+            audio_transport_uart_previous.bt.audio_0x36_sent_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.normal_0x31_rx_count,
+            audio_transport_uart_previous.bt.normal_0x31_rx_count
+        )),
+        static_cast<unsigned long>(audio_transport_uart_counter_delta(
+            current.bt.normal_0x31_sent_count,
+            audio_transport_uart_previous.bt.normal_0x31_sent_count
+        ))
+    );
+
+    audio_transport_uart_previous = current;
+    audio_transport_uart_next_log_us = now + AUDIO_TRANSPORT_UART_LOG_INTERVAL_US;
+}
+#endif
+
 #define RUN_MAIN_PHASE(phase_id, block) \
     do { \
         watchdog_telemetry_note_phase(phase_id); \
@@ -271,14 +385,21 @@ static uint16_t ds4_copy_input_report_payload(uint8_t report_id, uint8_t *buffer
     return copy_len;
 }
 
-static bool dualsense_feature_report_may_use_bt_passthrough(uint8_t report_id) {
+static bool dualsense_feature_report_may_use_bt_passthrough(
+    HostPersonaMode output_persona,
+    uint8_t report_id
+) {
     if (report_id != 0x20 && report_id != 0x22) {
         return true;
     }
 
-    // We never enumerate as DualSense Edge. Do not leak DSE firmware or
-    // hardware identity through stock DualSense identity feature reports.
-    return bt_controller_type() != ControllerTypeDualSenseEdge;
+    const uint8_t upstream_type = bt_controller_type();
+    if (output_persona == HostPersonaModeDualSenseEdge) {
+        return upstream_type == ControllerTypeDualSenseEdge;
+    }
+    // Keep the two Sony identities isolated. A mismatched or non-DualSense
+    // upstream controller uses the persona's synthesized identity instead.
+    return upstream_type == ControllerTypeDualSense;
 }
 
 void host_input_prepare_persona_switch() {
@@ -313,7 +434,10 @@ void reset_controller_input_report_cache() {
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
     interrupt_in_state = default_state;
-    report_dirty = false;
+    // When wake-on-connect retains the native USB persona after the physical
+    // controller sleeps, publish neutral state so Windows never sees a stuck
+    // button or axis from the final Bluetooth report.
+    report_dirty = usb_controller_transport_retained_for_wake();
     critical_section_exit(&report_cs);
 }
 
@@ -433,6 +557,14 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return 0;
     }
 
+    const HostPersonaMode active_persona = host_persona_active();
+    if (
+        active_persona != HostPersonaModeDualSense
+        && active_persona != HostPersonaModeDualSenseEdge
+    ) {
+        return 0;
+    }
+
     audio_debug_note_hid_event(
         HidDebugGetReport,
         report_id,
@@ -445,7 +577,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     }
 
     std::vector<uint8_t> feature_data;
-    if (dualsense_feature_report_may_use_bt_passthrough(report_id)) {
+    if (dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)) {
         feature_data = get_feature_data(report_id, reqlen);
     }
     if (!feature_data.empty() && buffer != nullptr) {
@@ -458,7 +590,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return copy_len;
     }
 
-    return dualsense_persona_get_feature_report(report_id, buffer, reqlen);
+    return dualsense_persona_get_feature_report(active_persona, report_id, buffer, reqlen);
 }
 
 // Invoked when received SET_REPORT control request or
@@ -562,13 +694,13 @@ int main() {
 
     board_init();
     watchdog_telemetry_boot_capture();
-    firmware_log_init();
     usb_device_stack_init_disconnected();
 #if DS5_DEBUG_LOGS_ENABLED
     // TinyUSB's board_init() configures its UART at 115200. Reinitialize stdio
     // after the custom USB stack so diagnostic builds use the configured baud.
     stdio_init_all();
 #endif
+    firmware_log_init();
     board_init_after_tusb();
     firmware_log_init_btstack_sink();
 
@@ -674,5 +806,8 @@ int main() {
                 interrupt_loop();
             }
         );
+#if DS5_DEBUG_LOGS_ENABLED
+        audio_transport_uart_log_if_due(time_us_32());
+#endif
     }
 }

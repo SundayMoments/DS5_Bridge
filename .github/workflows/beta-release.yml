@@ -1,0 +1,119 @@
+name: Publish beta release
+run-name: Publish beta ${{ inputs.beta_number }} from port-dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      beta_number:
+        description: Beta sequence number appended to the current project version
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-release-port-dev
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Tag port-dev and create draft prerelease
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      build_version: ${{ steps.release.outputs.build_version }}
+
+    steps:
+      - name: Checkout port-dev
+        uses: actions/checkout@v5
+        with:
+          ref: port-dev
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Validate versions and prepare prerelease
+        id: release
+        shell: pwsh
+        env:
+          BETA_NUMBER: ${{ inputs.beta_number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:BETA_NUMBER -notmatch '^[1-9]\d*$') {
+            throw 'beta_number must be a positive integer.'
+          }
+
+          $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
+          $companionVersion = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
+          if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version.'
+          }
+          if ($companionVersion -ne $firmwareVersion) {
+            throw "Companion and firmware base versions must match. Found companion=$companionVersion firmware=$firmwareVersion"
+          }
+
+          $bridgeServiceSource = Get-Content companion/src/main/bridge-service.ts -Raw
+          $bundledVersionMatch = [regex]::Match($bridgeServiceSource, "BUNDLED_FIRMWARE_VERSION\s*=\s*'(\d+\.\d+\.\d+)'")
+          if (-not $bundledVersionMatch.Success -or $bundledVersionMatch.Groups[1].Value -ne $firmwareVersion) {
+            throw 'The bundled firmware version must match firmware-version.txt before publishing a beta.'
+          }
+
+          $buildVersion = "$firmwareVersion-beta.$env:BETA_NUMBER"
+          $tagName = "v$buildVersion"
+          git fetch origin port-dev --tags --force
+          $sourceCommit = (git rev-parse origin/port-dev).Trim()
+
+          git rev-parse -q --verify "refs/tags/$($tagName)^{commit}" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $tagCommit = (git rev-list -n 1 $tagName).Trim()
+            if ($tagCommit -ne $sourceCommit) {
+              throw "$tagName already points to $tagCommit instead of current port-dev $sourceCommit. Use a new beta number."
+            }
+          } else {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a $tagName $sourceCommit -m "DS5 Bridge $buildVersion"
+            git push origin "refs/tags/$tagName"
+          }
+
+          gh release view $tagName --json isDraft,isPrerelease 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            $release = gh release view $tagName --json isDraft,isPrerelease | ConvertFrom-Json
+            if (-not $release.isDraft) {
+              throw "$tagName is already published. Use a new beta number."
+            }
+          } else {
+            gh release create $tagName `
+              --verify-tag `
+              --draft `
+              --prerelease `
+              --generate-notes `
+              --title "DS5 Bridge $buildVersion"
+          }
+
+          "tag_name=$tagName" >> $env:GITHUB_OUTPUT
+          "build_version=$buildVersion" >> $env:GITHUB_OUTPUT
+
+  build:
+    name: Build beta artifacts
+    needs: prepare
+    uses: ./.github/workflows/release.yml
+    with:
+      tag_name: ${{ needs.prepare.outputs.tag_name }}
+      build_version: ${{ needs.prepare.outputs.build_version }}
+    secrets: inherit
+
+  publish:
+    name: Publish GitHub prerelease
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish completed beta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=true

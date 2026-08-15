@@ -5,6 +5,7 @@ public sealed class EndpointManagerTests
     [Theory]
     [InlineData("DS5 Bridge")]
     [InlineData("Speakers (DS5 Bridge)")]
+    [InlineData("Speakers (DualSense Edge Wireless Controller)")]
     [InlineData("Headphones (DualSense Wireless Controller)")]
     [InlineData("Headset Earphone (Wireless Controller)")]
     [InlineData("Speakers (Xbox 360 Controller for Windows)")]
@@ -28,5 +29,19 @@ public sealed class EndpointManagerTests
         Assert.True(EndpointManager.IsKnownBridgeEndpointNameForPersona(
             "Headset Earphone (Wireless Controller)",
             "ds4"));
+    }
+
+    [Fact]
+    public void IsKnownBridgeEndpointNameForPersonaIsolatesDualSenseEdgeEndpoint()
+    {
+        Assert.True(EndpointManager.IsKnownBridgeEndpointNameForPersona(
+            "Speakers (DualSense Edge Wireless Controller)",
+            "dualsense-edge"));
+        Assert.False(EndpointManager.IsKnownBridgeEndpointNameForPersona(
+            "Speakers (DualSense Wireless Controller)",
+            "dualsense-edge"));
+        Assert.False(EndpointManager.IsKnownBridgeEndpointNameForPersona(
+            "Speakers (DualSense Edge Wireless Controller)",
+            "dualsense"));
     }
 }

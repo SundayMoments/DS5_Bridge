@@ -9,7 +9,7 @@
     {
       "name": "pico2-w-debug-uart-companion-on",
       "displayName": "Pico 2 W Debug UART (companion ON)",
-      "description": "Companion-enabled firmware with retained logging on the physical GPIO UART and no USB descriptor changes.",
+      "description": "Companion-enabled firmware with direct logging on the physical GPIO UART and no USB descriptor changes.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/diagnostics/pico2-w-debug-uart-companion-on",
       "cacheVariables": {
@@ -17,7 +17,7 @@
         "DS5_DIAGNOSTICS_PRESET": "custom",
         "ENABLE_COMPANION": "ON",
         "ENABLE_DEBUG_LOGS": "ON",
-        "ENABLE_FEEDBACK_TRACE_REPORTS": "ON",
+        "ENABLE_FEEDBACK_TRACE_REPORTS": "OFF",
         "WAVESHARE_RP2350B_PLUS_W_BUILD": "OFF"
       }
     }

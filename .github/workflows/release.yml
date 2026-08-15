@@ -4,21 +4,40 @@ on:
   release:
     types:
       - published
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Existing release tag to build and upload assets for
+        required: true
+        type: string
+      build_version:
+        description: Optional prerelease version embedded in companion and artifact names
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       tag_name:
         description: Release tag to build and upload assets for
         required: true
         type: string
+      build_version:
+        description: Optional prerelease version, for example 1.7.0-beta.1
+        required: false
+        default: ''
+        type: string
 
 env:
-  PICO_SDK_REF: 2.2.0
-  TINYUSB_REF: 0.20.0
+  PICO_SDK_REF: 2.3.0
+  TINYUSB_REF: 2d56dc533e45e4e91b15e93fdab5e22e964f328d
   PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
-  ARM_TOOLCHAIN_VERSION: 14.2.rel1
-  ARM_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz
+  ARM_TOOLCHAIN_VERSION: 15.2.rel1
+  ARM_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz
   ARM_TOOLCHAIN_PATH: ${{ github.workspace }}/arm-toolchain
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
+  # workflow_call/dispatch supplies the version directly. A published
+  # prerelease has no inputs, so preserve its tag-derived beta version too.
+  RELEASE_BUILD_VERSION: ${{ inputs.build_version || (github.event.release.prerelease && github.event.release.tag_name) || '' }}
 
 permissions:
   contents: write
@@ -42,7 +61,7 @@ jobs:
 
       # The Ubuntu apt-packaged gcc-arm-none-eabi 13.2 (15:13.2.rel1-2)
       # produces Waveshare RP2350B-Plus-W binaries with audible audio static
-      # that ARM's official toolchains do not exhibit. Use ARM's 14.2.Rel1
+      # that ARM's official toolchains do not exhibit. Use ARM's 15.2.Rel1
       # tarball instead of the apt package, matching the CI build workflow.
       - name: Cache ARM toolchain
         id: cache-arm-toolchain
@@ -72,21 +91,36 @@ jobs:
           git clone --depth 1 --branch "$PICO_SDK_REF" https://github.com/raspberrypi/pico-sdk.git "$PICO_SDK_PATH"
           git -C "$PICO_SDK_PATH" submodule update --init --recursive
 
-      - name: Switch TinyUSB to configured tag
+      - name: Switch TinyUSB to configured revision
         run: |
-          if ! git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse -q --verify "refs/tags/$TINYUSB_REF" >/dev/null; then
-            git -C "$PICO_SDK_PATH/lib/tinyusb" fetch --depth 1 origin "refs/tags/$TINYUSB_REF:refs/tags/$TINYUSB_REF"
+          if ! git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse -q --verify "${TINYUSB_REF}^{commit}" >/dev/null; then
+            git -C "$PICO_SDK_PATH/lib/tinyusb" fetch --depth 1 origin "$TINYUSB_REF"
           fi
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
+          test "$(git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse HEAD)" = "$TINYUSB_REF"
 
       - name: Read firmware version
         shell: pwsh
+        env:
+          BUILD_VERSION: ${{ env.RELEASE_BUILD_VERSION }}
         run: |
           $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
           if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
           }
+          $assetVersion = $firmwareVersion
+          $buildVersion = $env:BUILD_VERSION -replace '^v', ''
+          if (-not [string]::IsNullOrWhiteSpace($buildVersion)) {
+            if ($buildVersion -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+              throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
+            }
+            if (-not $buildVersion.StartsWith("$firmwareVersion-beta.")) {
+              throw "build_version must be based on firmware version $firmwareVersion"
+            }
+            $assetVersion = $buildVersion
+          }
           "FIRMWARE_VERSION=$firmwareVersion" >> $env:GITHUB_ENV
+          "RELEASE_ASSET_VERSION=$assetVersion" >> $env:GITHUB_ENV
 
       - name: Build companion firmware
         run: |
@@ -96,7 +130,7 @@ jobs:
             -DENABLE_COMPANION=ON
           cmake --build build/companion --target ds5-bridge
           mkdir -p artifacts
-          cp build/companion/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-v${FIRMWARE_VERSION}.uf2"
+          cp build/companion/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-v${RELEASE_ASSET_VERSION}.uf2"
 
       - name: Build companion firmware (Waveshare RP2350B-Plus-W)
         run: |
@@ -106,7 +140,7 @@ jobs:
             -DENABLE_COMPANION=ON \
             -DWAVESHARE_RP2350B_PLUS_W_BUILD=ON
           cmake --build build/waveshare --target ds5-bridge
-          cp build/waveshare/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-Waveshare-v${FIRMWARE_VERSION}.uf2"
+          cp build/waveshare/ds5-bridge.uf2 "artifacts/DS5-Bridge-Firmware-Waveshare-v${RELEASE_ASSET_VERSION}.uf2"
 
       - name: Upload firmware to release
         env:
@@ -139,6 +173,8 @@ jobs:
 
       - name: Set up Arm GNU Toolchain
         uses: carlosperate/arm-none-eabi-gcc-action@v1.12.3
+        with:
+          release: '15.2.Rel1'
 
       - name: Install firmware build dependencies
         shell: pwsh
@@ -153,19 +189,42 @@ jobs:
           git clone --depth 1 --branch "$env:PICO_SDK_REF" https://github.com/raspberrypi/pico-sdk.git "$env:PICO_SDK_PATH"
           git -C "$env:PICO_SDK_PATH" submodule update --init --recursive
 
-      - name: Switch TinyUSB to configured tag
+      - name: Switch TinyUSB to configured revision
         shell: pwsh
         run: |
           $tinyUsbPath = Join-Path $env:PICO_SDK_PATH 'lib/tinyusb'
-          $tagExists = -not [string]::IsNullOrWhiteSpace((git -C "$tinyUsbPath" tag --list "$env:TINYUSB_REF"))
-          if (-not $tagExists) {
-            git -C "$tinyUsbPath" fetch --depth 1 origin "refs/tags/${env:TINYUSB_REF}:refs/tags/${env:TINYUSB_REF}"
+          git -C "$tinyUsbPath" rev-parse -q --verify "$env:TINYUSB_REF^{commit}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            git -C "$tinyUsbPath" fetch --depth 1 origin "$env:TINYUSB_REF"
           }
           git -C "$tinyUsbPath" checkout --detach "$env:TINYUSB_REF"
+          if ((git -C "$tinyUsbPath" rev-parse HEAD).Trim() -ne $env:TINYUSB_REF) {
+            throw 'TinyUSB revision mismatch.'
+          }
 
       - name: Install companion dependencies
         working-directory: companion
         run: npm ci
+
+      - name: Apply companion prerelease version
+        if: env.RELEASE_BUILD_VERSION != ''
+        working-directory: companion
+        shell: pwsh
+        env:
+          BUILD_VERSION: ${{ env.RELEASE_BUILD_VERSION }}
+        run: |
+          $packageVersion = [string] (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $buildVersion = $env:BUILD_VERSION -replace '^v', ''
+          if ($buildVersion -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+            throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
+          }
+          if (-not $buildVersion.StartsWith("$packageVersion-beta.")) {
+            throw "build_version must be based on companion version $packageVersion"
+          }
+          npm version $buildVersion --no-git-tag-version --allow-same-version
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to apply companion prerelease version.'
+          }
 
       - name: Build portable companion package
         working-directory: companion
@@ -225,12 +284,26 @@ jobs:
 
       - name: Stage release metadata
         shell: pwsh
+        env:
+          BUILD_VERSION: ${{ env.RELEASE_BUILD_VERSION }}
         run: |
           $ErrorActionPreference = 'Stop'
           $companionVersion = [string] (Get-Content companion/package.json -Raw | ConvertFrom-Json).version
           $firmwareVersion = (Get-Content firmware-version.txt -Raw).Trim()
           if ($firmwareVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw 'firmware-version.txt must contain one MAJOR.MINOR.PATCH version'
+          }
+          $assetVersion = $firmwareVersion
+          $buildVersion = $env:BUILD_VERSION -replace '^v', ''
+          if (-not [string]::IsNullOrWhiteSpace($buildVersion)) {
+            if ($buildVersion -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+              throw 'build_version must use MAJOR.MINOR.PATCH-beta.NUMBER format'
+            }
+            if (-not $buildVersion.StartsWith("$firmwareVersion-beta.")) {
+              throw "build_version must be based on firmware version $firmwareVersion"
+            }
+            $assetVersion = $buildVersion
+            $companionVersion = $buildVersion
           }
           $commit = (git rev-parse HEAD).Trim()
           $dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain | Out-String).Trim())
@@ -257,8 +330,8 @@ jobs:
             firmwareVersion = $firmwareVersion
             companionVersion = $companionVersion
             artifacts = @(
-              "DS5-Bridge-Firmware-v$firmwareVersion.uf2",
-              "DS5-Bridge-Firmware-Waveshare-v$firmwareVersion.uf2",
+              "DS5-Bridge-Firmware-v$assetVersion.uf2",
+              "DS5-Bridge-Firmware-Waveshare-v$assetVersion.uf2",
               "DS5-Bridge-Companion-Setup-v$companionVersion.exe",
               "DS5-Bridge-Companion-Portable-v$companionVersion-win32-x64.zip"
             )

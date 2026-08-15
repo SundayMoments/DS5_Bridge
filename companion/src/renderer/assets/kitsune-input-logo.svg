@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="766"
+     height="784"
+     viewBox="0 0 766 784"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">Kitsune Input logo</title>
+  <desc id="desc">Symmetrical orange fox mark.</desc>
+
+  <path fill="#ff5c00" d="M39 0 284 200h198L727 0v202l-43 167 82 98-147 41-112 114-68 108-56 54-56-54-68-108-112-114L0 467l82-98-43-167Z"/>
+  <path fill="#fff" d="m0 467 147 41 112 114 68 108Zm766 0-147 41-112 114-68 108Z"/>
+  <path fill="#12181a" d="m71 63 187 233-99-55-46 120-42-162Zm624 0L508 296l99-55 46 120 42-162ZM148 417c54 22 107 51 139 81 14 33 22 74 32 113l-131-89Zm470 0c-54 22-107 51-139 81-14 33-22 74-32 113l131-89ZM327 730c12-14 33-19 56-19s44 5 56 19c-14 29-34 48-56 54-22-6-42-25-56-54Z"/>
+  <ellipse fill="#fff" cx="245.5" cy="511" rx="15.2" ry="29.5" transform="rotate(-45 245.5 511)"/>
+  <ellipse fill="#fff" cx="520.5" cy="511" rx="15.2" ry="29.5" transform="rotate(45 520.5 511)"/>
+  <path d="M350 733c19-6 47-6 66 0" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round"/>
+</svg>

@@ -89,7 +89,7 @@ bool controller_output_policy_render_classic_rumble_payload(
     payload[kValidFlag0Offset] = static_cast<uint8_t>(
         (payload[kValidFlag0Offset] & static_cast<uint8_t>(~(
             kFlag0CompatibleVibration | kFlag0HapticsSelect
-        ))) | kFlag0HapticsSelect
+        )))
     );
     if (len > kValidFlag2Offset) {
         payload[kValidFlag2Offset] = static_cast<uint8_t>(
@@ -98,6 +98,23 @@ bool controller_output_policy_render_classic_rumble_payload(
             ))
         );
     }
+
+    payload[kMotorRightOffset] = right;
+    payload[kMotorLeftOffset] = left;
+    if ((right | left) == 0) {
+        // HAPTICS_SELECT with zero motors stops classic rumble but leaves the
+        // controller in rumble-emulation mode, which silences later actuator
+        // audio. COMPATIBLE_VIBRATION without HAPTICS_SELECT is the DualSense
+        // transition that stops rumble and returns ownership to audio haptics.
+        payload[kValidFlag0Offset] = static_cast<uint8_t>(
+            payload[kValidFlag0Offset] | kFlag0CompatibleVibration
+        );
+        return true;
+    }
+
+    payload[kValidFlag0Offset] = static_cast<uint8_t>(
+        payload[kValidFlag0Offset] | kFlag0HapticsSelect
+    );
 
     if (classic_rumble_v1_enabled) {
         payload[kValidFlag0Offset] = static_cast<uint8_t>(
@@ -110,8 +127,6 @@ bool controller_output_policy_render_classic_rumble_payload(
         );
     }
 
-    payload[kMotorRightOffset] = right;
-    payload[kMotorLeftOffset] = left;
     return true;
 }
 
@@ -125,7 +140,9 @@ bool controller_output_policy_sanitize_host_speaker_amp_payload(uint8_t *payload
     const uint8_t original_flag0 = payload[kValidFlag0Offset];
     const uint8_t original_flag1 = payload[kValidFlag1Offset];
     const uint8_t next_flag0 = original_flag0 & static_cast<uint8_t>(~(
-        kFlag0SpeakerVolumeEnable | kFlag0AudioControlEnable
+        kFlag0HeadphoneVolumeEnable
+        | kFlag0SpeakerVolumeEnable
+        | kFlag0AudioControlEnable
     ));
     if (payload[kValidFlag0Offset] != next_flag0) {
         payload[kValidFlag0Offset] = next_flag0;
@@ -138,7 +155,11 @@ bool controller_output_policy_sanitize_host_speaker_amp_payload(uint8_t *payload
         changed = true;
     }
 
-    if (original_flag0 & (kFlag0SpeakerVolumeEnable | kFlag0AudioControlEnable)) {
+    if (original_flag0 & (
+        kFlag0HeadphoneVolumeEnable
+        | kFlag0SpeakerVolumeEnable
+        | kFlag0AudioControlEnable
+    )) {
         if (payload[kHeadphoneVolumeOffset] != 0) {
             payload[kHeadphoneVolumeOffset] = 0;
             changed = true;

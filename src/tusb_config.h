@@ -26,6 +26,8 @@
 #ifndef TUSB_CONFIG_H_
 #define TUSB_CONFIG_H_
 
+#include "pico/platform/sections.h"
+
 #ifdef __cplusplus
  extern "C" {
 #endif
@@ -113,10 +115,12 @@
 // HID buffer size Should be sufficient to hold ID (if any) + Data
 #define CFG_TUD_HID_EP_BUFSIZE    64
 
-// Companion control bridge.
+// Companion control bridge. Bulk traffic bypasses TinyUSB's vendor FIFO and
+// uses host_bridge.cpp's direct endpoint buffer. Keep the otherwise-unused
+// class FIFO to one packet so it does not consume audio SRAM.
 #define CFG_TUD_VENDOR_EPSIZE     64
 #define CFG_TUD_VENDOR_RX_BUFSIZE 64
-#define CFG_TUD_VENDOR_TX_BUFSIZE 16384
+#define CFG_TUD_VENDOR_TX_BUFSIZE 64
 
 //--------------------------------------------------------------------
 // AUDIO CLASS DRIVER CONFIGURATION

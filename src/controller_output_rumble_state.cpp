@@ -15,6 +15,18 @@ bool payload_motors_active(uint8_t const *payload, uint16_t len) {
         && (payload[kMotorRightOffset] | payload[kMotorLeftOffset]) != 0;
 }
 
+bool payload_restores_audio_haptics(uint8_t const *payload, uint16_t len) {
+    if (payload == nullptr || len <= kValidFlag1Offset) {
+        return false;
+    }
+
+    const uint8_t flag0 = payload[kValidFlag0Offset];
+    const uint8_t flag2 = len > kValidFlag2Offset ? payload[kValidFlag2Offset] : 0;
+    return (flag0 & kFlag0CompatibleVibration) != 0
+        && (flag0 & kFlag0HapticsSelect) == 0
+        && (flag2 & kFlag2UseRumbleNotHaptics2) == 0;
+}
+
 uint8_t classic_rumble_flag0(uint8_t const *payload) {
     return static_cast<uint8_t>(
         payload[kValidFlag0Offset] & static_cast<uint8_t>(kFlag0CompatibleVibration | kFlag0HapticsSelect)
@@ -53,6 +65,13 @@ bool controller_output_rumble_payload_requires_immediate_send(
         return false;
     }
 
+    if (payload_restores_audio_haptics(payload, len)) {
+        // This is an ownership edge, not an ordinary selectorless state
+        // update. It must reach the controller before an audio carrier can
+        // project the previously delivered classic-rumble state again.
+        return true;
+    }
+
     if (!controller_output_rumble_payload_uses_classic_selector(payload, len)) {
         return false;
     }
@@ -87,6 +106,11 @@ void controller_output_rumble_state_apply_payload(
     uint16_t len
 ) {
     if (!payload_has_common_motor_bytes(payload, len)) {
+        return;
+    }
+
+    if (payload_restores_audio_haptics(payload, len)) {
+        state = ControllerOutputRumbleStateMachine{};
         return;
     }
 

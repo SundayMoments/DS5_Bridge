@@ -13,7 +13,7 @@ Common identity-changing fields in this project are:
 - Audio topology: no audio, speaker-only, speaker plus mic, or different audio
   interface ordering.
 - HID report descriptor shape and length.
-- Host persona: DualSense, Xbox compatibility, and DS4 compatibility modes
+- Host persona: DualSense, DualSense Edge, Xbox compatibility, and DS4 compatibility modes
   intentionally expose different game-facing identities/descriptors.
 - Product string: for example `DualSense Wireless Controller`,
   `DualSense Edge Wireless Controller`, `Wireless Controller`, or

@@ -1,5 +1,7 @@
 #include "dualsense_input_decoder.h"
 
+#include "dualsense_battery_status.h"
+
 #include <cstring>
 
 namespace {
@@ -106,11 +108,9 @@ bool dualsense_decode_usb_input_report(
     next.edge_left_paddle = (report[9] & 0x40) != 0;
     next.edge_right_paddle = (report[9] & 0x80) != 0;
 
-    const uint8_t battery = report[52] & 0x0f;
-    next.raw_power_state = static_cast<uint8_t>((report[52] >> 4) & 0x0f);
-    if (battery <= 10) {
-        next.battery_percent = static_cast<uint8_t>(battery == 10 ? 100 : battery * 10 + 5);
-    }
+    const auto battery = ds5::dualsense_battery::decode_status(report[52]);
+    next.battery_percent = battery.percent;
+    next.raw_power_state = battery.raw_power_state;
 
     next.headset_plugged = (report[53] & 0x01) != 0;
     next.microphone_plugged = (report[53] & 0x02) != 0;

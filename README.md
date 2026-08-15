@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <strong>DS5 Bridge 1.6.4 is live.</strong><br>
+  <strong>DS5 Bridge 1.7.0 is live.</strong><br>
   This release includes controller microphone support, Audio Haptics, Trigger
   Lab, controller personas, chords, and companion firmware tools.
 </p>
@@ -72,9 +72,19 @@ on the controller until its lightbar rapidly blinks blue.
 - Use Audio Haptics to turn system or app audio into controller feedback.
 - Save controller setups as profiles.
 - Remap buttons and assign chord shortcuts.
-- Switch the host persona between DualSense, DualShock 4, and Xbox modes.
+- Switch the host persona between DualSense, DualSense Edge, DualShock 4, and Xbox modes.
 - See Bluetooth signal quality at a glance.
 - Mount, flash, or nuke Pico firmware from Bridge Settings.
+
+## Explore Kitsune Input
+
+DS5 Bridge is a complete, free, and open-source bridge experience. For deeper
+controller customization, explore [Kitsune Input](https://kitsuneinput.com/),
+with advanced stick and trigger tuning, gyro aim, touchpad gestures, per-game
+profiles, multi-actions, Kitsune Game Bar, and expanded controller personas.
+
+[Learn more](https://kitsuneinput.com/) ·
+[Purchase Kitsune Input](https://ko-fi.com/s/d1f0a3b26f)
 
 ## Companion App Tour
 
@@ -164,6 +174,11 @@ and device repair.
 
 Create reusable keyboard, media, and controller actions, then assign them to
 starter chords.
+
+DualSense Edge reserves LFN/RFN plus the face buttons for onboard profile
+switching. Enable **Block Edge Profile Switching** in Bridge Settings to use
+those combinations as DS5 Bridge chords; turning it off keeps the assignments
+saved but inactive.
 
 <p align="center">
   <img src="assets/readme/app-chords.png" width="680" alt="Chord assignment controls in the DS5 Bridge companion app">

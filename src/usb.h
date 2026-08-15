@@ -6,7 +6,7 @@
 #ifndef DS5_BRIDGE_USB_H
 #define DS5_BRIDGE_USB_H
 
-#define DEFAULT_COMPANION_SPEAKER_GAIN 0.30f
+#define DEFAULT_COMPANION_SPEAKER_GAIN 1.0f
 
 extern uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
 extern float volume[2]; // 0: companion speaker gain, 1: haptics gain
@@ -30,5 +30,9 @@ bool usb_mic_streaming_active();
 bool usb_line_streaming_active();
 void usb_handle_controller_transport_disconnect(bool expected_disconnect = false);
 void usb_handle_controller_transport_ready();
+void usb_wake_host_if_suspended();
+void usb_set_wake_on_connect(bool enabled);
+bool usb_wake_on_connect_enabled();
+bool usb_controller_transport_retained_for_wake();
 
 #endif //DS5_BRIDGE_USB_H
