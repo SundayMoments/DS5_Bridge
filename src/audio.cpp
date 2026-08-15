@@ -10,6 +10,7 @@
 #include "controller_output_state.h"
 #include "dualsense_output.h"
 #include "haptics_test_signal.h"
+#include "persona/host_persona.h"
 #include "usb_audio_render_gain.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
@@ -68,17 +69,15 @@
 #define HOST_MIC_OPUS_SIZE 71
 #define HOST_MIC_OPUS_FRAMES 480
 #define HOST_MIC_INPUT_CHANNELS 1
-#define HOST_MIC_USB_CHANNELS CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX
+#define HOST_MIC_USB_CHANNELS_MAX CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX
 #define HOST_MIC_QUEUE_DEPTH 8
-#define HOST_MIC_USB_PACKET_BYTES (48 * HOST_MIC_USB_CHANNELS * sizeof(int16_t))
-#define HOST_MIC_USB_PREFILL_BYTES (64 * HOST_MIC_USB_PACKET_BYTES)
+#define HOST_MIC_USB_PACKET_BYTES_MAX (48 * HOST_MIC_USB_CHANNELS_MAX * sizeof(int16_t))
 #define HOST_MIC_USB_FILL_MAX_CHUNKS 6
 #define HOST_MIC_USB_FILL_MAX_CHUNKS_WITH_RAW_PCM 4
 #define HOST_MIC_CORE1_BURST_LIMIT 2
 #define HOST_MIC_PLAYOUT_START_DEPTH 12
 #define HOST_MIC_OPUS_FRAME_INTERVAL_US 10000
 #define HOST_MIC_PLC_TARGET_DEPTH 1
-#define HOST_MIC_PLC_RESERVOIR_BYTES (40 * HOST_MIC_USB_PACKET_BYTES)
 #define HOST_MIC_PLC_EMPTY_GRACE_US 30000
 #define BRIDGE_AUDIO_STREAM_REPORT_ID 0x07
 #define BRIDGE_AUDIO_FAST_FRAME_FRAGMENT_TYPE 0x08
@@ -118,10 +117,26 @@ struct mic_packet_element {
 };
 
 struct mic_decode_element {
-    int16_t data[HOST_MIC_OPUS_FRAMES * HOST_MIC_USB_CHANNELS];
+    int16_t data[HOST_MIC_OPUS_FRAMES * HOST_MIC_USB_CHANNELS_MAX];
     uint16_t len;
     uint32_t generation;
 };
+
+static uint8_t host_mic_usb_channel_count() {
+    return host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1;
+}
+
+static uint16_t host_mic_usb_packet_bytes() {
+    return static_cast<uint16_t>(48 * host_mic_usb_channel_count() * sizeof(int16_t));
+}
+
+static uint16_t host_mic_usb_prefill_bytes() {
+    return static_cast<uint16_t>(64 * host_mic_usb_packet_bytes());
+}
+
+static uint32_t host_mic_plc_reservoir_bytes() {
+    return static_cast<uint32_t>(40 * host_mic_usb_packet_bytes());
+}
 
 struct speaker_opus_element {
     uint8_t data[SPEAKER_OPUS_SIZE];
@@ -1959,25 +1974,26 @@ static void process_idle_speaker_silence_preroll(uint32_t now) {
 }
 
 static bool write_mic_usb_concealment_chunk(tu_fifo_t *ep_in_fifo) {
+    const uint16_t packet_bytes = host_mic_usb_packet_bytes();
     if (ep_in_fifo != nullptr) {
-        if (tu_fifo_count(ep_in_fifo) >= HOST_MIC_USB_PACKET_BYTES) {
+        if (tu_fifo_count(ep_in_fifo) >= packet_bytes) {
             return false;
         }
-        if (tu_fifo_remaining(ep_in_fifo) < HOST_MIC_USB_PACKET_BYTES) {
+        if (tu_fifo_remaining(ep_in_fifo) < packet_bytes) {
             return false;
         }
     }
 
-    alignas(2) uint8_t chunk[HOST_MIC_USB_PACKET_BYTES]{};
-    const uint16_t written = tud_audio_n_write(0, chunk, HOST_MIC_USB_PACKET_BYTES);
+    alignas(2) uint8_t chunk[HOST_MIC_USB_PACKET_BYTES_MAX]{};
+    const uint16_t written = tud_audio_n_write(0, chunk, packet_bytes);
     mic_last_written_bytes = written;
-    if (written != HOST_MIC_USB_PACKET_BYTES) {
+    if (written != packet_bytes) {
         mic_usb_write_short++;
         audio_debug_log(
             AudioDebugMicPacket,
             12,
             clamp_debug_u8(written),
-            HOST_MIC_USB_PACKET_BYTES,
+            clamp_debug_u8(packet_bytes),
             clamp_debug_u8(mic_usb_write_short),
             0
         );
@@ -2005,12 +2021,13 @@ static void configure_mic_usb_fifo_threshold(tu_fifo_t *ep_in_fifo) {
     }
 
     const uint16_t depth = tu_fifo_depth(ep_in_fifo);
-    if (depth <= HOST_MIC_USB_PACKET_BYTES) {
+    const uint16_t packet_bytes = host_mic_usb_packet_bytes();
+    if (depth <= packet_bytes) {
         return;
     }
 
-    const uint16_t max_threshold = static_cast<uint16_t>(depth - HOST_MIC_USB_PACKET_BYTES);
-    const uint16_t threshold = std::min<uint16_t>(HOST_MIC_USB_PREFILL_BYTES, max_threshold);
+    const uint16_t max_threshold = static_cast<uint16_t>(depth - packet_bytes);
+    const uint16_t threshold = std::min<uint16_t>(host_mic_usb_prefill_bytes(), max_threshold);
     tud_audio_n_set_ep_in_fifo_threshold(0, threshold);
     mic_usb_fifo_threshold_configured = true;
 }
@@ -2045,7 +2062,7 @@ static __attribute__((noinline, noclone)) bool __not_in_flash_func(write_mic_usb
 
     tu_fifo_t *ep_in_fifo = tud_audio_n_get_ep_in_ff(0);
     const uint16_t remaining = static_cast<uint16_t>(mic_usb_pending_len - mic_usb_pending_offset);
-    uint16_t target_len = std::min<uint16_t>(remaining, HOST_MIC_USB_PACKET_BYTES);
+    uint16_t target_len = std::min<uint16_t>(remaining, host_mic_usb_packet_bytes());
     if (ep_in_fifo != nullptr) {
         target_len = std::min<uint16_t>(target_len, tu_fifo_remaining(ep_in_fifo));
         target_len = static_cast<uint16_t>(target_len & ~1u);
@@ -2060,7 +2077,7 @@ static __attribute__((noinline, noclone)) bool __not_in_flash_func(write_mic_usb
     }
 
     const uint8_t *data = reinterpret_cast<uint8_t const *>(mic_usb_pending.data) + mic_usb_pending_offset;
-    alignas(2) uint8_t scaled_data[HOST_MIC_USB_PACKET_BYTES]{};
+    alignas(2) uint8_t scaled_data[HOST_MIC_USB_PACKET_BYTES_MAX]{};
     uint8_t const *write_data = data;
     const uint8_t output_percent = mic_output_muted ? 0 : mic_output_volume_percent;
     if (output_percent < 100) {
@@ -2316,6 +2333,7 @@ static bool queue_mic_decoded_samples(
 
     static mic_decode_element decoded{};
     const int frames = std::min(decoded_samples, HOST_MIC_OPUS_FRAMES);
+    const uint8_t usb_channels = host_mic_usb_channel_count();
     uint32_t peak = 0;
     for (int frame = 0; frame < frames; frame++) {
         const int32_t sample = decoded_mono[frame];
@@ -2323,11 +2341,11 @@ static bool queue_mic_decoded_samples(
         if (magnitude > peak) {
             peak = magnitude;
         }
-        for (int channel = 0; channel < HOST_MIC_USB_CHANNELS; channel++) {
-            decoded.data[frame * HOST_MIC_USB_CHANNELS + channel] = decoded_mono[frame];
+        for (int channel = 0; channel < usb_channels; channel++) {
+            decoded.data[frame * usb_channels + channel] = decoded_mono[frame];
         }
     }
-    decoded.len = static_cast<uint16_t>(frames * HOST_MIC_USB_CHANNELS * sizeof(int16_t));
+    decoded.len = static_cast<uint16_t>(frames * usb_channels * sizeof(int16_t));
     decoded.generation = generation;
     if (count_packet_decode) {
         mic_decode_success++;
@@ -2402,9 +2420,9 @@ static bool __not_in_flash_func(core1_process_mic)() {
 static bool mic_playout_reservoir_needs_plc(uint8_t decoded_level) {
     const uint32_t decoded_bytes = static_cast<uint32_t>(decoded_level)
         * HOST_MIC_OPUS_FRAMES
-        * HOST_MIC_USB_CHANNELS
+        * host_mic_usb_channel_count()
         * sizeof(int16_t);
-    return mic_usb_buffered_bytes + decoded_bytes < HOST_MIC_PLC_RESERVOIR_BYTES;
+    return mic_usb_buffered_bytes + decoded_bytes < host_mic_plc_reservoir_bytes();
 }
 
 static bool __not_in_flash_func(core1_process_mic_plc)() {

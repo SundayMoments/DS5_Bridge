@@ -58,8 +58,10 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32 0x48E90EC1u
 #define DUALSENSE_EDGE_VENDOR_ID 0x054C
 #define DUALSENSE_EDGE_PRODUCT_ID 0x0DF2
-#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0100
+#define DUALSENSE_EDGE_USB_BCD_DEVICE 0x0101
 #define DUALSENSE_EDGE_STRING_PRODUCT "DualSense Edge Wireless Controller"
+#define DUALSENSE_EDGE_AUDIO_EXTRA_LEN 0x0001
+#define CONTROLLER_MIC_MONO_EP_SIZE 0x0060
 #define XUSB_MS_OS_VENDOR_REQUEST 0x21
 #define XUSB360_CONFIG_EXTRA_LEN 0x0007
 #define XUSB360_INTERFACE_DESC_LEN 0x0028
@@ -75,12 +77,12 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define XUSB360_EP_OUT_INTERVAL 0x08
 #define XUSB360_VENDOR_ID 0x1209
 #define XUSB360_PRODUCT_ID 0xDB05
-#define XUSB360_USB_BCD_DEVICE 0x0156
+#define XUSB360_USB_BCD_DEVICE 0x0157
 #define XUSB360_STRING_MANUFACTURER "Microsoft Corporation"
 #define XUSB360_STRING_PRODUCT "Xbox 360 Controller for Windows"
 #define DS4_VENDOR_ID 0x054C
 #define DS4_PRODUCT_ID 0x09CC
-#define DS4_USB_BCD_DEVICE 0x0103
+#define DS4_USB_BCD_DEVICE 0x0104
 #define DS4_HID_REPORT_DESC_LEN 0x01FB
 #define DS4_HID_REPORT_DESC_FNV1A32 0x9316A41Du
 #define DS4_HID_EP_INTERVAL 0x04
@@ -135,9 +137,9 @@ static tusb_desc_device_t const desc_device =
     // cleanup with tools/windows/clean-ds5bridge-devices.ps1.
     .idVendor = 0x054C,
     .idProduct = 0x0CE6,
-    // Remote wake changes the configuration descriptor. Bump the revision so
-    // Windows does not reuse its cached non-wake descriptor.
-    .bcdDevice = 0x0154,
+    // Persona-specific microphone audio contracts change the configuration
+    // descriptor. Bump the revision so Windows does not reuse a cached shape.
+    .bcdDevice = 0x0155,
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
@@ -381,8 +383,8 @@ uint8_t descriptor_configuration[] = {
     0x05, // bDescriptorType (ENDPOINT)
     0x82, // bEndpointAddress: IN EP2
     0x05, // bmAttributes: Isochronous, Asynchronous
-    CFG_TUD_AUDIO_FUNC_1_FORMAT_1_EP_SZ_IN & 0xFF,
-    (CFG_TUD_AUDIO_FUNC_1_FORMAT_1_EP_SZ_IN >> 8) & 0xFF,
+    CONTROLLER_MIC_MONO_EP_SIZE & 0xFF,
+    (CONTROLLER_MIC_MONO_EP_SIZE >> 8) & 0xFF,
     0x01, // bInterval: 1
     0x00, // bRefresh
     0x00, // bSynchAddress
@@ -606,6 +608,10 @@ TU_VERIFY_STATIC(sizeof(descriptor_configuration) == CONFIG_TOTAL_LEN_STANDARD, 
 
 static CFG_TUD_MEM_ALIGN uint8_t descriptor_configuration_xusb[sizeof(descriptor_configuration) + XUSB360_CONFIG_EXTRA_LEN];
 static uint16_t descriptor_configuration_xusb_len = 0;
+static CFG_TUD_MEM_ALIGN uint8_t descriptor_configuration_dualsense_edge[
+    sizeof(descriptor_configuration) + DUALSENSE_EDGE_AUDIO_EXTRA_LEN
+];
+static uint16_t descriptor_configuration_dualsense_edge_len = 0;
 
 static uint8_t const desc_xusb360_gamepad_interface[] = {
     // --- INTERFACE DESCRIPTOR: XUSB 360-compatible gamepad ---
@@ -747,6 +753,73 @@ static uint16_t build_xusb_configuration_descriptor(void) {
     return dest;
 }
 
+static uint16_t build_dualsense_edge_configuration_descriptor(void) {
+    if (descriptor_configuration_dualsense_edge_len != 0) {
+        return descriptor_configuration_dualsense_edge_len;
+    }
+
+    uint16_t dest = 0;
+    uint8_t source_interface = 0xff;
+    for (size_t offset = 0; offset + 2 <= sizeof(descriptor_configuration);) {
+        uint8_t length = descriptor_configuration[offset];
+        if (length < 2 || offset + length > sizeof(descriptor_configuration)) {
+            return 0;
+        }
+
+        uint8_t descriptor[255];
+        memcpy(descriptor, descriptor_configuration + offset, length);
+        const uint8_t descriptor_type = descriptor[1];
+        if (descriptor_type == TUSB_DESC_INTERFACE && length >= 9) {
+            source_interface = descriptor[2];
+        } else if (source_interface == 0 && descriptor_type == 0x24 && length >= 3) {
+            if (descriptor[2] == 0x01 && length >= 7) {
+                const uint16_t audio_control_length = (uint16_t)(descriptor[5] | (descriptor[6] << 8));
+                const uint16_t edge_audio_control_length = (uint16_t)(audio_control_length + 1);
+                descriptor[5] = (uint8_t)(edge_audio_control_length & 0xff);
+                descriptor[6] = (uint8_t)((edge_audio_control_length >> 8) & 0xff);
+            } else if (descriptor[2] == 0x02 && length >= 12 && descriptor[3] == 0x04) {
+                descriptor[7] = 0x02;
+                descriptor[8] = 0x03;
+                descriptor[9] = 0x00;
+            } else if (descriptor[2] == 0x06 && length == 9 && descriptor[3] == 0x05) {
+                memmove(descriptor + 9, descriptor + 8, 1);
+                descriptor[8] = 0x00;
+                descriptor[0] = 10;
+                length = 10;
+            }
+        } else if (
+            source_interface == 2
+            && descriptor_type == 0x24
+            && length >= 11
+            && descriptor[2] == 0x02
+            && descriptor[3] == 0x01
+        ) {
+            descriptor[4] = 0x02;
+        } else if (
+            source_interface == 2
+            && descriptor_type == TUSB_DESC_ENDPOINT
+            && length >= 7
+            && descriptor[2] == 0x82
+        ) {
+            descriptor[4] = (uint8_t)(CFG_TUD_AUDIO_FUNC_1_FORMAT_1_EP_SZ_IN & 0xff);
+            descriptor[5] = (uint8_t)((CFG_TUD_AUDIO_FUNC_1_FORMAT_1_EP_SZ_IN >> 8) & 0xff);
+        }
+
+        if (dest + length > sizeof(descriptor_configuration_dualsense_edge)) {
+            return 0;
+        }
+        memcpy(descriptor_configuration_dualsense_edge + dest, descriptor, length);
+        dest = (uint16_t)(dest + length);
+        offset += descriptor_configuration[offset];
+    }
+
+    descriptor_configuration_dualsense_edge[2] = (uint8_t)(dest & 0xff);
+    descriptor_configuration_dualsense_edge[3] = (uint8_t)((dest >> 8) & 0xff);
+    apply_gamepad_hid_runtime_configuration(descriptor_configuration_dualsense_edge, dest);
+    descriptor_configuration_dualsense_edge_len = dest;
+    return dest;
+}
+
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
@@ -758,6 +831,15 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
         }
         if (descriptor_configuration_xusb_len != 0) {
             return descriptor_configuration_xusb;
+        }
+    }
+
+    if (host_persona_active() == HostPersonaModeDualSenseEdge) {
+        if (descriptor_configuration_dualsense_edge_len == 0) {
+            (void)build_dualsense_edge_configuration_descriptor();
+        }
+        if (descriptor_configuration_dualsense_edge_len != 0) {
+            return descriptor_configuration_dualsense_edge;
         }
     }
 
