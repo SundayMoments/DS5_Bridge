@@ -76,6 +76,19 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.device-diagnostics', 'overflow: auto;')).toContain('overflow: auto;');
   });
 
+  it('content-sizes the system profile panel so summary rows stay inside its border', () => {
+    const systemPage = cssBlock('.system-page', 'grid-template-rows: auto minmax(0, 1fr) 148px;');
+    expect(systemPage).toContain('height: 100%;');
+    expect(systemPage).toContain('min-height: 0;');
+    const profilePanel = cssBlock('.system-profile-panel', 'grid-template-rows: auto minmax(0, 1fr);');
+    expect(profilePanel).toContain('gap: 8px;');
+    expect(cssBlock('.system-profile-summary-group', 'align-content: start;')).toContain('align-content: start;');
+    expect(cssBlock('.system-profile-summary dt,', 'font-size: 10px;')).toContain('line-height: 1.15;');
+    expect(cssBlock('.system-profile-strip .system-profile-save-status,', 'font-size: 11px;')).toContain(
+      'min-height: 28px;'
+    );
+  });
+
   it('keeps test card statuses aligned and gives lighting color metadata enough room', () => {
     const sharedRows = '--feature-status-grid-rows: var(--feature-card-header-height) 76px var(--action-height) var(--action-height) minmax(40px, 1fr);';
     expect(cssBlock('.feature-card', sharedRows)).toContain(sharedRows);
@@ -312,9 +325,9 @@ describe('companion layout CSS', () => {
     expect(styles).not.toContain('--autosave-status-bg');
     expect(styles).not.toContain('--autosave-status-border');
     expect(styles).not.toContain('--autosave-status-text');
-    const systemProfileStrip = cssBlock('.system-profile-strip', 'padding: 10px 14px;');
-    expect(systemProfileStrip).toContain('min-height: 58px;');
-    expect(systemProfileStrip).toContain('padding: 10px 14px;');
+    const systemProfileStrip = cssBlock('.system-profile-strip', 'padding: 8px 12px;');
+    expect(systemProfileStrip).toContain('min-height: 52px;');
+    expect(systemProfileStrip).toContain('padding: 8px 12px;');
     expect(normalizedStyles).toContain('.remapping-profile-actions button, .system-profile-save-status {');
     const profileButtonBlock = cssBlock('.remapping-profile-actions button,', 'background: var(--surface-control-soft);');
     expect(profileButtonBlock).toContain('min-height: 30px;');

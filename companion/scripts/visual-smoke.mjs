@@ -126,6 +126,28 @@ try {
       animations: 'disabled'
     });
 
+    if (tab === 'System') {
+      const profilePanel = page.locator('.system-profile-panel');
+      const panelSize = await profilePanel.evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight
+      }));
+      if (panelSize.scrollHeight > panelSize.clientHeight + 1) {
+        throw new Error(`System profile summary overflows its panel (${panelSize.scrollHeight}px > ${panelSize.clientHeight}px).`);
+      }
+      const systemPageSize = await page.locator('.system-page.active').evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight
+      }));
+      if (systemPageSize.scrollHeight > systemPageSize.clientHeight + 1) {
+        throw new Error(`System page requires vertical scrolling (${systemPageSize.scrollHeight}px > ${systemPageSize.clientHeight}px).`);
+      }
+      await page.screenshot({
+        path: path.join(outputDir, 'system-profile-summary.png'),
+        animations: 'disabled'
+      });
+    }
+
     if (tab === 'Audio') {
       await page.locator('.control-page:not([hidden]) .audio-mode-selector button').filter({ hasText: 'Mic' }).click();
       await page.waitForTimeout(150);

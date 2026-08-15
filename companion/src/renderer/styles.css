@@ -3271,6 +3271,12 @@ button {
   grid-template-rows: auto minmax(0, 400px) minmax(132px, 1fr);
 }
 
+.system-page {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) 148px;
+}
+
 .overview-heading {
   align-items: center;
 }
@@ -4648,18 +4654,20 @@ button.feature-icon {
 
 .system-profile-panel {
   align-content: start;
-  gap: 10px;
-  padding: 10px 14px 12px;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 14px;
 }
 
 .system-profile-strip {
-  min-height: 58px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin: -10px -14px 2px;
-  padding: 10px 14px;
+  margin: -10px -14px 0;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--surface-divider);
   border-radius: var(--card-radius) var(--card-radius) 0 0;
   background: var(--surface-card-header);
@@ -4668,6 +4676,17 @@ button.feature-icon {
 .system-profile-save-status {
   min-width: 0;
   letter-spacing: 0;
+}
+
+.system-profile-strip .system-profile-save-status,
+.system-profile-strip .remapping-profile-actions button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.system-profile-strip .remapping-profile-actions {
+  gap: 5px;
 }
 
 .autosave-check-icon {
@@ -4697,13 +4716,14 @@ button.feature-icon {
 .system-profile-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .system-profile-summary-group {
   min-width: 0;
   display: grid;
-  gap: 8px;
+  align-content: start;
+  gap: 6px;
 }
 
 .system-profile-summary-heading {
@@ -4716,7 +4736,7 @@ button.feature-icon {
 .system-profile-summary-heading h3 {
   margin: 0;
   color: var(--text-control);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.1;
 }
 
@@ -4724,7 +4744,7 @@ button.feature-icon {
   min-width: 0;
   margin: 0;
   display: grid;
-  gap: 5px;
+  gap: 3px;
 }
 
 .system-profile-summary dl > div {
@@ -4739,8 +4759,8 @@ button.feature-icon {
 .system-profile-summary dd {
   min-width: 0;
   margin: 0;
-  font-size: 11px;
-  line-height: 1.2;
+  font-size: 10px;
+  line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
