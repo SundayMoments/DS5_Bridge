@@ -2770,6 +2770,14 @@ describe('BridgeService', () => {
     expect(snapshot.settings.notifyLowBattery).toBe(true);
   });
 
+  it('stores permanent Kitsune Input promotion dismissal without firmware traffic', () => {
+    const service = serviceFixture();
+
+    const snapshot = service.setKitsuneInputPromotionDismissed(true);
+
+    expect(snapshot.settings.kitsuneInputPromotionDismissed).toBe(true);
+  });
+
   it('emits controller connect and disconnect toasts on status transitions', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();

@@ -25,6 +25,7 @@ const app = await electron.launch({
 let page;
 let originalUiScalePercent;
 let originalUiThemePreset;
+let originalKitsuneInputPromotionDismissed;
 
 try {
   page = await app.firstWindow();
@@ -44,11 +45,13 @@ try {
     const snapshot = await window.bridge.getStatus();
     return {
       uiScalePercent: snapshot.settings.uiScalePercent,
-      uiThemePreset: snapshot.settings.uiThemePreset
+      uiThemePreset: snapshot.settings.uiThemePreset,
+      kitsuneInputPromotionDismissed: snapshot.settings.kitsuneInputPromotionDismissed
     };
   });
   originalUiScalePercent = originalSettings.uiScalePercent;
   originalUiThemePreset = originalSettings.uiThemePreset;
+  originalKitsuneInputPromotionDismissed = originalSettings.kitsuneInputPromotionDismissed;
 
   if (originalUiThemePreset !== 'dark') {
     await page.evaluate(() => window.bridge.setUiThemePreset('dark'));
@@ -56,7 +59,41 @@ try {
   if (originalUiScalePercent !== 100) {
     await page.evaluate(() => window.bridge.setUiScalePercent(100));
   }
+  if (originalKitsuneInputPromotionDismissed) {
+    await page.evaluate(() => window.bridge.setKitsuneInputPromotionDismissed(false));
+  }
   await page.waitForTimeout(300);
+
+  const kitsunePromotionBanner = page.getByRole('button', {
+    name: 'Explore Kitsune Input'
+  });
+  await kitsunePromotionBanner.hover();
+  await page.waitForTimeout(420);
+  await page.screenshot({
+    path: path.join(outputDir, 'kitsune-input-banner-hover.png'),
+    animations: 'allow'
+  });
+  await kitsunePromotionBanner.click();
+  const kitsunePromotionDialog = page.getByRole('dialog', {
+    name: 'Take controller customization further'
+  });
+  await kitsunePromotionDialog.waitFor();
+  await page.screenshot({
+    path: path.join(outputDir, 'kitsune-input-promotion.png'),
+    animations: 'disabled'
+  });
+  await kitsunePromotionDialog.getByRole('button', {
+    name: 'Close Kitsune Input promotion'
+  }).click();
+  await kitsunePromotionDialog.waitFor({ state: 'hidden' });
+  await kitsunePromotionBanner.waitFor({ state: 'visible' });
+  const promotionDismissedAfterClose = await page.evaluate(async () => {
+    const snapshot = await window.bridge.getStatus();
+    return snapshot.settings.kitsuneInputPromotionDismissed;
+  });
+  if (promotionDismissedAfterClose) {
+    throw new Error('Closing the Kitsune Input modal unexpectedly saved a permanent dismissal.');
+  }
 
   const controlsNav = page.getByRole('navigation', { name: 'Controls' });
   await page.getByRole('button', { name: 'Open Devices' }).click();
@@ -141,6 +178,9 @@ try {
     }
     if (originalUiScalePercent && originalUiScalePercent !== 100) {
       await page.evaluate((scale) => window.bridge.setUiScalePercent(scale), originalUiScalePercent).catch(() => {});
+    }
+    if (originalKitsuneInputPromotionDismissed) {
+      await page.evaluate(() => window.bridge.setKitsuneInputPromotionDismissed(true)).catch(() => {});
     }
     await page.waitForTimeout(100).catch(() => {});
   }

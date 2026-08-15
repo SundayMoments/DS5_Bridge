@@ -33,6 +33,7 @@ export interface CompanionSettings {
   uiThemePreset: UiThemePreset;
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
+  kitsuneInputPromotionDismissed: boolean;
   firmwareLogDirectory: string | null;
   leftStickRadialDeadzonePercent: number;
   rightStickRadialDeadzonePercent: number;

@@ -151,6 +151,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   uiThemePreset: 'dark',
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
+  kitsuneInputPromotionDismissed: false,
   firmwareLogDirectory: null,
   leftStickRadialDeadzonePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.leftStickRadialDeadzonePercent,
   rightStickRadialDeadzonePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.rightStickRadialDeadzonePercent,
@@ -896,6 +897,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     showBatteryPercentTrayIcon: typeof value?.showBatteryPercentTrayIcon === 'boolean'
       ? value.showBatteryPercentTrayIcon
       : DEFAULT_SETTINGS.showBatteryPercentTrayIcon,
+    kitsuneInputPromotionDismissed: typeof value?.kitsuneInputPromotionDismissed === 'boolean'
+      ? value.kitsuneInputPromotionDismissed
+      : DEFAULT_SETTINGS.kitsuneInputPromotionDismissed,
     firmwareLogDirectory: typeof value?.firmwareLogDirectory === 'string' && value.firmwareLogDirectory.trim()
       ? value.firmwareLogDirectory.trim()
       : DEFAULT_SETTINGS.firmwareLogDirectory,
@@ -1121,11 +1125,13 @@ export class SettingsStore {
     const firmwareLogDirectory = this.settings.firmwareLogDirectory;
     const selectedBridgePath = this.settings.selectedBridgePath;
     const bridgeIdentities = this.settings.bridgeIdentities;
+    const kitsuneInputPromotionDismissed = this.settings.kitsuneInputPromotionDismissed;
     this.settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
       firmwareLogDirectory,
       selectedBridgePath,
       bridgeIdentities,
+      kitsuneInputPromotionDismissed,
       selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
       controllerProfiles
     });

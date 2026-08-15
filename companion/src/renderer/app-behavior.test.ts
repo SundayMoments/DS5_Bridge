@@ -403,6 +403,35 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('aria-label={`Switch to ${label} mode`}');
   });
 
+  it('advertises Kitsune Input with a dismissible titlebar promotion', () => {
+    expect(appSource).toContain("import '@fontsource/montserrat/latin-500.css';");
+    expect(appSource).toContain("import kitsuneInputLogoUrl from './assets/kitsune-input-logo.svg';");
+    expect(appSource).toContain('!snapshot.settings.kitsuneInputPromotionDismissed');
+    expect(appSource).toContain('aria-label="Explore Kitsune Input"');
+    expect(appSource).toContain('aria-label="Close Kitsune Input promotion"');
+    expect(appSource).toContain('Take controller customization further');
+    expect(appSource).toContain('Deeper tuning, smarter profiles, and controller-first tools.');
+    expect(appSource).not.toContain('Shape every movement.');
+    expect(appSource).not.toContain('Ready when you play.');
+    expect(appSource).not.toContain('Features exclusive to Kitsune Input');
+    expect(appSource).toContain('<li>Advanced Stick Tuning</li>');
+    expect(appSource).toContain('<li>Advanced Trigger Tuning</li>');
+    expect(appSource).toContain('<li>Touchpad Gestures</li>');
+    expect(appSource).toContain('<li>Multi-Actions</li>');
+    expect(appSource).toContain('<li>Per-game Profiles</li>');
+    expect(appSource).toContain('<li>Kitsune Game Bar</li>');
+    expect(appSource).toContain('<li>More Personas &amp; Xbox Impulse Triggers</li>');
+    expect(appSource).toContain('<li>Mod API</li>');
+    expect(appSource).toContain('Purchase');
+    expect(appSource).toContain('Learn More');
+    expect(appSource).toContain('secondary-action kitsune-promotion-learn');
+    expect(appSource).toContain('<ArrowRight size={16} />');
+    expect(appSource).toContain("Don't show Kitsune Input promotions again");
+    expect(appSource).toContain("const KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';");
+    expect(appSource).toContain("const KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';");
+    expect(appSource).toContain('window.bridge.setKitsuneInputPromotionDismissed(true)');
+  });
+
   it('keeps Audio Haptics page enablement aligned with its feature tile', () => {
     expect(appSource).toContain(
       'aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}'

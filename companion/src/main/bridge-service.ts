@@ -3017,6 +3017,14 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  setKitsuneInputPromotionDismissed(dismissed: boolean): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      kitsuneInputPromotionDismissed: dismissed
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   async setPollingRateMode(mode: PollingRateMode): Promise<BridgeSnapshot> {
     const normalizedMode = normalizePollingRateMode(mode);
     await this.sendSettingCommand(

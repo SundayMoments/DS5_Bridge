@@ -48,8 +48,10 @@ describe('IPC contract', () => {
 
   it('allowlists every external link shown by the companion', () => {
     expect(mainSource).toContain('/^https:\\/\\/ko-fi\\.com\\/sundaymoments\\/?$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/ko-fi\\.com\\/s\\/d1f0a3b26f\\/?$/i.test(url)');
     expect(mainSource).toContain('/^https:\\/\\/github\\.com\\/SundayMoments\\/?$/i.test(url)');
     expect(mainSource).toContain('/^https:\\/\\/discord\\.gg\\/By5jhh73wr\\/?$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/kitsuneinput\\.com\\/?$/i.test(url)');
   });
 
   it('maps chord keyboard shortcuts to Windows virtual-key codes', () => {

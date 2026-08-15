@@ -155,6 +155,9 @@ const api = {
   setShowBatteryPercentTrayIcon: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setShowBatteryPercentTrayIcon', value)
   ),
+  setKitsuneInputPromotionDismissed: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setKitsuneInputPromotionDismissed', value)
+  ),
   setUiScalePercent: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiScalePercent', value),
   setUiThemePreset: (value: UiThemePreset): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setUiThemePreset', value)

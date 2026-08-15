@@ -62,7 +62,18 @@ describe('SettingsStore', () => {
     expect(settings.micMuted).toBe(false);
     expect(settings.lightbarColor).toBe('#0000ff');
     expect(settings.showBatteryPercentTrayIcon).toBe(false);
+    expect(settings.kitsuneInputPromotionDismissed).toBe(false);
     expect(settings.wakeOnConnectEnabled).toBe(true);
+  });
+
+  it('persists the app-wide Kitsune Input promotion dismissal across controller resets', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+
+    expect(store.update({ kitsuneInputPromotionDismissed: true }).kitsuneInputPromotionDismissed).toBe(true);
+    expect(persistedSettings(userDataPath).kitsuneInputPromotionDismissed).toBe(true);
+    expect(new SettingsStore(userDataPath).get().kitsuneInputPromotionDismissed).toBe(true);
+    expect(store.restoreDefaults().kitsuneInputPromotionDismissed).toBe(true);
   });
 
   it('persists the wake-on-connect preference', () => {

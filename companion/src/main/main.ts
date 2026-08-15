@@ -417,8 +417,10 @@ function isAppFileUrl(url: string, appIndexPath: string): boolean {
 
 function isAllowedExternalUrl(url: string): boolean {
   return /^https:\/\/ko-fi\.com\/sundaymoments\/?$/i.test(url)
+    || /^https:\/\/ko-fi\.com\/s\/d1f0a3b26f\/?$/i.test(url)
     || /^https:\/\/github\.com\/SundayMoments\/?$/i.test(url)
-    || /^https:\/\/discord\.gg\/By5jhh73wr\/?$/i.test(url);
+    || /^https:\/\/discord\.gg\/By5jhh73wr\/?$/i.test(url)
+    || /^https:\/\/kitsuneinput\.com\/?$/i.test(url);
 }
 
 function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
@@ -1160,6 +1162,9 @@ function registerIpc(service: BridgeService): void {
   });
   ipcMain.handle('bridge:setShowBatteryPercentTrayIcon', (_event, value: boolean) => (
     service.setShowBatteryPercentTrayIcon(Boolean(value))
+  ));
+  ipcMain.handle('bridge:setKitsuneInputPromotionDismissed', (_event, value: boolean) => (
+    service.setKitsuneInputPromotionDismissed(Boolean(value))
   ));
   ipcMain.handle('bridge:setPollingRateMode', (_event, value: PollingRateMode) => (
     service.setPollingRateMode(value)

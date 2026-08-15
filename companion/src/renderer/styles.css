@@ -808,7 +808,24 @@ button {
   }
 }
 
+@keyframes kitsune-promotion-gloss-wipe {
+  0% {
+    transform: translateX(-240%) skewX(-18deg);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.72;
+  }
+
+  100% {
+    transform: translateX(520%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
 .window-bar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -879,6 +896,105 @@ button {
 .bridge-wordmark-name {
   font-size: 17px;
   font-weight: 350;
+}
+
+.kitsune-promotion-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(330px, 38vw);
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #ff5c00;
+  border-radius: 3px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--text-strong);
+  background: rgba(255, 92, 0, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.kitsune-promotion-banner::before {
+  content: "";
+  position: absolute;
+  top: -55%;
+  bottom: -55%;
+  left: 0;
+  width: 22%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 245, 236, 0.24),
+    transparent
+  );
+  opacity: 0;
+  transform: translateX(-240%) skewX(-18deg);
+}
+
+.kitsune-promotion-banner:hover {
+  transform: translate(-50%, -50%);
+  border-color: #ff5c00;
+  background: rgba(255, 92, 0, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.kitsune-promotion-banner:hover::before,
+.kitsune-promotion-banner:focus-visible::before {
+  animation: kitsune-promotion-gloss-wipe 760ms cubic-bezier(0.22, 0.65, 0.32, 1) 1;
+}
+
+.kitsune-promotion-banner:focus-visible {
+  outline: 2px solid rgba(255, 92, 0, 0.72);
+  outline-offset: 1px;
+}
+
+.kitsune-promotion-banner > img {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 5px rgba(255, 92, 0, 0.24));
+}
+
+.kitsune-promotion-banner-copy {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kitsune-promotion-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--text-strong);
+  font-family: Montserrat, "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.kitsune-promotion-wordmark-kitsune {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.kitsune-promotion-wordmark-input {
+  color: #ff5c00;
+  font-weight: 500;
+  letter-spacing: 0.26em;
+}
+
+.kitsune-promotion-banner .kitsune-promotion-wordmark {
+  font-size: 11px;
 }
 
 .window-bar svg {
@@ -1431,6 +1547,191 @@ button {
   color: var(--text-strong);
   border-color: var(--surface-divider);
   background: var(--surface-control-hover);
+}
+
+.kitsune-promotion-backdrop {
+  z-index: 130;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(255, 92, 0, 0.13), transparent 38%),
+    var(--modal-backdrop-bg);
+}
+
+.kitsune-promotion-modal {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: min(700px, calc(100vw - 48px));
+  max-height: min(600px, calc(100vh - 48px));
+  padding: 22px;
+  overflow: auto;
+  animation: modal-panel-in 160ms ease-out;
+}
+
+.kitsune-promotion-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+
+.kitsune-promotion-hero {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 4px 40px 19px 2px;
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.kitsune-promotion-hero-logo {
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 16px rgba(255, 92, 0, 0.2));
+}
+
+.kitsune-promotion-hero-copy {
+  min-width: 0;
+}
+
+.kitsune-promotion-hero .kitsune-promotion-wordmark {
+  margin-bottom: 8px;
+  font-size: 17px;
+}
+
+.kitsune-promotion-hero h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.kitsune-promotion-hero p {
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.42;
+}
+
+.kitsune-promotion-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.kitsune-promotion-feature-card {
+  min-width: 0;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--card-radius);
+  padding: 17px 18px 13px;
+  background: var(--surface-column);
+}
+
+.kitsune-promotion-feature-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.kitsune-promotion-feature-kicker span {
+  color: #ff6a18;
+}
+
+.kitsune-promotion-feature-kicker strong {
+  color: var(--text-secondary);
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+.kitsune-promotion-feature-card ul {
+  margin: 14px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--surface-divider);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.2;
+  list-style: none;
+}
+
+.kitsune-promotion-feature-card li {
+  position: relative;
+  min-height: 34px;
+  padding: 8px 4px 8px 25px;
+  border-bottom: 1px solid var(--surface-divider);
+  display: flex;
+  align-items: center;
+}
+
+.kitsune-promotion-feature-card li::before {
+  content: "+";
+  position: absolute;
+  left: 3px;
+  color: #ff6a18;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kitsune-promotion-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--surface-divider);
+}
+
+.kitsune-promotion-actions button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.kitsune-promotion-actions .primary-action {
+  border-color: #ff6a18;
+  color: #fff;
+  background: linear-gradient(180deg, #ff7a32, #e44d00);
+  box-shadow: inset 0 -2px 0 rgba(118, 35, 0, 0.42), 0 6px 16px rgba(255, 92, 0, 0.15);
+}
+
+.kitsune-promotion-actions .primary-action:hover {
+  border-color: #ff925d;
+  background: linear-gradient(180deg, #ff8847, #f1590d);
+}
+
+.kitsune-promotion-learn,
+.kitsune-promotion-dismiss {
+  border-color: var(--surface-border-strong);
+  color: var(--text-primary);
+  background: var(--surface-control);
+  box-shadow: inset 0 -1px 0 var(--surface-divider), 0 3px 10px rgba(0, 0, 0, 0.1);
+  font-weight: 700;
+}
+
+.kitsune-promotion-learn:hover,
+.kitsune-promotion-dismiss:hover {
+  border-color: rgba(255, 106, 24, 0.45);
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
+}
+
+.kitsune-promotion-learn svg,
+.kitsune-promotion-dismiss svg {
+  color: #ff7a32;
+}
+
+.kitsune-promotion-dismiss {
+  grid-column: 1 / -1;
+  background: var(--surface-control-soft);
 }
 
 .remap-profile-modal {
@@ -2416,6 +2717,12 @@ button {
   .control-tab-group-panel,
   .control-tab-group-trigger .control-tab-group-chevron {
     transition: none;
+  }
+
+  .kitsune-promotion-banner:hover::before,
+  .kitsune-promotion-banner:focus-visible::before {
+    animation: none;
+    opacity: 0;
   }
 }
 

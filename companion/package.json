@@ -106,6 +106,7 @@
     }
   },
   "dependencies": {
+    "@fontsource/montserrat": "^5.2.8",
     "node-hid": "^3.2.0"
   },
   "devDependencies": {

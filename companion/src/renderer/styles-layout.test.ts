@@ -605,4 +605,31 @@ describe('companion layout CSS', () => {
     expect(controlsRegion).toContain('overscroll-behavior: contain;');
     expect(cssBlock('.hero-card > .sidebar-actions', 'margin-top: 0;')).toContain('margin-top: 0;');
   });
+
+  it('centers the Kitsune promotion and gives its modal actions a clear hierarchy', () => {
+    const banner = cssBlock('.kitsune-promotion-banner', 'position: absolute;');
+    expect(banner).toContain('left: 50%;');
+    expect(banner).toContain('transform: translate(-50%, -50%);');
+    expect(banner).toContain('border: 1px solid #ff5c00;');
+    expect(banner).toContain('border-radius: 3px;');
+    expect(banner).toContain('background: rgba(255, 92, 0, 0.07);');
+    expect(banner).not.toContain('linear-gradient');
+    expect(banner).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlock('.kitsune-promotion-banner:hover', 'transform: translate(-50%, -50%);'))
+      .not.toContain('translateY');
+    expect(cssBlock('.kitsune-promotion-banner::before', 'rgba(255, 245, 236, 0.24)'))
+      .toContain('transform: translateX(-240%) skewX(-18deg);');
+    expect(cssBlock('.kitsune-promotion-banner:hover::before,', 'animation: kitsune-promotion-gloss-wipe'))
+      .toContain('animation: kitsune-promotion-gloss-wipe 760ms cubic-bezier(0.22, 0.65, 0.32, 1) 1;');
+    expect(cssBlock('.kitsune-promotion-feature-grid', 'grid-template-columns: repeat(2, minmax(0, 1fr));'))
+      .toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(cssBlock('.kitsune-promotion-actions', 'grid-template-columns: repeat(2, minmax(0, 1fr));'))
+      .toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(cssBlock('.kitsune-promotion-learn,', 'background: var(--surface-control);'))
+      .toContain('color: var(--text-primary);');
+    expect(cssBlock('.kitsune-promotion-learn svg,', 'color: #ff7a32;'))
+      .toContain('color: #ff7a32;');
+    expect(cssBlock('.kitsune-promotion-dismiss', 'grid-column: 1 / -1;'))
+      .toContain('background: var(--surface-control-soft);');
+  });
 });
