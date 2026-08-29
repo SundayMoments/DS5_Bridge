@@ -585,7 +585,7 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
     );
     if (
         suspend_callback.find("reconnect_grace_active(now)") == std::string::npos
-        || suspend_callback.find("usb_suspend_at_us = now;") == std::string::npos
+        || suspend_callback.find("arm_suspend_disconnect(now);") == std::string::npos
         || suspend_callback.find("bt_power_off_controller") != std::string::npos
     ) {
         throw std::runtime_error("USB suspend must arm a debounced power-off, not power off the controller immediately");
@@ -599,8 +599,8 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
     if (
         pm_poll.find("USB_SUSPEND_POWEROFF_DEBOUNCE_US") == std::string::npos
         || pm_poll.find("bt_power_off_controller();") == std::string::npos
-        || pm_poll.find("usb_note_reconnect_disconnect(now);") == std::string::npos
-        || pm_poll.find("if (usb_bus_suspended())") == std::string::npos
+        || pm_poll.find("usb_begin_descriptor_reconnect(now, usb_reconnect_target_bridge_only);") == std::string::npos
+        || pm_poll.find("if (usb_host_suspended)") == std::string::npos
     ) {
         throw std::runtime_error("USB PM poll must commit debounced power-off and defer reconnect work while suspended");
     }
@@ -608,7 +608,7 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
     const std::string disconnect_block = extract_between(
         usb_cpp,
         "void usb_handle_controller_transport_disconnect(bool expected_disconnect) {",
-        "\n}\n\nvoid usb_handle_controller_transport_ready()"
+        "\n}\n\nvoid usb_handle_controller_link_connected()"
     );
     if (
         disconnect_block.find("usb_controller_transport_ready = false;")
@@ -655,15 +655,16 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
             == std::string::npos
         || pm_poll.find("usb_controller_transport_disconnect_not_before_us")
             == std::string::npos
-        || pm_poll.find("usb_connect_controller_transport(now);")
+        || pm_poll.find("usb_connect_transport(now, true);")
             == std::string::npos
-        || pm_poll.find("usb_controller_transport_attached = false;")
+        || pm_poll.find("usb_schedule_topology_reconnect(now, false);")
             == std::string::npos
-        || pm_poll.find("tud_disconnect();") == std::string::npos
+        || usb_cpp.find("dcd_edpt_close_all(BOARD_TUD_RHPORT);") == std::string::npos
+        || usb_cpp.find("dcd_event_bus_signal(BOARD_TUD_RHPORT, DCD_EVENT_UNPLUGGED, false);") == std::string::npos
         || usb_cpp.find("tusb_deinit") != std::string::npos
     ) {
         throw std::runtime_error(
-            "USB PM poll must reconcile soft attach/detach without deinitializing TinyUSB"
+            "USB PM poll must reconcile bridge/full topology changes with a complete RP2 endpoint teardown"
         );
     }
 
@@ -689,12 +690,15 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
     }
 }
 
-void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path const &root) {
+void assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(std::filesystem::path const &root) {
     const auto descriptors = read_text(root / "src" / "usb_descriptors.c");
     const auto usb_cpp = read_text(root / "src" / "usb.cpp");
     const auto bt_cpp = read_text(root / "src" / "bt.cpp");
     const auto companion_cpp = read_text(root / "src" / "companion.cpp");
     const auto main_cpp = read_text(root / "src" / "main.cpp");
+    const auto host_bridge_cpp = read_text(root / "src" / "host_bridge.cpp");
+    const auto host_bridge_h = read_text(root / "src" / "host_bridge.h");
+    const auto host_persona_cpp = read_text(root / "src" / "persona" / "host_persona.cpp");
 
     if (
         descriptors.find("0xE0, // bmAttributes: SELF-POWERED, REMOTE-WAKEUP") == std::string::npos
@@ -703,10 +707,10 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
         throw std::runtime_error("Remote wake must be advertised by DualSense/DS4 without leaking into Xbox mode");
     }
 
-    const std::string wake = extract_between(
+    const std::string link_connected = extract_between(
         usb_cpp,
-        "void usb_wake_host_if_suspended() {",
-        "\n}\n\nvoid usb_set_wake_on_connect"
+        "void usb_handle_controller_link_connected() {",
+        "\n}\n\nvoid usb_handle_controller_transport_ready()"
     );
     const std::string suspend = extract_between(
         usb_cpp,
@@ -718,38 +722,49 @@ void assert_wake_on_connect_is_gated_and_persona_safe(std::filesystem::path cons
         "void usb_pm_poll() {",
         "\n}\n\nstatic UsbAudioVolumeRange"
     );
-    const std::string ready = extract_between(
+    const std::string wake_setting = extract_between(
         usb_cpp,
-        "void usb_handle_controller_transport_ready() {",
-        "\n}\n\nextern \"C\" void tud_mount_cb(void) {"
+        "void usb_set_wake_on_connect(bool enabled) {",
+        "\n}\n\nbool usb_wake_on_connect_enabled()"
     );
     if (
-        wake.find("usb_bus_suspended()") == std::string::npos
-        || wake.find("usb_wake_retention_enabled_for_persona()") == std::string::npos
-        || wake.find("usb_remote_wakeup_armed") == std::string::npos
-        || wake.find("usb_remote_wakeup_pending = true;") == std::string::npos
-        || wake.find("tud_remote_wakeup()") != std::string::npos
+        descriptors.find("#define BRIDGE_ONLY_VENDOR_ID 0x1209") == std::string::npos
+        || descriptors.find("#define BRIDGE_ONLY_PRODUCT_ID 0xDB08") == std::string::npos
+        || descriptors.find("#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0105") == std::string::npos
+        || descriptors.find("#define BRIDGE_ONLY_CONFIG_INTERFACE_COUNT 0x03") == std::string::npos
+        || descriptors.find("descriptor_configuration_bridge_only[]") == std::string::npos
+        || descriptors.find("BRIDGE_ONLY_VENDOR_BRIDGE_INTERFACE_NUMBER") == std::string::npos
+        || descriptors.find("BRIDGE_ONLY_WAKE_KEYBOARD_INTERFACE_NUMBER") == std::string::npos
+        || descriptors.find("desc_hid_report_bridge_placeholder") == std::string::npos
+        || descriptors.find("desc_device_runtime.iSerialNumber = STRID_SERIAL;") == std::string::npos
+        || descriptors.find("return \"DS5 Bridge Receiver\";") == std::string::npos
+        || descriptors.find("desc_ms_os_20_bridge_only[22] = BRIDGE_ONLY_VENDOR_BRIDGE_INTERFACE_NUMBER;") == std::string::npos
+        || host_bridge_h.find("#define HOST_BRIDGE_BRIDGE_ONLY_INTERFACE_NUMBER 0x01") == std::string::npos
+        || host_bridge_cpp.find("host_bridge_runtime_interface_number()") == std::string::npos
+        || host_bridge_cpp.find("usb_descriptor_bridge_only_active()") == std::string::npos
+        || host_persona_cpp.find("if (usb_descriptor_bridge_only_active())") == std::string::npos
+        || link_connected.find("if (!usb_wake_on_connect)") == std::string::npos
+        || link_connected.find("usb_remote_wakeup_pending = true;") == std::string::npos
+        || link_connected.find("tud_remote_wakeup") != std::string::npos
         || pm_poll.find("if (usb_remote_wakeup_pending)") == std::string::npos
         || pm_poll.find("usb_wake_on_connect") == std::string::npos
         || pm_poll.find("usb_remote_wakeup_armed") == std::string::npos
         || pm_poll.find("usb_bus_suspended()") == std::string::npos
         || pm_poll.find("(void)tud_remote_wakeup();") == std::string::npos
-        || pm_poll.find("if (usb_bus_suspended())") < pm_poll.find("(void)tud_remote_wakeup();")
         || suspend.find("usb_remote_wakeup_armed = remote_wakeup_en;") == std::string::npos
-        || ready.find("usb_wake_host_if_suspended();") == std::string::npos
-        || bt_cpp.find("usb_wake_host_if_suspended();") == std::string::npos
-        || usb_cpp.find("usb_wake_retention_enabled_for_persona()") == std::string::npos
-        || usb_cpp.find("host_persona_active() != HostPersonaModeXusb360") == std::string::npos
-        || usb_cpp.find("usb_controller_transport_retained_for_wake()") == std::string::npos
-        || usb_cpp.find("Keep the full native controller persona enumerated as the") == std::string::npos
-        || usb_cpp.find("if (!usb_controller_transport_ready && usb_controller_transport_attached)") == std::string::npos
-        || main_cpp.find("report_dirty = usb_controller_transport_retained_for_wake();") == std::string::npos
+        || bt_cpp.find("usb_handle_controller_link_connected();") == std::string::npos
+        || wake_setting.find("usb_controller_transport_transition_pending") != std::string::npos
+        || pm_poll.find("usb_connect_transport(now, true);") == std::string::npos
+        || pm_poll.find("usb_schedule_topology_reconnect(now, true);") == std::string::npos
+        || pm_poll.find("usb_schedule_topology_reconnect(now, false);") == std::string::npos
+        || main_cpp.find("if (usb_descriptor_bridge_only_active())") == std::string::npos
+        || main_cpp.find("report_dirty = usb_mounted_active() && !usb_descriptor_bridge_only_active();") == std::string::npos
         || companion_cpp.find("CommandSetWakeOnConnect = 0x35") == std::string::npos
         || companion_cpp.find("usb_set_wake_on_connect(value == 1);") == std::string::npos
         || companion_cpp.find("buffer[49] = usb_wake_on_connect_enabled() ? 1 : 0;") == std::string::npos
     ) {
         throw std::runtime_error(
-            "Wake-on-connect must retain a neutral native persona and require suspend, host arming, and the companion setting"
+            "The serialized bridge-only receiver must remain manageable, gate remote wake, and hand off safely to the full persona"
         );
     }
 }
@@ -2237,7 +2252,7 @@ int main() {
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);
         assert_usb_suspend_poweroff_is_debounced(source_root);
-        assert_wake_on_connect_is_gated_and_persona_safe(source_root);
+        assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(source_root);
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);

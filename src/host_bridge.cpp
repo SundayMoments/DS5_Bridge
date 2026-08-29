@@ -4,12 +4,19 @@
 
 #include "audio.h"
 #include "companion.h"
+#include "usb_descriptor_mode.h"
 #include "tusb.h"
 #include "device/usbd_pvt.h"
 #include <cstring>
 
 static uint8_t host_bridge_ep_out = 0;
 static CFG_TUD_MEM_ALIGN uint8_t host_bridge_rx_buffer[64];
+
+extern "C" uint8_t host_bridge_runtime_interface_number(void) {
+    return usb_descriptor_bridge_only_active()
+        ? HOST_BRIDGE_BRIDGE_ONLY_INTERFACE_NUMBER
+        : HOST_BRIDGE_INTERFACE_NUMBER;
+}
 
 static void host_bridge_process_report(uint8_t const *report, uint32_t len) {
     if (report == nullptr || len == 0) {
@@ -84,7 +91,7 @@ static void host_bridge_driver_reset(uint8_t rhport) {
 static uint16_t host_bridge_driver_open(uint8_t rhport, tusb_desc_interface_t const *desc_itf, uint16_t max_len) {
     if (
         desc_itf->bInterfaceClass != TUSB_CLASS_VENDOR_SPECIFIC
-        || desc_itf->bInterfaceNumber != HOST_BRIDGE_INTERFACE_NUMBER
+        || desc_itf->bInterfaceNumber != host_bridge_runtime_interface_number()
     ) {
         return 0;
     }

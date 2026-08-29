@@ -3807,7 +3807,7 @@ export class BridgeService extends EventEmitter {
       if (!this.device) {
         this.device = await WinUsbCompanionTransport.open({
           retryTimeoutMs: this.isHostPersonaTransitionActive() ? HOST_PERSONA_TRANSITION_OPEN_RETRY_MS : 0,
-          devicePath: this.settingsStore.get().selectedBridgePath ?? undefined
+          devicePath: this.preferredBridgePathForOpen()
         });
         const openedDevice = this.device;
         this.device.on('error', (error: Error) => this.publishError(error));
@@ -4156,6 +4156,10 @@ export class BridgeService extends EventEmitter {
     return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
   }
 
+  private static isBridgeOnlyPath(path: string | null | undefined): boolean {
+    return Boolean(path && /vid_1209.*pid_db08/i.test(path));
+  }
+
   private async refreshBridgeCensusIfDue(): Promise<void> {
     if (Date.now() - this.lastBridgeCensusAt >= BRIDGE_CENSUS_INTERVAL_MS) {
       await this.refreshBridgeCensus();
@@ -4170,6 +4174,7 @@ export class BridgeService extends EventEmitter {
       if (
         selectedPath
         && this.bridgeCensus.bridges.length === 1
+        && !BridgeService.isBridgeOnlyPath(this.bridgeCensus.bridges[0].path)
         && !this.bridgeCensus.bridges.some((bridge) => (
           BridgeService.bridgePathsEqual(bridge.path, selectedPath)
         ))
@@ -4187,6 +4192,22 @@ export class BridgeService extends EventEmitter {
 
   private activeBridgePath(): string | null {
     return this.device?.path ?? this.settingsStore.get().selectedBridgePath ?? null;
+  }
+
+  private preferredBridgePathForOpen(): string | undefined {
+    const selectedPath = this.settingsStore.get().selectedBridgePath;
+    if (
+      selectedPath
+      && this.bridgeCensus?.bridges.some((bridge) => (
+        BridgeService.bridgePathsEqual(bridge.path, selectedPath)
+      ))
+    ) {
+      return selectedPath;
+    }
+    if (this.bridgeCensus?.bridges.length === 1) {
+      return this.bridgeCensus.bridges[0].path;
+    }
+    return selectedPath ?? undefined;
   }
 
   private syncAudioHelperBridgeTarget(): void {
@@ -4244,7 +4265,7 @@ export class BridgeService extends EventEmitter {
   private recordBridgeIdentityAssociation(): void {
     const uniqueId = this.connectedBridgeUniqueId;
     const devicePath = this.device?.path;
-    if (!uniqueId || !devicePath) {
+    if (!uniqueId || !devicePath || BridgeService.isBridgeOnlyPath(devicePath)) {
       return;
     }
     const containerId = this.bridgeCensus?.bridges.find((bridge) => (
@@ -4316,9 +4337,8 @@ export class BridgeService extends EventEmitter {
         return {
           path: bridge.path,
           containerId: bridge.containerId,
-          selected: selectedPath
-            ? BridgeService.bridgePathsEqual(bridge.path, selectedPath)
-            : BridgeService.bridgePathsEqual(bridge.path, activePath),
+          selected: BridgeService.bridgePathsEqual(bridge.path, activePath)
+            || Boolean(selectedPath && BridgeService.bridgePathsEqual(bridge.path, selectedPath)),
           connected: BridgeService.bridgePathsEqual(bridge.path, activePath),
           uniqueId,
           name: uniqueId ? settings.bridgeIdentities[uniqueId]?.label ?? null : null

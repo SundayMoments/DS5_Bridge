@@ -4,6 +4,7 @@
 //
 
 #include "tusb.h"
+#include "device/dcd.h"
 #include "bsp/board_api.h"
 #include "hardware/watchdog.h"
 #include "pico/time.h"
@@ -15,6 +16,7 @@
 #include "host_input.h"
 #include "persona/host_persona.h"
 #include "usb.h"
+#include "usb_descriptor_mode.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
 float volume[2] = {DEFAULT_COMPANION_SPEAKER_GAIN, 1.0f}; // 0: companion speaker gain 0-1, 1: haptics gain 0-5
@@ -42,6 +44,8 @@ static volatile uint32_t usb_reconnect_grace_until_us = 0;
 static volatile bool usb_remote_wakeup_armed = false;
 static volatile bool usb_remote_wakeup_pending = false;
 static volatile bool usb_wake_on_connect = true;
+static bool usb_attached_bridge_only = false;
+static bool usb_reconnect_target_bridge_only = false;
 
 extern "C" {
 uint8_t usb_hid_polling_interval_ms_value = 1;
@@ -94,13 +98,18 @@ static bool reconnect_grace_active(uint32_t now) {
         && !time_reached(now, usb_reconnect_grace_until_us);
 }
 
-static bool usb_bus_suspended() {
-    return usb_host_suspended || (tud_inited() && tud_suspended());
+static uint32_t nonzero_time(uint32_t now) {
+    return now == 0 ? 1 : now;
 }
 
-static bool usb_wake_retention_enabled_for_persona() {
-    return usb_wake_on_connect
-        && host_persona_active() != HostPersonaModeXusb360;
+static void arm_suspend_disconnect(uint32_t now) {
+    usb_suspend_at_us = usb_suspend_disconnect && !reconnect_grace_active(now)
+        ? nonzero_time(now)
+        : 0;
+}
+
+static bool usb_bus_suspended() {
+    return usb_host_suspended || (tud_inited() && tud_suspended());
 }
 
 static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
@@ -115,9 +124,35 @@ static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
     }
 }
 
+static void usb_note_reconnect_disconnect(uint32_t now);
+
+static void usb_begin_descriptor_reconnect(uint32_t now, bool bridge_only) {
+    // Keep callbacks on the mounted descriptor topology until the new attach.
+    usb_reconnect_target_bridge_only = bridge_only;
+    usb_reconnect_requested = false;
+    usb_reconnect_connect_pending = true;
+    usb_reconnect_at_us = now + USB_RECONNECT_HOLD_US;
+    usb_note_reconnect_disconnect(now);
+    host_input_prepare_persona_switch();
+    tud_disconnect();
+    // RP2's forced VBUS detection does not reset endpoint hardware when only
+    // the pull-up is removed. Reclaim DPRAM and publish the local unplug event
+    // before presenting a descriptor topology with different interfaces.
+    dcd_edpt_close_all(BOARD_TUD_RHPORT);
+    dcd_event_bus_signal(BOARD_TUD_RHPORT, DCD_EVENT_UNPLUGGED, false);
+}
+
 static void usb_schedule_reconnect() {
+    if (usb_reconnect_connect_pending) {
+        return;
+    }
+    usb_reconnect_target_bridge_only = usb_attached_bridge_only;
     usb_reconnect_requested = true;
     usb_reconnect_at_us = time_us_32() + USB_RECONNECT_DELAY_US;
+}
+
+static void usb_schedule_topology_reconnect(uint32_t now, bool bridge_only) {
+    usb_begin_descriptor_reconnect(now, bridge_only);
 }
 
 static void usb_note_reconnect_disconnect(uint32_t now) {
@@ -163,18 +198,23 @@ void usb_device_stack_init_disconnected() {
     usb_reset_audio_class_state();
     if (initialized_now) {
         sleep_ms_with_watchdog(150);
+        // No controller is ready during boot. The top-level poll publishes the
+        // management-only bridge after TinyUSB has settled.
+        usb_controller_transport_transition_pending = true;
     }
     if (!initialized_now) {
         tud_disconnect();
     }
 }
 
-static void usb_connect_controller_transport(uint32_t now) {
+static void usb_connect_transport(uint32_t now, bool bridge_only) {
     (void)now;
-    usb_controller_transport_ready = true;
     if (usb_controller_transport_attached) {
         return;
     }
+    usb_descriptor_set_bridge_only_active(bridge_only);
+    usb_attached_bridge_only = bridge_only;
+    usb_reconnect_target_bridge_only = bridge_only;
     usb_device_stack_init_disconnected();
     tud_connect();
     usb_controller_transport_attached = true;
@@ -209,6 +249,9 @@ bool usb_host_hid_output_recent() {
 
 void usb_set_suspend_disconnect_enabled(bool enabled) {
     usb_suspend_disconnect = enabled;
+    if (!enabled) {
+        usb_suspend_at_us = 0;
+    }
 }
 
 bool usb_suspend_disconnect_enabled() {
@@ -217,6 +260,10 @@ bool usb_suspend_disconnect_enabled() {
 
 bool usb_host_suspended_active() {
     return usb_bus_suspended();
+}
+
+bool usb_mounted_active() {
+    return usb_mounted;
 }
 
 bool __not_in_flash_func(usb_speaker_streaming_active)() {
@@ -231,36 +278,15 @@ bool usb_line_streaming_active() {
     return usb_line_streaming;
 }
 
-void usb_wake_host_if_suspended() {
-    // This function is called from BTstack callbacks. Publish the request here,
-    // then let usb_pm_poll issue it from the normal TinyUSB task context.
-    if (
-        usb_bus_suspended()
-        && usb_wake_retention_enabled_for_persona()
-        && usb_remote_wakeup_armed
-    ) {
-        usb_remote_wakeup_pending = true;
-    }
-}
-
 void usb_set_wake_on_connect(bool enabled) {
     usb_wake_on_connect = enabled;
     if (!enabled) {
         usb_remote_wakeup_pending = false;
-        if (!usb_controller_transport_ready && usb_controller_transport_attached) {
-            usb_controller_transport_transition_pending = true;
-        }
     }
 }
 
 bool usb_wake_on_connect_enabled() {
     return usb_wake_on_connect;
-}
-
-bool usb_controller_transport_retained_for_wake() {
-    return usb_controller_transport_attached
-        && !usb_controller_transport_ready
-        && usb_wake_retention_enabled_for_persona();
 }
 
 void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
@@ -276,8 +302,17 @@ void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
     usb_controller_transport_transition_pending = true;
 }
 
+void usb_handle_controller_link_connected() {
+    if (!usb_wake_on_connect) {
+        return;
+    }
+    // Bluetooth callbacks only publish wake intent. TinyUSB performs the
+    // remote-wakeup request later from usb_pm_poll.
+    usb_remote_wakeup_pending = true;
+}
+
 void usb_handle_controller_transport_ready() {
-    usb_wake_host_if_suspended();
+    usb_handle_controller_link_connected();
     if (
         usb_controller_transport_ready
         && !usb_controller_transport_transition_pending
@@ -300,7 +335,11 @@ extern "C" void tud_mount_cb(void) {
 }
 
 extern "C" void tud_umount_cb(void) {
+    const uint32_t now = time_us_32();
     usb_mounted = false;
+    // Windows may report a durable unmount instead of suspend. Treat it as a
+    // debounced power transition, excluding our own descriptor reconnects.
+    arm_suspend_disconnect(now);
     usb_remote_wakeup_armed = false;
     usb_remote_wakeup_pending = false;
     usb_speaker_streaming = false;
@@ -332,18 +371,14 @@ extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t cons
 }
 
 extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
-    usb_remote_wakeup_armed = remote_wakeup_en;
     const uint32_t now = time_us_32();
     if (reconnect_grace_active(now)) {
         usb_suspend_at_us = 0;
         return;
     }
     usb_host_suspended = true;
-    if (usb_suspend_disconnect) {
-        usb_suspend_at_us = now;
-    } else {
-        usb_suspend_at_us = 0;
-    }
+    usb_remote_wakeup_armed = remote_wakeup_en;
+    arm_suspend_disconnect(now);
     usb_speaker_streaming = false;
     usb_mic_streaming = false;
     usb_line_streaming = false;
@@ -364,7 +399,7 @@ void usb_pm_poll() {
 
     if (
         usb_suspend_at_us != 0
-        && usb_host_suspended
+        && (usb_host_suspended || !usb_mounted)
         && static_cast<uint32_t>(now - usb_suspend_at_us) >= USB_SUSPEND_POWEROFF_DEBOUNCE_US
     ) {
         (void)bt_power_off_controller();
@@ -383,19 +418,45 @@ void usb_pm_poll() {
         }
     }
 
-    if (usb_bus_suspended()) {
+    if (usb_host_suspended) {
+        return;
+    }
+
+    // An ACL link is enough to request remote wake, but the full DS/DSE
+    // topology waits for HID initialization so every exposed endpoint is
+    // immediately backed by a usable controller transport.
+    if (
+        usb_controller_transport_ready
+        && usb_controller_transport_attached
+        && usb_attached_bridge_only
+        && !usb_reconnect_connect_pending
+        && !usb_reconnect_requested
+    ) {
+        usb_controller_transport_transition_pending = false;
+        usb_controller_transport_disconnect_not_before_us = 0;
+        usb_schedule_topology_reconnect(now, false);
         return;
     }
 
     if (
-        !usb_controller_transport_ready
-        && usb_controller_transport_attached
-        && !usb_wake_retention_enabled_for_persona()
-        && !usb_controller_transport_transition_pending
+        tud_inited()
+        && tud_suspended()
         && !usb_reconnect_connect_pending
         && !usb_reconnect_requested
     ) {
-        usb_controller_transport_transition_pending = true;
+        return;
+    }
+
+    // Consume a duplicate ready notification when a full-persona reconnect is
+    // already in flight instead of restarting the detach timer.
+    if (
+        usb_controller_transport_transition_pending
+        && usb_controller_transport_ready
+        && (usb_reconnect_connect_pending || usb_reconnect_requested)
+        && !usb_reconnect_target_bridge_only
+    ) {
+        usb_controller_transport_transition_pending = false;
+        usb_controller_transport_disconnect_not_before_us = 0;
     }
 
     if (usb_controller_transport_transition_pending) {
@@ -410,6 +471,10 @@ void usb_pm_poll() {
         usb_controller_transport_disconnect_not_before_us = 0;
         if (usb_controller_transport_ready) {
             if (usb_controller_transport_attached) {
+                if (!usb_attached_bridge_only) {
+                    return;
+                }
+                usb_schedule_topology_reconnect(now, false);
                 return;
             }
             usb_mounted = false;
@@ -417,38 +482,45 @@ void usb_pm_poll() {
             // The stack is initialized once before Bluetooth starts. Keep the
             // defensive initializer for an exceptional recovery path, but it
             // now runs only from this top-level poll, never a packet callback.
-            usb_connect_controller_transport(now);
-        } else if (usb_controller_transport_attached && tud_inited()) {
-            usb_reset_audio_class_state();
-            if (usb_wake_retention_enabled_for_persona()) {
-                // Keep the full native controller persona enumerated as the
-                // wake target after the physical controller goes to sleep.
-                // Controller state is still reported as disconnected, and a
-                // neutral input report clears any held controls.
+            usb_connect_transport(now, false);
+        } else {
+#ifdef ENABLE_COMPANION
+            if (!usb_controller_transport_attached) {
+                usb_mounted = false;
+                usb_reset_audio_class_state();
+                usb_connect_transport(now, true);
                 return;
             }
-            // Wake is disabled or unsupported by this persona. A soft detach
-            // hides the emulated controller while preserving TinyUSB state.
-            usb_controller_transport_attached = false;
-            usb_mounted = false;
-            tud_disconnect();
+            if (!usb_attached_bridge_only && tud_inited()) {
+                usb_mounted = false;
+                usb_reset_audio_class_state();
+                usb_schedule_topology_reconnect(now, true);
+            }
+            return;
+#else
+            if (usb_controller_transport_attached && tud_inited()) {
+                usb_controller_transport_attached = false;
+                usb_mounted = false;
+                usb_reset_audio_class_state();
+                tud_disconnect();
+            }
+#endif
         }
-        return;
     }
 
     if (usb_reconnect_connect_pending && time_reached(now, usb_reconnect_at_us)) {
         usb_reconnect_connect_pending = false;
+        usb_descriptor_set_bridge_only_active(usb_reconnect_target_bridge_only);
+        usb_attached_bridge_only = usb_reconnect_target_bridge_only;
         tud_connect();
     }
     if (usb_reconnect_requested && time_reached(now, usb_reconnect_at_us)) {
-        usb_reconnect_requested = false;
-        usb_reconnect_connect_pending = true;
-        usb_reconnect_at_us = now + USB_RECONNECT_HOLD_US;
-        usb_note_reconnect_disconnect(now);
-        tud_disconnect();
+        // Polling and persona changes alter descriptor state too. Use the same
+        // endpoint teardown as topology handoffs so Windows cannot retain the
+        // former bInterval or interface ownership.
+        usb_begin_descriptor_reconnect(now, usb_reconnect_target_bridge_only);
         return;
     }
-
 }
 
 static UsbAudioVolumeRange const &usb_volume_range(uint8_t index) {

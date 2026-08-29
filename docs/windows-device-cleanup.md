@@ -37,6 +37,9 @@ The current firmware intentionally exposes no USB serial number:
 - Audio interfaces come first, followed by the game-facing HID interface.
 - Companion firmware appends the companion vendor HID interface and bridge
   keyboard HID interface after the game-facing HID interface.
+- With no controller, companion firmware remains visible as the serialized
+  management bridge `0x1209:0xDB08` with product `DS5 Bridge Receiver` and USB
+  revision `0x0105`; it hands off to the selected DS/DSE identity when ready.
 - Xbox compatibility mode uses the composite-safe `0x1209:0xDB05` test
   identity, bumps the USB device revision for Windows cache separation, and
   advertises the game-facing interface as XUSB-compatible.
@@ -94,6 +97,7 @@ By default, the script lists or removes non-present instances matching:
 - The DS4 persona test identity `VID_054C&PID_09CC`.
 - The temporary Xbox persona test identity `VID_045E&PID_028E`.
 - The composite-safe Xbox persona test identity `VID_1209&PID_DB05`.
+- The controller-less management identity `VID_1209&PID_DB08`.
 - DualSense-named Windows audio endpoints.
 - DS5 Bridge-named Windows audio endpoints and System devices.
 - DS5 Bridge USB descriptor cache keys for the historical `0x0100`, current
@@ -101,6 +105,7 @@ By default, the script lists or removes non-present instances matching:
 - The DS4 persona cache key `054C09CC0100`.
 - The temporary Xbox persona test cache keys `045E028E0114`, `045E028E0154`,
   `1209DB050155`, and `1209DB050156`.
+- The management bridge cache key `1209DB080105`.
 
 It does not remove currently present `Status = OK` entries unless
 `-IncludePresent` is supplied.

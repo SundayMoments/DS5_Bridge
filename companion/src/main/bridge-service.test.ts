@@ -2642,6 +2642,61 @@ describe('BridgeService', () => {
     });
   });
 
+  it('opens the bridge-only receiver without replacing the saved full-persona identity', async () => {
+    const uniqueId = '0011223344556677';
+    const fullPath = 'winusb://vid_054c&pid_0ce6&mi_05#full-persona';
+    const bridgeOnlyPath = 'winusb://vid_1209&pid_db08&mi_01#bridge-only';
+    const service = serviceFixture({
+      selectedBridgePath: fullPath,
+      bridgeIdentities: {
+        [uniqueId]: {
+          label: 'Desk Bridge',
+          containerId: '11111111-1111-1111-1111-111111111111'
+        }
+      }
+    });
+    const device = new MockHidDevice();
+    device.path = bridgeOnlyPath;
+    device.status = statusReport({ controllerConnected: false });
+    device.deviceIdentity = deviceIdentityReport({ bridgeId: uniqueId });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set(bridgeOnlyPath, device);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [{
+        path: bridgeOnlyPath,
+        containerId: '22222222-2222-2222-2222-222222222222'
+      }],
+      hidDevices: []
+    });
+
+    await poll(service);
+
+    expect(winUsbTransportMock.open).toHaveBeenCalledWith(expect.objectContaining({
+      devicePath: bridgeOnlyPath
+    }));
+    expect(service.getSnapshot()).toMatchObject({
+      state: 'connected',
+      settings: {
+        selectedBridgePath: fullPath,
+        bridgeIdentities: {
+          [uniqueId]: {
+            label: 'Desk Bridge',
+            containerId: '11111111-1111-1111-1111-111111111111'
+          }
+        }
+      }
+    });
+    expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([
+      expect.objectContaining({
+        path: bridgeOnlyPath,
+        selected: true,
+        connected: true,
+        uniqueId,
+        name: 'Desk Bridge'
+      })
+    ]);
+  });
+
   it('rejects bridge paths and identities that were not enumerated', async () => {
     const service = serviceFixture();
 
