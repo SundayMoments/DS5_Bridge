@@ -2695,6 +2695,23 @@ describe('BridgeService', () => {
         name: 'Desk Bridge'
       })
     ]);
+
+    const disabledSnapshot = await service.setWakeOnConnectEnabled(false);
+    const command = device.sentReports.at(-1);
+    expect(command?.[7]).toBe(COMMAND_ID.SET_WAKE_ON_CONNECT);
+    expect(command?.[9]).toBe(0);
+    expect(device.closeCount).toBe(0);
+    expect(disabledSnapshot.state).toBe('connected');
+    expect(disabledSnapshot.settings.selectedBridgePath).toBe(fullPath);
+    expect(disabledSnapshot.bridgeDevices?.bridges).toEqual([
+      expect.objectContaining({
+        path: bridgeOnlyPath,
+        selected: true,
+        connected: true,
+        uniqueId,
+        name: 'Desk Bridge'
+      })
+    ]);
   });
 
   it('rejects bridge paths and identities that were not enumerated', async () => {
