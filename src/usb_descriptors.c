@@ -839,6 +839,10 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
             (void)build_dualsense_edge_configuration_descriptor();
         }
         if (descriptor_configuration_dualsense_edge_len != 0) {
+            apply_gamepad_hid_runtime_configuration(
+                descriptor_configuration_dualsense_edge,
+                descriptor_configuration_dualsense_edge_len
+            );
             return descriptor_configuration_dualsense_edge;
         }
     }

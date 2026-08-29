@@ -321,6 +321,54 @@ void assert_dualsense_edge_persona_is_edge_facing(
     }
 }
 
+void assert_dualsense_polling_rate_is_applied_to_cached_edge_descriptor(
+    std::string const &source,
+    std::filesystem::path const &source_root
+) {
+    const std::string callback = extract_between(
+        source,
+        "uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {",
+        "\n}\n\n#ifdef ENABLE_COMPANION"
+    );
+    const std::string edge_branch = extract_between(
+        callback,
+        "if (host_persona_active() == HostPersonaModeDualSenseEdge) {",
+        "\n    }\n\n    apply_gamepad_hid_runtime_configuration(descriptor_configuration"
+    );
+    const auto refresh = edge_branch.find(
+        "apply_gamepad_hid_runtime_configuration(\n"
+        "                descriptor_configuration_dualsense_edge,\n"
+        "                descriptor_configuration_dualsense_edge_len\n"
+        "            );"
+    );
+    const auto cached_return = edge_branch.find("return descriptor_configuration_dualsense_edge;");
+    if (
+        refresh == std::string::npos
+        || cached_return == std::string::npos
+        || refresh > cached_return
+    ) {
+        throw std::runtime_error(
+            "DualSense Edge must refresh the cached HID endpoint interval before every enumeration"
+        );
+    }
+
+    const auto usb_cpp = read_text(source_root / "src" / "usb.cpp");
+    const std::string interval_mapping = extract_between(
+        usb_cpp,
+        "static uint8_t hid_polling_interval_for_mode(uint8_t mode) {",
+        "\n}\n\nstatic void usb_note_reconnect_disconnect"
+    );
+    if (
+        interval_mapping.find("case 0:\n            return 4;") == std::string::npos
+        || interval_mapping.find("case 1:\n            return 2;") == std::string::npos
+        || interval_mapping.find("case 2:\n        default:\n            return 1;") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense polling modes must map to 250 Hz, 500 Hz, and 1000 Hz endpoint intervals"
+        );
+    }
+}
+
 void assert_xusb_persona_strings_are_xbox_facing(std::string const &source) {
     if (source.find("#define XUSB360_VENDOR_ID 0x1209") == std::string::npos) {
         throw std::runtime_error("Xbox persona must expose a non-Sony composite-safe USB vendor ID");
@@ -2178,6 +2226,7 @@ int main() {
         assert_persona_support_requires_verified_descriptors(source, source_root);
         assert_dualsense_persona_identity_reports_are_isolated(source_root);
         assert_dualsense_edge_persona_is_edge_facing(source, source_root);
+        assert_dualsense_polling_rate_is_applied_to_cached_edge_descriptor(source, source_root);
         assert_xusb_persona_strings_are_xbox_facing(source);
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);
