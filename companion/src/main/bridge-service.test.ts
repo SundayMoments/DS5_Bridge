@@ -1485,7 +1485,7 @@ describe('BridgeService', () => {
     const command = device.sentReports.at(-1);
     expect(command?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
     expect(command?.[9]).toBe(0);
-    expect(command?.slice(11, 18)).toEqual([0x81, 150, 0, 2, 2, 3, 2]);
+    expect(command?.slice(11, 19)).toEqual([0x81, 150, 0, 2, 2, 3, 2, 1]);
     expect(snapshot.settings).toMatchObject({
       audioReactiveHapticsEnabled: true,
       audioReactiveHapticsMode: 'replace',
@@ -1504,7 +1504,7 @@ describe('BridgeService', () => {
     const passthroughCommand = device.sentReports.at(-1);
     expect(passthroughCommand?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
     expect(passthroughCommand?.[9]).toBe(1);
-    expect(passthroughCommand?.slice(11, 18)).toEqual([0x81, 150, 0, 2, 2, 3, 2]);
+    expect(passthroughCommand?.slice(11, 19)).toEqual([0x81, 150, 0, 2, 2, 3, 2, 1]);
   });
 
   it('restarts system audio haptics immediately after a route change', async () => {
@@ -1663,7 +1663,7 @@ describe('BridgeService', () => {
     const command = device.sentReports.at(-1);
     expect(command?.[7]).toBe(COMMAND_ID.SET_AUDIO_REACTIVE_HAPTICS);
     expect(command?.[9]).toBe(0);
-    expect(command?.slice(11, 18)).toEqual([1, 100, 0, 1, 1, 1, 1]);
+    expect(command?.slice(11, 19)).toEqual([1, 100, 0, 1, 1, 1, 1, 0]);
   });
 
   it('sends and stores USB suspend disconnect settings', async () => {

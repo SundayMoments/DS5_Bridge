@@ -31,7 +31,7 @@ namespace {
 
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
-constexpr uint8_t kProtocolMinor = 22;
+constexpr uint8_t kProtocolMinor = 23;
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -41,6 +41,7 @@ constexpr uint8_t kFirmwareMinor = DS5_FIRMWARE_VERSION_MINOR;
 constexpr uint8_t kFirmwarePatch = DS5_FIRMWARE_VERSION_PATCH;
 constexpr uint8_t kAudioReactiveHapticsModeMask = 0x7f;
 constexpr uint8_t kAudioReactiveHapticsSuppressClassicRumbleFlag = 0x80;
+constexpr uint8_t kAudioHapticsSessionProtocolMinor = 23;
 constexpr uint8_t kTriangleButtonBit = 0x80;
 constexpr uint8_t kSquareButtonBit = 0x10;
 constexpr uint8_t kCrossButtonBit = 0x20;
@@ -871,6 +872,7 @@ void restore_defaults() {
     audio_set_quiet_mode(false);
     audio_set_duplex_requested(true);
     audio_set_reactive_haptics_config(
+        false,
         false,
         AudioReactiveHapticsMix,
         100,
@@ -2492,13 +2494,18 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             const bool enabled = value == 1;
             const uint8_t mode_control = buffer[10];
             const uint8_t mode = mode_control & kAudioReactiveHapticsModeMask;
+            const bool session_active = protocol_minor >= kAudioHapticsSessionProtocolMinor
+                ? buffer[17] == 1
+                : enabled;
             const bool suppress_classic_rumble = protocol_minor >= 9
                 ? (mode_control & kAudioReactiveHapticsSuppressClassicRumbleFlag) != 0
                 : enabled && mode == AudioReactiveHapticsReplace;
             if (
                 value > 1
+                || (protocol_minor >= kAudioHapticsSessionProtocolMinor && buffer[17] > 1)
                 || !audio_set_reactive_haptics_config(
                     enabled,
+                    session_active,
                     mode,
                     read_u16(buffer + 11),
                     buffer[13],

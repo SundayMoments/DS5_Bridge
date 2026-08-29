@@ -4,7 +4,7 @@ export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 22;
+export const PROTOCOL_MINOR = 23;
 
 export const REPORT_ID = {
   STATUS: 0x01,

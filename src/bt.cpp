@@ -5233,6 +5233,11 @@ bool bt_write_classified_output(uint8_t *data, uint16_t len) {
     if (!output_report_payload(data, len, payload, payload_len)) {
         return false;
     }
+    (void)controller_output_policy_normalize_classic_rumble_stop_payload(
+        payload,
+        payload_len,
+        audio_haptics_session_active()
+    );
     apply_player_led_policy_to_payload(payload, payload_len);
 
     uint8_t trace_critical_depth = 0;

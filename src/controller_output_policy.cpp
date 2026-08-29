@@ -130,6 +130,47 @@ bool controller_output_policy_render_classic_rumble_payload(
     return true;
 }
 
+bool controller_output_policy_normalize_classic_rumble_stop_payload(
+    uint8_t *payload,
+    uint16_t len,
+    bool audio_haptics_session_active
+) {
+    if (
+        !audio_haptics_session_active
+        || payload == nullptr
+        || len <= kMotorLeftOffset
+    ) {
+        return false;
+    }
+
+    const uint8_t flag0 = payload[kValidFlag0Offset];
+    const uint8_t flag2 = len > kValidFlag2Offset ? payload[kValidFlag2Offset] : 0;
+    const bool classic_rumble_selected = (flag0 & kFlag0HapticsSelect) != 0
+        || (flag2 & kFlag2UseRumbleNotHaptics2) != 0;
+    if (
+        !classic_rumble_selected
+        || (payload[kMotorRightOffset] | payload[kMotorLeftOffset]) != 0
+    ) {
+        return false;
+    }
+
+    // Classic rumble and actuator audio are mutually exclusive controller
+    // modes. A game's zero-motor stop can leave the controller in rumble mode,
+    // so hand ownership back only while Audio Haptics is actually active.
+    payload[kValidFlag0Offset] = static_cast<uint8_t>(
+        (flag0 | kFlag0CompatibleVibration)
+        & static_cast<uint8_t>(~kFlag0HapticsSelect)
+    );
+    if (len > kValidFlag2Offset) {
+        payload[kValidFlag2Offset] = static_cast<uint8_t>(
+            flag2 & static_cast<uint8_t>(~(
+                kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
+            ))
+        );
+    }
+    return true;
+}
+
 bool controller_output_policy_sanitize_host_speaker_amp_payload(uint8_t *payload, uint16_t len) {
     if (payload == nullptr || len < kCommonPayloadSize) {
         return false;

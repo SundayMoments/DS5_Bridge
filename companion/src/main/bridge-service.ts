@@ -2227,6 +2227,7 @@ export class BridgeService extends EventEmitter {
 
   private audioReactiveHapticsCommandPayload(settings: CompanionSettings): number[] {
     const gain = Math.max(0, Math.min(200, Math.round(settings.audioReactiveHapticsGainPercent)));
+    const sessionActive = settings.hapticsEnabled && settings.audioReactiveHapticsEnabled;
     const mode = audioReactiveHapticsModeValue(settings.audioReactiveHapticsMode)
       | (this.audioReactiveHapticsSuppressesClassicRumble(settings)
         ? AUDIO_REACTIVE_HAPTICS_SUPPRESS_CLASSIC_RUMBLE_MODE_FLAG
@@ -2238,7 +2239,8 @@ export class BridgeService extends EventEmitter {
       audioReactiveHapticsBassFocusValue(settings.audioReactiveHapticsBassFocus),
       audioReactiveHapticsResponseValue(settings.audioReactiveHapticsResponse),
       audioReactiveHapticsAttackValue(settings.audioReactiveHapticsAttack),
-      audioReactiveHapticsReleaseValue(settings.audioReactiveHapticsRelease)
+      audioReactiveHapticsReleaseValue(settings.audioReactiveHapticsRelease),
+      sessionActive ? 1 : 0
     ];
   }
 
