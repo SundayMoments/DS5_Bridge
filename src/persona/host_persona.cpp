@@ -3,6 +3,7 @@
 #include "persona/ds4_persona.h"
 #include "persona/dualsense_persona.h"
 #include "persona/xusb360_persona.h"
+#include "usb_descriptor_mode.h"
 
 namespace {
 
@@ -40,6 +41,9 @@ extern "C" bool host_persona_is_native_hid(void) {
 
 extern "C" uint8_t host_persona_keyboard_hid_instance(void) {
 #ifdef ENABLE_COMPANION
+    if (usb_descriptor_bridge_only_active()) {
+        return 0xff;
+    }
     return host_persona_is_native_hid() ? 1 : 0;
 #else
     return 0;

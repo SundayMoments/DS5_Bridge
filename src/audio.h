@@ -128,6 +128,7 @@ void audio_set_mic_output_state(uint8_t volume_percent, bool muted);
 void audio_set_mic_mute_led_passthrough(bool enabled);
 bool audio_set_reactive_haptics_config(
     bool enabled,
+    bool session_active,
     uint8_t mode,
     uint16_t gain_percent,
     uint8_t bass_focus,
@@ -137,6 +138,7 @@ bool audio_set_reactive_haptics_config(
     bool suppress_classic_rumble
 );
 bool audio_reactive_haptics_enabled();
+bool audio_haptics_session_active();
 void audio_reactive_haptics_reset();
 
 #endif //DS5_BRIDGE_AUDIO_H

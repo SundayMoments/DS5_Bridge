@@ -32,8 +32,9 @@ $sonyDualSenseVidPidPattern = '(?i)VID_054C&(PID_0CE6|PID_0DF2)'
 $sonyDs4PersonaVidPidPattern = '(?i)VID_054C&PID_09CC'
 $temporaryXboxPersonaVidPidPattern = '(?i)VID_045E&PID_028E'
 $compositeXboxPersonaVidPidPattern = '(?i)VID_1209&PID_DB05'
+$bridgeOnlyVidPidPattern = '(?i)VID_1209&PID_DB08'
 $usbFlagsRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\UsbFlags'
-$usbFlagsKeyPattern = '(?i)^(054C0CE6|054C0DF2)(0100|0151|0152|0153|0154)$|^054C09CC(0100|0102|0103)$|^045E028E(0114|0154)$|^1209DB05015(5|6)$'
+$usbFlagsKeyPattern = '(?i)^(054C0CE6|054C0DF2)(0100|0151|0152|0153|0154|0155)$|^054C09CC(0100|0102|0103)$|^045E028E(0114|0154)$|^1209DB05015(5|6)$|^1209DB080105$'
 $dualsenseNamePattern = '(?i)(DualSense|DualSense Edge|Wireless Controller)'
 $ds5BridgeNamePattern = '(?i)(DS5[ _-]?Bridge|Xbox 360 Controller for Windows)'
 $maxCleanupPasses = 8
@@ -69,6 +70,9 @@ function Get-DeviceCategory {
     }
     if ($instanceId -match $compositeXboxPersonaVidPidPattern) {
         return 'Composite Xbox persona test identity'
+    }
+    if ($instanceId -match $bridgeOnlyVidPidPattern) {
+        return 'Controller-less management bridge identity'
     }
     if ($instanceId -match $sonyDs4PersonaVidPidPattern) {
         return 'DS4 persona test identity'
@@ -111,6 +115,9 @@ function Test-TargetDevice {
         return $true
     }
     if ($instanceId -match $compositeXboxPersonaVidPidPattern) {
+        return $true
+    }
+    if ($instanceId -match $bridgeOnlyVidPidPattern) {
         return $true
     }
     if ($instanceId -match $sonyDs4PersonaVidPidPattern) {

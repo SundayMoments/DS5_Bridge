@@ -3259,7 +3259,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                     break;
                 }
                 acl_connection_outbound = false;
-                usb_wake_host_if_suspended();
+                usb_handle_controller_link_connected();
                 DS5_LOG("[HCI] Request GAP security level 2 on handle=0x%04X\n", handle);
                 gap_request_security_level(handle, LEVEL_2);
             } else {
@@ -5233,6 +5233,11 @@ bool bt_write_classified_output(uint8_t *data, uint16_t len) {
     if (!output_report_payload(data, len, payload, payload_len)) {
         return false;
     }
+    (void)controller_output_policy_normalize_classic_rumble_stop_payload(
+        payload,
+        payload_len,
+        audio_haptics_session_active()
+    );
     apply_player_led_policy_to_payload(payload, payload_len);
 
     uint8_t trace_critical_depth = 0;

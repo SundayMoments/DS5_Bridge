@@ -117,6 +117,24 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('Command Pending');
   });
 
+  it('distinguishes controller-ready, wake-enabled, and bridge-only health states', () => {
+    const start = appSource.indexOf('function healthLabel');
+    const end = appSource.indexOf('function hexByte', start);
+    const healthSource = appSource.slice(start, end);
+
+    expect(healthSource).toContain("return 'Wake with controller enabled';");
+    expect(healthSource).toContain("return 'Bridge online';");
+    expect(healthSource).toContain("return 'All systems normal';");
+    expect(healthSource).toContain('snapshot.settings.wakeOnConnectEnabled');
+    expect(healthSource).toContain('snapshot.status?.controllerConnected');
+    expect(healthSource).toContain('The Pico bridge is online and waiting for a controller.');
+    expect(appSource).toContain('title={overviewHealthTitle}');
+    expect(appSource).toContain('title={healthTitle(snapshot)}');
+    expect(stylesSource).toContain('.dot.info');
+    expect(stylesSource).toContain('.overview-health.info');
+    expect(stylesSource).toContain('.health-label.info');
+  });
+
   it('dims primary feature toggles when the controller is unavailable', () => {
     expect(appSource).toContain('const controllerControlsAvailable = connected && controllerConnected;');
     expect(appSource).toContain("controllerControlsAvailable ? '' : 'controller-unavailable'");
@@ -414,13 +432,19 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('Shape every movement.');
     expect(appSource).not.toContain('Ready when you play.');
     expect(appSource).not.toContain('Features exclusive to Kitsune Input');
+    expect(appSource).toContain('<strong>Tuning &amp; Compatibility</strong>');
+    expect(appSource).toContain('<strong>Profiles &amp; Tools</strong>');
+    expect(appSource).not.toContain('<span>01</span>');
+    expect(appSource).not.toContain('<span>02</span>');
     expect(appSource).toContain('<li>Advanced Stick Tuning</li>');
     expect(appSource).toContain('<li>Advanced Trigger Tuning</li>');
     expect(appSource).toContain('<li>Touchpad Gestures</li>');
+    expect(appSource).toContain('<li>More Personas: XSX + Impulse Triggers</li>');
+    expect(appSource).toContain('<li>Kitsune Cursor &amp; Keyboard</li>');
     expect(appSource).toContain('<li>Multi-Actions</li>');
     expect(appSource).toContain('<li>Per-game Profiles</li>');
     expect(appSource).toContain('<li>Kitsune Game Bar</li>');
-    expect(appSource).toContain('<li>More Personas &amp; Xbox Impulse Triggers</li>');
+    expect(appSource).toContain('<li>NS Pro Support · DS4 in v1.1.1</li>');
     expect(appSource).toContain('<li>Mod API</li>');
     expect(appSource).toContain('Purchase');
     expect(appSource).toContain('Learn More');

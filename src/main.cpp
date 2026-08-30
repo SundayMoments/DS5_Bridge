@@ -15,6 +15,7 @@
 #include "resample.h"
 #include "audio.h"
 #include "usb.h"
+#include "usb_descriptor_mode.h"
 #include "host_input.h"
 #include "controller_report.h"
 #include "dualsense_input_decoder.h"
@@ -344,6 +345,17 @@ static BridgeControllerState neutral_controller_state() {
 }
 
 static bool host_input_ready_for_persona(HostPersonaMode persona) {
+#ifdef ENABLE_COMPANION
+    // Bridge-only HID instances are an inert composite helper and a wake
+    // anchor. Controller-shaped reports are valid only after the full persona
+    // has mounted.
+    if (usb_descriptor_bridge_only_active()) {
+        return false;
+    }
+#endif
+    if (!usb_mounted_active()) {
+        return false;
+    }
     return persona == HostPersonaModeXusb360 ? xusb360_usb_ready() : tud_hid_ready();
 }
 
@@ -434,10 +446,9 @@ void reset_controller_input_report_cache() {
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
     interrupt_in_state = default_state;
-    // When wake-on-connect retains the native USB persona after the physical
-    // controller sleeps, publish neutral state so Windows never sees a stuck
-    // button or axis from the final Bluetooth report.
-    report_dirty = usb_controller_transport_retained_for_wake();
+    // Publish neutral before replacing a mounted full controller topology. A
+    // bridge-only topology never accepts controller-shaped reports.
+    report_dirty = usb_mounted_active() && !usb_descriptor_bridge_only_active();
     critical_section_exit(&report_cs);
 }
 
@@ -542,6 +553,9 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     (void) reqlen;
 
 #ifdef ENABLE_COMPANION
+    if (usb_descriptor_bridge_only_active()) {
+        return 0;
+    }
     if (itf == host_persona_keyboard_hid_instance()) {
         return 0;
     }
@@ -604,6 +618,9 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void) bufsize;
 
 #ifdef ENABLE_COMPANION
+    if (usb_descriptor_bridge_only_active()) {
+        return;
+    }
     if (itf == host_persona_keyboard_hid_instance()) {
         return;
     }

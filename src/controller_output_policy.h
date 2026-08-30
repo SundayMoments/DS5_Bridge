@@ -18,6 +18,11 @@ bool controller_output_policy_render_classic_rumble_payload(
     uint8_t right,
     uint8_t left
 );
+bool controller_output_policy_normalize_classic_rumble_stop_payload(
+    uint8_t *payload,
+    uint16_t len,
+    bool audio_haptics_session_active
+);
 bool controller_output_policy_sanitize_host_speaker_amp_payload(uint8_t *payload, uint16_t len);
 bool controller_output_policy_sanitize_host_speaker_amp_report(uint8_t *report, uint16_t len);
 bool controller_output_policy_sanitize_host_mic_payload(uint8_t *payload, uint16_t len);

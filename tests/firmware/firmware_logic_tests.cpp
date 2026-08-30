@@ -1298,6 +1298,45 @@ void classic_rumble_renderer_restores_audio_haptics_on_stop() {
     EXPECT_EQ(payload[kMotorLeftOffset], 0);
 }
 
+void host_zero_rumble_stop_only_restores_an_active_audio_haptics_session() {
+    Payload payload{};
+    payload[kValidFlag0Offset] = static_cast<uint8_t>(
+        kFlag0HapticsSelect | kFlag0RightTriggerEffect
+    );
+    payload[kValidFlag1Offset] = kFlag1LightbarControlEnable;
+    payload[kValidFlag2Offset] = static_cast<uint8_t>(
+        kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
+    );
+
+    Payload active_rumble = payload;
+    active_rumble[kMotorRightOffset] = 1;
+    EXPECT_FALSE(controller_output_policy_normalize_classic_rumble_stop_payload(
+        active_rumble.data(),
+        active_rumble.size(),
+        true
+    ));
+
+    Payload disabled_session = payload;
+    EXPECT_FALSE(controller_output_policy_normalize_classic_rumble_stop_payload(
+        disabled_session.data(),
+        disabled_session.size(),
+        false
+    ));
+    EXPECT_TRUE(disabled_session == payload);
+
+    EXPECT_TRUE(controller_output_policy_normalize_classic_rumble_stop_payload(
+        payload.data(),
+        payload.size(),
+        true
+    ));
+    EXPECT_TRUE((payload[kValidFlag0Offset] & kFlag0CompatibleVibration) != 0);
+    EXPECT_FALSE((payload[kValidFlag0Offset] & kFlag0HapticsSelect) != 0);
+    EXPECT_TRUE((payload[kValidFlag0Offset] & kFlag0RightTriggerEffect) != 0);
+    EXPECT_TRUE((payload[kValidFlag1Offset] & kFlag1LightbarControlEnable) != 0);
+    EXPECT_FALSE((payload[kValidFlag2Offset] & kFlag2EnableImprovedRumbleEmulation) != 0);
+    EXPECT_FALSE((payload[kValidFlag2Offset] & kFlag2UseRumbleNotHaptics2) != 0);
+}
+
 void ds4_persona_maps_standard_gamepad_fields() {
     const auto report = sample_dualsense_input_report();
     BridgeControllerState state{};
@@ -1582,6 +1621,7 @@ std::vector<TestCase> tests{
     {"xusb360 rumble decodes to ds5 classic rumble payload", xusb360_rumble_decodes_to_ds5_classic_rumble_payload},
     {"classic rumble renderer can emit v1 classic rumble", classic_rumble_renderer_can_emit_v1_classic_rumble},
     {"classic rumble renderer restores audio haptics on stop", classic_rumble_renderer_restores_audio_haptics_on_stop},
+    {"host zero rumble stop only restores active audio haptics", host_zero_rumble_stop_only_restores_an_active_audio_haptics_session},
     {"ds4 persona maps standard gamepad fields", ds4_persona_maps_standard_gamepad_fields},
     {"ds4 output decodes to ds5 rumble and lightbar payload", ds4_output_decodes_to_ds5_rumble_and_lightbar_payload},
     {"dualsense persona feature reports cover identity probe surface", dualsense_persona_feature_reports_cover_identity_probe_surface},

@@ -625,9 +625,17 @@ describe('companion layout CSS', () => {
     expect(banner).toContain('transform: translate(-50%, -50%);');
     expect(banner).toContain('border: 1px solid #ff5c00;');
     expect(banner).toContain('border-radius: 3px;');
-    expect(banner).toContain('background: rgba(255, 92, 0, 0.07);');
+    expect(banner).toContain('background: var(--kitsune-banner-bg);');
     expect(banner).not.toContain('linear-gradient');
     expect(banner).toContain('-webkit-app-region: no-drag;');
+    const rootTheme = cssBlock(':root', '--kitsune-banner-bg: #111821;');
+    expect(rootTheme).toContain('--kitsune-banner-bg-hover: #182330;');
+    expect(rootTheme).toContain('--kitsune-banner-copy: #d7e0ec;');
+    expect(rootTheme).toContain('--kitsune-banner-wordmark: #ffffff;');
+    expect(cssBlock('.kitsune-promotion-banner-copy', 'color: var(--kitsune-banner-copy);'))
+      .toContain('color: var(--kitsune-banner-copy);');
+    expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: 11px;'))
+      .toContain('color: var(--kitsune-banner-wordmark);');
     expect(cssBlock('.kitsune-promotion-banner:hover', 'transform: translate(-50%, -50%);'))
       .not.toContain('translateY');
     expect(cssBlock('.kitsune-promotion-banner::before', 'rgba(255, 245, 236, 0.24)'))

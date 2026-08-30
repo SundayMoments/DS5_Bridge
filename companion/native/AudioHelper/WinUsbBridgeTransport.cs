@@ -1,17 +1,19 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Win32.SafeHandles;
 
 sealed class WinUsbBridgeTransport : IDisposable
 {
     private const byte ControlGetReport = 0x31;
     private const byte ControlSetReport = 0x32;
-    private const ushort BridgeInterfaceNumber = 0x0005;
-    private const string BridgeInterfaceMarker = "mi_05";
     private const int ReportBytes = 64;
     private const uint BridgeOutTransferTimeoutMs = 35;
     private static readonly Guid DeviceInterfaceGuid = new("E4C8B2A9-87F5-4C4C-9E52-2B4C1B8B4F62");
     private static readonly Guid LegacySharedDeviceInterfaceGuid = new("D5B7C5F4-8A68-4A86-9E31-1E5FA7B1D5B0");
+    private static readonly Regex InterfaceMarkerRegex = new(
+        @"mi_([0-9a-f]{2})",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     internal static readonly Guid[] BridgeDeviceInterfaceGuids =
     [
         DeviceInterfaceGuid,
@@ -21,14 +23,21 @@ sealed class WinUsbBridgeTransport : IDisposable
     private readonly SafeFileHandle deviceHandle;
     private readonly IntPtr winUsbHandle;
     private readonly byte outPipeId;
+    private readonly ushort bridgeInterfaceNumber;
     private bool disposed;
 
-    private WinUsbBridgeTransport(string devicePath, SafeFileHandle deviceHandle, IntPtr winUsbHandle, byte outPipeId)
+    private WinUsbBridgeTransport(
+        string devicePath,
+        SafeFileHandle deviceHandle,
+        IntPtr winUsbHandle,
+        byte outPipeId,
+        ushort bridgeInterfaceNumber)
     {
         DevicePath = devicePath;
         this.deviceHandle = deviceHandle;
         this.winUsbHandle = winUsbHandle;
         this.outPipeId = outPipeId;
+        this.bridgeInterfaceNumber = bridgeInterfaceNumber;
     }
 
     public string DevicePath { get; }
@@ -42,7 +51,7 @@ sealed class WinUsbBridgeTransport : IDisposable
         {
             foreach (var path in NativeMethods.EnumerateDeviceInterfacePaths(deviceInterfaceGuid))
             {
-                if (!IsBridgeInterfacePath(path))
+                if (!TryParseBridgeInterfaceNumber(path, out var bridgeInterfaceNumber))
                 {
                     continue;
                 }
@@ -87,7 +96,12 @@ sealed class WinUsbBridgeTransport : IDisposable
                             NativeMethods.PipeTransferTimeout,
                             sizeof(uint),
                             ref timeoutMs);
-                        return new WinUsbBridgeTransport(path, device, winUsb, outPipe.PipeId);
+                        return new WinUsbBridgeTransport(
+                            path,
+                            device,
+                            winUsb,
+                            outPipe.PipeId,
+                            bridgeInterfaceNumber);
                     }
 
                     NativeMethods.WinUsb_Free(winUsb);
@@ -135,7 +149,7 @@ sealed class WinUsbBridgeTransport : IDisposable
             RequestType = 0xC1,
             Request = ControlGetReport,
             Value = reportId,
-            Index = BridgeInterfaceNumber,
+            Index = bridgeInterfaceNumber,
             Length = ReportBytes
         };
         if (!NativeMethods.WinUsb_ControlTransfer(
@@ -200,7 +214,7 @@ sealed class WinUsbBridgeTransport : IDisposable
             RequestType = 0x41,
             Request = ControlSetReport,
             Value = report[0],
-            Index = BridgeInterfaceNumber,
+            Index = bridgeInterfaceNumber,
             Length = ReportBytes
         };
         if (!NativeMethods.WinUsb_ControlTransfer(
@@ -258,7 +272,20 @@ sealed class WinUsbBridgeTransport : IDisposable
 
     internal static bool IsBridgeInterfacePath(string path)
     {
-        return path.Contains(BridgeInterfaceMarker, StringComparison.OrdinalIgnoreCase);
+        return TryParseBridgeInterfaceNumber(path, out _);
+    }
+
+    private static bool TryParseBridgeInterfaceNumber(string path, out ushort interfaceNumber)
+    {
+        interfaceNumber = 0;
+        var match = InterfaceMarkerRegex.Match(path);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        interfaceNumber = Convert.ToUInt16(match.Groups[1].Value, 16);
+        return true;
     }
 }
 

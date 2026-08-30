@@ -121,7 +121,7 @@ const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
-const BUNDLED_FIRMWARE_VERSION = '1.7.0';
+const BUNDLED_FIRMWARE_VERSION = '1.7.1';
 const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
 const AUDIO_DEBUG_LOG_LINE_LIMIT = 300;
@@ -137,6 +137,8 @@ const HOST_PERSONA_TRANSITION_SETTLE_MS = 0;
 const HOST_PERSONA_TRANSITION_REDISCOVERY_POLL_MS = 50;
 const HOST_PERSONA_TRANSITION_OPEN_RETRY_MS = 250;
 const HOST_PERSONA_RECONNECT_GRACE_MS = 5000;
+const HOST_PERSONA_DEFAULT_RENDER_CAPTURE_BUDGET_MS = 200;
+const HOST_PERSONA_DEFAULT_RENDER_CACHE_MAX_AGE_MS = 5000;
 const HOST_PERSONA_DEFAULT_RENDER_RESTORE_RETRY_MS = 500;
 const HOST_PERSONA_DEFAULT_RENDER_RESTORE_GRACE_MS = 4000;
 const MIN_IDLE_DISCONNECT_TIMEOUT_MINUTES = 1;
@@ -1291,6 +1293,8 @@ export class BridgeService extends EventEmitter {
   private hostPersonaTransition: HostPersonaTransitionState | null = null;
   private completedHostPersonaMode: HostPersonaMode | null = null;
   private hostPersonaDefaultRenderRestore: HostPersonaDefaultRenderRestore | null = null;
+  private lastDefaultRenderEndpointStatus: DefaultRenderEndpointStatus | null = null;
+  private lastDefaultRenderEndpointStatusAt = 0;
   private controllerPowerSavingActive: boolean | null = null;
   private previousControllerConnected: boolean | null = null;
   private lowBatteryToastActive = false;
@@ -1745,17 +1749,56 @@ export class BridgeService extends EventEmitter {
   }
 
   private async defaultRenderIsBridgeEndpoint(): Promise<boolean> {
-    try {
-      const status = await this.getDefaultRenderEndpointStatus();
+    const refresh = this.getDefaultRenderEndpointStatus()
+      .then((status) => {
+        this.lastDefaultRenderEndpointStatus = status;
+        this.lastDefaultRenderEndpointStatusAt = Date.now();
+        return status;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.appendAudioDebugLines([`[HostBridge] default render check skipped: ${message}`]);
+        return null;
+      });
+    const cached = Date.now() - this.lastDefaultRenderEndpointStatusAt
+      <= HOST_PERSONA_DEFAULT_RENDER_CACHE_MAX_AGE_MS
+      ? this.lastDefaultRenderEndpointStatus
+      : null;
+
+    if (cached) {
+      // Give an already-resolved query one microtask to replace the sample.
+      // A real helper query stays in the background and cannot delay the command.
+      await Promise.resolve();
+      const status = this.lastDefaultRenderEndpointStatus ?? cached;
       this.appendAudioDebugLines([
-        `[HostBridge] default render before persona switch device='${status.deviceName}' bridge=${status.isBridgeEndpoint}`
+        `[HostBridge] default render before persona switch device='${status.deviceName}' bridge=${status.isBridgeEndpoint} source=cache`
       ]);
       return status.isBridgeEndpoint;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.appendAudioDebugLines([`[HostBridge] default render check skipped: ${message}`]);
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const result = await Promise.race([
+      refresh,
+      new Promise<'timeout'>((resolve) => {
+        timeout = setTimeout(() => resolve('timeout'), HOST_PERSONA_DEFAULT_RENDER_CAPTURE_BUDGET_MS);
+      })
+    ]);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (result === 'timeout') {
+      this.appendAudioDebugLines([
+        `[HostBridge] default render check deferred beyond ${HOST_PERSONA_DEFAULT_RENDER_CAPTURE_BUDGET_MS}ms; persona switch continuing`
+      ]);
       return false;
     }
+    if (!result) {
+      return false;
+    }
+    this.appendAudioDebugLines([
+      `[HostBridge] default render before persona switch device='${result.deviceName}' bridge=${result.isBridgeEndpoint} source=live`
+    ]);
+    return result.isBridgeEndpoint;
   }
 
   private queueHostPersonaDefaultRenderRestore(to: HostPersonaMode): void {
@@ -2227,6 +2270,7 @@ export class BridgeService extends EventEmitter {
 
   private audioReactiveHapticsCommandPayload(settings: CompanionSettings): number[] {
     const gain = Math.max(0, Math.min(200, Math.round(settings.audioReactiveHapticsGainPercent)));
+    const sessionActive = settings.hapticsEnabled && settings.audioReactiveHapticsEnabled;
     const mode = audioReactiveHapticsModeValue(settings.audioReactiveHapticsMode)
       | (this.audioReactiveHapticsSuppressesClassicRumble(settings)
         ? AUDIO_REACTIVE_HAPTICS_SUPPRESS_CLASSIC_RUMBLE_MODE_FLAG
@@ -2238,7 +2282,8 @@ export class BridgeService extends EventEmitter {
       audioReactiveHapticsBassFocusValue(settings.audioReactiveHapticsBassFocus),
       audioReactiveHapticsResponseValue(settings.audioReactiveHapticsResponse),
       audioReactiveHapticsAttackValue(settings.audioReactiveHapticsAttack),
-      audioReactiveHapticsReleaseValue(settings.audioReactiveHapticsRelease)
+      audioReactiveHapticsReleaseValue(settings.audioReactiveHapticsRelease),
+      sessionActive ? 1 : 0
     ];
   }
 
@@ -3147,7 +3192,10 @@ export class BridgeService extends EventEmitter {
         }
         this.beginHostPersonaTransition(normalizedMode, previousMode);
         this.systemAudioHapticsRetryAt = 0;
-        await this.systemAudioHapticsEngine.stop();
+        void this.systemAudioHapticsEngine.stop().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.appendAudioDebugLines([`[SystemHaptics] persona switch stop failed: ${message}`]);
+        });
         this.applyHostPersonaTransitionSnapshot(this.snapshot.diagnostics.rawDevices);
       }
       this.emitSnapshot();
@@ -3805,7 +3853,7 @@ export class BridgeService extends EventEmitter {
       if (!this.device) {
         this.device = await WinUsbCompanionTransport.open({
           retryTimeoutMs: this.isHostPersonaTransitionActive() ? HOST_PERSONA_TRANSITION_OPEN_RETRY_MS : 0,
-          devicePath: this.settingsStore.get().selectedBridgePath ?? undefined
+          devicePath: this.preferredBridgePathForOpen()
         });
         const openedDevice = this.device;
         this.device.on('error', (error: Error) => this.publishError(error));
@@ -4154,6 +4202,10 @@ export class BridgeService extends EventEmitter {
     return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
   }
 
+  private static isBridgeOnlyPath(path: string | null | undefined): boolean {
+    return Boolean(path && /vid_1209.*pid_db08/i.test(path));
+  }
+
   private async refreshBridgeCensusIfDue(): Promise<void> {
     if (Date.now() - this.lastBridgeCensusAt >= BRIDGE_CENSUS_INTERVAL_MS) {
       await this.refreshBridgeCensus();
@@ -4168,6 +4220,7 @@ export class BridgeService extends EventEmitter {
       if (
         selectedPath
         && this.bridgeCensus.bridges.length === 1
+        && !BridgeService.isBridgeOnlyPath(this.bridgeCensus.bridges[0].path)
         && !this.bridgeCensus.bridges.some((bridge) => (
           BridgeService.bridgePathsEqual(bridge.path, selectedPath)
         ))
@@ -4185,6 +4238,22 @@ export class BridgeService extends EventEmitter {
 
   private activeBridgePath(): string | null {
     return this.device?.path ?? this.settingsStore.get().selectedBridgePath ?? null;
+  }
+
+  private preferredBridgePathForOpen(): string | undefined {
+    const selectedPath = this.settingsStore.get().selectedBridgePath;
+    if (
+      selectedPath
+      && this.bridgeCensus?.bridges.some((bridge) => (
+        BridgeService.bridgePathsEqual(bridge.path, selectedPath)
+      ))
+    ) {
+      return selectedPath;
+    }
+    if (this.bridgeCensus?.bridges.length === 1) {
+      return this.bridgeCensus.bridges[0].path;
+    }
+    return selectedPath ?? undefined;
   }
 
   private syncAudioHelperBridgeTarget(): void {
@@ -4242,7 +4311,7 @@ export class BridgeService extends EventEmitter {
   private recordBridgeIdentityAssociation(): void {
     const uniqueId = this.connectedBridgeUniqueId;
     const devicePath = this.device?.path;
-    if (!uniqueId || !devicePath) {
+    if (!uniqueId || !devicePath || BridgeService.isBridgeOnlyPath(devicePath)) {
       return;
     }
     const containerId = this.bridgeCensus?.bridges.find((bridge) => (
@@ -4314,9 +4383,8 @@ export class BridgeService extends EventEmitter {
         return {
           path: bridge.path,
           containerId: bridge.containerId,
-          selected: selectedPath
-            ? BridgeService.bridgePathsEqual(bridge.path, selectedPath)
-            : BridgeService.bridgePathsEqual(bridge.path, activePath),
+          selected: BridgeService.bridgePathsEqual(bridge.path, activePath)
+            || Boolean(selectedPath && BridgeService.bridgePathsEqual(bridge.path, selectedPath)),
           connected: BridgeService.bridgePathsEqual(bridge.path, activePath),
           uniqueId,
           name: uniqueId ? settings.bridgeIdentities[uniqueId]?.label ?? null : null
