@@ -1346,30 +1346,28 @@ function KitsuneInputPromotionDialog({
         <div className="kitsune-promotion-feature-grid">
           <article className="kitsune-promotion-feature-card">
             <div className="kitsune-promotion-feature-kicker">
-              <span>01</span>
-              <strong>Advanced Inputs</strong>
+              <strong>Tuning &amp; Compatibility</strong>
             </div>
             <ul>
               <li>Advanced Stick Tuning</li>
               <li>Advanced Trigger Tuning</li>
+              <li>More Personas: XSX + Impulse Triggers</li>
+              <li>NS Pro Support · DS4 in v1.1.1</li>
               <li>Gyro Aim</li>
               <li>Touchpad Gestures</li>
-              <li>Kitsune Cursor</li>
-              <li>Kitsune Keyboard</li>
             </ul>
           </article>
 
           <article className="kitsune-promotion-feature-card">
             <div className="kitsune-promotion-feature-kicker">
-              <span>02</span>
-              <strong>Game-Aware Tools</strong>
+              <strong>Profiles &amp; Tools</strong>
             </div>
             <ul>
               <li>Per-game Profiles</li>
               <li>Multi-Actions</li>
               <li>Automatic Game Library</li>
               <li>Kitsune Game Bar</li>
-              <li>More Personas &amp; Xbox Impulse Triggers</li>
+              <li>Kitsune Cursor &amp; Keyboard</li>
               <li>Mod API</li>
             </ul>
           </article>

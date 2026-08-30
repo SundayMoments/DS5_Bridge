@@ -29,6 +29,10 @@
   --window-bar-border: rgba(144, 166, 197, 0.12);
   --bridge-mark-primary: #ffffff;
   --bridge-mark-secondary: #046fff;
+  --kitsune-banner-bg: #111821;
+  --kitsune-banner-bg-hover: #182330;
+  --kitsune-banner-copy: #d7e0ec;
+  --kitsune-banner-wordmark: #ffffff;
   --sidebar-bg: #050b13;
   --sidebar-overlay: transparent;
   --sidebar-border: rgba(142, 164, 194, 0.1);
@@ -912,8 +916,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: var(--text-strong);
-  background: rgba(255, 92, 0, 0.07);
+  color: var(--kitsune-banner-wordmark);
+  background: var(--kitsune-banner-bg);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
   overflow: hidden;
   white-space: nowrap;
@@ -941,7 +945,7 @@ button {
 .kitsune-promotion-banner:hover {
   transform: translate(-50%, -50%);
   border-color: #ff5c00;
-  background: rgba(255, 92, 0, 0.1);
+  background: var(--kitsune-banner-bg-hover);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
 }
 
@@ -964,7 +968,7 @@ button {
 }
 
 .kitsune-promotion-banner-copy {
-  color: var(--text-secondary);
+  color: var(--kitsune-banner-copy);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -994,6 +998,7 @@ button {
 }
 
 .kitsune-promotion-banner .kitsune-promotion-wordmark {
+  color: var(--kitsune-banner-wordmark);
   font-size: 11px;
 }
 
@@ -1632,16 +1637,11 @@ button {
 .kitsune-promotion-feature-kicker {
   display: flex;
   align-items: center;
-  gap: 9px;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.13em;
   line-height: 1.1;
   text-transform: uppercase;
-}
-
-.kitsune-promotion-feature-kicker span {
-  color: #ff6a18;
 }
 
 .kitsune-promotion-feature-kicker strong {
