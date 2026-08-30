@@ -30,6 +30,27 @@ The companion app gives you a clean place to adjust audio, haptics, trigger
 strength, lighting, button remaps, shortcuts, firmware tools, and other
 controller behavior without rebuilding firmware.
 
+* [Quick start](#quick-start)
+* [Features](#features)
+* [Companion app tour](#companion-app-tour)
+  * [Overview](#overview)
+  * [Haptics](#haptics)
+  * [Audio](#audio)
+  * [Triggers](#triggers)
+  * [Lighting](#lighting)
+  * [Button remapping](#button-remapping)
+  * [System](#system)
+  * [Settings](#settings)
+* [Troubleshooting](#troubleshooting)
+* [Common issues](#common-issues)
+* [Requirements](#requirements)
+* [For developers](#for-developers)
+* [Project layout](#project-layout)
+* [Development notes](#development-notes)
+* [License](#license)
+* [References](#references)
+* [Disclaimer](#disclaimer)
+
 ## Quick Start
 
 1. Download the firmware `.uf2` and Windows companion installer from
@@ -195,6 +216,7 @@ saving, LEDs, shortcuts, idle disconnect, and PC sleep disconnect.
 
 ## Troubleshooting
 
+- Make sure you have got a **Pico 2 W** (where w stands for wireless/bluetooth capability).
 - Use the companion app and firmware from the same release when possible.
 - For first-time flashing, hold `BOOTSEL` before plugging the Pico 2 W into the
   PC. The Pico should appear as a USB drive.
@@ -209,6 +231,10 @@ saving, LEDs, shortcuts, idle disconnect, and PC sleep disconnect.
   [Windows device cleanup](docs/windows-device-cleanup.md) or System >
   Emergency Device Repair.
 - Battery level may be inaccurate while the controller is charging.
+
+## Common issues
+
+See [Common issues](docs/common-issues.md) for solutions to common problems.
 
 ## Requirements
 
