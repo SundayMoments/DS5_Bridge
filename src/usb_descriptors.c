@@ -83,6 +83,8 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define XUSB360_EP_IN 0x84
 #define XUSB360_EP_OUT 0x03
 #define XUSB360_EP_SIZE 0x20
+// Template default only. The returned XUSB configuration is patched to the
+// selected 1/2/4 ms input interval before every enumeration.
 #define XUSB360_EP_IN_INTERVAL 0x04
 #define XUSB360_EP_OUT_INTERVAL 0x08
 #define XUSB360_VENDOR_ID 0x1209
@@ -95,7 +97,6 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define DS4_USB_BCD_DEVICE 0x0104
 #define DS4_HID_REPORT_DESC_LEN 0x01FB
 #define DS4_HID_REPORT_DESC_FNV1A32 0x9316A41Du
-#define DS4_HID_EP_INTERVAL 0x04
 #define DS4_STRING_MANUFACTURER "Sony Interactive Entertainment"
 #define DS4_STRING_PRODUCT "Wireless Controller"
 
@@ -745,9 +746,7 @@ static uint16_t active_gamepad_hid_report_descriptor_len(void) {
 static void apply_gamepad_hid_runtime_configuration(uint8_t *configuration, uint16_t len) {
     bool in_gamepad_interface = false;
     const uint16_t report_descriptor_len = active_gamepad_hid_report_descriptor_len();
-    const uint8_t gamepad_hid_interval = host_persona_active() == HostPersonaModeDs4
-        ? DS4_HID_EP_INTERVAL
-        : usb_hid_polling_interval_ms_value;
+    const uint8_t gamepad_hid_interval = usb_hid_polling_interval_ms_value;
     for (uint16_t offset = 0; offset + 2 <= len;) {
         uint8_t const length = configuration[offset];
         if (length == 0 || offset + length > len) {
@@ -766,6 +765,32 @@ static void apply_gamepad_hid_runtime_configuration(uint8_t *configuration, uint
             && (configuration[offset + 2] == 0x84 || configuration[offset + 2] == 0x03)
         ) {
             configuration[offset + 6] = gamepad_hid_interval;
+        }
+        offset = (uint16_t)(offset + length);
+    }
+}
+
+static void apply_xusb_runtime_configuration(uint8_t *configuration, uint16_t len) {
+    bool in_xusb_interface = false;
+    const uint8_t input_interval = usb_hid_polling_interval_ms_value;
+    for (uint16_t offset = 0; offset + 2 <= len;) {
+        const uint8_t length = configuration[offset];
+        if (length == 0 || offset + length > len) {
+            break;
+        }
+
+        const uint8_t descriptor_type = configuration[offset + 1];
+        if (descriptor_type == TUSB_DESC_INTERFACE && length >= 9) {
+            in_xusb_interface = configuration[offset + 5] == 0xFF
+                && configuration[offset + 6] == 0x5D
+                && configuration[offset + 7] == 0x01;
+        } else if (
+            in_xusb_interface
+            && descriptor_type == TUSB_DESC_ENDPOINT
+            && length >= 7
+            && configuration[offset + 2] == XUSB360_EP_IN
+        ) {
+            configuration[offset + 6] = input_interval;
         }
         offset = (uint16_t)(offset + length);
     }
@@ -919,6 +944,10 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
             (void)build_xusb_configuration_descriptor();
         }
         if (descriptor_configuration_xusb_len != 0) {
+            apply_xusb_runtime_configuration(
+                descriptor_configuration_xusb,
+                descriptor_configuration_xusb_len
+            );
             return descriptor_configuration_xusb;
         }
     }

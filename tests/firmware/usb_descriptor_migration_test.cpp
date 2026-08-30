@@ -321,15 +321,74 @@ void assert_dualsense_edge_persona_is_edge_facing(
     }
 }
 
-void assert_dualsense_polling_rate_is_applied_to_cached_edge_descriptor(
+void assert_selected_polling_rate_is_applied_to_every_persona_descriptor(
     std::string const &source,
     std::filesystem::path const &source_root
 ) {
+    const std::string hid_runtime_configuration = extract_between(
+        source,
+        "static void apply_gamepad_hid_runtime_configuration(uint8_t *configuration, uint16_t len) {",
+        "\n}\n\nstatic void apply_xusb_runtime_configuration"
+    );
+    if (
+        hid_runtime_configuration.find(
+            "const uint8_t gamepad_hid_interval = usb_hid_polling_interval_ms_value;"
+        ) == std::string::npos
+        || hid_runtime_configuration.find("configuration[offset + 2] == 0x84") == std::string::npos
+        || hid_runtime_configuration.find("configuration[offset + 2] == 0x03") == std::string::npos
+        || hid_runtime_configuration.find("configuration[offset + 6] = gamepad_hid_interval;") == std::string::npos
+        || source.find("#define DS4_HID_EP_INTERVAL") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense, DualSense Edge, and DS4 HID endpoints must all use the selected polling interval"
+        );
+    }
+
+    const std::string xusb_runtime_configuration = extract_between(
+        source,
+        "static void apply_xusb_runtime_configuration(uint8_t *configuration, uint16_t len) {",
+        "\n}\n\nstatic bool find_gamepad_descriptor_block"
+    );
+    if (
+        xusb_runtime_configuration.find(
+            "const uint8_t input_interval = usb_hid_polling_interval_ms_value;"
+        ) == std::string::npos
+        || xusb_runtime_configuration.find("configuration[offset + 2] == XUSB360_EP_IN") == std::string::npos
+        || xusb_runtime_configuration.find("configuration[offset + 6] = input_interval;") == std::string::npos
+        || xusb_runtime_configuration.find("configuration[offset + 2] == XUSB360_EP_OUT") != std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Xbox 360 IN must use the selected polling interval without changing its OUT endpoint interval"
+        );
+    }
+
     const std::string callback = extract_between(
         source,
         "uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {",
         "\n}\n\n#ifdef ENABLE_COMPANION"
     );
+    const std::string xusb_branch = extract_between(
+        callback,
+        "if (host_persona_active() == HostPersonaModeXusb360) {",
+        "\n    }\n\n    if (host_persona_active() == HostPersonaModeDualSenseEdge)"
+    );
+    const auto xusb_refresh = xusb_branch.find(
+        "apply_xusb_runtime_configuration(\n"
+        "                descriptor_configuration_xusb,\n"
+        "                descriptor_configuration_xusb_len\n"
+        "            );"
+    );
+    const auto xusb_return = xusb_branch.find("return descriptor_configuration_xusb;");
+    if (
+        xusb_refresh == std::string::npos
+        || xusb_return == std::string::npos
+        || xusb_refresh > xusb_return
+    ) {
+        throw std::runtime_error(
+            "Xbox 360 must refresh its cached IN endpoint interval before every enumeration"
+        );
+    }
+
     const std::string edge_branch = extract_between(
         callback,
         "if (host_persona_active() == HostPersonaModeDualSenseEdge) {",
@@ -349,6 +408,16 @@ void assert_dualsense_polling_rate_is_applied_to_cached_edge_descriptor(
     ) {
         throw std::runtime_error(
             "DualSense Edge must refresh the cached HID endpoint interval before every enumeration"
+        );
+    }
+
+    if (
+        callback.find(
+            "apply_gamepad_hid_runtime_configuration(descriptor_configuration, sizeof(descriptor_configuration));"
+        ) == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "DualSense and DS4 must refresh their shared HID endpoint intervals before every enumeration"
         );
     }
 
@@ -440,10 +509,6 @@ void assert_ds4_persona_identity_is_ds4_facing(std::string const &source) {
 
     if (source.find("#define DS4_STRING_PRODUCT \"Wireless Controller\"") == std::string::npos) {
         throw std::runtime_error("DS4 persona must expose the DS4-facing Wireless Controller product string");
-    }
-
-    if (source.find("#define DS4_HID_EP_INTERVAL 0x04") == std::string::npos) {
-        throw std::runtime_error("DS4 persona must preserve the DS4-like HID endpoint interval");
     }
 
     if (source.find("TU_VERIFY_STATIC(sizeof(desc_hid_report_ds4) == DS4_HID_REPORT_DESC_LEN") == std::string::npos) {
@@ -2247,7 +2312,7 @@ int main() {
         assert_persona_support_requires_verified_descriptors(source, source_root);
         assert_dualsense_persona_identity_reports_are_isolated(source_root);
         assert_dualsense_edge_persona_is_edge_facing(source, source_root);
-        assert_dualsense_polling_rate_is_applied_to_cached_edge_descriptor(source, source_root);
+        assert_selected_polling_rate_is_applied_to_every_persona_descriptor(source, source_root);
         assert_xusb_persona_strings_are_xbox_facing(source);
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);
