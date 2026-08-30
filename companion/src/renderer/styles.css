@@ -1291,6 +1291,10 @@ button {
   background: var(--warning);
 }
 
+.dot.info {
+  background: var(--accent);
+}
+
 .bridge-state {
   gap: 8px;
   color: var(--text-muted);
@@ -3302,6 +3306,11 @@ button {
 
 .overview-health.bad {
   color: var(--danger);
+}
+
+.overview-health.info,
+.health-label.info {
+  color: var(--accent);
 }
 
 .overview-card-grid {

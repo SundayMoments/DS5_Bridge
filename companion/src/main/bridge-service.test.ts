@@ -2329,6 +2329,115 @@ describe('BridgeService', () => {
     }
   });
 
+  it('does not let a slow default-render query stall a host persona switch', async () => {
+    vi.useFakeTimers();
+    try {
+      const service = serviceFixture();
+      const device = new MockHidDevice();
+      device.status = statusReport({
+        controllerConnected: false,
+        hostPersonaMode: 'dualsense',
+        supportedHostPersonaModesMask: 0x07
+      });
+      hidMock.state.devicesList = [companionDeviceInfo()];
+      hidMock.state.openDevices.set('companion-path', device);
+      await poll(service);
+
+      const getDefaultRenderEndpointStatus = vi.fn(() => new Promise<never>(() => undefined));
+      (service as unknown as {
+        getDefaultRenderEndpointStatus: typeof getDefaultRenderEndpointStatus;
+      }).getDefaultRenderEndpointStatus = getDefaultRenderEndpointStatus;
+
+      const switching = service.setHostPersonaMode('ds4');
+      await vi.advanceTimersByTimeAsync(199);
+      expect(device.sentReports.at(-1)?.[7]).not.toBe(COMMAND_ID.SET_HOST_PERSONA);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const snapshot = await switching;
+
+      expect(device.sentReports.at(-1)?.[7]).toBe(COMMAND_ID.SET_HOST_PERSONA);
+      expect(snapshot.personaTransition?.to).toBe('ds4');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses cached default-render state without delaying a host persona switch', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    const getDefaultRenderEndpointStatus = vi.fn(() => new Promise<never>(() => undefined));
+    const internals = service as unknown as {
+      getDefaultRenderEndpointStatus: typeof getDefaultRenderEndpointStatus;
+      lastDefaultRenderEndpointStatus: {
+        deviceName: string;
+        isBridgeEndpoint: boolean;
+      } | null;
+      lastDefaultRenderEndpointStatusAt: number;
+    };
+    internals.lastDefaultRenderEndpointStatus = {
+      deviceName: 'Speakers (DualSense Wireless Controller)',
+      isBridgeEndpoint: true
+    };
+    internals.lastDefaultRenderEndpointStatusAt = Date.now();
+    internals.getDefaultRenderEndpointStatus = getDefaultRenderEndpointStatus;
+
+    const snapshot = await service.setHostPersonaMode('ds4');
+
+    expect(getDefaultRenderEndpointStatus).toHaveBeenCalledOnce();
+    expect(snapshot.personaTransition?.to).toBe('ds4');
+    expect(snapshot.settings.hostPersonaMode).toBe('ds4');
+  });
+
+  it('does not wait for audio haptics process disposal after a host persona switch', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({
+      controllerConnected: false,
+      hostPersonaMode: 'dualsense',
+      supportedHostPersonaModesMask: 0x07
+    });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    let finishStop: (() => void) | null = null;
+    const stop = vi.fn(() => new Promise<void>((resolve) => {
+      finishStop = resolve;
+    }));
+    const getDefaultRenderEndpointStatus = vi.fn(async () => ({
+      deviceName: 'Speakers (Yeti Classic)',
+      isBridgeEndpoint: false
+    }));
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+      getDefaultRenderEndpointStatus: typeof getDefaultRenderEndpointStatus;
+    };
+    internals.systemAudioHapticsEngine = {
+      stop,
+      isActive: () => false
+    };
+    internals.getDefaultRenderEndpointStatus = getDefaultRenderEndpointStatus;
+
+    const snapshot = await service.setHostPersonaMode('ds4');
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(snapshot.personaTransition?.to).toBe('ds4');
+    stop.mockResolvedValue(undefined);
+    finishStop?.();
+  });
+
   it('masks transient bridge loss during host persona re-enumeration', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();

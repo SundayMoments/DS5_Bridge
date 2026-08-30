@@ -137,6 +137,8 @@ const HOST_PERSONA_TRANSITION_SETTLE_MS = 0;
 const HOST_PERSONA_TRANSITION_REDISCOVERY_POLL_MS = 50;
 const HOST_PERSONA_TRANSITION_OPEN_RETRY_MS = 250;
 const HOST_PERSONA_RECONNECT_GRACE_MS = 5000;
+const HOST_PERSONA_DEFAULT_RENDER_CAPTURE_BUDGET_MS = 200;
+const HOST_PERSONA_DEFAULT_RENDER_CACHE_MAX_AGE_MS = 5000;
 const HOST_PERSONA_DEFAULT_RENDER_RESTORE_RETRY_MS = 500;
 const HOST_PERSONA_DEFAULT_RENDER_RESTORE_GRACE_MS = 4000;
 const MIN_IDLE_DISCONNECT_TIMEOUT_MINUTES = 1;
@@ -1291,6 +1293,8 @@ export class BridgeService extends EventEmitter {
   private hostPersonaTransition: HostPersonaTransitionState | null = null;
   private completedHostPersonaMode: HostPersonaMode | null = null;
   private hostPersonaDefaultRenderRestore: HostPersonaDefaultRenderRestore | null = null;
+  private lastDefaultRenderEndpointStatus: DefaultRenderEndpointStatus | null = null;
+  private lastDefaultRenderEndpointStatusAt = 0;
   private controllerPowerSavingActive: boolean | null = null;
   private previousControllerConnected: boolean | null = null;
   private lowBatteryToastActive = false;
@@ -1745,17 +1749,56 @@ export class BridgeService extends EventEmitter {
   }
 
   private async defaultRenderIsBridgeEndpoint(): Promise<boolean> {
-    try {
-      const status = await this.getDefaultRenderEndpointStatus();
+    const refresh = this.getDefaultRenderEndpointStatus()
+      .then((status) => {
+        this.lastDefaultRenderEndpointStatus = status;
+        this.lastDefaultRenderEndpointStatusAt = Date.now();
+        return status;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.appendAudioDebugLines([`[HostBridge] default render check skipped: ${message}`]);
+        return null;
+      });
+    const cached = Date.now() - this.lastDefaultRenderEndpointStatusAt
+      <= HOST_PERSONA_DEFAULT_RENDER_CACHE_MAX_AGE_MS
+      ? this.lastDefaultRenderEndpointStatus
+      : null;
+
+    if (cached) {
+      // Give an already-resolved query one microtask to replace the sample.
+      // A real helper query stays in the background and cannot delay the command.
+      await Promise.resolve();
+      const status = this.lastDefaultRenderEndpointStatus ?? cached;
       this.appendAudioDebugLines([
-        `[HostBridge] default render before persona switch device='${status.deviceName}' bridge=${status.isBridgeEndpoint}`
+        `[HostBridge] default render before persona switch device='${status.deviceName}' bridge=${status.isBridgeEndpoint} source=cache`
       ]);
       return status.isBridgeEndpoint;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.appendAudioDebugLines([`[HostBridge] default render check skipped: ${message}`]);
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const result = await Promise.race([
+      refresh,
+      new Promise<'timeout'>((resolve) => {
+        timeout = setTimeout(() => resolve('timeout'), HOST_PERSONA_DEFAULT_RENDER_CAPTURE_BUDGET_MS);
+      })
+    ]);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (result === 'timeout') {
+      this.appendAudioDebugLines([
+        `[HostBridge] default render check deferred beyond ${HOST_PERSONA_DEFAULT_RENDER_CAPTURE_BUDGET_MS}ms; persona switch continuing`
+      ]);
       return false;
     }
+    if (!result) {
+      return false;
+    }
+    this.appendAudioDebugLines([
+      `[HostBridge] default render before persona switch device='${result.deviceName}' bridge=${result.isBridgeEndpoint} source=live`
+    ]);
+    return result.isBridgeEndpoint;
   }
 
   private queueHostPersonaDefaultRenderRestore(to: HostPersonaMode): void {
@@ -3149,7 +3192,10 @@ export class BridgeService extends EventEmitter {
         }
         this.beginHostPersonaTransition(normalizedMode, previousMode);
         this.systemAudioHapticsRetryAt = 0;
-        await this.systemAudioHapticsEngine.stop();
+        void this.systemAudioHapticsEngine.stop().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.appendAudioDebugLines([`[SystemHaptics] persona switch stop failed: ${message}`]);
+        });
         this.applyHostPersonaTransitionSnapshot(this.snapshot.diagnostics.rawDevices);
       }
       this.emitSnapshot();
