@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <strong>DS5 Bridge 1.7.0 is live.</strong><br>
+  <strong>DS5 Bridge 1.7.1 is live.</strong><br>
   This release includes controller microphone support, Audio Haptics, Trigger
   Lab, controller personas, chords, and companion firmware tools.
 </p>
