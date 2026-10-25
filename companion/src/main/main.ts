@@ -1196,6 +1196,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setNotifyLowBattery', (_event, value: boolean) => (
     service.setNotifyLowBattery(value)
   ));
+  ipcMain.handle('bridge:setGameBarXboxPersonaEnabled', (_event, value: boolean) => (
+    service.setGameBarXboxPersonaEnabled(value)
+  ));
   ipcMain.handle('bridge:testNotification', () => service.testNotification());
   ipcMain.handle('bridge:testHaptics', () => service.testHaptics());
   ipcMain.handle('bridge:testSpeaker', () => service.testSpeaker());

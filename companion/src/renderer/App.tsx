@@ -10485,6 +10485,24 @@ export function App() {
                     <span />
                   </button>
                 </div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Game Bar Controller Compatibility</strong>
+                    <span>Switch to Xbox mode while Xbox Game Bar is open so the controller can navigate it, then switch back when it closes.</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snapshot.settings.gameBarXboxPersonaEnabled}
+                    className={`switch ${snapshot.settings.gameBarXboxPersonaEnabled ? 'on' : ''}`}
+                    disabled={pendingAction !== null}
+                    onClick={() => void runAction('game-bar-xbox-persona', () => (
+                      window.bridge.setGameBarXboxPersonaEnabled(!snapshot.settings.gameBarXboxPersonaEnabled)
+                    ))}
+                  >
+                    <span />
+                  </button>
+                </div>
                 <div className="settings-menu-row pico-firmware-row">
                   <div className="pico-firmware-header">
                     <strong>Firmware</strong>

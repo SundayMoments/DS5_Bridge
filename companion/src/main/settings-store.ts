@@ -206,6 +206,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   hostPersonaMode: 'dualsense',
   notifyControllerConnection: false,
   notifyLowBattery: false,
+  gameBarXboxPersonaEnabled: false,
   duplexMicEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.duplexMicEnabled,
   controllerPowerSavingEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.controllerPowerSavingEnabled,
   selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
@@ -1053,6 +1054,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     notifyLowBattery: typeof value?.notifyLowBattery === 'boolean'
       ? value.notifyLowBattery
       : DEFAULT_SETTINGS.notifyLowBattery,
+    gameBarXboxPersonaEnabled: typeof value?.gameBarXboxPersonaEnabled === 'boolean'
+      ? value.gameBarXboxPersonaEnabled
+      : DEFAULT_SETTINGS.gameBarXboxPersonaEnabled,
     duplexMicEnabled: typeof value?.duplexMicEnabled === 'boolean'
       ? value.duplexMicEnabled
       : DEFAULT_SETTINGS.duplexMicEnabled,

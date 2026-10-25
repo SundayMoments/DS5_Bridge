@@ -87,6 +87,7 @@ import type {
 } from '../shared/types';
 import {
   AudioHapticsSessionMonitor,
+  GameBarMonitor,
   MicKeepaliveEngine,
   SystemAudioHapticsEngine,
   playBridgeHapticsTestPattern,
@@ -133,6 +134,9 @@ const FIRMWARE_LOG_MAX_READS_PER_POLL = 64;
 const STARTUP_REAPPLY_MIN_SETTLE_MS = 0;
 const STARTUP_REAPPLY_RETRY_DELAYS_MS = [250, 650, 1300] as const;
 const HOST_PERSONA_TRANSITION_TIMEOUT_MS = 8000;
+// Game Bar briefly loses visibility while the bridge re-enumerates as an Xbox
+// controller, so wait before restoring the previous persona.
+const GAME_BAR_PERSONA_RESTORE_DELAY_MS = 1500;
 const HOST_PERSONA_TRANSITION_SETTLE_MS = 0;
 const HOST_PERSONA_TRANSITION_REDISCOVERY_POLL_MS = 50;
 const HOST_PERSONA_TRANSITION_OPEN_RETRY_MS = 250;
@@ -1245,6 +1249,16 @@ export class BridgeService extends EventEmitter {
   private stickInputPreview: StickInputPreviewPayload | null = null;
   private readonly systemAudioHapticsEngine = new SystemAudioHapticsEngine();
   private readonly audioHapticsSessionMonitor = new AudioHapticsSessionMonitor();
+  private readonly gameBarMonitor = new GameBarMonitor();
+  private gameBarVisible = false;
+  private gameBarHiddenSince = 0;
+  // Persona to restore once Game Bar closes; set while the temporary Xbox
+  // persona is requested or active.
+  private gameBarPersonaRestoreMode: HostPersonaMode | null = null;
+  // Set when the user picks a persona while Game Bar is open, so the
+  // automatic switch does not override that choice until Game Bar closes.
+  private gameBarPersonaSuppressed = false;
+  private gameBarPersonaInFlight = false;
   private readonly micKeepaliveEngine = new MicKeepaliveEngine();
   private readonly hidDiscovery = new HidDiscoveryClient();
   private unavailableDiscoveryRequested = false;
@@ -1344,6 +1358,23 @@ export class BridgeService extends EventEmitter {
     this.audioHapticsSessionMonitor.on('sessions', () => {
       this.audioHapticsSessionCache = null;
     });
+    this.gameBarMonitor.on('error', (error: Error) => {
+      this.appendAudioDebugLines([`[GameBar] error: ${error.message}`]);
+    });
+    this.gameBarMonitor.on('status', (line: string) => {
+      if (line) {
+        this.appendAudioDebugLines([`[GameBar] ${line}`]);
+      }
+    });
+    this.gameBarMonitor.on('visibility', (visible: boolean) => {
+      this.gameBarVisible = visible;
+      if (!visible) {
+        this.gameBarHiddenSince = Date.now();
+        this.gameBarPersonaSuppressed = false;
+      }
+      this.appendAudioDebugLines([`[GameBar] visible=${visible}`]);
+      void this.reconcileGameBarPersona();
+    });
     this.micKeepaliveEngine.on('error', (error: Error) => {
       this.appendAudioDebugLines([`[MicKeepalive] error: ${error.message}`]);
       this.emitSnapshot();
@@ -1426,6 +1457,7 @@ export class BridgeService extends EventEmitter {
   }
 
   start(): void {
+    this.syncGameBarMonitor();
     this.runPoll();
     this.pollTimer = setInterval(() => {
       this.runPoll();
@@ -1446,6 +1478,7 @@ export class BridgeService extends EventEmitter {
       clearInterval(this.shortcutPollTimer);
       this.shortcutPollTimer = null;
     }
+    this.gameBarMonitor.stop();
 
     await this.stopControllerAudioPolling();
     this.hidDiscovery.stop();
@@ -3174,6 +3207,92 @@ export class BridgeService extends EventEmitter {
   }
 
   async setHostPersonaMode(mode: HostPersonaMode): Promise<BridgeSnapshot> {
+    // An explicit choice replaces any temporary Game Bar persona.
+    this.gameBarPersonaRestoreMode = null;
+    this.gameBarPersonaSuppressed = this.gameBarVisible;
+    return this.switchHostPersonaMode(mode, true);
+  }
+
+  async setGameBarXboxPersonaEnabled(enabled: boolean): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.update({ gameBarXboxPersonaEnabled: enabled });
+    this.syncGameBarMonitor();
+    void this.reconcileGameBarPersona();
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  private syncGameBarMonitor(): void {
+    if (process.platform === 'win32' && this.settingsStore.get().gameBarXboxPersonaEnabled) {
+      this.gameBarMonitor.start();
+    } else {
+      this.gameBarMonitor.stop();
+    }
+  }
+
+  private effectiveHostPersonaMode(settings: CompanionSettings): HostPersonaMode {
+    return this.gameBarPersonaRestoreMode !== null ? 'xbox' : settings.hostPersonaMode;
+  }
+
+  // Switches to the Xbox persona while Game Bar is open, because Game Bar only
+  // accepts XInput controllers for navigation, then restores the previous
+  // persona once it closes. Neither switch is saved to settings.
+  private async reconcileGameBarPersona(): Promise<void> {
+    if (this.gameBarPersonaInFlight || this.snapshot.state !== 'connected') {
+      return;
+    }
+    const enabled = this.settingsStore.get().gameBarXboxPersonaEnabled;
+    const current = this.currentHostPersonaMode();
+    let target: HostPersonaMode | null = null;
+
+    if (this.gameBarPersonaRestoreMode === null) {
+      if (
+        enabled
+        && this.gameBarVisible
+        && !this.gameBarPersonaSuppressed
+        && current !== 'xbox'
+        && this.snapshot.status?.supportedHostPersonaModes.includes('xbox')
+      ) {
+        this.gameBarPersonaRestoreMode = current;
+        target = 'xbox';
+      }
+    } else if (
+      !enabled
+      || (!this.gameBarVisible && Date.now() - this.gameBarHiddenSince >= GAME_BAR_PERSONA_RESTORE_DELAY_MS)
+    ) {
+      target = this.gameBarPersonaRestoreMode;
+      this.gameBarPersonaRestoreMode = null;
+    }
+
+    if (target === null || target === current) {
+      return;
+    }
+
+    this.gameBarPersonaInFlight = true;
+    this.appendAudioDebugLines([`[GameBar] switching persona ${current} -> ${target}`]);
+    try {
+      await this.switchHostPersonaMode(target, false);
+      if (target === 'xbox' && this.currentHostPersonaModeAfterSwitch() !== 'xbox') {
+        this.gameBarPersonaRestoreMode = null;
+      }
+    } catch (error) {
+      if (target === 'xbox') {
+        this.gameBarPersonaRestoreMode = null;
+      } else {
+        // Retry the restore on the next poll.
+        this.gameBarPersonaRestoreMode = target;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([`[GameBar] persona switch failed: ${message}`]);
+    } finally {
+      this.gameBarPersonaInFlight = false;
+    }
+  }
+
+  private currentHostPersonaModeAfterSwitch(): HostPersonaMode | null {
+    return this.hostPersonaTransition?.to ?? this.snapshot.status?.hostPersonaMode ?? null;
+  }
+
+  private async switchHostPersonaMode(mode: HostPersonaMode, persist: boolean): Promise<BridgeSnapshot> {
     const normalizedMode = normalizeHostPersonaMode(mode);
     const previousMode = this.snapshot.status?.hostPersonaMode ?? this.snapshot.settings.hostPersonaMode;
     const shouldRestoreDefaultRender = previousMode !== normalizedMode
@@ -3183,7 +3302,9 @@ export class BridgeService extends EventEmitter {
       expectSettingsRevisionChange: true
     });
     if (ack.resultCode === ACK_RESULT.OK) {
-      this.snapshot.settings = this.settingsStore.update({ hostPersonaMode: normalizedMode });
+      if (persist) {
+        this.snapshot.settings = this.settingsStore.update({ hostPersonaMode: normalizedMode });
+      }
       if (previousMode !== normalizedMode) {
         if (shouldRestoreDefaultRender) {
           this.queueHostPersonaDefaultRenderRestore(normalizedMode);
@@ -3797,6 +3918,7 @@ export class BridgeService extends EventEmitter {
     }
     await this.updateMicKeepaliveEngine(status.controllerConnected);
     await this.syncControllerPowerSavingState(settings);
+    void this.reconcileGameBarPersona();
 
     if (status.controllerConnected) {
       this.controllerConnected = true;
@@ -4121,7 +4243,7 @@ export class BridgeService extends EventEmitter {
     );
     await this.sendCommand(
       COMMAND_ID.SET_HOST_PERSONA,
-      hostPersonaModeValue(settings.hostPersonaMode),
+      hostPersonaModeValue(this.effectiveHostPersonaMode(settings)),
       { expectSettingsRevisionChange }
     );
   }
