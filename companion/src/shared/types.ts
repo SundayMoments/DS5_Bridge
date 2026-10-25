@@ -88,6 +88,7 @@ export interface CompanionSettings {
   hostPersonaMode: HostPersonaMode;
   notifyControllerConnection: boolean;
   notifyLowBattery: boolean;
+  gameBarXboxPersonaEnabled: boolean;
   duplexMicEnabled: boolean;
   controllerPowerSavingEnabled: boolean;
   selectedControllerProfileId: string;

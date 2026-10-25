@@ -491,6 +491,140 @@ export class AudioHapticsSessionMonitor extends EventEmitter {
   }
 }
 
+const GAME_BAR_MONITOR_RESTART_DELAY_MS = 5000;
+
+// Watches Xbox Game Bar visibility through the helper's --monitor-game-bar
+// mode. Emits 'visibility' (boolean) on every change and restarts the helper
+// if it exits while the monitor is wanted.
+export class GameBarMonitor extends EventEmitter {
+  private process: ChildProcessWithoutNullStreams | null = null;
+  private wanted = false;
+  private restartTimer: NodeJS.Timeout | null = null;
+  private stdoutBuffer = '';
+  private stderrBuffer = '';
+  private visible = false;
+
+  start(): void {
+    if (this.wanted) {
+      return;
+    }
+    this.wanted = true;
+    this.spawnHelper();
+  }
+
+  stop(): void {
+    this.wanted = false;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    const helper = this.process;
+    this.process = null;
+    if (helper) {
+      try {
+        helper.stdin.write('stop\n');
+        helper.stdin.end();
+      } catch {
+        // The helper may already be gone.
+      }
+      helper.kill();
+    }
+    this.setVisible(false);
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  private spawnHelper(): void {
+    let helper: ChildProcessWithoutNullStreams;
+    try {
+      helper = spawn(resolveHelperPath(), ['--monitor-game-bar'], {
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+    } catch (error) {
+      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      this.scheduleRestart();
+      return;
+    }
+
+    this.process = helper;
+    this.stdoutBuffer = '';
+    this.stderrBuffer = '';
+    helper.stdin.on('error', (error) => {
+      if (!isExpectedHelperPipeError(error)) {
+        this.emit('error', error);
+      }
+    });
+    helper.on('error', (error) => this.emit('error', error));
+    helper.stdout.on('data', (chunk: Buffer) => this.processStdout(chunk));
+    helper.stderr.on('data', (chunk: Buffer) => this.processStderr(chunk));
+    helper.on('exit', (code, signal) => {
+      if (this.process !== helper) {
+        return;
+      }
+      this.process = null;
+      this.setVisible(false);
+      this.emit('status', `game bar monitor exited (${signal ?? code ?? 'unknown'})`);
+      this.scheduleRestart();
+    });
+  }
+
+  private scheduleRestart(): void {
+    if (!this.wanted || this.restartTimer) {
+      return;
+    }
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      if (this.wanted && !this.process) {
+        this.spawnHelper();
+      }
+    }, GAME_BAR_MONITOR_RESTART_DELAY_MS);
+  }
+
+  private setVisible(visible: boolean): void {
+    if (this.visible === visible) {
+      return;
+    }
+    this.visible = visible;
+    this.emit('visibility', visible);
+  }
+
+  private processStdout(chunk: Buffer): void {
+    this.stdoutBuffer += chunk.toString('utf8');
+    const lines = this.stdoutBuffer.split(/\r?\n/);
+    this.stdoutBuffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const visible = parseGameBarMonitorLine(line);
+      if (visible !== null) {
+        this.setVisible(visible);
+      }
+    }
+  }
+
+  private processStderr(chunk: Buffer): void {
+    this.stderrBuffer = (this.stderrBuffer + chunk.toString('utf8')).slice(-HELPER_STDERR_MAX_CHARS);
+    const lines = this.stderrBuffer.split(/\r?\n/);
+    this.stderrBuffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const text = line.trim();
+      if (text) {
+        this.emit('status', text);
+      }
+    }
+  }
+}
+
+export function parseGameBarMonitorLine(raw: string): boolean | null {
+  try {
+    const parsed = JSON.parse(raw) as { visible?: unknown } | null;
+    return parsed && typeof parsed.visible === 'boolean' ? parsed.visible : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeSpeakerVolumePercent(percent: number): number {
   return Math.max(0, Math.min(100, Math.round(percent)));
 }

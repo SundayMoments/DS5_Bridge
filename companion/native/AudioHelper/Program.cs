@@ -54,6 +54,11 @@ if (options.PlayTestHaptics)
     AudioHelperTestHaptics.Play(options);
     return;
 }
+if (options.MonitorGameBar)
+{
+    await new GameBarMonitor().RunAsync();
+    return;
+}
 if (options.MonitorAudioSessions)
 {
     using var monitor = new AudioSessionMonitor();
@@ -2773,6 +2778,7 @@ sealed record HelperOptions(
     bool CaptureDumpOnly)
 {
     public bool ListBridges { get; init; }
+    public bool MonitorGameBar { get; init; }
     public string? CompanionDevicePath { get; init; }
     public Guid? BridgeContainer { get; init; }
 
@@ -2802,6 +2808,7 @@ sealed record HelperOptions(
         );
         var listDevices = false;
         var monitorAudioSessions = false;
+        var monitorGameBar = false;
         string? resolveIconDataUrlPath = null;
         var companionTransportServer = false;
         var listBridges = false;
@@ -2938,6 +2945,9 @@ sealed record HelperOptions(
                 case "--monitor-audio-sessions":
                     monitorAudioSessions = true;
                     break;
+                case "--monitor-game-bar":
+                    monitorGameBar = true;
+                    break;
                 case "--resolve-icon-data-url" when index + 1 < args.Length:
                     resolveIconDataUrlPath = args[++index];
                     break;
@@ -3027,6 +3037,7 @@ sealed record HelperOptions(
             captureDumpOnly)
         {
             ListBridges = listBridges,
+            MonitorGameBar = monitorGameBar,
             CompanionDevicePath = companionDevicePath,
             BridgeContainer = bridgeContainer
         };
