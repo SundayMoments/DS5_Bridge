@@ -25,5 +25,6 @@
 .system-page {
   height: 100%;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) 148px;
+  /* Cards match the other pages; the profile panel takes the rest. */
+  grid-template-rows: auto minmax(0, 326px) minmax(148px, 1fr);
 }

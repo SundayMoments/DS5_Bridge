@@ -73,7 +73,7 @@
   display: grid;
   grid-template-rows:
     repeat(4, minmax(var(--system-row-height), auto))
-    minmax(var(--system-row-height), 1fr);
+    minmax(40px, 1fr);
 }
 
 .device-row {

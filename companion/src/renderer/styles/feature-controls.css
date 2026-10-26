@@ -65,20 +65,21 @@
   filter: drop-shadow(0 0 9px rgba(255, 176, 46, 0.42));
 }
 
-.haptics-page .feature-card {
-  position: relative;
+/*
+ * Boost (and v1 Rumble in Rumble mode) follow the presets on the card's 16px
+ * rhythm instead of sitting at the card's bottom edge, so no gap opens above
+ * them. The slider and presets keep the shared preset-row position.
+ */
+.haptics-intensity-switches {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .haptics-boost-control {
-  position: absolute;
-  right: var(--card-padding);
-  bottom: var(--card-padding);
-}
-
-.haptics-rumble-v1-control {
-  position: absolute;
-  left: var(--card-padding);
-  bottom: var(--card-padding);
+  margin-left: auto;
 }
 
 .shell.controller-unavailable button.feature-icon:disabled,

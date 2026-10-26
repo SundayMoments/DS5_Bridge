@@ -497,45 +497,47 @@ export function ControllerFeedbackPage({
                 );
               })}
             </div>
-            <div
-              className="inline-switch feedback-boost-control haptics-boost-control"
-              title={feedbackBoostEnabled ? 'Feedback boost: up to 500%' : 'Enable feedback boost up to 500%'}
-            >
-              <span className="feedback-boost-label">
-                <IconFlame size={16} aria-hidden="true" />
-                Boost
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={feedbackBoostEnabled}
-                aria-label={feedbackBoostEnabled ? 'Disable feedback boost' : 'Enable feedback boost'}
-                className={`switch ${feedbackBoostEnabled ? 'on' : ''}`}
-                disabled={!connected || pendingAction !== null || feedbackBoostCommitPending}
-                onClick={toggleFeedbackBoostEnabled}
-              >
-                <span />
-              </button>
-            </div>
-            {showClassicRumbleControl ? (
+            <div className="haptics-intensity-switches">
+              {showClassicRumbleControl ? (
+                <div
+                  className="inline-switch feedback-boost-control haptics-rumble-v1-control"
+                  title={classicRumbleV1Enabled ? 'Classic rumble: v1 compatibility mode' : 'Classic rumble: v2 default mode'}
+                >
+                  <span className="feedback-boost-label">v1 Rumble</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={classicRumbleV1Enabled}
+                    aria-label={classicRumbleV1Enabled ? 'Disable v1 rumble mode' : 'Enable v1 rumble mode'}
+                    className={`switch ${classicRumbleV1Enabled ? 'on' : ''}`}
+                    disabled={!connected || pendingAction !== null || classicRumbleV1CommitPending}
+                    onClick={toggleClassicRumbleV1Enabled}
+                  >
+                    <span />
+                  </button>
+                </div>
+              ) : null}
               <div
-                className="inline-switch feedback-boost-control haptics-rumble-v1-control"
-                title={classicRumbleV1Enabled ? 'Classic rumble: v1 compatibility mode' : 'Classic rumble: v2 default mode'}
+                className="inline-switch feedback-boost-control haptics-boost-control"
+                title={feedbackBoostEnabled ? 'Feedback boost: up to 500%' : 'Enable feedback boost up to 500%'}
               >
-                <span className="feedback-boost-label">v1 Rumble</span>
+                <span className="feedback-boost-label">
+                  <IconFlame size={16} aria-hidden="true" />
+                  Boost
+                </span>
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={classicRumbleV1Enabled}
-                  aria-label={classicRumbleV1Enabled ? 'Disable v1 rumble mode' : 'Enable v1 rumble mode'}
-                  className={`switch ${classicRumbleV1Enabled ? 'on' : ''}`}
-                  disabled={!connected || pendingAction !== null || classicRumbleV1CommitPending}
-                  onClick={toggleClassicRumbleV1Enabled}
+                  aria-checked={feedbackBoostEnabled}
+                  aria-label={feedbackBoostEnabled ? 'Disable feedback boost' : 'Enable feedback boost'}
+                  className={`switch ${feedbackBoostEnabled ? 'on' : ''}`}
+                  disabled={!connected || pendingAction !== null || feedbackBoostCommitPending}
+                  onClick={toggleFeedbackBoostEnabled}
                 >
                   <span />
                 </button>
               </div>
-            ) : null}
+            </div>
           </section>
           <section className="feature-card test-card">
             <div className="feature-card-title">

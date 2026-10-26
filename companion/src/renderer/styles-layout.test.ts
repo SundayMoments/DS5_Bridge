@@ -94,7 +94,8 @@ describe('companion layout CSS', () => {
   });
 
   it('content-sizes the system profile panel so summary rows stay inside its border', () => {
-    const systemPage = cssBlock('.system-page', 'grid-template-rows: auto minmax(0, 1fr) 148px;');
+    // System cards match the other pages' 326px row; the profile panel keeps at least 148px.
+    const systemPage = cssBlock('.system-page', 'grid-template-rows: auto minmax(0, 326px) minmax(148px, 1fr);');
     expect(systemPage).toContain('height: 100%;');
     expect(systemPage).toContain('min-height: 0;');
     const profilePanel = cssBlock('.system-profile-panel', 'grid-template-rows: auto minmax(0, 1fr);');
