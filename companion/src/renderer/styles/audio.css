@@ -1,0 +1,597 @@
+.audio-haptics-grid {
+  align-items: stretch;
+}
+
+.audio-haptics-card {
+  align-content: stretch;
+  min-height: 0;
+}
+
+.audio-haptics-card:not(.audio-haptics-response-card) {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.audio-haptics-card:not(.audio-haptics-response-card) .feature-card-title {
+  margin-bottom: 0;
+}
+
+.audio-haptics-response-card {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 5px;
+}
+
+.audio-haptics-slider-spacer {
+  display: block;
+  min-height: 0;
+}
+
+.audio-haptics-status-badge {
+  justify-self: end;
+  align-self: start;
+  max-width: 134px;
+}
+
+.dual-selector.audio-haptics-mode-selector {
+  width: 100%;
+  grid-auto-columns: minmax(0, 1fr);
+  margin-top: 0;
+}
+
+.dual-selector.audio-haptics-source-selector {
+  width: 100%;
+  grid-auto-columns: minmax(0, 1fr);
+  margin-top: 0;
+}
+
+.audio-haptics-card > .segmented-row {
+  margin-top: 0;
+}
+
+.audio-haptics-routing-stack {
+  display: grid;
+  gap: 8px;
+  grid-row: 6;
+  margin-top: 0;
+}
+
+.audio-haptics-source-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.audio-haptics-source-select {
+  width: 100%;
+}
+
+.audio-haptics-source-select .custom-select-button {
+  min-height: 42px;
+  height: 42px;
+  padding: 0 10px;
+}
+
+.audio-haptics-source-select .custom-select-button > span,
+.audio-haptics-source-select .custom-select-menu button > span {
+  min-width: 0;
+  width: 100%;
+}
+
+.audio-haptics-source-select .custom-select-menu {
+  max-height: min(var(--custom-select-menu-max-height), 270px);
+}
+
+.audio-haptics-source-select .custom-select-menu button {
+  min-height: 44px;
+  padding: 7px 10px;
+}
+
+.audio-haptics-source-option {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.audio-haptics-source-icon {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--surface-control-soft);
+  overflow: hidden;
+}
+
+.audio-haptics-source-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.audio-haptics-source-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.audio-haptics-source-copy strong,
+.audio-haptics-source-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-haptics-source-copy strong {
+  color: var(--text-control);
+  font-size: var(--font-size-subtitle);
+  font-weight: 750;
+}
+
+.audio-haptics-source-copy small {
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  font-weight: 650;
+}
+
+.audio-haptics-source-option.unavailable {
+  opacity: 0.72;
+}
+
+.audio-haptics-routing-stack .dual-selector {
+  min-height: 38px;
+}
+
+.audio-haptics-routing-stack .dual-selector button {
+  min-height: 36px;
+  font-size: var(--font-size-body);
+  font-weight: 650;
+}
+
+.audio-haptics-config-stack {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 12px;
+  padding: 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--card-radius);
+  background: var(--surface-control-soft);
+}
+
+.audio-haptics-config-row {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.audio-haptics-config-row > span {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+}
+
+.audio-haptics-config-pair-row {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.audio-haptics-config-pair-row label {
+  min-width: 0;
+  position: relative;
+  display: grid;
+  gap: 6px;
+}
+
+.audio-haptics-config-pair-row span {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+}
+
+.audio-haptics-config-pair-row .audio-haptics-config-label {
+  position: static;
+  width: max-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  outline: none;
+  cursor: help;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--surface-border-strong);
+  text-underline-offset: 3px;
+}
+
+.audio-haptics-config-pair-row .audio-haptics-config-label:hover,
+.audio-haptics-config-pair-row .audio-haptics-config-label:focus-visible {
+  color: var(--text-strong);
+  text-decoration-color: var(--accent-border-strong);
+}
+
+.audio-haptics-config-pair-row .audio-haptics-config-label:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.audio-haptics-config-pair-row .audio-haptics-config-label:hover .audio-haptics-config-tooltip,
+.audio-haptics-config-pair-row .audio-haptics-config-label:focus-visible .audio-haptics-config-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.audio-haptics-config-pair-row .audio-haptics-config-tooltip {
+  --audio-haptics-config-tooltip-width: min(420px, calc(100vw - 72px));
+  --audio-haptics-config-tooltip-half-width: min(210px, calc((100vw - 72px) * 0.5));
+  top: calc(1.25em + 10px);
+  left: min(50%, calc(100% - var(--audio-haptics-config-tooltip-half-width)));
+  right: auto;
+  z-index: 60;
+  width: var(--audio-haptics-config-tooltip-width);
+  max-width: var(--audio-haptics-config-tooltip-width);
+  display: block;
+  color: var(--text-control);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transform: translate(-50%, -4px);
+}
+
+.audio-secondary-controls {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  align-content: stretch;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.audio-buffer-control {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  margin: 2px 0 0;
+  padding: 14px 18px;
+  overflow: visible;
+}
+
+.audio-buffer-control.disabled {
+  opacity: 0.58;
+}
+
+.audio-buffer-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, auto) 30px;
+  align-items: center;
+  gap: 10px;
+}
+
+.audio-buffer-title {
+  position: relative;
+  min-width: 0;
+  width: max-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  color: var(--text-primary);
+  overflow: visible;
+  font-size: var(--font-size-body);
+  font-weight: 780;
+  line-height: 1.18;
+  letter-spacing: 0;
+  outline: none;
+  white-space: nowrap;
+  cursor: help;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--surface-border-strong);
+  text-underline-offset: 3px;
+}
+
+.audio-buffer-title svg {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.audio-buffer-title:hover,
+.audio-buffer-title:focus-visible {
+  color: var(--text-strong);
+  text-decoration-color: var(--accent-border-strong);
+}
+
+.audio-buffer-title:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.audio-buffer-title:hover .audio-haptics-config-tooltip,
+.audio-buffer-title:focus-visible .audio-haptics-config-tooltip {
+  opacity: 1;
+  transform: translate(0, 0);
+}
+
+.audio-buffer-title .audio-haptics-config-tooltip {
+  --audio-buffer-tooltip-width: min(360px, calc(100vw - 72px));
+  top: calc(100% + 10px);
+  left: 0;
+  right: auto;
+  z-index: 70;
+  width: var(--audio-buffer-tooltip-width);
+  max-width: var(--audio-buffer-tooltip-width);
+  display: block;
+  color: var(--text-control);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transform: translate(0, 0);
+}
+
+.audio-buffer-readout {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 9px;
+  min-width: 92px;
+  white-space: nowrap;
+}
+
+.audio-buffer-readout strong {
+  color: var(--accent);
+  font-size: var(--font-size-body);
+  font-weight: 780;
+  line-height: 1;
+}
+
+.audio-buffer-readout span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: 760;
+  line-height: 1;
+}
+
+.audio-buffer-status-icon {
+  position: relative;
+  justify-self: end;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  display: grid;
+  place-items: center;
+  background: var(--surface-control-soft);
+  outline: none;
+  cursor: help;
+}
+
+.audio-buffer-status-icon svg {
+  display: block;
+}
+
+.audio-buffer-status-icon:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.audio-buffer-status-icon:hover .audio-buffer-zone-tooltip,
+.audio-buffer-status-icon:focus-visible .audio-buffer-zone-tooltip {
+  opacity: 1;
+  transform: translate(0, 0);
+}
+
+.audio-buffer-zone-tooltip {
+  top: calc(100% + 8px);
+  left: auto;
+  right: 0;
+  z-index: 75;
+  width: 250px;
+  max-width: min(250px, calc(100vw - 72px));
+  display: block;
+  color: var(--text-control);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transform: translate(0, 0);
+}
+
+.audio-buffer-status-icon.stutter {
+  color: #ff6b66;
+}
+
+.audio-buffer-status-icon.risky {
+  color: #ffc23f;
+}
+
+.audio-buffer-status-icon.safe {
+  color: #39d77d;
+}
+
+.audio-buffer-slider-row {
+  gap: 2px;
+}
+
+.audio-buffer-range-control {
+  min-width: 0;
+  gap: 0;
+}
+
+.audio-buffer-control input[type="range"] {
+  height: 24px;
+}
+
+.audio-buffer-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--range-fill, 50%), var(--range-track-rest) var(--range-fill, 50%));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16);
+}
+
+.audio-buffer-control input[type="range"]::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -8.5px;
+  border: 0;
+  background: var(--text-control);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.audio-buffer-control input[type="range"]:disabled::-webkit-slider-runnable-track {
+  background: var(--range-disabled-track);
+}
+
+.audio-haptics-select .custom-select-button {
+  height: 36px;
+}
+
+.audio-haptics-select .custom-select-menu button {
+  min-height: 32px;
+}
+
+.audio-haptics-response-card {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.audio-haptics-status {
+  align-self: stretch;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.dual-selector {
+  min-height: 28px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--dual-selector-segment-width);
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--surface-control-soft);
+  box-shadow: var(--shadow-panel);
+}
+
+.dual-selector button {
+  min-width: 0;
+  min-height: 26px;
+  border: 0;
+  border-right: 1px solid var(--surface-border);
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0 12px;
+  color: var(--text-control);
+  background: transparent;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
+  transition:
+    color 160ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.dual-selector button:last-child {
+  border-right: 0;
+}
+
+.dual-selector button.active {
+  color: var(--accent-text);
+  background: var(--accent-selected);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 16px var(--accent-soft);
+}
+
+.dual-selector button:disabled {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+  background: transparent;
+}
+
+.dual-selector button.active:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-disabled-strong);
+}
+
+.dual-selector button svg {
+  width: 15px;
+  height: 15px;
+  color: currentColor;
+}
+
+.mic-option-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.mic-option-grid button {
+  min-height: var(--control-height);
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 12px;
+  color: var(--text-control);
+  background: var(--surface-control-soft);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+}
+
+.mic-option-grid button.active {
+  border-color: var(--accent-border-strong);
+  color: var(--text-strong);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent-border-strong);
+}
+
+.mic-option-grid button.danger {
+  border-color: var(--danger-border-strong);
+  color: var(--danger);
+  background: var(--danger-bg);
+  box-shadow: inset 0 -2px 0 var(--danger-border-strong);
+}
+
+.mic-option-grid button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}

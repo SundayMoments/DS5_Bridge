@@ -1,0 +1,184 @@
+.sidebar-bridge-area {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.sidebar-bridge-selector {
+  position: relative;
+  z-index: 4;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  border: 1px solid var(--surface-divider);
+  border-radius: 9px;
+  background: var(--surface-control-soft);
+  overflow: visible;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-bridge-selector:has(.custom-select.open),
+.sidebar-bridge-selector:has(.bridge-rename-input:focus) {
+  border-color: var(--accent-border-strong);
+}
+
+.sidebar-bridge-type {
+  grid-area: 1 / 1;
+  z-index: 1;
+  width: 38px;
+  min-height: 38px;
+  display: grid;
+  place-items: center;
+  color: var(--text-control);
+  pointer-events: none;
+}
+
+.sidebar-bridge-selector > .sidebar-bridge-select,
+.sidebar-bridge-selector > .bridge-rename-input {
+  grid-area: 1 / 1;
+}
+
+.sidebar-bridge-select .custom-select-button {
+  min-height: 38px;
+  padding-inline: 38px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sidebar-bridge-select.open .custom-select-button {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.sidebar-bridge-select .custom-select-button > span {
+  font-weight: var(--font-weight-regular);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A pending scan locks actions without flashing the menu's disabled palette. */
+.sidebar-bridge-select.bridge-pending .custom-select-button:disabled,
+.sidebar-bridge-select.bridge-pending .custom-select-menu button[role="option"]:disabled {
+  opacity: 1;
+}
+
+.sidebar-bridge-select.bridge-pending .custom-select-menu button[role="option"]:disabled {
+  color: var(--text-control);
+}
+
+.sidebar-bridge-select.bridge-pending .custom-select-menu button.selected:disabled {
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
+}
+
+.shell .sidebar-bridge-select .custom-select-menu {
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface-popup);
+  border-color: var(--surface-border-strong);
+  box-shadow: var(--shadow-menu);
+}
+
+.sidebar-bridge-select .custom-select-menu-options {
+  display: grid;
+  gap: 4px;
+}
+
+.sidebar-bridge-select .custom-select-menu button[role="option"] {
+  min-height: 38px;
+  padding-inline: 12px 10px;
+  border-radius: 6px;
+}
+
+.sidebar-bridge-select .custom-select-menu button[role="option"] > span {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+}
+
+.sidebar-bridge-select .custom-select-menu button.selected {
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
+}
+
+.sidebar-bridge-select .custom-select-menu button.selected > span {
+  font-weight: var(--font-weight-semibold);
+}
+
+.sidebar-bridge-select .custom-select-menu button.selected > svg {
+  color: var(--accent);
+}
+
+.sidebar-bridge-select .custom-select-menu-footer {
+  border-top: 1px solid var(--surface-divider);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.sidebar-bridge-menu-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sidebar-bridge-select .sidebar-bridge-menu-actions button {
+  width: auto;
+  min-width: 0;
+  min-height: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--surface-divider);
+  border-radius: 6px;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+}
+
+.sidebar-bridge-menu-actions button svg {
+  flex: 0 0 auto;
+}
+
+.bridge-direct-controller {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 10px;
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  line-height: 1.35;
+}
+
+.bridge-direct-controller svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.bridge-direct-controller span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bridge-rename-input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px 0 38px;
+  color: var(--text-control);
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-body);
+  outline: none;
+}

@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",
     "build:audio-helper": "node scripts/run-dotnet-sdk.mjs publish native/AudioHelper/AudioHelper.csproj -c Release -r win-x64 --self-contained true -o native/AudioHelper/bin/publish/win-x64",
     "build:firmware-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File ../tools/build-pico-universal-flash-nuke.ps1",
-    "build:app": "tsc -p tsconfig.main.json && vite build",
+    "build:app": "npm run localize:check && tsc -p tsconfig.main.json && vite build",
+    "localize:extract": "node scripts/generate-localization-master.mjs",
+    "localize:check": "node scripts/generate-localization-master.mjs --check",
     "build": "npm run build:audio-helper && npm run build:app",
     "package:win": "npm run build:firmware-tools && npm run build && node scripts/package-win.mjs",
     "installer:win": "npm run build:firmware-tools && npm run build && electron-builder --win nsis --x64",
@@ -22,7 +24,8 @@
     "test:native": "node scripts/run-dotnet-sdk.mjs test native/AudioHelper.Tests/AudioHelper.Tests.csproj --nologo",
     "test:firmware": "cmake -S ../tests/firmware -B ../build-firmware-tests -G Ninja && cmake --build ../build-firmware-tests && ctest --test-dir ../build-firmware-tests --output-on-failure",
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
-    "layout:check": "npm run build && node scripts/layout-check.mjs"
+    "layout:check": "npm run build && node scripts/layout-check.mjs",
+    "ui:review": "npm run build:app && node scripts/ui-review.mjs"
   },
   "build": {
     "appId": "io.github.sundaymoments.ds5bridge",
@@ -119,6 +122,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "electron": "^39.8.10",
     "electron-builder": "^26.8.1",
+    "jsdom": "^29.1.1",
     "lucide-react": "^0.561.0",
     "playwright": "^1.59.1",
     "rcedit": "^5.0.2",

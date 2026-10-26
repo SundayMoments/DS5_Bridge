@@ -40,7 +40,11 @@ import type {
   HostPersonaMode,
   RemapButtonId
 } from '../shared/protocol';
-import type { CompanionSettings, UiScalePercent, UiThemePreset } from '../shared/types';
+import { isUiScalePercent, isUiTextScalePercent } from '../shared/types';
+import { isUiThemePreset } from '../shared/ui-theme';
+import { SYSTEM_UI_LOCALE, normalizeUiLocalePreference } from '../shared/ui-locale-matching';
+export { normalizeUiLocalePreference };
+import type { CompanionSettings, UiScalePercent, UiTextScalePercent, UiThemePreset } from '../shared/types';
 
 const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   leftStickRadialDeadzonePercent: 0,
@@ -148,7 +152,9 @@ const CONTROLLER_PROFILE_SETTING_KEYS = new Set<keyof ControllerProfileSettings>
 export const DEFAULT_SETTINGS: CompanionSettings = {
   selectedPresetId: 'balanced',
   uiScalePercent: 100,
+  uiTextScalePercent: 100,
   uiThemePreset: 'dark',
+  uiLocale: SYSTEM_UI_LOCALE,
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
   kitsuneInputPromotionDismissed: false,
@@ -333,20 +339,33 @@ function normalizeAudioReactiveHapticsRelease(value: unknown): AudioReactiveHapt
 }
 
 export function normalizeUiScalePercent(value: unknown): UiScalePercent {
-  return value === 75 || value === 125 || value === 150 ? value : 100;
+  return isUiScalePercent(value) ? value : DEFAULT_SETTINGS.uiScalePercent;
+}
+
+export function normalizeUiTextScalePercent(value: unknown): UiTextScalePercent {
+  return isUiTextScalePercent(value) ? value : DEFAULT_SETTINGS.uiTextScalePercent;
+}
+
+/**
+ * Schema 4 and earlier zoomed the window by the raw percentage. Schema 5 adds a
+ * 1.25 base zoom, so each saved choice maps to the option with the same size.
+ */
+const LEGACY_UI_SCALE_PERCENTS: Readonly<Record<number, UiScalePercent>> = {
+  75: 60,
+  100: 80,
+  125: 100,
+  150: 120
+};
+
+export function migrateLegacyUiScalePercent(value: unknown): UiScalePercent {
+  // The legacy default was 100%, which keeps its size at 80%.
+  return typeof value === 'number' && LEGACY_UI_SCALE_PERCENTS[value] !== undefined
+    ? LEGACY_UI_SCALE_PERCENTS[value]
+    : LEGACY_UI_SCALE_PERCENTS[100];
 }
 
 export function normalizeUiThemePreset(value: unknown): UiThemePreset {
-  switch (value) {
-    case 'light':
-    case 'dark':
-    case 'bubble-gum':
-    case 'pomegranate':
-    case 'kiwi':
-      return value;
-    default:
-      return DEFAULT_SETTINGS.uiThemePreset;
-  }
+  return isUiThemePreset(value) ? value : DEFAULT_SETTINGS.uiThemePreset;
 }
 
 function cloneRemapMap(map: ButtonRemapMap): ButtonRemapMap {
@@ -856,7 +875,8 @@ type PersistedSettings = Partial<CompanionSettings> & {
   settingsSchemaVersion?: number;
 };
 
-const CURRENT_SETTINGS_SCHEMA_VERSION = 4;
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 5;
+const BASE_ZOOM_SETTINGS_SCHEMA_VERSION = 5;
 
 function migratePersistedSettings(value: PersistedSettings): PersistedSettings {
   const version = Number.isFinite(value.settingsSchemaVersion)
@@ -870,6 +890,15 @@ function migratePersistedSettings(value: PersistedSettings): PersistedSettings {
     ...value,
     settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION
   };
+  if (version < BASE_ZOOM_SETTINGS_SCHEMA_VERSION) {
+    next.uiScalePercent = migrateLegacyUiScalePercent(value.uiScalePercent);
+    if (value.customProfile) {
+      next.customProfile = {
+        ...value.customProfile,
+        uiScalePercent: migrateLegacyUiScalePercent(value.customProfile.uiScalePercent)
+      };
+    }
+  }
   return next;
 }
 
@@ -890,7 +919,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
   return {
     selectedPresetId,
     uiScalePercent: normalizeUiScalePercent(value?.uiScalePercent),
+    uiTextScalePercent: normalizeUiTextScalePercent(value?.uiTextScalePercent),
     uiThemePreset: normalizeUiThemePreset(value?.uiThemePreset),
+    uiLocale: normalizeUiLocalePreference(value?.uiLocale),
     launchAtStartupEnabled: typeof value?.launchAtStartupEnabled === 'boolean'
       ? value.launchAtStartupEnabled
       : DEFAULT_SETTINGS.launchAtStartupEnabled,

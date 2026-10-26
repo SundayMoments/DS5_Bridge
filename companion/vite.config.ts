@@ -6,6 +6,13 @@ export default defineConfig({
   root: '.',
   base: './',
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@renderer': path.resolve(__dirname, 'src', 'renderer'),
+      '@shared': path.resolve(__dirname, 'src', 'shared'),
+      '@product-assets': path.resolve(__dirname, '..', 'assets')
+    }
+  },
   build: {
     outDir: 'dist/renderer',
     emptyOutDir: true

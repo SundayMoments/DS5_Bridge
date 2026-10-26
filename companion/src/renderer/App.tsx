@@ -3,6 +3,11 @@ import '@fontsource/montserrat/latin-600.css';
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  CustomSelect as SharedCustomSelect,
+  type CustomSelectProps
+} from './components/CustomSelect';
+import type { SelectValue } from './components/custom-select-types';
+import {
   type TablerIcon,
   IconAdjustmentsSpark,
   IconActivity as Activity,
@@ -101,6 +106,31 @@ import {
   UI_THEME_OPTIONS,
   UI_THEME_PREVIEW_SWATCHES
 } from './ui-themes';
+import { saveUiThemePreset, storedUiThemePreset } from './ui-theme-preferences';
+import {
+  applyUiTextScalePercent,
+  saveUiTextScalePercent,
+  storedUiTextScalePercent
+} from './ui-text-scale-preferences';
+import { useDocumentTheme } from './common/use-document-theme';
+import { BridgeMark } from './features/shell/BridgeMark';
+import { MainAppShell } from './features/shell/MainAppShell';
+import { ShellSidebarHeader } from './features/shell/ShellSidebarHeader';
+import {
+  SettingsPage,
+  SettingsSidebar,
+  useSettingsNavigation,
+  type SettingsFocusTarget,
+  type SettingsPageActions,
+  type SettingsPageModel
+} from './features/settings';
+import { ShellBridgeSelector } from './features/shell/ShellBridgeSelector';
+import { ShellNotifications } from './features/shell/ShellNotifications';
+import { ShellSidebarDevice } from './features/shell/ShellSidebarDevice';
+import { ShellSupportBadge } from './features/shell/ShellSupportBadge';
+import { controlPanelIdFor, type ControlTab } from './features/shell/control-tabs';
+import { useLocalization, type UiLocalePreference } from './common/localization';
+import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
   CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
   CHORD_CONTROLLER_SETTING_STEP_MAX,
@@ -143,7 +173,15 @@ import type {
   TriggerTestMode,
   TriggerTestTarget
 } from '../shared/protocol';
-import type { AudioHapticsSession, BridgeSnapshot, UiScalePercent, UiThemePreset } from '../shared/types';
+import {
+  UI_SCALE_PERCENTS,
+  UI_TEXT_SCALE_PERCENTS,
+  type AudioHapticsSession,
+  type BridgeSnapshot,
+  type UiScalePercent,
+  type UiTextScalePercent,
+  type UiThemePreset
+} from '../shared/types';
 import {
   buildDevicesModel,
   controllerDeviceCachesEqual,
@@ -160,16 +198,6 @@ import {
 } from './ControllerDevicesPage';
 import { radialDeadzonePreview, stickPositionPercent } from './radial-deadzone-preview';
 
-type ControlTab = 'overview' | 'devices' | 'haptics' | 'audio-haptics' | 'audio' | 'triggers' | 'trigger-lab' | 'lighting' | 'deadzones' | 'remapping' | 'chords' | 'system';
-type SidebarControlTab = ControlTab;
-type ControlTabDefinition = Readonly<{ id: SidebarControlTab; label: string; Icon: TablerIcon }>;
-type ControlTabGroupId = 'controller' | 'input' | 'labs';
-type ControlTabGroupDefinition = Readonly<{
-  id: ControlTabGroupId;
-  label: string;
-  Icon: TablerIcon;
-  tabs: readonly ControlTabDefinition[];
-}>;
 type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type ControllerType = BridgeStatusPayload['controllerType'];
 type KnownControllerType = Exclude<ControllerType, 'unknown'>;
@@ -299,7 +327,6 @@ type FeatureTipsPanelProps = {
   audioHapticsOpen?: boolean;
   triggerLabOpen?: boolean;
 };
-type SettingsFocusTarget = 'controller-power-saving' | 'sleep-shortcut' | 'volume-shortcut';
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
 
 const KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';
@@ -485,17 +512,6 @@ const TRIGGER_TARGET_OPTIONS: Array<[string, TriggerTestTarget]> = [
   ['L2', 'l2'],
   ['R2', 'r2'],
   ['Both Triggers', 'both']
-];
-const IDLE_DISCONNECT_TIMEOUT_OPTIONS: Array<[string, number]> = [
-  ['5 min', 5],
-  ['15 min', 15],
-  ['30 min', 30]
-];
-const UI_SCALE_OPTIONS: Array<[string, UiScalePercent]> = [
-  ['75%', 75],
-  ['100%', 100],
-  ['125%', 125],
-  ['150%', 150]
 ];
 const REMAP_BUTTONS: Record<RemapButtonId, RemapButtonDefinition> = {
   l2: { id: 'l2', label: 'L2', glyphUrl: l2GlyphUrl },
@@ -760,65 +776,6 @@ const REMAP_EDGE_LINE_POINTS: Record<DualSenseEdgeRemapButtonId, [[number, numbe
   lfn: [[227.5, 368.88], [227.68, 296.98]],
   rfn: [[370.46, 368.88], [370.64, 296.98]]
 };
-const CONTROL_TAB_DEFINITIONS: Record<SidebarControlTab, ControlTabDefinition> = {
-  overview: { id: 'overview', label: 'Overview', Icon: IconLayoutDashboard },
-  devices: { id: 'devices', label: 'Devices', Icon: IconBluetooth },
-  audio: { id: 'audio', label: 'Audio', Icon: IconVolume },
-  haptics: { id: 'haptics', label: 'Haptics', Icon: Sparkles },
-  'audio-haptics': { id: 'audio-haptics', label: 'Audio Haptics', Icon: IconDeviceAudioTape },
-  triggers: { id: 'triggers', label: 'Adaptive Triggers', Icon: IconDeviceGamepad2 },
-  'trigger-lab': { id: 'trigger-lab', label: 'Trigger Lab', Icon: IconFlask2 },
-  lighting: { id: 'lighting', label: 'Lighting', Icon: IconBulb },
-  deadzones: { id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder },
-  remapping: { id: 'remapping', label: 'Button Remapping', Icon: IconDeviceGamepad3 },
-  chords: { id: 'chords', label: 'Chords', Icon: IconReplace },
-  system: { id: 'system', label: 'System', Icon: IconCpu }
-};
-
-const CONTROL_TAB_GROUPS: readonly ControlTabGroupDefinition[] = [
-  {
-    id: 'controller',
-    label: 'Controller',
-    Icon: IconDeviceGamepad3,
-    tabs: [
-      CONTROL_TAB_DEFINITIONS.devices,
-      CONTROL_TAB_DEFINITIONS.audio,
-      CONTROL_TAB_DEFINITIONS.haptics,
-      CONTROL_TAB_DEFINITIONS.triggers,
-      CONTROL_TAB_DEFINITIONS.lighting
-    ]
-  },
-  {
-    id: 'input',
-    label: 'Input',
-    Icon: IconReplace,
-    tabs: [
-      CONTROL_TAB_DEFINITIONS.deadzones,
-      CONTROL_TAB_DEFINITIONS.remapping,
-      CONTROL_TAB_DEFINITIONS.chords
-    ]
-  },
-  {
-    id: 'labs',
-    label: 'Labs',
-    Icon: IconFlask2,
-    tabs: [
-      CONTROL_TAB_DEFINITIONS['audio-haptics'],
-      CONTROL_TAB_DEFINITIONS['trigger-lab']
-    ]
-  }
-];
-
-function controlTabGroupFor(tab: ControlTab): ControlTabGroupDefinition | null {
-  return CONTROL_TAB_GROUPS.find(({ tabs }) => tabs.some(({ id }) => id === tab)) ?? null;
-}
-
-function controlPanelIdFor(tab: SidebarControlTab): string {
-  if (tab === 'audio-haptics') return 'control-panel-haptics';
-  if (tab === 'trigger-lab') return 'control-panel-triggers';
-  return `control-panel-${tab}`;
-}
-type SelectValue = string | number;
 type SinkSelectableAudio = HTMLAudioElement & {
   setSinkId?: (sinkId: string) => Promise<void>;
   sinkId?: string;
@@ -826,26 +783,12 @@ type SinkSelectableAudio = HTMLAudioElement & {
 const LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY = 'ds5bridge.lastRemapControllerType';
 const TRIGGER_LAB_CUSTOM_PROFILES_STORAGE_KEY = 'ds5bridge.triggerLabProfiles';
 const TRIGGER_LAB_WORKSPACE_STORAGE_KEY = 'ds5bridge.triggerLabWorkspace';
-const UI_THEME_PRESET_STORAGE_KEY = 'ds5bridge.uiThemePreset';
 const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
 const STARTUP_READY_HOLD_MS = 1000;
 
 function storedRemapControllerType(): KnownControllerType {
   const saved = window.localStorage.getItem(LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY);
   return saved === 'dualsense-edge' ? 'dualsense-edge' : 'dualsense';
-}
-
-function isUiThemePreset(value: string | null): value is UiThemePreset {
-  return UI_THEME_OPTIONS.some(([, preset]) => preset === value);
-}
-
-function storedUiThemePreset(): UiThemePreset {
-  const saved = window.localStorage.getItem(UI_THEME_PRESET_STORAGE_KEY);
-  return isUiThemePreset(saved) ? saved : DEFAULT_UI_THEME_PRESET;
-}
-
-function saveUiThemePreset(preset: UiThemePreset): void {
-  window.localStorage.setItem(UI_THEME_PRESET_STORAGE_KEY, preset);
 }
 
 function storedStartupTutorialStep(): StartupTutorialStep {
@@ -855,28 +798,6 @@ function storedStartupTutorialStep(): StartupTutorialStep {
 function saveStartupTutorialCompleted(): void {
   window.localStorage.setItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY, '1');
 }
-
-type CustomSelectProps<T extends SelectValue> = {
-  value: T;
-  options: Array<[string, T]>;
-  disabled?: boolean;
-  className?: string;
-  floatingMenu?: boolean;
-  floatingMenuMinWidth?: number;
-  suspendOutsideClose?: boolean;
-  showSelectedCheck?: boolean;
-  closeOnSelect?: boolean;
-  getOptionClassName?: (label: string, value: T) => string | undefined;
-  renderValue?: (label: string, value: T) => ReactNode;
-  renderOption?: (label: string, value: T) => ReactNode;
-  renderMenuFooter?: (closeMenu: () => void) => ReactNode;
-  ariaLabel: string;
-  onChange: (value: T) => void;
-};
-
-type CustomSelectMenuStyle = CSSProperties & {
-  '--custom-select-menu-max-height'?: string;
-};
 
 function snapHapticsValue(value: number, max = STANDARD_FEEDBACK_GAIN_PERCENT): number {
   return Math.max(0, Math.min(max, Math.round(value / HAPTICS_STEP) * HAPTICS_STEP));
@@ -1269,28 +1190,6 @@ function TriggerLabMeter({ label, value, disabled = false, onChange, onCommit }:
         ))}
       </div>
     </div>
-  );
-}
-
-function BridgeMark() {
-  return (
-    <svg className="bridge-mark" viewBox="335 88 310 292" aria-hidden="true" focusable="false">
-      <path
-        d="M 864.77 430.4 L 864.77 430.4 A 0.3453 0.3389 -55.841 0 1 864.65 429.74 C 890.7 418.97 908.21 394.39 913.07 367.04 Q 913.87 362.54 913.87 350.25 Q 913.87 343.85 913.73 310.51 C 913.59 279.64 890.84 248.89 859.8 243.26 Q 855.01 242.39 845.2 242.4 Q 735.01 242.44 716.25 242.4 Q 708.72 242.38 705.28 242.67 C 688.41 244.09 674.53 255.82 670.13 271.87 Q 668.71 277.05 668.72 288.26 Q 668.8 403.3 668.79 407.26 C 668.73 429.15 687.02 445.81 708.28 445.78 Q 723.29 445.75 737.72 445.69 L 737.72 445.69 A 0.6565 0.6519 78.2735 0 1 738.34 446.1 Q 748.79 472.7 773.46 487.92 L 773.46 487.92 A 0.2759 0.2737 60.5847 0 1 773.32 488.43 Q 746.06 488.27 717.83 488.45 Q 699.82 488.56 692.29 486.93 Q 675.65 483.32 663.78 475.73 Q 640.67 460.95 630.84 435.18 C 626.71 424.34 625.81 415.24 625.82 402.4 Q 625.87 313.63 625.78 289.05 Q 625.72 274.97 627.22 267.58 C 634.19 233.22 661.15 206.38 695.82 200.44 Q 701.96 199.39 712.75 199.39 Q 768.15 199.4 854 199.4 Q 858.34 199.41 867.8 201.07 Q 874.86 202.32 881.21 204.48 C 914.65 215.86 940.3 242.82 951.4 276.34 Q 956.72 292.43 956.78 308.5 Q 956.81 318.91 956.88 344.27 Q 956.94 364.15 955.25 374.14 Q 951.72 395.08 941.77 413.99 C 938.94 419.38 934.77 424.88 931.3 429.85 L 931.3 429.85 A 1.2776 1.2741 17.2763 0 1 930.25 430.4 L 864.77 430.4 Z"
-        fill="var(--bridge-mark-primary)"
-        transform="matrix(0.5818 0 0 0.5818 0 0)"
-      />
-      <path
-        d="M 896.95 373.03 L 896.95 373.03 A 0.6463 0.6441 -83.8938 0 1 896.32 373.54 Q 871.83 373.82 838.84 373.65 Q 820.82 373.56 816.73 374.53 C 795.55 379.55 784.9 400.68 790.87 421.13 C 793.48 430.08 798.91 436.11 806.81 440.77 Q 815.27 445.76 824.54 445.77 Q 857.29 445.77 980.74 445.82 Q 993.93 445.83 1007.2 451.29 C 1046.5 467.48 1065.63 510.54 1050.8199 550.98 Q 1043.61 570.68 1027.51 584.73 Q 1023.67 588.08 1014.98 593.18 Q 1005.17 598.94 992.3 601.61 Q 986.5 602.81 968.13 602.8 Q 876.32 602.75 842.35 602.75 Q 818.37 602.75 817.15 602.59 C 805.99 601.11 795.75 597.97 785.66 591.65 Q 759.6 575.33 750.46 544.77 Q 746.76 532.39 747.41 519.21 L 747.41 519.21 A 1.3529 1.3514 -88.6671 0 1 748.76 517.92 L 787.86 517.92 L 787.86 517.92 A 1.8981 1.8942 -88.1551 0 1 789.75 519.94 C 788.61 537.13 798.59 553.44 815.27 558.67 Q 820.27 560.24 835.53 560.22 Q 897.28 560.16 976.26 560.16 Q 990.81 560.16 1000.68 551.71 Q 1015.36 539.15 1013.57 519.34 Q 1013.3 516.35 1011.1 510.38 C 1008.01 501.96 1001.86 496.55 993.91 492.23 C 986.35 488.13 979.5 488.45 970 488.44 Q 892 488.41 827.25 488.47 Q 816.38 488.48 807.56 486.62 C 787.46 482.39 769.98 469.71 759.32 452.36 Q 757.23 448.98 755.78 445.86 C 754.36 442.81 752.55 439.97 751.58 437.02 Q 740.83 404.12 755.51 374.72 C 767.26 351.19 788.59 335.04 814.84 331.58 Q 820.95 330.78 832.06 330.81 Q 883.87 330.98 897.79 330.8 L 897.79 330.8 A 0.7015 0.6915 -89.2094 0 1 898.49 331.53 Q 898.05 343.01 898.46 354.62 C 898.72 361.7 898.34 366.91 896.95 373.03 Z"
-        fill="var(--bridge-mark-secondary)"
-        transform="matrix(0.5818 0 0 0.5818 0 0)"
-      />
-      <path
-        d="M 971.82 331.88 L 971.82 331.88 A 0.98 0.98 -60.1943 0 1 972.8 330.9 C 994.8 331.03 1015.5 340.93 1030.0601 357.64 Q 1049.92 380.42 1049.22 413.11 L 1049.22 413.11 A 1.591 1.5905 -89.2606 0 1 1047.63 414.66 L 1008.32 414.66 L 1008.32 414.66 A 1.9801 1.98 89.8546 0 1 1006.34 412.69 Q 1006.3 406.39 1006.21 405.46 Q 1004.53 389.03 991.04 379.45 Q 983.23 373.91 972.94 373.98 L 972.94 373.98 A 1.1101 1.11 -0.2558 0 1 971.82 372.87 L 971.82 331.88 Z"
-        fill="var(--bridge-mark-secondary)"
-        transform="matrix(0.5818 0 0 0.5818 0 0)"
-      />
-    </svg>
   );
 }
 
@@ -2340,230 +2239,9 @@ async function playMicLiveListen(durationMs: number): Promise<void> {
   });
 }
 
-function CustomSelect<T extends SelectValue>({
-  value,
-  options,
-  disabled = false,
-  className = '',
-  floatingMenu = false,
-  floatingMenuMinWidth,
-  suspendOutsideClose = false,
-  showSelectedCheck = true,
-  closeOnSelect = true,
-  getOptionClassName,
-  renderValue,
-  renderOption,
-  renderMenuFooter,
-  ariaLabel,
-  onChange
-}: CustomSelectProps<T>) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const selected = options.find(([, optionValue]) => optionValue === value);
-  const longList = options.length > 18;
-  const defaultMenuMaxHeight = longList ? 360 : 232;
-  const [menuMaxHeight, setMenuMaxHeight] = useState(defaultMenuMaxHeight);
-  const [menuPlacement, setMenuPlacement] = useState<'top' | 'bottom'>('bottom');
-  const [floatingMenuStyle, setFloatingMenuStyle] = useState<CustomSelectMenuStyle>({});
-
-  function updateMenuMaxHeight() {
-    const root = rootRef.current;
-    if (!root) {
-      setMenuMaxHeight(defaultMenuMaxHeight);
-      return;
-    }
-
-    const rootRect = root.getBoundingClientRect();
-    const boundary = floatingMenu
-      ? null
-      : root.closest('.system-card, .feature-card, .settings-menu, .control-page') as HTMLElement | null;
-    const boundaryRect = boundary?.getBoundingClientRect();
-    const menuGap = 6;
-    const viewportPadding = floatingMenu ? 8 : 0;
-    const lowerLimit = Math.min(window.innerHeight - viewportPadding, boundaryRect?.bottom ?? window.innerHeight);
-    const upperLimit = Math.max(viewportPadding, boundaryRect?.top ?? 0);
-    const spaceBelow = Math.max(1, Math.floor(lowerLimit - rootRect.bottom - menuGap));
-    const spaceAbove = Math.max(1, Math.floor(rootRect.top - upperLimit - menuGap));
-    const preferredVisibleHeight = Math.min(defaultMenuMaxHeight, 184);
-    const nextPlacement = spaceBelow < preferredVisibleHeight && spaceAbove > spaceBelow ? 'top' : 'bottom';
-    const availableSpace = nextPlacement === 'top' ? spaceAbove : spaceBelow;
-    const nextMaxHeight = longList ? availableSpace : Math.min(defaultMenuMaxHeight, availableSpace);
-
-    setMenuPlacement(nextPlacement);
-    setMenuMaxHeight(Math.max(1, nextMaxHeight));
-
-    if (floatingMenu) {
-      const minimumWidth = floatingMenuMinWidth ?? rootRect.width;
-      const width = Math.min(
-        Math.max(rootRect.width, minimumWidth),
-        Math.max(1, window.innerWidth - viewportPadding * 2)
-      );
-      const idealLeft = rootRect.left + (rootRect.width - width) / 2;
-      const left = Math.min(
-        Math.max(viewportPadding, idealLeft),
-        Math.max(viewportPadding, window.innerWidth - viewportPadding - width)
-      );
-      setFloatingMenuStyle({
-        left: `${Math.round(left)}px`,
-        width: `${Math.round(width)}px`,
-        ...(nextPlacement === 'top'
-          ? { bottom: `${Math.round(window.innerHeight - rootRect.top + menuGap)}px` }
-          : { top: `${Math.round(rootRect.bottom + menuGap)}px` }),
-        '--custom-select-menu-max-height': `${Math.max(1, nextMaxHeight)}px`
-      });
-    }
-  }
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function closeIfOutside(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        !suspendOutsideClose
-        && !rootRef.current?.contains(target)
-        && !menuRef.current?.contains(target)
-      ) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', closeIfOutside);
-    return () => document.removeEventListener('mousedown', closeIfOutside);
-  }, [open, suspendOutsideClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    updateMenuMaxHeight();
-    window.addEventListener('resize', updateMenuMaxHeight);
-    window.addEventListener('scroll', updateMenuMaxHeight, true);
-    return () => {
-      window.removeEventListener('resize', updateMenuMaxHeight);
-      window.removeEventListener('scroll', updateMenuMaxHeight, true);
-    };
-  }, [open, defaultMenuMaxHeight, floatingMenu, floatingMenuMinWidth, longList]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.requestAnimationFrame(() => {
-      const menu = menuRef.current;
-      const optionsContainer = menu?.querySelector('.custom-select-menu-options') as HTMLElement | null;
-      const selectedElement = menu?.querySelector('[data-selected="true"]') as HTMLElement | null;
-      if (!optionsContainer || !selectedElement) {
-        return;
-      }
-      const selectedCenter = selectedElement.offsetTop + selectedElement.offsetHeight / 2;
-      optionsContainer.scrollTop = Math.max(0, selectedCenter - optionsContainer.clientHeight / 2);
-    });
-  }, [open]);
-
-  function choose(nextValue: T) {
-    if (closeOnSelect) {
-      setOpen(false);
-    }
-    if (nextValue !== value) {
-      onChange(nextValue);
-    }
-  }
-
-  function toggleOpen() {
-    if (!open) {
-      updateMenuMaxHeight();
-    }
-    setOpen((nextOpen) => !nextOpen);
-  }
-
-  function openMenu() {
-    updateMenuMaxHeight();
-    setOpen(true);
-  }
-
-  const menu = open ? (
-    <div ref={menuRef} className="custom-select-menu" role="listbox" aria-label={ariaLabel}>
-      <div className="custom-select-menu-options">
-        {options.map(([label, optionValue]) => {
-          const selectedOption = optionValue === value;
-          const optionClassName = getOptionClassName?.(label, optionValue);
-          return (
-            <button
-              key={String(optionValue)}
-              type="button"
-              role="option"
-              aria-selected={selectedOption}
-              data-selected={selectedOption ? 'true' : undefined}
-              className={[selectedOption ? 'selected' : '', optionClassName].filter(Boolean).join(' ')}
-              onClick={() => choose(optionValue)}
-            >
-              <span>{renderOption?.(label, optionValue) ?? label}</span>
-              {showSelectedCheck && selectedOption && <Check size={15} />}
-            </button>
-          );
-        })}
-      </div>
-      {renderMenuFooter && (
-        <div className="custom-select-menu-footer">
-          {renderMenuFooter(() => setOpen(false))}
-        </div>
-      )}
-    </div>
-  ) : null;
-
-  const portalTarget = floatingMenu
-    ? (rootRef.current?.closest('.shell') as HTMLElement | null) ?? document.body
-    : null;
-
-  return (
-    <div
-      ref={rootRef}
-      className={`custom-select ${className} ${open ? 'open' : ''} menu-${menuPlacement} ${disabled ? 'disabled' : ''}`}
-      style={{ '--custom-select-menu-max-height': `${menuMaxHeight}px` } as CSSProperties}
-    >
-      <button
-        type="button"
-        className="custom-select-button"
-        disabled={disabled}
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={toggleOpen}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            openMenu();
-          }
-          if (event.key === 'Escape') {
-            setOpen(false);
-          }
-        }}
-      >
-        <span>{renderValue?.(selected?.[0] ?? String(value), selected?.[1] ?? value) ?? selected?.[0] ?? String(value)}</span>
-        <ChevronDown size={18} />
-      </button>
-      {floatingMenu && portalTarget && menu
-        ? createPortal(
-          <div
-            className={`custom-select custom-select-floating-layer open menu-${menuPlacement} ${suspendOutsideClose ? 'dialog-suspended' : ''} ${className}`}
-            style={floatingMenuStyle}
-          >
-            {menu}
-          </div>,
-          portalTarget
-        )
-        : menu}
-    </div>
-  );
-}
-
-function ThemeOption({ label, value }: { label: string; value: UiThemePreset }) {
-  return (
-      <span className="theme-option">
-        <span className="theme-option-swatches" aria-hidden="true">
-        {UI_THEME_PREVIEW_SWATCHES[value].map((swatch) => (
-          <span key={`${value}-${swatch.role}`} title={swatch.role} style={{ background: swatch.color }} />
-        ))}
-      </span>
-      <span className="theme-option-label">{label}</span>
-    </span>
-  );
+// The 1.x pages style their menus in place; keep them inline until the page split.
+function CustomSelect<T extends SelectValue>(props: CustomSelectProps<T>) {
+  return <SharedCustomSelect floatingMenu={false} {...props} />;
 }
 
 function AudioHapticsConfigLabel({
@@ -2979,7 +2657,6 @@ export function App() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
-  const [openControlGroupId, setOpenControlGroupId] = useState<ControlTabGroupId | null>(null);
   const [hapticsValue, setHapticsValue] = useState(100);
   const [leftStickRadialDeadzoneValue, setLeftStickRadialDeadzoneValue] = useState(0);
   const [rightStickRadialDeadzoneValue, setRightStickRadialDeadzoneValue] = useState(0);
@@ -3045,7 +2722,7 @@ export function App() {
   const [controllerDeviceRenameDialog, setControllerDeviceRenameDialog] = useState<ControllerDeviceRenameDialog | null>(null);
   const [controllerDeviceForgetDialog, setControllerDeviceForgetDialog] = useState<ControllerDeviceForgetDialog | null>(null);
   const [controllerDeviceActionError, setControllerDeviceActionError] = useState<string | null>(null);
-  const [showBridgeSettings, setShowBridgeSettings] = useState(false);
+  const [settingsReturnTab, setSettingsReturnTab] = useState<ControlTab>('overview');
   const [settingsFocusTarget, setSettingsFocusTarget] = useState<SettingsFocusTarget | null>(null);
   const [notificationFocusTarget, setNotificationFocusTarget] = useState<NotificationFocusTarget | null>(null);
   const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
@@ -3056,6 +2733,8 @@ export function App() {
   const [windowDragging, setWindowDragging] = useState(false);
   const [testLocked, setTestLocked] = useState(false);
   const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
+  const [startupTextScale, setStartupTextScale] = useState<UiTextScalePercent>(storedUiTextScalePercent);
+  const localization = useLocalization();
   const [speakerTestLocked, setSpeakerTestLocked] = useState(false);
   const [speakerOutputAvailable, setSpeakerOutputAvailable] = useState<boolean | null>(null);
   const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
@@ -3140,6 +2819,20 @@ export function App() {
     setStartupTheme(liveTheme);
     saveUiThemePreset(liveTheme);
   }, [snapshot?.settings.uiThemePreset]);
+
+  useEffect(() => {
+    const liveLocale = snapshot?.settings.uiLocale;
+    if (!liveLocale || liveLocale === localization.preference) return;
+    localization.setPreference(liveLocale);
+  }, [snapshot?.settings.uiLocale]);
+
+  useEffect(() => {
+    const liveTextScale = snapshot?.settings.uiTextScalePercent;
+    if (!liveTextScale) return;
+    setStartupTextScale(liveTextScale);
+    applyUiTextScalePercent(liveTextScale);
+    saveUiTextScalePercent(liveTextScale);
+  }, [snapshot?.settings.uiTextScalePercent]);
 
   useEffect(() => {
     const hasSnapshot = Boolean(snapshot);
@@ -3626,7 +3319,7 @@ export function App() {
   }, [audioHapticsOpen, audioReactiveHapticsSourceKey, connected, controllerConnected]);
 
   useEffect(() => {
-    if (!showBridgeSettings && !showNotificationsMenu) {
+    if (!showNotificationsMenu) {
       return;
     }
 
@@ -3637,7 +3330,6 @@ export function App() {
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setShowBridgeSettings(false);
         setShowNotificationsMenu(false);
       }
     };
@@ -3648,7 +3340,7 @@ export function App() {
       document.removeEventListener('mousedown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [showBridgeSettings, showNotificationsMenu]);
+  }, [showNotificationsMenu]);
 
   useEffect(() => {
     setSpeakerOutputAvailable(true);
@@ -6399,7 +6091,7 @@ export function App() {
 
   function focusBridgeSettings(target: SettingsFocusTarget) {
     setShowNotificationsMenu(false);
-    setShowBridgeSettings(true);
+    selectControlTab('settings');
     setNotificationFocusTarget(null);
     setSettingsFocusTarget(target);
     if (settingsFocusTimerRef.current !== null) {
@@ -6412,7 +6104,6 @@ export function App() {
   }
 
   function focusNotificationSettings(target: NotificationFocusTarget) {
-    setShowBridgeSettings(false);
     setShowNotificationsMenu(true);
     setSettingsFocusTarget(null);
     setNotificationFocusTarget(target);
@@ -6521,15 +6212,13 @@ export function App() {
   }
 
   function selectControlTab(tab: ControlTab) {
-    const group = controlTabGroupFor(tab);
-    if (group) {
-      setOpenControlGroupId(group.id);
-    }
     if (tab === activeControlTab) {
       return;
     }
+    if (tab === 'settings') {
+      setSettingsReturnTab(activeControlTab);
+    }
     setShowCustomColorPicker(false);
-    setShowBridgeSettings(false);
     setShowNotificationsMenu(false);
     setOpenControllerDeviceMenuKey(null);
     setActiveControlTab(tab);
@@ -6706,10 +6395,13 @@ export function App() {
   }
 
   const activeTheme = snapshot?.settings.uiThemePreset ?? startupTheme;
+  const activeTextScale = snapshot?.settings.uiTextScalePercent ?? startupTextScale;
+  useDocumentTheme(activeTheme, activeTextScale);
+  const settingsNavigation = useSettingsNavigation({ focusTarget: settingsFocusTarget });
 
   if (!snapshot || startupVisible) {
     return (
-      <div className="shell loading" data-theme={activeTheme}>
+      <div className="shell loading" data-theme={activeTheme} data-text-scale={activeTextScale}>
         <StartupScreen ready={Boolean(snapshot)} />
       </div>
     );
@@ -6717,370 +6409,157 @@ export function App() {
 
   const kofiBadgeUrl = UI_THEME_KOFI_BADGES[activeTheme] ?? UI_THEME_KOFI_BADGES[DEFAULT_UI_THEME_PRESET];
 
+  const sidebarDeviceNode = (
+    <ShellSidebarDevice
+      device={{
+        title: sidebarDeviceTitle,
+        status: sidebarDeviceStatus,
+        tone: sidebarDeviceTone,
+        batteryLabel: sidebarBatteryLabel,
+        powerLabel: batteryPowerLabel,
+        controllerArt: controllerImage
+      }}
+      onOpenDevices={() => selectControlTab('devices')}
+      bridgeSelector={(
+        <ShellBridgeSelector
+          bridges={bridgeSelectOptions.map(([label, path]) => ({ label, path }))}
+          selectedPath={activeBridgeSelectValue}
+          selectedName={selectedBridgeInfo?.name ?? null}
+          selectedUniqueId={selectedBridgeInfo?.uniqueId ?? null}
+          directControllers={directControllers}
+          busy={pendingAction !== null}
+          onSelect={(devicePath) => void runAction('bridge-select', () => window.bridge.selectBridge(devicePath))}
+          onRefresh={() => runAction('bridge-refresh', () => window.bridge.refreshBridgeDevices())}
+          onRename={(uniqueId, name) => void runAction(
+            'bridge-rename',
+            () => window.bridge.setBridgeLabel(uniqueId, name)
+          )}
+        />
+      )}
+    />
+  );
+
+  const settingsPageModel: SettingsPageModel = {
+    settings: snapshot.settings,
+    connected,
+    busy: pendingAction !== null,
+    pendingAction,
+    support: {
+      usbSuspendDisconnect: usbSuspendDisconnectSupported,
+      wakeOnConnect: wakeOnConnectSupported,
+      sleepController: sleepControllerSupported
+    },
+    focusTarget: settingsFocusTarget,
+    picoFirmware: { message: picoFirmwareMessage, error: picoFirmwareError }
+  };
+  const currentSettings = snapshot.settings;
+  const settingsPageActions: SettingsPageActions = {
+    setTheme: (value) => void runAction('ui-theme', () => window.bridge.setUiThemePreset(value)),
+    setUiScale: (value) => void runAction('ui-scale', () => window.bridge.setUiScalePercent(value)),
+    setTextScale: (value) => void runAction('ui-text-scale', () => window.bridge.setUiTextScalePercent(value)),
+    setLocale: (value) => void runAction('ui-locale', () => window.bridge.setUiLocale(normalizeUiLocalePreference(value))),
+    toggleLaunchAtStartup: () => void runAction('launch-at-startup', () => (
+      window.bridge.setLaunchAtStartupEnabled(!currentSettings.launchAtStartupEnabled)
+    )),
+    toggleBatteryTrayIcon: () => void runAction('battery-tray-icon', () => (
+      window.bridge.setShowBatteryPercentTrayIcon(!currentSettings.showBatteryPercentTrayIcon)
+    )),
+    toggleControllerNotifications,
+    toggleLowBatteryNotifications,
+    testNotification: testNotifications,
+    setIdleDisconnectTimeout: (minutes) => void runAction('idle-timeout', () => window.bridge.setIdleDisconnectTimeoutMinutes(minutes)),
+    toggleIdleDisconnect: () => void runAction('idle', () => (
+      window.bridge.setIdleDisconnectEnabled(!currentSettings.idleDisconnectEnabled)
+    )),
+    toggleUsbSuspendDisconnect: () => void runAction('usb-suspend', () => (
+      window.bridge.setUsbSuspendDisconnectEnabled(!currentSettings.usbSuspendDisconnectEnabled)
+    )),
+    toggleControllerPowerSaving: () => void runAction('controller-power-saving', () => (
+      window.bridge.setControllerPowerSavingEnabled(!currentSettings.controllerPowerSavingEnabled)
+    )),
+    toggleLed: () => void runAction('led', () => window.bridge.setLedEnabled(!currentSettings.ledEnabled)),
+    togglePlayerLed: () => void runAction('player-led', () => window.bridge.setPlayerLedEnabled(!currentSettings.playerLedEnabled)),
+    toggleLightbarRestore: () => void runAction('lightbar-restore', () => (
+      window.bridge.setLightbarRestoreEnabled(!currentSettings.lightbarRestoreEnabled)
+    )),
+    toggleEdgeProfileSwitching: () => void runAction('edge-profile-switching', () => (
+      window.bridge.setEdgeProfileSwitchingBlocked(!currentSettings.edgeProfileSwitchingBlocked)
+    )),
+    toggleSleepShortcut: () => void runAction('sleep-keybind', () => (
+      window.bridge.setSleepKeybindEnabled(!currentSettings.sleepKeybindEnabled)
+    )),
+    toggleVolumeShortcut: () => void runAction('volume-shortcut', () => (
+      window.bridge.setSpeakerVolumeShortcutEnabled(!currentSettings.speakerVolumeShortcutEnabled)
+    )),
+    toggleWakeOnConnect: () => void runAction('wake-on-connect', () => (
+      window.bridge.setWakeOnConnectEnabled(!currentSettings.wakeOnConnectEnabled)
+    )),
+    mountPicoBootloader,
+    flashPicoFirmware,
+    nukePicoFlash,
+    openExternal: (url) => void window.bridge.openExternal(url)
+  };
+
+  const shellClassName = [
+    'shell',
+    windowDragging ? 'window-dragging' : '',
+    controllerControlsAvailable ? '' : 'controller-unavailable'
+  ].filter(Boolean).join(' ');
+
   return (
-    <div
-      className={[
-        'shell',
-        windowDragging ? 'window-dragging' : '',
-        controllerControlsAvailable ? '' : 'controller-unavailable'
-      ].filter(Boolean).join(' ')}
-      data-theme={activeTheme}
-    >
-      <div
-        className="window-bar"
-        onMouseDown={(event) => {
-          const target = event.target as HTMLElement;
-          if (
-            target.closest('.kitsune-promotion-banner')
-            || target.closest('.bridge-tools')
-            || target.closest('.window-actions')
-          ) {
-            return;
-          }
-          setShowBridgeSettings(false);
-          setShowNotificationsMenu(false);
-          if (event.button === 0) {
-            beginWindowDrag();
-          }
-        }}
-      >
-        <span className="bridge-wordmark" aria-label="DS5 Bridge">
-          <BridgeMark />
-          <span className="bridge-wordmark-ds">DS5</span>
-          <span className="bridge-wordmark-name">Bridge</span>
-        </span>
-        {!snapshot.settings.kitsuneInputPromotionDismissed && (
-          <button
-            className="kitsune-promotion-banner"
-            type="button"
-            aria-label="Explore Kitsune Input"
-            aria-haspopup="dialog"
-            aria-expanded={showKitsuneInputPromotion}
-            onClick={() => {
-              setShowBridgeSettings(false);
-              setShowNotificationsMenu(false);
-              setShowKitsuneInputPromotion(true);
-            }}
-          >
-            <img src={kitsuneInputLogoUrl} alt="" />
-            <span className="kitsune-promotion-banner-copy">Explore</span>
-            <KitsuneInputWordmark />
-          </button>
-        )}
-        <div className="topbar-right">
-          <div className="bridge-tools">
-            <div className="notifications-control" ref={notificationsRef}>
-              <button
-                className={`topbar-tool notification-tool ${showNotificationsMenu ? 'active' : ''} ${notificationsEnabled ? 'armed' : ''}`}
-                type="button"
-                aria-label="Notifications"
-                aria-haspopup="menu"
-                aria-expanded={showNotificationsMenu}
-                onClick={() => setShowNotificationsMenu((value) => !value)}
-              >
-                <Bell size={18} />
-              </button>
-              {showNotificationsMenu && (
-                <div className="settings-menu notifications-menu" role="menu" aria-label="Notifications">
-                  <div className="settings-menu-heading">
-                    <Bell size={16} />
-                    <span>Notifications</span>
-                  </div>
-                  <div className={`settings-menu-row ${notificationFocusTarget === 'controller-status' || notificationFocusTarget === 'all' ? 'settings-menu-row-highlight' : ''}`}>
-                    <div>
-                      <strong>Controller Status</strong>
-                      <span>Toast when the controller connects or disconnects</span>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={controllerToastEnabled}
-                      className={`switch ${controllerToastEnabled ? 'on' : ''}`}
-                      disabled={pendingAction !== null}
-                      onClick={toggleControllerNotifications}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                  <div className={`settings-menu-row ${notificationFocusTarget === 'low-battery' || notificationFocusTarget === 'all' ? 'settings-menu-row-highlight' : ''}`}>
-                    <div>
-                      <strong>Low Battery</strong>
-                      <span>Toast when battery reaches 20% or below</span>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={lowBatteryToastEnabled}
-                      className={`switch ${lowBatteryToastEnabled ? 'on' : ''}`}
-                      disabled={pendingAction !== null}
-                      onClick={toggleLowBatteryNotifications}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                  <div className="settings-menu-action">
-                    <button
-                      className="secondary-action"
-                      type="button"
-                      disabled={pendingAction !== null}
-                      onClick={testNotifications}
-                    >
-                      Test Toast
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            <span className="bridge-tool-divider" aria-hidden="true" />
-          </div>
-          <div className="window-actions">
-            <button type="button" title="Minimize" onClick={() => void window.bridge.minimizeWindow()}>
-              <Minus size={16} />
-            </button>
-            <button type="button" title="Hide to tray" onClick={() => void window.bridge.hideWindow()}>
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <main className="app-content">
-        <section className={`hero-card status-${statusTone}`}>
-          <div className="sidebar-section-label">Device</div>
-          <div
-            className={`hero-main device-status-${sidebarDeviceTone}`}
-            role="button"
-            tabIndex={0}
-            aria-label="Open Devices"
-            onClick={() => selectControlTab('devices')}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return;
-              event.preventDefault();
-              selectControlTab('devices');
-            }}
-          >
-            <img className="controller-art" src={controllerImage} alt="" />
-            <div className="status-copy">
-              <div className="connection-row">
-                <strong>{sidebarDeviceTitle}</strong>
-              </div>
-              <div className="device-meta-row">
-                <div className="bridge-state compact-device-status">
-                  <span>{sidebarDeviceStatus}</span>
-                </div>
-                <div className="device-battery-meta">
-                  <span className="device-meta-separator" aria-hidden="true">·</span>
-                  <span className="device-battery-percentage">{sidebarBatteryLabel}</span>
-                  {batteryPowerLabel && (
-                    <span
-                      className="device-power-indicator"
-                      title={batteryPowerLabel}
-                      aria-label={batteryPowerLabel}
-                    >
-                      <Zap size={13} stroke={2} aria-hidden="true" />
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="sidebar-bridge-area">
-            <div className="sidebar-bridge-selector" aria-label="Pico bridge selector">
-              <span className="sidebar-bridge-type" aria-hidden="true">
-                <IconUsb size={16} />
-              </span>
-              {bridgeRenameDraft === null ? (
-                <CustomSelect
-                  value={activeBridgeSelectValue}
-                  options={bridgeSelectOptions}
-                  onChange={(devicePath) => {
-                    if (!devicePath) return;
-                    void runAction('bridge-select', () => window.bridge.selectBridge(String(devicePath)));
-                  }}
-                  renderValue={(label) => selectedBridgeInfo?.name ?? (label || 'No bridge detected')}
-                  renderMenuFooter={(closeMenu) => (
-                    <div className="trigger-lab-profile-actions chords-function-menu-actions">
-                      <button
-                        type="button"
-                        title="Rename bridge"
-                        disabled={pendingAction !== null || !selectedBridgeInfo?.uniqueId}
-                        onClick={() => {
-                          closeMenu();
-                          if (!selectedBridgeInfo?.uniqueId) return;
-                          bridgeRenameCancelledRef.current = false;
-                          setBridgeRenameDraft({
-                            uniqueId: selectedBridgeInfo.uniqueId,
-                            value: selectedBridgeInfo.name ?? ''
-                          });
-                        }}
-                      >
-                        <Pencil size={15} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Refresh bridges"
-                        disabled={pendingAction !== null}
-                        onClick={() => void runAction('bridge-refresh', () => window.bridge.refreshBridgeDevices())}
-                      >
-                        <RefreshCcw size={15} aria-hidden="true" />
-                      </button>
-                    </div>
-                  )}
-                  ariaLabel="Pico bridge"
-                  className="chords-function-select sidebar-bridge-select"
-                  disabled={pendingAction !== null}
-                />
-              ) : (
-                <input
-                  className="bridge-rename-input"
-                  type="text"
-                  autoFocus
-                  maxLength={32}
-                  aria-label="Bridge name"
-                  placeholder="Bridge name"
-                  value={bridgeRenameDraft.value}
-                  onChange={(event) => setBridgeRenameDraft({
-                    ...bridgeRenameDraft,
-                    value: event.currentTarget.value
-                  })}
-                  onBlur={() => {
-                    const draft = bridgeRenameDraft;
-                    setBridgeRenameDraft(null);
-                    if (bridgeRenameCancelledRef.current) {
-                      bridgeRenameCancelledRef.current = false;
-                      return;
-                    }
-                    void runAction('bridge-rename', () => (
-                      window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)
-                    ));
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.currentTarget.blur();
-                    } else if (event.key === 'Escape') {
-                      bridgeRenameCancelledRef.current = true;
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-              )}
-            </div>
-            {directControllers.map((controller) => (
-              <div key={controller.path} className="bridge-direct-controller" title={controller.path}>
-                <IconUsb size={13} aria-hidden="true" />
-                <span>{(controller.product ?? 'DualSense').replace(' Wireless Controller', '')} — USB direct</span>
-              </div>
-            ))}
-          </div>
-          <div className="sidebar-section-label">Controls</div>
-          <div className="sidebar-controls">
-            <nav className="control-tabs" aria-label="Controls">
-              {(() => {
-                const { id, label, Icon } = CONTROL_TAB_DEFINITIONS.overview;
-                return (
-                  <button
-                    key={id}
-                    id={`control-tab-${id}`}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeControlTab === id}
-                    aria-controls={controlPanelIdFor(id)}
-                    className={`control-tab-button ${activeControlTab === id ? 'active' : ''}`}
-                    onClick={() => selectControlTab(id)}
-                  >
-                    <Icon size={18} stroke={2} />
-                    <span>{label}</span>
-                  </button>
-                );
-              })()}
-              {CONTROL_TAB_GROUPS.map(({ id, label, Icon, tabs }) => {
-                const expanded = openControlGroupId === id;
-                const containsActiveTab = tabs.some(({ id: tabId }) => tabId === activeControlTab);
-                const triggerId = `control-group-${id}`;
-                const panelId = `control-group-panel-${id}`;
-                return (
-                  <div
-                    key={id}
-                    className={`control-tab-group ${expanded ? 'expanded' : ''} ${containsActiveTab ? 'contains-active' : ''}`}
-                  >
-                    <button
-                      id={triggerId}
-                      type="button"
-                      className="control-tab-group-trigger"
-                      aria-expanded={expanded}
-                      aria-controls={panelId}
-                      onClick={() => setOpenControlGroupId((current) => current === id ? null : id)}
-                    >
-                      <Icon size={18} stroke={2} />
-                      <span>{label}</span>
-                      <ChevronDown className="control-tab-group-chevron" size={16} stroke={2} aria-hidden="true" />
-                    </button>
-                    <div id={panelId} className="control-tab-group-panel" aria-hidden={!expanded}>
-                      <div className="control-tab-group-clip">
-                        <div className="control-tab-group-items" role="group" aria-labelledby={triggerId}>
-                          {tabs.map(({ id: tabId, label: tabLabel, Icon: TabIcon }) => (
-                            <button
-                              key={tabId}
-                              id={`control-tab-${tabId}`}
-                              type="button"
-                              role="tab"
-                              tabIndex={expanded ? undefined : -1}
-                              aria-selected={activeControlTab === tabId}
-                              aria-controls={controlPanelIdFor(tabId)}
-                              className={`control-tab-button nested ${activeControlTab === tabId ? 'active' : ''}`}
-                              onClick={() => selectControlTab(tabId)}
-                            >
-                              <TabIcon size={18} stroke={2} />
-                              <span>{tabLabel}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </nav>
-          </div>
-          <div className="sidebar-actions">
-            <div className="sidebar-support">
-              <button
-                className="sidebar-kofi-link"
-                type="button"
-                aria-label="Support SundayMoments on Ko-fi"
-                onClick={() => void window.bridge.openExternal('https://ko-fi.com/sundaymoments')}
-              >
-                <img className="sidebar-kofi-badge" src={kofiBadgeUrl} alt="" />
-              </button>
-            </div>
-            <div className="header-settings">
-              <button
-                className={`sidebar-action-button ${showBridgeSettings ? 'active' : ''}`}
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded={showBridgeSettings}
-                onClick={() => setShowBridgeSettings((value) => !value)}
-              >
-                <SettingsIcon size={18} />
-                <span>Settings</span>
-              </button>
-              <button
-                className={`sidebar-action-button ${activeControlTab === 'system' ? 'active' : ''}`}
-                id="control-tab-system"
-                type="button"
-                aria-controls="control-panel-system"
-                aria-selected={activeControlTab === 'system'}
-                onClick={() => selectControlTab('system')}
-              >
-                <IconCpu size={18} />
-                <span>System</span>
-              </button>
-            </div>
-          </div>
-        </section>
-
-      <section className="control-panel flat-control-panel">
-        <div className="control-pages">
+    <MainAppShell
+      className={shellClassName}
+      theme={activeTheme}
+      textScale={activeTextScale}
+      activeTab={activeControlTab}
+      panelIdForTab={controlPanelIdFor}
+      onSelectTab={selectControlTab}
+      onWindowChromeMouseDown={() => setShowNotificationsMenu(false)}
+      onBeginWindowDrag={beginWindowDrag}
+      onMinimize={() => void window.bridge.minimizeWindow()}
+      onHide={() => void window.bridge.hideWindow()}
+      windowBarCenter={snapshot.settings.kitsuneInputPromotionDismissed ? null : (
+        <button
+          className="kitsune-promotion-banner"
+          type="button"
+          aria-label="Explore Kitsune Input"
+          aria-haspopup="dialog"
+          aria-expanded={showKitsuneInputPromotion}
+          onClick={() => {
+            setShowNotificationsMenu(false);
+            setShowKitsuneInputPromotion(true);
+          }}
+        >
+          <img src={kitsuneInputLogoUrl} alt="" />
+          <span className="kitsune-promotion-banner-copy">Explore</span>
+          <KitsuneInputWordmark />
+        </button>
+      )}
+      windowBarTools={(
+        <ShellNotifications
+          rootRef={notificationsRef}
+          notifications={{
+            menuOpen: showNotificationsMenu,
+            controllerEnabled: controllerToastEnabled,
+            lowBatteryEnabled: lowBatteryToastEnabled,
+            controlsDisabled: pendingAction !== null,
+            focusTarget: notificationFocusTarget
+          }}
+          onToggle={() => setShowNotificationsMenu((value) => !value)}
+          onToggleController={toggleControllerNotifications}
+          onToggleLowBattery={toggleLowBatteryNotifications}
+          onTest={testNotifications}
+        />
+      )}
+      sidebarDevice={sidebarDeviceNode}
+      sidebarFooter={(
+        <ShellSupportBadge
+          badgeUrl={kofiBadgeUrl}
+          onOpen={() => void window.bridge.openExternal('https://ko-fi.com/sundaymoments')}
+        />
+      )}
+      pages={(
+        <>
           <div
             className={`control-page overview-page ${activeControlTab === 'overview' ? 'active' : ''}`}
             role="tabpanel"
@@ -9918,9 +9397,23 @@ export function App() {
                 />
               </section>
           </div>
-        </div>
-      </section>
-      </main>
+          <SettingsPage
+            active={activeControlTab === 'settings'}
+            navigation={settingsNavigation}
+            model={settingsPageModel}
+            actions={settingsPageActions}
+          />
+        </>
+      )}
+      settingsSidebar={(
+        <SettingsSidebar
+          navigation={settingsNavigation}
+          onBack={() => selectControlTab(settingsReturnTab)}
+          header={<><ShellSidebarHeader />{sidebarDeviceNode}</>}
+        />
+      )}
+      overlays={(
+        <>
 
       {showKitsuneInputPromotion && !snapshot.settings.kitsuneInputPromotionDismissed && (
         <KitsuneInputPromotionDialog
@@ -10303,406 +9796,9 @@ export function App() {
         </div>
       )}
 
-      {showBridgeSettings && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={() => setShowBridgeSettings(false)}
-        >
-          <div
-            className="settings-menu bridge-settings-modal bridge-settings-preferences-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Bridge settings"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                <SettingsIcon size={16} />
-                <span>Bridge Settings</span>
-              </div>
-              <button
-                className="modal-close-button"
-                type="button"
-                aria-label="Close bridge settings"
-                onClick={() => setShowBridgeSettings(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="bridge-settings-columns">
-              <div className="bridge-settings-column">
-                <div className="settings-menu-section-label">Appearance</div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Theme</strong>
-                  </div>
-                  <CustomSelect
-                    value={snapshot.settings.uiThemePreset}
-                    options={UI_THEME_OPTIONS}
-                    className="settings-theme-select"
-                    showSelectedCheck={false}
-                    ariaLabel="UI theme"
-                    disabled={pendingAction !== null}
-                    renderValue={(label, value) => <ThemeOption label={label} value={value} />}
-                    renderOption={(label, value) => <ThemeOption label={label} value={value} />}
-                    onChange={(value) => {
-                      void runAction('ui-theme', () => window.bridge.setUiThemePreset(value));
-                    }}
-                  />
-                </div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>UI Scale</strong>
-                  </div>
-                  <CustomSelect
-                    value={snapshot.settings.uiScalePercent}
-                    options={UI_SCALE_OPTIONS}
-                    className="settings-scale-select"
-                    showSelectedCheck={false}
-                    ariaLabel="UI scale"
-                    disabled={pendingAction !== null}
-                    onChange={(value) => {
-                      void runAction('ui-scale', () => window.bridge.setUiScalePercent(value));
-                    }}
-                  />
-                </div>
-                <div className="settings-menu-section-label">General</div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Launch at Startup</strong>
-                    <span>Start in the tray when Windows starts</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.launchAtStartupEnabled}
-                    className={`switch ${snapshot.settings.launchAtStartupEnabled ? 'on' : ''}`}
-                    disabled={pendingAction !== null}
-                    onClick={() => void runAction('launch-at-startup', () => (
-                      window.bridge.setLaunchAtStartupEnabled(!snapshot.settings.launchAtStartupEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Battery Tray Icon</strong>
-                    <span>Show controller battery percentage in the tray</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.showBatteryPercentTrayIcon}
-                    className={`switch ${snapshot.settings.showBatteryPercentTrayIcon ? 'on' : ''}`}
-                    disabled={pendingAction !== null}
-                    onClick={() => void runAction('battery-tray-icon', () => (
-                      window.bridge.setShowBatteryPercentTrayIcon(!snapshot.settings.showBatteryPercentTrayIcon)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Pico LED</strong>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.ledEnabled}
-                    className={`switch ${snapshot.settings.ledEnabled ? 'on' : ''}`}
-                    disabled={!connected}
-                    onClick={() => void runAction('led', () => window.bridge.setLedEnabled(!snapshot.settings.ledEnabled))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-section-label">Connection Behavior</div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Idle Disconnect</strong>
-                  </div>
-                  <div className="settings-menu-controls">
-                    <CustomSelect
-                      value={snapshot.settings.idleDisconnectTimeoutMinutes}
-                      options={IDLE_DISCONNECT_TIMEOUT_OPTIONS}
-                      className="settings-timeout-select"
-                      showSelectedCheck={false}
-                      ariaLabel="Idle disconnect timeout"
-                      disabled={!connected || !snapshot.settings.idleDisconnectEnabled}
-                      onChange={(value) => {
-                        void runAction('idle-timeout', () => window.bridge.setIdleDisconnectTimeoutMinutes(value));
-                      }}
-                    />
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={snapshot.settings.idleDisconnectEnabled}
-                      className={`switch ${snapshot.settings.idleDisconnectEnabled ? 'on' : ''}`}
-                      disabled={!connected}
-                      onClick={() => void runAction('idle', () => (
-                        window.bridge.setIdleDisconnectEnabled(!snapshot.settings.idleDisconnectEnabled)
-                      ))}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                </div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>PC Sleep Disconnect</strong>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.usbSuspendDisconnectEnabled}
-                    className={`switch ${snapshot.settings.usbSuspendDisconnectEnabled ? 'on' : ''}`}
-                    disabled={!connected || !usbSuspendDisconnectSupported}
-                    onClick={() => void runAction('usb-suspend', () => (
-                      window.bridge.setUsbSuspendDisconnectEnabled(!snapshot.settings.usbSuspendDisconnectEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Wake PC on Controller</strong>
-                    <span>Wake through USB when a controller reconnects. Requires Windows wake permission and DualSense, DualSense Edge, or DS4 mode.</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.wakeOnConnectEnabled}
-                    className={`switch ${snapshot.settings.wakeOnConnectEnabled ? 'on' : ''}`}
-                    disabled={!connected || !wakeOnConnectSupported || pendingAction !== null}
-                    onClick={() => void runAction('wake-on-connect', () => (
-                      window.bridge.setWakeOnConnectEnabled(!snapshot.settings.wakeOnConnectEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-row pico-firmware-row">
-                  <div className="pico-firmware-header">
-                    <strong>Firmware</strong>
-                    <div className="pico-firmware-actions">
-                      <button
-                        type="button"
-                        className="heading-action danger"
-                        disabled={pendingAction !== null}
-                        onClick={nukePicoFlash}
-                      >
-                        <IconRadioactive size={14} />
-                        {pendingAction === 'pico-firmware-nuke' ? 'Nuking...' : 'Nuke'}
-                      </button>
-                      <div className="pico-firmware-dual-action" role="group" aria-label="Pico firmware bootloader actions">
-                        <button
-                          type="button"
-                          className="heading-action"
-                          disabled={pendingAction !== null}
-                          onClick={mountPicoBootloader}
-                        >
-                          <IconUsb size={14} />
-                          {pendingAction === 'pico-firmware-mount' ? 'Mounting...' : 'Mount'}
-                        </button>
-                        <button
-                          type="button"
-                          className="heading-action"
-                          disabled={pendingAction !== null}
-                          onClick={flashPicoFirmware}
-                        >
-                          <IconUpload size={14} />
-                          {pendingAction === 'pico-firmware-flash' ? 'Flashing...' : 'Flash'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="settings-menu-copy pico-firmware-copy">
-                    <span>Mount reboots the Pico into UF2 mode. Flash copies a selected firmware UF2. Nuke wipes flash with Pico Universal Flash Nuke.</span>
-                    {picoFirmwareMessage ? (
-                      <span className="pico-firmware-message good">{picoFirmwareMessage}</span>
-                    ) : null}
-                    {picoFirmwareError ? (
-                      <span className="pico-firmware-message bad">{picoFirmwareError}</span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <div className="bridge-settings-column">
-                <div className="settings-menu-section-label">Power & Controller</div>
-                <div className={`settings-menu-row ${settingsFocusTarget === 'controller-power-saving' ? 'settings-menu-row-highlight' : ''}`}>
-                  <div className="settings-menu-copy">
-                    <strong>Controller Power Saving</strong>
-                    <span>Caps haptics, triggers, and lightbar brightness at 60% while headphones are plugged in</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.controllerPowerSavingEnabled}
-                    className={`switch ${snapshot.settings.controllerPowerSavingEnabled ? 'on' : ''}`}
-                    disabled={pendingAction !== null}
-                    onClick={() => void runAction('controller-power-saving', () => (
-                      window.bridge.setControllerPowerSavingEnabled(!snapshot.settings.controllerPowerSavingEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Player Slot LED</strong>
-                    <span>Show the controller player indicator lights</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.playerLedEnabled}
-                    className={`switch ${snapshot.settings.playerLedEnabled ? 'on' : ''}`}
-                    disabled={!connected}
-                    onClick={() => void runAction('player-led', () => (
-                      window.bridge.setPlayerLedEnabled(!snapshot.settings.playerLedEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-section-label">Shortcuts</div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Block Edge Profile Switching</strong>
-                    <span>Reserve LFN/RFN + face buttons for chords when a DualSense Edge connects to this bridge</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.edgeProfileSwitchingBlocked}
-                    className={`switch ${snapshot.settings.edgeProfileSwitchingBlocked ? 'on' : ''}`}
-                    disabled={!connected || pendingAction !== null}
-                    onClick={() => void runAction('edge-profile-switching', () => (
-                      window.bridge.setEdgeProfileSwitchingBlocked(!snapshot.settings.edgeProfileSwitchingBlocked)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className={`settings-menu-row ${settingsFocusTarget === 'sleep-shortcut' ? 'settings-menu-row-highlight' : ''}`}>
-                  <div className="settings-menu-copy settings-menu-copy-tooltip">
-                    <strong>Sleep Shortcut</strong>
-                    <div className="settings-shortcut-tooltip shortcut-glyph-tooltip" role="tooltip">
-                      <span>Put controller to sleep with</span>
-                      <span className="shortcut-glyph-row" aria-label="PlayStation Home and Triangle">
-                        <span className="shortcut-glyph-key">
-                          <img src={psHomeGlyphUrl} alt="PlayStation Home" />
-                        </span>
-                        <span className="shortcut-plus" aria-hidden="true">+</span>
-                        <span className="shortcut-glyph-key">
-                          <img src={triangleGlyphUrl} alt="Triangle" />
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.sleepKeybindEnabled}
-                    className={`switch ${snapshot.settings.sleepKeybindEnabled ? 'on' : ''}`}
-                    disabled={!connected || !sleepControllerSupported || pendingAction !== null}
-                    onClick={() => void runAction('sleep-keybind', () => (
-                      window.bridge.setSleepKeybindEnabled(!snapshot.settings.sleepKeybindEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className={`settings-menu-row ${settingsFocusTarget === 'volume-shortcut' ? 'settings-menu-row-highlight' : ''}`}>
-                  <div className="settings-menu-copy settings-menu-copy-tooltip">
-                    <strong>Volume Shortcut</strong>
-                    <div className="settings-shortcut-tooltip shortcut-glyph-tooltip" role="tooltip">
-                      <span>Controller volume up/down with</span>
-                      <span className="shortcut-glyph-row" aria-label="PlayStation Home and D-pad Up or D-pad Down">
-                        <span className="shortcut-glyph-key">
-                          <img src={psHomeGlyphUrl} alt="PlayStation Home" />
-                        </span>
-                        <span className="shortcut-plus" aria-hidden="true">+</span>
-                        <span className="shortcut-glyph-pair">
-                          <span className="shortcut-glyph-key">
-                            <img src={dpadUpGlyphUrl} alt="D-pad Up" />
-                          </span>
-                          <span className="shortcut-glyph-key">
-                            <img src={dpadDownGlyphUrl} alt="D-pad Down" />
-                          </span>
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.speakerVolumeShortcutEnabled}
-                    className={`switch ${snapshot.settings.speakerVolumeShortcutEnabled ? 'on' : ''}`}
-                    disabled={!connected}
-                    onClick={() => void runAction('volume-shortcut', () => (
-                      window.bridge.setSpeakerVolumeShortcutEnabled(!snapshot.settings.speakerVolumeShortcutEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-section-label">Lightbar</div>
-                <div className="settings-menu-row">
-                  <div className="settings-menu-copy">
-                    <strong>Automatic Restore</strong>
-                    <span>Reapply the saved color after games clear it</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.lightbarRestoreEnabled}
-                    className={`switch ${snapshot.settings.lightbarRestoreEnabled ? 'on' : ''}`}
-                    disabled={!connected || pendingAction !== null}
-                    onClick={() => void runAction('lightbar-restore', () => (
-                      window.bridge.setLightbarRestoreEnabled(!snapshot.settings.lightbarRestoreEnabled)
-                    ))}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <div className="settings-menu-section-label">About</div>
-                <button
-                  type="button"
-                  className="settings-menu-link-row"
-                  onClick={() => void window.bridge.openExternal('https://github.com/SundayMoments')}
-                >
-                  <span className="settings-menu-link-icon" aria-hidden="true">
-                    <IconBrandGithub size={18} />
-                  </span>
-                  <span className="settings-menu-link-copy">
-                    <strong>GitHub</strong>
-                    <span>SundayMoments</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="settings-menu-link-row"
-                  onClick={() => void window.bridge.openExternal('https://discord.gg/By5jhh73wr')}
-                >
-                  <span className="settings-menu-link-icon" aria-hidden="true">
-                    <IconBrandDiscord size={18} />
-                  </span>
-                  <span className="settings-menu-link-copy">
-                    <strong>Discord</strong>
-                    <span>Official DS5 Bridge Discord</span>
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-    </div>
+        </>
+      )}
+    />
   );
 }

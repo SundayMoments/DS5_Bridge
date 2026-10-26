@@ -1,0 +1,122 @@
+.control-panel {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-height: 0;
+  align-self: stretch;
+  padding: 36px 30px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+.control-panel.flat-control-panel {
+  --control-panel-inline-padding: 22px;
+  --control-panel-bottom-padding: 26px;
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  align-self: stretch;
+  padding: var(--top-chrome-height) var(--control-panel-inline-padding) var(--control-panel-bottom-padding);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.control-pages {
+  display: grid;
+  min-height: 0;
+  height: 100%;
+  justify-items: start;
+}
+
+.control-page {
+  grid-area: 1 / 1;
+  width: min(100%, 800px);
+  display: grid;
+  grid-template-rows: auto minmax(var(--feature-card-height), auto);
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+  height: auto;
+  overflow-y: visible;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.control-page.active {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.studio-tab-strip {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--card-radius);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.studio-tab-strip button {
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid var(--surface-divider);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--sidebar-link);
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.studio-tab-strip button:last-child {
+  border-right: 0;
+}
+
+.studio-tab-strip button:not(.active):hover {
+  color: var(--sidebar-link-hover);
+  background: var(--surface-control-hover);
+}
+
+.studio-tab-strip button.active {
+  color: var(--accent);
+  background: transparent;
+  box-shadow: inset 0 -3px 0 var(--nav-active-rail);
+}
+
+.studio-tab-strip button.active svg {
+  color: var(--nav-active-icon);
+}
+
+.studio-tab-strip button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-page {
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}

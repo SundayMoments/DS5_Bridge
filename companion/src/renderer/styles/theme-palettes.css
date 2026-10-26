@@ -1,0 +1,103 @@
+/* Each preset supplies only its palette. Component and state tokens live in theme-tokens.css.
+ * Preview swatches use these same values; there is no second palette in TypeScript. */
+
+/* DS5 Bridge swatches match the preserved brand reference in theme-ds5.css. */
+:root,
+:root[data-theme="dark"],
+.shell[data-theme="dark"],
+.theme-option[data-theme-preview="dark"] {
+  --palette-canvas: #070b12;
+  --palette-sidebar: #050b13;
+  --palette-surface: #08111d;
+  --palette-raised: #0b1622;
+  --palette-control: #0a1420;
+  --palette-hover: #162231;
+  --palette-text: #f7f9ff;
+  --palette-secondary: #c1cadd;
+  --palette-muted: #9fb1c9;
+  --palette-border: #1c2836;
+  --palette-control-border: #2c3a4c;
+  --palette-accent: #3d9bff;
+  --palette-accent-fill: #1f6bd6;
+  --palette-on-accent: #ffffff;
+}
+
+/* Light */
+:root[data-theme="light"],
+.shell[data-theme="light"],
+.theme-option[data-theme-preview="light"] {
+  --palette-canvas: #eef2f7;
+  --palette-sidebar: #f5f7fb;
+  --palette-surface: #ffffff;
+  --palette-raised: #ffffff;
+  --palette-control: #f6f8fc;
+  --palette-hover: #e1e8f1;
+  --palette-text: #111a26;
+  --palette-secondary: #2b3746;
+  --palette-muted: #455164;
+  --palette-border: #c4cfdd;
+  --palette-control-border: #7d8da4;
+  --palette-accent: #005bd9;
+  --palette-accent-fill: #0866e6;
+  --palette-on-accent: #ffffff;
+}
+
+/* Bubble Gum */
+:root[data-theme="bubble-gum"],
+.shell[data-theme="bubble-gum"],
+.theme-option[data-theme-preview="bubble-gum"] {
+  --palette-canvas: #ffe3f1;
+  --palette-sidebar: #fff0f8;
+  --palette-surface: #fff5fb;
+  --palette-raised: #ffffff;
+  --palette-control: #ffebf6;
+  --palette-hover: #f9d5e9;
+  --palette-text: #2c1828;
+  --palette-secondary: #4b3544;
+  --palette-muted: #5d4353;
+  --palette-border: #e5b7d2;
+  --palette-control-border: #a36d8c;
+  --palette-accent: #b50067;
+  --palette-accent-fill: #ce006f;
+  --palette-on-accent: #ffffff;
+}
+
+/* Pomegranate */
+:root[data-theme="pomegranate"],
+.shell[data-theme="pomegranate"],
+.theme-option[data-theme-preview="pomegranate"] {
+  --palette-canvas: #190914;
+  --palette-sidebar: #210e1c;
+  --palette-surface: #2a1124;
+  --palette-raised: #34162d;
+  --palette-control: #391a32;
+  --palette-hover: #49213e;
+  --palette-text: #fafafa;
+  --palette-secondary: #e8e6e8;
+  --palette-muted: #c8c3c8;
+  --palette-border: #503b54;
+  --palette-control-border: #916f92;
+  --palette-accent: #ff5a99;
+  --palette-accent-fill: #d91c64;
+  --palette-on-accent: #ffffff;
+}
+
+/* Kiwi */
+:root[data-theme="kiwi"],
+.shell[data-theme="kiwi"],
+.theme-option[data-theme-preview="kiwi"] {
+  --palette-canvas: #07140b;
+  --palette-sidebar: #0c1b10;
+  --palette-surface: #102617;
+  --palette-raised: #16311e;
+  --palette-control: #1b3823;
+  --palette-hover: #264630;
+  --palette-text: #fafbf9;
+  --palette-secondary: #e7eae6;
+  --palette-muted: #c7cdc6;
+  --palette-border: #384e3f;
+  --palette-control-border: #7b9d78;
+  --palette-accent: #a2ef32;
+  --palette-accent-fill: #9ce62d;
+  --palette-on-accent: #142209;
+}

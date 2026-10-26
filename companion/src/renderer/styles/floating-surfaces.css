@@ -1,0 +1,137 @@
+/* The notifications menu stays mounted so it can fade and slide in from the window bar. */
+.notifications-menu {
+  right: 0;
+  width: min(360px, calc(100vw - 140px));
+  max-height: min(460px, calc(100vh - 90px));
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.shell .notifications-menu {
+  border-color: var(--surface-border-strong);
+  background: var(--surface-popup);
+  box-shadow: var(--shadow-menu);
+  backdrop-filter: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 120ms ease-in, transform 120ms ease-in, visibility 0s linear 120ms;
+}
+
+.shell .notifications-menu[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s;
+}
+
+.notifications-menu .settings-menu-heading {
+  min-height: 28px;
+  flex-shrink: 0;
+  padding: 0 0 12px;
+  gap: 8px;
+  color: var(--text-strong);
+  font-size: var(--font-size-title);
+}
+
+.notifications-close {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.notifications-close svg {
+  color: currentColor;
+}
+
+.notifications-close:hover {
+  background: var(--surface-control-hover);
+  color: var(--text-strong);
+}
+
+.notifications-control .notification-tool:is(:hover, .active) {
+  background: var(--surface-control-hover);
+}
+
+.notifications-control .notification-tool.armed:is(:hover, .active) {
+  color: var(--success);
+}
+
+.notifications-options {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-border-strong) transparent;
+}
+
+.notifications-menu .settings-menu-row {
+  min-height: 72px;
+  padding: 12px 0;
+  gap: 20px;
+  border-top: 0;
+}
+
+.notifications-menu .settings-menu-row + .settings-menu-row {
+  border-top: 1px solid var(--surface-divider);
+}
+
+.notifications-menu .settings-menu-row > div {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 5px;
+}
+
+.notifications-menu .settings-menu-row strong {
+  font-size: var(--font-size-body);
+  color: var(--text-strong);
+  line-height: 1.25;
+}
+
+.notifications-menu .settings-menu-row span {
+  color: var(--settings-copy-text);
+  font-size: var(--font-size-subtitle);
+  line-height: 1.45;
+}
+
+.notifications-menu .settings-menu-row .switch {
+  flex: 0 0 48px;
+}
+
+.notifications-actions {
+  flex-shrink: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-divider);
+}
+
+.notifications-actions .secondary-action {
+  width: 100%;
+  min-height: var(--control-height);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell .notifications-menu,
+  .shell .notifications-menu[data-open="true"] {
+    transition: none;
+    transform: none;
+  }
+
+  .notifications-close {
+    transition: none;
+  }
+}

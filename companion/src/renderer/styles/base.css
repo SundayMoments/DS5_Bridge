@@ -1,0 +1,105 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 100vw;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--app-bg-flat);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  -webkit-app-region: no-drag;
+}
+
+button {
+  cursor: pointer;
+}
+
+.shell {
+  --nav-active-bg: color-mix(in srgb, var(--accent) var(--nav-active-bg-weight), var(--nav-active-base));
+  --nav-active-border: color-mix(in srgb, var(--accent) var(--nav-active-border-weight), var(--nav-active-base));
+  --nav-active-rail: color-mix(in srgb, var(--accent-strong) var(--nav-active-rail-weight), var(--accent));
+  color-scheme: var(--theme-color-scheme);
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--app-bg);
+}
+
+.loading {
+  grid-template-rows: minmax(0, 1fr);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+
+.renderer-failure {
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  padding: clamp(24px, 6vw, 72px);
+}
+
+.renderer-failure-card {
+  display: grid;
+  gap: 14px;
+  width: min(620px, 100%);
+  padding: clamp(24px, 4vw, 40px);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--card-radius);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.36);
+}
+
+.renderer-failure-eyebrow {
+  color: var(--danger);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.renderer-failure-card h1,
+.renderer-failure-card p {
+  margin: 0;
+}
+
+.renderer-failure-card h1 {
+  font-size: var(--font-size-title);
+  line-height: 1.15;
+}
+
+.renderer-failure-card p {
+  color: var(--text-secondary);
+}
+
+.renderer-failure-detail {
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--control-radius);
+  color: var(--danger);
+  background: var(--surface-control);
+}
+
+.renderer-failure-card .primary-action {
+  justify-self: start;
+  min-width: 132px;
+  margin-top: 4px;
+}

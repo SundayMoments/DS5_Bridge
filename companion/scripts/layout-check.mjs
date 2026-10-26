@@ -1,23 +1,16 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { _electron as electron } from 'playwright';
+// Measures alignment across the companion pages and fails on layout drift.
+//
+//   npm run layout:check              drives the real companion (bridges and saved settings)
+//   npm run layout:check -- --fixture uses fixture data in a minimal host instead
+import { fixtureRequested, launchCompanion, openControlTab } from './ui-review/launch.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, '..');
-const tabs = ['Haptics', 'Audio', 'Triggers', 'Lighting', 'System'];
-const testButtonTabs = ['Haptics', 'Audio', 'Triggers'];
+const tabs = ['Haptics', 'Audio', 'Adaptive Triggers', 'Lighting', 'System'];
+const testButtonTabs = ['Haptics', 'Audio', 'Adaptive Triggers'];
 const tolerancePx = 1;
 const buttonTolerancePx = 2;
 const startupTutorialStorageKey = 'ds5bridge.startupTutorialCompleted.v1';
 
-const app = await electron.launch({
-  args: ['.'],
-  cwd: root,
-  env: {
-    ...process.env,
-    DS5_BRIDGE_ALLOW_PARALLEL_AUTOMATION_INSTANCE: '1'
-  }
-});
+const { app, close } = await launchCompanion({ fixture: fixtureRequested(), showStartupTutorial: true });
 
 try {
   const page = await app.firstWindow();
@@ -70,42 +63,36 @@ try {
     await page.waitForTimeout(150);
   }
 
-  const controlsNav = page.getByRole('tablist', { name: 'Controls' });
+  // The navigation list scrolls on its own; the Ko-fi badge and Settings stay pinned below it.
   const sidebarSupportSpacing = await page.evaluate(() => {
     const sidebar = document.querySelector('.hero-card');
-    const systemButton = document.querySelector('#control-tab-system');
+    const list = document.querySelector('.control-tab-list');
     const badge = document.querySelector('.sidebar-kofi-badge');
-    const footer = document.querySelector('.header-settings');
-    if (!sidebar || !systemButton || !badge || !footer) return null;
+    const settings = document.querySelector('#control-tab-settings');
+    if (!sidebar || !list || !badge || !settings) return null;
 
-    const systemIcon = systemButton.querySelector('svg');
-    const systemLabelNode = [...systemButton.childNodes].find(
-      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()
-    );
-    const systemLabelRange = systemLabelNode ? document.createRange() : null;
-    systemLabelRange?.selectNodeContents(systemLabelNode);
-    const systemContentBottom = Math.max(
-      systemIcon?.getBoundingClientRect().bottom ?? 0,
-      systemLabelRange?.getBoundingClientRect().bottom ?? 0
-    );
+    const listRect = list.getBoundingClientRect();
     const badgeRect = badge.getBoundingClientRect();
-    const footerRect = footer.getBoundingClientRect();
+    const settingsRect = settings.getBoundingClientRect();
     return {
-      above: badgeRect.top - systemContentBottom,
-      below: footerRect.top - badgeRect.bottom,
+      above: badgeRect.top - listRect.bottom,
+      below: settingsRect.top - badgeRect.bottom,
       overflow: Math.max(0, sidebar.scrollHeight - sidebar.clientHeight)
     };
   });
 
   if (!sidebarSupportSpacing) {
-    failures.push('Sidebar: support badge spacing targets were not found');
-  } else if (Math.abs(sidebarSupportSpacing.above - sidebarSupportSpacing.below) > tolerancePx) {
-    failures.push(
-      `Sidebar: Ko-fi badge has ${sidebarSupportSpacing.above.toFixed(2)}px above and ${sidebarSupportSpacing.below.toFixed(2)}px below`
-    );
-  }
-  if (sidebarSupportSpacing && sidebarSupportSpacing.overflow > tolerancePx) {
-    failures.push(`Sidebar: content overflowed by ${sidebarSupportSpacing.overflow.toFixed(2)}px`);
+    failures.push('Sidebar: navigation, Ko-fi badge, or Settings was not found');
+  } else {
+    if (sidebarSupportSpacing.above < -tolerancePx) {
+      failures.push(`Sidebar: Ko-fi badge overlaps the navigation list by ${(-sidebarSupportSpacing.above).toFixed(2)}px`);
+    }
+    if (sidebarSupportSpacing.below < -tolerancePx) {
+      failures.push(`Sidebar: Ko-fi badge overlaps Settings by ${(-sidebarSupportSpacing.below).toFixed(2)}px`);
+    }
+    if (sidebarSupportSpacing.overflow > tolerancePx) {
+      failures.push(`Sidebar: content overflowed by ${sidebarSupportSpacing.overflow.toFixed(2)}px`);
+    }
   }
 
   const rows = [];
@@ -121,7 +108,7 @@ try {
   let targetTextLeft = null;
   let targetPresetTop = null;
 
-  await controlsNav.getByRole('tab', { name: 'Overview' }).click();
+  await openControlTab(page, 'Overview');
   await page.waitForTimeout(150);
 
   const overviewControlAlignment = await page.evaluate(() => {
@@ -174,7 +161,7 @@ try {
   }
 
   for (const tab of tabs) {
-    await controlsNav.getByRole('tab', { name: tab }).click();
+    await openControlTab(page, tab);
     await page.waitForTimeout(150);
 
     const measurement = await page.evaluate(() => {
@@ -251,9 +238,7 @@ try {
     }
   }
 
-  await controlsNav.getByRole('tab', { name: 'Haptics' }).click();
-  await page.waitForTimeout(150);
-  await page.getByRole('switch', { name: 'Enter Audio Haptics' }).click();
+  await openControlTab(page, 'Audio Haptics');
   await page.waitForTimeout(150);
 
   const audioHapticsMeasurement = await page.evaluate(() => {
@@ -433,11 +418,8 @@ try {
     }
   }
 
-  await page.getByRole('switch', { name: 'Exit Audio Haptics' }).click();
-  await page.waitForTimeout(150);
-
   for (const tab of testButtonTabs) {
-    await controlsNav.getByRole('tab', { name: tab }).click();
+    await openControlTab(page, tab);
     await page.waitForTimeout(150);
 
     const measurements = await page.evaluate(() => {
@@ -556,7 +538,7 @@ try {
     }
   }
 
-  await controlsNav.getByRole('tab', { name: 'System' }).click();
+  await openControlTab(page, 'System');
   await page.waitForTimeout(150);
 
   const systemTypography = await page.evaluate(() => {
@@ -597,7 +579,43 @@ try {
     }
   }
 
+  await openControlTab(page, 'Settings');
+  await page.waitForTimeout(150);
+  const settingsRows = [];
+  for (const section of await page.locator('.settings-section-button').allTextContents()) {
+    await page.locator('.settings-section-button').filter({ hasText: section }).first().click();
+    await page.waitForTimeout(80);
+    const settingsLayout = await page.evaluate(() => {
+      const surface = document.querySelector('.settings-page.active .settings-page-surface');
+      const sidebar = document.querySelector('.settings-sidebar');
+      const rows = [...(surface?.querySelectorAll('.settings-category-section:not([hidden]) .settings-menu-row') ?? [])];
+      const clippedRows = rows.filter((row) => row.scrollWidth - row.clientWidth > 1).length;
+      return surface && sidebar ? {
+        horizontal: Math.max(0, surface.scrollWidth - surface.clientWidth),
+        sidebarOverflow: Math.max(0, sidebar.scrollHeight - sidebar.clientHeight),
+        rows: rows.length,
+        clippedRows
+      } : null;
+    });
+    if (!settingsLayout) {
+      failures.push(`Settings ${section}: page surface or sidebar was not found`);
+      continue;
+    }
+    settingsRows.push({ section, ...settingsLayout });
+    if (settingsLayout.horizontal > tolerancePx) {
+      failures.push(`Settings ${section}: page scrolls horizontally by ${settingsLayout.horizontal}px`);
+    }
+    if (settingsLayout.sidebarOverflow > tolerancePx) {
+      failures.push(`Settings ${section}: sidebar overflowed by ${settingsLayout.sidebarOverflow}px`);
+    }
+    if (settingsLayout.clippedRows > 0) {
+      failures.push(`Settings ${section}: ${settingsLayout.clippedRows} row(s) clip their content`);
+    }
+  }
+  await page.getByRole('button', { name: 'Back to app' }).click();
+
   console.table(rows);
+  console.table(settingsRows);
   console.table(audioHapticsRows);
   console.table(audioHapticsSelectorRows);
   console.table(audioHapticsConfigControlRows);
@@ -616,5 +634,5 @@ try {
     throw new Error(`Layout check failed:\n${failures.join('\n')}`);
   }
 } finally {
-  await app.close();
+  await close();
 }

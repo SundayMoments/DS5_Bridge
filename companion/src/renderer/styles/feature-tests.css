@@ -1,0 +1,296 @@
+.test-card {
+  display: grid;
+  grid-template-rows: var(--feature-status-grid-rows);
+  align-content: stretch;
+  gap: 8px;
+}
+
+.test-card .feature-card-title {
+  align-self: start;
+  margin-bottom: 0;
+}
+
+.test-options {
+  align-self: center;
+}
+
+.title-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.title-copy p {
+  margin: 0;
+  color: var(--card-subtitle-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.35;
+}
+
+.test-card > .primary-action {
+  grid-row: 3;
+}
+
+.test-card > .secondary-action {
+  grid-row: 4;
+}
+
+.test-card .feature-status {
+  grid-row: 5;
+  align-self: start;
+}
+
+.audio-test-status {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primary-action,
+.secondary-action {
+  width: 100%;
+  min-height: var(--action-height);
+  font-size: var(--font-size-body);
+}
+
+.test-card > .primary-action,
+.test-card > .secondary-action,
+.trigger-action-row .primary-action,
+.trigger-action-row .secondary-action {
+  --test-action-icon-size: 24px;
+  --test-action-icon-gap: 12px;
+  --test-action-label-width: calc((76px + 56px + 82px + 56px + 88px + 94px) / 6);
+  --test-action-content-width: calc(var(--test-action-icon-size) + var(--test-action-icon-gap) + var(--test-action-label-width));
+  display: grid;
+  grid-template-columns: var(--test-action-icon-size) minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: start;
+  column-gap: var(--test-action-icon-gap);
+  padding-left: max(12px, calc((100% - var(--test-action-content-width)) / 2));
+  padding-right: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.test-card > .primary-action svg,
+.test-card > .secondary-action svg,
+.test-card > .secondary-action .stop-glyph,
+.trigger-action-row .primary-action svg,
+.trigger-action-row .secondary-action svg {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 5px;
+  border-radius: 50%;
+  stroke-width: 2.4;
+}
+
+.test-card > .primary-action svg,
+.trigger-action-row .primary-action svg {
+  color: var(--accent);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: var(--accent-text);
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.test-card > .secondary-action svg,
+.test-card > .secondary-action .stop-glyph,
+.trigger-action-row .secondary-action svg {
+  color: var(--text-secondary);
+  border: 1px solid var(--surface-border);
+  background: var(--surface-control-soft);
+}
+
+.test-card > .secondary-action .stop-glyph {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.test-card > .secondary-action .stop-glyph::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.test-card > .secondary-action svg {
+  fill: none;
+}
+
+.trigger-action-row .secondary-action svg {
+  padding: 4px;
+}
+
+.primary-action:disabled svg,
+.secondary-action:disabled svg,
+.secondary-action:disabled .stop-glyph {
+  color: var(--text-disabled);
+  border-color: var(--surface-border);
+  background: var(--surface-disabled);
+  fill: none;
+}
+
+.primary-action {
+  color: var(--accent-text);
+  border-color: var(--accent-border-strong);
+  background: var(--accent-selected);
+  box-shadow: inset 0 -2px 0 var(--accent-border-strong);
+}
+
+.secondary-action {
+  color: var(--text-secondary);
+  background: var(--surface-control-soft);
+}
+
+.primary-action:disabled {
+  border-color: var(--surface-border);
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+  box-shadow: none;
+}
+
+.secondary-action:disabled {
+  border-color: var(--surface-border);
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+}
+
+.segmented-row button:disabled {
+  color: var(--text-disabled);
+}
+
+.segmented-row button.active:disabled {
+  border-color: var(--surface-border);
+  color: var(--text-disabled);
+  background: var(--surface-disabled-strong);
+  box-shadow: none;
+}
+
+.feature-status {
+  border-top: 1px solid var(--surface-divider);
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--text-secondary);
+}
+
+.feature-status strong {
+  color: var(--text-control);
+  font-weight: var(--font-weight-medium);
+}
+
+.feature-status p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+}
+
+.feature-status.test-status {
+  display: flex;
+  align-items: flex-start;
+}
+
+.feature-status.lighting-status {
+  display: flex;
+  align-items: flex-start;
+}
+
+.status-badge {
+  min-width: 0;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 0 9px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-control);
+  background: var(--surface-control-muted);
+}
+
+.status-badge strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-subtitle);
+  font-weight: 650;
+}
+
+.test-status.good .status-badge,
+.status-badge.good {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.test-status.warn .status-badge,
+.status-badge.warn {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.test-status.bad .status-badge,
+.status-badge.bad {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.wide-select {
+  grid-template-columns: 110px minmax(0, 1fr);
+  margin: 14px 0 20px;
+}
+
+.test-options {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.test-options .wide-select {
+  grid-template-columns: 86px minmax(0, 1fr);
+  margin: 0;
+}
+
+.test-options .trigger-test-mode-control {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.target-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.target-row > span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.target-row .segmented-row.compact {
+  grid-template-columns: 72px 72px minmax(124px, 1fr);
+  justify-self: stretch;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.target-row .segmented-row.compact button {
+  min-width: 0;
+}
+
+.trigger-action-row {
+  display: contents;
+}

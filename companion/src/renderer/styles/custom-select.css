@@ -1,0 +1,200 @@
+.custom-select {
+  position: relative;
+  min-width: 0;
+}
+
+.custom-select-button {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 14px;
+  color: var(--text-control);
+  background: var(--surface-control);
+  text-align: left;
+}
+
+.custom-select-button > span {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-button > svg {
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+
+.custom-select.open .custom-select-button {
+  border-color: var(--accent-border-strong);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.custom-select.open .custom-select-button > svg {
+  transform: rotate(180deg);
+}
+
+.custom-select-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: var(--custom-select-menu-max-height, 232px);
+  padding: 8px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-popup);
+  box-shadow: var(--shadow-menu);
+  backdrop-filter: none;
+  animation: none;
+  transition: none;
+  overscroll-behavior: contain;
+}
+
+.custom-select-menu-options {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.custom-select.menu-top .custom-select-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.custom-select-menu-options::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-select-menu-options::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.custom-select-menu-options::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+.custom-select-menu-header,
+.custom-select-menu-footer {
+  flex: 0 0 auto;
+}
+
+.custom-select-floating-layer {
+  position: fixed;
+  z-index: 10000;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.custom-select-floating-layer.dialog-suspended {
+  z-index: 90;
+}
+
+.custom-select-floating-layer .custom-select-menu {
+  position: static;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.custom-select-menu button {
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px 0 10px;
+  color: var(--text-control);
+  background: transparent;
+  text-align: left;
+}
+
+.custom-select-menu button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-menu button:where([role="option"]) {
+  padding-inline: 12px 10px;
+}
+
+/* Keep keyboard focus visible inside the menu's scroll boundary. */
+.custom-select-menu button[role="option"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.custom-select-menu button:hover {
+  background: var(--surface-control-hover);
+}
+
+.custom-select-menu button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.54;
+}
+
+.custom-select-menu button:disabled:hover {
+  background: transparent;
+}
+
+.custom-select-menu button.selected {
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
+}
+
+.custom-select-menu button.selected span,
+.custom-select-menu button.selected strong,
+.custom-select-menu button.selected small,
+.custom-select-menu button.selected .host-persona-option {
+  color: inherit;
+}
+
+.custom-select-menu button.selected > svg {
+  justify-self: end;
+  color: var(--accent);
+}
+
+.custom-select-menu button[role="option"].selected > span {
+  font-weight: var(--font-weight-semibold);
+}
+
+.custom-select-menu button.selected small {
+  color: var(--text-muted);
+}
+
+.custom-select-menu-option-row {
+  position: relative;
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-select-button > svg {
+    transition: none;
+  }
+}

@@ -1,0 +1,100 @@
+.system-page .feature-card-grid {
+  align-items: stretch;
+  height: auto;
+}
+
+.system-page .system-card {
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+}
+
+.feature-card-title {
+  min-height: var(--feature-card-header-height);
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: calc(var(--card-padding) * -1) calc(var(--card-padding) * -1) 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--surface-divider);
+  border-radius: calc(var(--card-radius) - 1px) calc(var(--card-radius) - 1px) 0 0;
+  background: var(--surface-card-header);
+}
+
+.haptics-mode-selector,
+.audio-mode-selector {
+  align-self: start;
+  justify-self: end;
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+.feature-icon {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--surface-control-soft);
+  box-shadow: var(--shadow-panel);
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.feature-icon > svg {
+  width: 24px;
+  height: 24px;
+}
+
+.feature-icon.icon-medium > svg {
+  width: 25px;
+  height: 25px;
+}
+
+.feature-icon.icon-compact > svg {
+  width: 26px;
+  height: 26px;
+}
+
+.feature-icon.icon-large > svg {
+  width: 27px;
+  height: 27px;
+}
+
+.feature-icon.icon-largest > svg {
+  width: 28px;
+  height: 28px;
+}
+
+.feature-icon.icon-wide > svg {
+  width: 22px;
+  height: 22px;
+}
+
+.overview-icon > svg {
+  width: 19px;
+  height: 19px;
+}
+
+button.feature-icon {
+  padding: 0;
+}
+
+.feature-card-title h3 {
+  font-size: var(--font-size-title);
+}
+
+.feature-card-title .title-copy {
+  gap: 5px;
+}
+
+.feature-card-title .title-copy p {
+  font-size: var(--font-size-subtitle);
+}

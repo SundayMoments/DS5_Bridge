@@ -2,10 +2,27 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { UI_THEME_PRESETS } from '../shared/ui-theme';
+import { cssBlockIn, rendererStyleModule, rendererStyles } from './test-support/renderer-styles';
+import { UI_THEME_PRESET_STORAGE_KEY } from './ui-theme-preferences';
+import {
+  UI_THEME_KOFI_BADGES,
+  UI_THEME_OPTIONS,
+  UI_THEME_PREVIEW_SWATCHES
+} from './ui-themes';
 
-const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
+const styles = rendererStyles();
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
-const themeSource = readFileSync(new URL('./ui-themes.ts', import.meta.url), 'utf8');
+const palettesSource = rendererStyleModule('styles/theme-palettes.css');
+const tokensSource = rendererStyleModule('styles/theme-tokens.css');
+const ds5ThemeSource = rendererStyleModule('styles/theme-ds5.css');
+const shellSidebarSource = rendererStyleModule('features/shell/shell-sidebar.css');
+const bridgeMarkSource = readFileSync(new URL('./features/shell/BridgeMark.tsx', import.meta.url), 'utf8');
+const settingsPageStyles = rendererStyleModule('features/settings/settings-page.css');
+const settingsSidebarStyles = rendererStyleModule('features/settings/settings-sidebar.css');
+const appSettingsSource = readFileSync(new URL('./features/settings/AppSettings.tsx', import.meta.url), 'utf8');
+const systemSettingsSource = readFileSync(new URL('./features/settings/SystemSettings.tsx', import.meta.url), 'utf8');
+const themeOptionSource = readFileSync(new URL('./features/settings/ThemeOption.tsx', import.meta.url), 'utf8');
 const normalizedStyles = styles.replace(/\s+/g, ' ').trim();
 
 function cssBlock(selector: string, requiredText?: string): string {
@@ -83,8 +100,8 @@ describe('companion layout CSS', () => {
     const profilePanel = cssBlock('.system-profile-panel', 'grid-template-rows: auto minmax(0, 1fr);');
     expect(profilePanel).toContain('gap: 8px;');
     expect(cssBlock('.system-profile-summary-group', 'align-content: start;')).toContain('align-content: start;');
-    expect(cssBlock('.system-profile-summary dt,', 'font-size: 10px;')).toContain('line-height: 1.15;');
-    expect(cssBlock('.system-profile-strip .system-profile-save-status,', 'font-size: 11px;')).toContain(
+    expect(cssBlock('.system-profile-summary dt,', 'font-size: var(--font-size-subtitle);')).toContain('line-height: 1.15;');
+    expect(cssBlock('.system-profile-strip .system-profile-save-status,', 'font-size: var(--font-size-subtitle);')).toContain(
       'min-height: 28px;'
     );
   });
@@ -140,29 +157,30 @@ describe('companion layout CSS', () => {
     expect(overviewStatusPanel).toContain('background: var(--surface-panel);');
   });
 
-  it('defines preset theme selectors and the Bridge Settings theme control', () => {
-    for (const theme of ['light', 'dark', 'bubble-gum', 'pomegranate', 'kiwi']) {
-      expect(styles).toContain(`.shell[data-theme="${theme}"]`);
-      expect(themeSource).toContain(`'${theme}'`);
+  it('defines every preset palette, including the swatches used by the theme control', () => {
+    for (const theme of UI_THEME_PRESETS) {
+      expect(palettesSource).toContain(`.shell[data-theme="${theme}"]`);
+      expect(palettesSource).toContain(`:root[data-theme="${theme}"]`);
+      expect(palettesSource).toContain(`.theme-option[data-theme-preview="${theme}"]`);
+      expect(UI_THEME_KOFI_BADGES[theme]).toBeTruthy();
     }
-    expect(appSource).toContain('ariaLabel="UI theme"');
-    expect(appSource).toContain('settings-theme-select');
-    expect(appSource).toContain('UI_THEME_PREVIEW_SWATCHES[value].map((swatch)');
-    expect(themeSource).toContain('export type UiThemePreviewSwatch');
-    expect(themeSource).toContain("role: 'Canvas' | 'Surface' | 'Accent' | 'Signal';");
-    expect(themeSource).toContain('UI_THEME_PREVIEW_SWATCHES');
-    expect(themeSource).toContain('support_me_on_kofi_beige.png');
-    expect(themeSource).toContain('support_me_on_kofi_blue.png');
-    expect(themeSource).toContain('support_me_on_kofi_red.png');
-    expect(themeSource).toContain("'bubble-gum': kofiBadgeBlueUrl");
-    expect(themeSource).toContain('kiwi: kofiBadgeDarkUrl');
+    expect(UI_THEME_OPTIONS.map(([, preset]) => preset)).toEqual([...UI_THEME_PRESETS]);
+    expect(UI_THEME_PREVIEW_SWATCHES.map(({ color }) => color)).toEqual([
+      'var(--palette-canvas)',
+      'var(--palette-surface)',
+      'var(--palette-accent)'
+    ]);
+    expect(appSettingsSource).toContain('ariaLabel="UI theme"');
+    expect(appSettingsSource).toContain('className="settings-theme-select"');
+    expect(appSettingsSource).toContain('renderOption={renderThemeOption}');
+    expect(themeOptionSource).toContain('<span className="theme-option" data-theme-preview={value}>');
   });
 
   it('uses the cached theme and branded panel for the startup loading state', () => {
-    expect(appSource).toContain("const UI_THEME_PRESET_STORAGE_KEY = 'ds5bridge.uiThemePreset';");
+    expect(UI_THEME_PRESET_STORAGE_KEY).toBe('ds5bridge.uiThemePreset');
     expect(appSource).toContain("const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';");
     expect(appSource).toContain('const STARTUP_READY_HOLD_MS = 1000;');
-    expect(appSource).toContain('function storedUiThemePreset()');
+    expect(appSource).toContain('useState<UiThemePreset>(storedUiThemePreset)');
     expect(appSource).toContain('function storedStartupTutorialStep()');
     expect(appSource).toContain('function saveStartupTutorialCompleted()');
     expect(appSource).toContain('function StartupScreen({ ready }: { ready: boolean })');
@@ -191,14 +209,10 @@ describe('companion layout CSS', () => {
   });
 
   it('keeps theme window bars and sidebars flat instead of gradient layered', () => {
-    for (const selector of [
-      ':root',
-      '.shell[data-theme="light"]',
-      '.shell[data-theme="bubble-gum"]',
-      '.shell[data-theme="pomegranate"]',
-      '.shell[data-theme="kiwi"]'
+    for (const themeBlock of [
+      cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--window-bar-bg:'),
+      cssBlockIn(tokensSource, '.shell {', '--window-bar-bg:')
     ]) {
-      const themeBlock = cssBlock(selector, '--window-bar-bg:');
       expect(themeBlock).not.toContain('var(--sidebar-width)');
       expect(themeBlock).not.toContain('--window-bar-bg: linear-gradient');
       expect(themeBlock).not.toContain('--sidebar-bg: linear-gradient');
@@ -206,80 +220,57 @@ describe('companion layout CSS', () => {
       expect(themeBlock).toContain('--window-bar-bg: var(--window-bar-bg-flat);');
       expect(themeBlock).toContain('--sidebar-overlay: transparent;');
     }
-    const bubbleGumTheme = cssBlock('.shell[data-theme="bubble-gum"]', '--window-bar-bg-flat: #d86fbd;');
-    expect(bubbleGumTheme).toContain('--window-bar-border: rgba(124, 30, 111, 0.56);');
+    expect(cssBlockIn(tokensSource, '.shell {', '--window-bar-bg-flat:')).toContain(
+      '--window-bar-bg-flat: var(--palette-sidebar);'
+    );
   });
 
-  it('uses theme-aware colors for the navbar bridge mark', () => {
-    expect(appSource).toContain('function BridgeMark()');
-    expect(appSource).toContain('fill="var(--bridge-mark-primary)"');
-    expect(appSource).toContain('fill="var(--bridge-mark-secondary)"');
+  it('keeps the DS5 mark in brand blue while its primary shape follows the theme text', () => {
+    expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-primary)"');
+    expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-secondary)"');
     expect(appSource).not.toContain('bridgeMarkUrl');
-    expect(cssBlock(':root', '--bridge-mark-primary: #ffffff;')).toContain('--bridge-mark-secondary: #046fff;');
-    expect(cssBlock('.shell[data-theme="light"]', '--bridge-mark-primary: #172232;')).toContain(
-      '--bridge-mark-secondary: #046fff;'
-    );
-    expect(cssBlock('.shell[data-theme="bubble-gum"]', '--bridge-mark-primary: #140d18;')).toContain(
-      '--bridge-mark-secondary: #046fff;'
-    );
-    expect(cssBlock('.shell[data-theme="pomegranate"]', '--bridge-mark-primary: #ffffff;')).toContain(
-      '--bridge-mark-secondary: #00a3ff;'
-    );
-    expect(cssBlock('.shell[data-theme="kiwi"]', '--bridge-mark-primary: #eaffef;')).toContain(
-      '--bridge-mark-secondary: #9cff2f;'
-    );
+    const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--bridge-mark-primary:');
+    expect(ds5Theme).toContain('--bridge-mark-primary: #ffffff;');
+    expect(ds5Theme).toContain('--bridge-mark-secondary: #046fff;');
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--bridge-mark-primary:');
+    expect(sharedTokens).toContain('--ds5-blue: #046fff;');
+    expect(sharedTokens).toContain('--bridge-mark-primary: var(--text-strong);');
+    expect(sharedTokens).toContain('--bridge-mark-secondary: var(--ds5-blue);');
   });
 
   it('uses dedicated sidebar text tokens for section labels and nav links', () => {
-    const rootTokens = cssBlock(':root', '--sidebar-label: var(--text-dim);');
-    const pomegranateTheme = cssBlock('.shell[data-theme="pomegranate"]', '--sidebar-label: #ff6ead;');
-    const kiwiTheme = cssBlock('.shell[data-theme="kiwi"]', '--sidebar-label: #7bbd67;');
-    expect(rootTokens).toContain('--sidebar-link: var(--text-secondary);');
-    expect(rootTokens).toContain('--sidebar-link-hover: var(--text-strong);');
-    expect(rootTokens).toContain('--sidebar-link-disabled: var(--text-dim);');
-    expect(pomegranateTheme).toContain('--sidebar-link: #f0d4e5;');
-    expect(pomegranateTheme).toContain('--sidebar-link-hover: #fff7fc;');
-    expect(kiwiTheme).toContain('--sidebar-link: #c6e8ca;');
-    expect(kiwiTheme).toContain('--sidebar-link-hover: #f4fff5;');
-    expect(cssBlock('.shell[data-theme="light"]', '--sidebar-label: #53647a;')).toContain(
-      '--sidebar-link-disabled: #63748c;'
-    );
-    expect(cssBlock('.shell[data-theme="bubble-gum"]', '--sidebar-label: #6a2b65;')).toContain(
-      '--sidebar-link-disabled: #68456d;'
-    );
-    expect(cssBlock('.sidebar-section-label', 'color: var(--sidebar-label);')).toContain(
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--sidebar-label:');
+    expect(sharedTokens).toContain('--sidebar-label: var(--text-muted);');
+    expect(sharedTokens).toContain('--sidebar-link: var(--text-secondary);');
+    expect(sharedTokens).toContain('--sidebar-link-hover: var(--text-strong);');
+    expect(sharedTokens).toContain('--sidebar-link-disabled: var(--text-disabled);');
+    const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--sidebar-label:');
+    expect(ds5Theme).toContain('--sidebar-label: var(--text-dim);');
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-section-label', 'color: var(--sidebar-label);')).toContain(
       'color: var(--sidebar-label);'
     );
-    expect(cssBlock('.control-tabs button,', 'color: var(--sidebar-link);')).toContain(
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button,', 'color: var(--sidebar-link);')).toContain(
       'color: var(--sidebar-link);'
     );
-    expect(cssBlock('.control-tabs button:not(.active):hover,', 'color: var(--sidebar-link-hover);')).toContain(
-      'color: var(--sidebar-link-hover);'
-    );
-    const disabledSidebarButton = cssBlock('.sidebar-nav-button:disabled', 'color: var(--sidebar-link-disabled);');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button:not(.active):hover,', 'color: var(--sidebar-link-hover);'))
+      .toContain('color: var(--sidebar-link-hover);');
+    const disabledSidebarButton = cssBlockIn(shellSidebarSource, '.sidebar-nav-button:disabled', 'color: var(--sidebar-link-disabled);');
     expect(disabledSidebarButton).toContain('color: var(--sidebar-link-disabled);');
     expect(disabledSidebarButton).toContain('opacity: 1;');
   });
 
   it('splits page headings from card headings so themes can tint page chrome', () => {
-    const rootTokens = cssBlock(':root', '--page-heading-text: var(--text-primary);');
-    const pomegranateTheme = cssBlock('.shell[data-theme="pomegranate"]', '--page-heading-text: #ff5aa6;');
-    const kiwiTheme = cssBlock('.shell[data-theme="kiwi"]', '--page-heading-text: #9cff2f;');
-    expect(rootTokens).toContain('--page-subtitle-text: var(--text-secondary);');
-    expect(rootTokens).toContain('--card-heading-text: var(--text-primary);');
-    expect(rootTokens).toContain('--card-subtitle-text: var(--text-secondary);');
-    expect(rootTokens).toContain('--settings-copy-text: var(--text-muted);');
-    expect(pomegranateTheme).toContain('--page-subtitle-text: #d94f8f;');
-    expect(pomegranateTheme).toContain('--card-heading-text: var(--text-strong);');
-    expect(pomegranateTheme).toContain('--settings-copy-text: var(--text-secondary);');
-    expect(kiwiTheme).toContain('--page-subtitle-text: #a7dba7;');
-    expect(kiwiTheme).toContain('--card-heading-text: var(--text-strong);');
-    expect(cssBlock('.shell[data-theme="light"]', '--page-heading-text: #0b1320;')).toContain(
-      '--settings-copy-text: #4d6179;'
-    );
-    expect(cssBlock('.shell[data-theme="bubble-gum"]', '--page-heading-text: #140d18;')).toContain(
-      '--settings-copy-text: #5a3e60;'
-    );
+    const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--page-heading-text:');
+    expect(ds5Theme).toContain('--page-heading-text: var(--text-primary);');
+    expect(ds5Theme).toContain('--page-subtitle-text: var(--text-secondary);');
+    expect(ds5Theme).toContain('--card-heading-text: var(--text-primary);');
+    expect(ds5Theme).toContain('--card-subtitle-text: var(--text-secondary);');
+    expect(ds5Theme).toContain('--settings-copy-text: var(--text-muted);');
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--page-heading-text:');
+    expect(sharedTokens).toContain('--page-heading-text: var(--text-strong);');
+    expect(sharedTokens).toContain('--page-subtitle-text: var(--text-secondary);');
+    expect(sharedTokens).toContain('--card-heading-text: var(--text-strong);');
+    expect(sharedTokens).toContain('--settings-copy-text: var(--text-secondary);');
     expect(cssBlock('.control-heading h2,', 'color: var(--page-heading-text);')).toContain(
       'color: var(--page-heading-text);'
     );
@@ -335,8 +326,8 @@ describe('companion layout CSS', () => {
     expect(profileButtonBlock).toContain('border: 1px solid var(--surface-border-strong);');
     expect(profileButtonBlock).toContain('color: var(--text-control);');
     expect(profileButtonBlock).toContain('background: var(--surface-control-soft);');
-    expect(profileButtonBlock).toContain('font-size: 12px;');
-    expect(profileButtonBlock).toContain('font-weight: 700;');
+    expect(profileButtonBlock).toContain('font-size: var(--font-size-subtitle);');
+    expect(profileButtonBlock).toContain('font-weight: var(--font-weight-strong);');
     expect(profileButtonBlock).toContain('box-shadow: none;');
     expect(cssBlock('.system-profile-save-status', 'min-width: 0;')).not.toContain('background:');
     expect(appSource).toContain('function ProfileSaveStatus()');
@@ -364,15 +355,10 @@ describe('companion layout CSS', () => {
   });
 
   it('colors the device container border by device status', () => {
-    expect(cssBlock('.hero-main.device-status-good', 'border-color: var(--success-border-strong);')).toContain(
-      'border-color: var(--success-border-strong);'
-    );
-    expect(cssBlock('.hero-main.device-status-warn', 'border-color: var(--warning-border-strong);')).toContain(
-      'border-color: var(--warning-border-strong);'
-    );
-    expect(cssBlock('.hero-main.device-status-bad', 'border-color: var(--danger-border-strong);')).toContain(
-      'border-color: var(--danger-border-strong);'
-    );
+    for (const [tone, token] of [['good', 'success'], ['warn', 'warning'], ['bad', 'danger']]) {
+      expect(cssBlockIn(shellSidebarSource, `.hero-main.device-status-${tone}`, `border-color: var(--${token}-border-strong);`))
+        .toContain(`border-color: var(--${token}-border-strong);`);
+    }
   });
 
   it('renders the Power Saving Green Icon tip as the filled success tile with a white glyph', () => {
@@ -399,18 +385,17 @@ describe('companion layout CSS', () => {
 
   it('uses selected tokens for active navigation and audio haptics mode chips', () => {
     const shellTokens = cssBlock('.shell', '--nav-active-bg:');
-    const lightTheme = cssBlock('.shell[data-theme="light"]', '--nav-active-base: white;');
-    const bubbleGumTheme = cssBlock('.shell[data-theme="bubble-gum"]', '--nav-active-base: white;');
-    const pomegranateTheme = cssBlock('.shell[data-theme="pomegranate"]', '--nav-active-base: #211323;');
-    const kiwiTheme = cssBlock('.shell[data-theme="kiwi"]', '--nav-active-base: #0d1f13;');
-    expect(cssBlock('.control-tabs button.active', 'background: var(--nav-active-bg);')).toContain(
-      'background: var(--nav-active-bg);'
-    );
-    expect(cssBlock('.control-tabs button.active svg', 'color: var(--nav-active-icon);')).toContain(
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--nav-active-base:');
+    const lightFamily = cssBlockIn(tokensSource, '.shell:is([data-theme="light"], [data-theme="bubble-gum"])', '--nav-active-base:');
+    // Active rows use a neutral text-tinted fill; only the icon carries the accent.
+    const activeRow = cssBlockIn(shellSidebarSource, '.control-tab-button.active', 'color: var(--nav-active-text);');
+    expect(activeRow).toContain('background: color-mix(in srgb, var(--text-strong) 8%, transparent);');
+    expect(activeRow).toContain('font-weight: var(--font-weight-strong);');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button.active svg,', 'color: var(--nav-active-icon);')).toContain(
       'color: var(--nav-active-icon);'
     );
-    expect(cssBlock('.sidebar-action-button.active', 'background: var(--nav-active-bg);')).toContain(
-      'background: var(--nav-active-bg);'
+    expect(cssBlock('.studio-tab-strip button.active', 'box-shadow: inset 0 -3px 0 var(--nav-active-rail);')).toContain(
+      'color: var(--accent);'
     );
     expect(cssBlock('.audio-haptics-mode-state.warn', 'background: var(--info-selected);')).toContain(
       'color: var(--info-selected-text);'
@@ -418,9 +403,10 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.audio-haptics-mode-state.retry', 'background: var(--info-selected);')).toContain(
       'color: var(--info-selected-text);'
     );
-    expect(cssBlock('.custom-select-menu button.selected', 'background: var(--accent-selected);')).toContain(
-      'color: var(--accent-text);'
+    expect(cssBlock('.custom-select-menu button.selected', 'background: var(--surface-control-hover);')).toContain(
+      'color: var(--text-strong);'
     );
+    expect(cssBlock('.custom-select-menu button.selected > svg', 'color: var(--accent);')).toContain('justify-self: end;');
     expect(cssBlock('.custom-select-menu button.selected span,', 'color: inherit;')).toContain('color: inherit;');
     expect(shellTokens).toContain(
       '--nav-active-bg: color-mix(in srgb, var(--accent) var(--nav-active-bg-weight), var(--nav-active-base));'
@@ -428,48 +414,22 @@ describe('companion layout CSS', () => {
     expect(shellTokens).toContain(
       '--nav-active-rail: color-mix(in srgb, var(--accent-strong) var(--nav-active-rail-weight), var(--accent));'
     );
-    for (const theme of [lightTheme, bubbleGumTheme]) {
-      expect(theme).toContain('--nav-active-base: white;');
-      expect(theme).toContain('--nav-active-bg-weight: 40%;');
-      expect(theme).toContain('--nav-active-border-weight: 78%;');
-      expect(theme).toContain('--nav-active-rail-weight: 84%;');
-    }
-    expect(lightTheme).toContain('--command-chip-muted-text: #1559bd;');
-    expect(lightTheme).toContain('--command-chip-active-bg: #2f78d8;');
-    expect(lightTheme).toContain('--command-chip-active-border: #1559bd;');
-    expect(lightTheme).toContain('--command-chip-active-text: #ffffff;');
-    expect(lightTheme).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 18%, #edf3fa 82%);');
-    expect(lightTheme).toContain('--command-chip-muted-border: color-mix(in srgb, var(--accent) 66%, #edf3fa 34%);');
-    expect(lightTheme).toContain('--success: #00b866;');
-    expect(lightTheme).toContain('--success-selected: #14935a;');
-    expect(bubbleGumTheme).toContain('--command-chip-muted-text: #8f2174;');
-    expect(bubbleGumTheme).toContain('--command-chip-active-bg: #d44799;');
-    expect(bubbleGumTheme).toContain('--command-chip-active-border: #a3368e;');
-    expect(bubbleGumTheme).toContain('--command-chip-active-text: #ffffff;');
-    expect(bubbleGumTheme).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 20%, #ffd8f5 80%);');
-    expect(bubbleGumTheme).toContain('--command-chip-muted-border: color-mix(in srgb, var(--accent) 70%, #ffd8f5 30%);');
-    expect(bubbleGumTheme).toContain('--success: #00b866;');
-    expect(bubbleGumTheme).toContain('--success-selected: #14935a;');
-    expect(bubbleGumTheme).toContain('--info-selected: #d44799;');
-    expect(bubbleGumTheme).toContain('--info-border-strong: rgba(163, 54, 142, 0.66);');
-    expect(pomegranateTheme).toContain('--nav-active-base: #211323;');
-    expect(pomegranateTheme).toContain('--nav-active-bg-weight: 50%;');
-    expect(pomegranateTheme).toContain('--nav-active-border-weight: 86%;');
-    expect(pomegranateTheme).toContain('--nav-active-rail-weight: 88%;');
-    expect(kiwiTheme).toContain('--nav-active-bg-weight: 48%;');
-    expect(kiwiTheme).toContain('--accent-selected: #9cff2f;');
-    expect(kiwiTheme).toContain('--accent-text: #061006;');
-    expect(kiwiTheme).toContain('--command-chip-active-bg: #9cff2f;');
-    expect(kiwiTheme).toContain('--command-chip-active-border: #6ecf18;');
-    expect(kiwiTheme).toContain('--danger-selected: #d52d3e;');
-    expect(kiwiTheme).toContain('--danger-selected-text: #ffffff;');
-    expect(bubbleGumTheme).toContain('--warning-selected-text: #ffffff;');
+    expect(sharedTokens).toContain('--nav-active-base: var(--palette-canvas);');
+    expect(sharedTokens).toContain('--nav-active-bg-weight: 28%;');
+    expect(lightFamily).toContain('--nav-active-base: #ffffff;');
+    expect(lightFamily).toContain('--nav-active-bg-weight: 40%;');
+    expect(lightFamily).toContain('--nav-active-border-weight: 78%;');
+    // Filled actions use each preset's own ink instead of hardcoded white text.
+    expect(sharedTokens).toContain('--accent-text: var(--palette-on-accent);');
+    expect(sharedTokens).toContain('--command-chip-active-text: var(--accent-text);');
+    expect(sharedTokens).toContain('--command-chip-active-bg: var(--accent-selected);');
     expect(cssBlock('.emergency-repair-button', 'background: var(--danger-selected);')).toContain(
       'color: var(--danger-selected-text);'
     );
-    expect(shellTokens).toContain('--command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base) 82%);');
-    expect(shellTokens).toContain('--command-chip-active-bg: color-mix(in srgb, var(--accent) 44%, var(--command-chip-base) 56%);');
-    expect(shellTokens).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);');
+    const ds5Chips = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--command-chip-bg:');
+    expect(ds5Chips).toContain('--command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base) 82%);');
+    expect(ds5Chips).toContain('--command-chip-active-bg: color-mix(in srgb, var(--accent) 44%, var(--command-chip-base) 56%);');
+    expect(ds5Chips).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);');
   });
 
   it('uses the main haptics gain control in the Audio Haptics card', () => {
@@ -510,9 +470,14 @@ describe('companion layout CSS', () => {
     );
   });
 
-  it('keeps Pico firmware maintenance actions compact inside Bridge Settings', () => {
-    expect(appSource).toContain('className="settings-menu-row pico-firmware-row"');
-    expect(appSource).not.toContain('<strong>Pico Firmware</strong>');
+  it('keeps Pico firmware maintenance actions compact inside Settings', () => {
+    expect(systemSettingsSource).toContain('className="settings-menu-row pico-firmware-row"');
+    expect(systemSettingsSource).not.toContain('<strong>Pico Firmware</strong>');
+    // On the Settings page the header wraps its actions under the copy instead of squeezing it.
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .pico-firmware-header', 'flex-wrap: wrap;'))
+      .toContain('justify-content: space-between;');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .pico-firmware-dual-action .heading-action:first-child', 'border-radius: 6px 0 0 6px;'))
+      .toContain('border-radius: 6px 0 0 6px;');
     expect(cssBlock('.pico-firmware-row', 'grid-template-columns: minmax(0, 1fr);')).toContain('gap: 7px;');
     expect(cssBlock('.pico-firmware-header', 'grid-template-columns: minmax(0, 1fr) auto;')).toContain(
       'align-items: center;'
@@ -581,50 +546,57 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.overview-range-ticks span.endpoint', 'height: 9px;')).toContain('height: 9px;');
   });
 
-  it('keeps the Bridge Settings preferences modal typography compact', () => {
-    expect(appSource).toContain('bridge-settings-modal bridge-settings-preferences-modal');
-    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-modal-heading', 'font-size: 14px;')).toContain(
-      'font-size: 14px;'
-    );
-    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-row strong', 'font-size: 12px;')).toContain(
-      'font-size: 12px;'
-    );
-    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-copy > span', 'font-size: 10.5px;')).toContain(
-      'font-size: 10.5px;'
-    );
-    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-column .settings-menu-row', 'min-height: 32px;')).toContain(
-      'padding-top: 3px;'
-    );
+  it('sets the Settings page in the shared type tokens and grouped rows', () => {
+    expect(appSource).not.toContain('bridge-settings-preferences-modal');
+    expect(styles).not.toContain('.bridge-settings-preferences-modal');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page-heading h2', 'font-size: var(--font-size-title);'))
+      .toContain('font-weight: var(--font-weight-semibold);');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .settings-menu-row strong', 'font-size: var(--font-size-body);'))
+      .toContain('color: var(--text-strong);');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .settings-menu-copy > span', 'font-size: var(--font-size-body);'))
+      .toContain('color: var(--text-secondary);');
+    const row = cssBlockIn(settingsPageStyles, '.settings-page .settings-menu-row', 'min-height: 64px;');
+    expect(row).toContain('background: var(--surface-section);');
+    expect(row).toContain('border: 1px solid var(--section-border);');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .settings-category-section > :last-child', 'border-bottom-left-radius: var(--card-radius);'))
+      .toContain('border-bottom: 1px solid var(--section-border);');
+    expect(settingsPageStyles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(settingsSidebarStyles).not.toMatch(/font-size:\s*\d/);
+    expect(settingsPageStyles).not.toMatch(/font-size:\s*\d/);
   });
 
   it('animates collapsible sidebar groups without leaving collapsed controls focusable', () => {
-    expect(cssBlock('.control-tabs', 'flex-direction: column;')).toContain('display: flex;');
-    expect(cssBlock('.control-tab-group-panel', 'grid-template-rows: 0fr;')).toContain('grid-template-rows: 0fr;');
-    expect(cssBlock('.control-tab-group.expanded > .control-tab-group-panel', 'grid-template-rows: 1fr;')).toContain(
-      'grid-template-rows: 1fr;'
-    );
-    expect(cssBlock('.control-tab-group-clip', 'overflow: hidden;')).toContain('overflow: hidden;');
-    expect(cssBlock('.control-tab-button.nested', 'padding-left: 42px;')).toContain('padding-left: 42px;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-list', 'flex-direction: column;')).toContain('display: flex;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-group-panel', 'grid-template-rows: 0fr;')).toContain('grid-template-rows: 0fr;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-group.expanded > .control-tab-group-panel', 'grid-template-rows: 1fr;'))
+      .toContain('grid-template-rows: 1fr;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-group-clip', 'overflow: hidden;')).toContain('overflow: hidden;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button.nested', 'padding-left: 42px;')).toContain('padding-left: 42px;');
+    expect(shellSidebarSource).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
-  it('keeps the sidebar device and actions fixed while only the controls region scrolls', () => {
-    const sidebar = cssBlock('.hero-card', 'grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;');
-    expect(sidebar).toContain('overflow: hidden;');
-    expect(sidebar).toContain('display: grid;');
-    expect(sidebar).toContain('grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;');
-    const controlsRegion = cssBlock('.sidebar-controls', 'overflow-y: auto;');
-    expect(controlsRegion).toContain('min-height: 0;');
-    expect(controlsRegion).toContain('overflow-y: auto;');
-    expect(controlsRegion).toContain('overscroll-behavior: contain;');
-    expect(cssBlock('.hero-card > .sidebar-actions', 'margin-top: 0;')).toContain('margin-top: 0;');
+  it('keeps the brand and device card fixed while only the navigation list scrolls', () => {
+    const sidebar = cssBlockIn(shellSidebarSource, '.hero-card', 'grid-template-rows: auto auto minmax(0, 1fr);');
+    expect(sidebar).toContain('overflow-y: hidden;');
+    expect(sidebar).toContain('-webkit-app-region: drag;');
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-controls', 'grid-template-rows: auto minmax(0, 1fr);'))
+      .toContain('overflow: hidden;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tabs', 'grid-template-rows: minmax(0, 1fr) auto;'))
+      .toContain('min-height: 0;');
+    const list = cssBlockIn(shellSidebarSource, '.control-tab-list', 'overflow-y: auto;');
+    expect(list).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-footer', 'display: grid;')).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlock('.app-content', 'grid-template-columns: var(--sidebar-width) minmax(0, 1fr);'))
+      .toContain('background: var(--sidebar-bg);');
+    expect(cssBlock('.app-content::before', 'border-radius: var(--workspace-corner-radius) 0 0 0;'))
+      .toContain('top: var(--workspace-top-inset);');
+    expect(cssBlock('.window-bar', 'left: var(--sidebar-width);')).toContain('position: absolute;');
   });
 
   it('centers the Kitsune promotion and gives its modal actions a clear hierarchy', () => {
-    const banner = cssBlock('.kitsune-promotion-banner', 'position: absolute;');
-    expect(banner).toContain('left: 50%;');
-    expect(banner).toContain('transform: translate(-50%, -50%);');
+    expect(cssBlock('.window-bar-center', 'place-items: center;')).toContain('grid-column: 1;');
+    const banner = cssBlock('.kitsune-promotion-banner', 'width: min(330px, 100%);');
     expect(banner).toContain('border: 1px solid #ff5c00;');
-    expect(banner).toContain('border-radius: 3px;');
     expect(banner).toContain('background: var(--kitsune-banner-bg);');
     expect(banner).not.toContain('linear-gradient');
     expect(banner).toContain('-webkit-app-region: no-drag;');
@@ -634,10 +606,10 @@ describe('companion layout CSS', () => {
     expect(rootTheme).toContain('--kitsune-banner-wordmark: #ffffff;');
     expect(cssBlock('.kitsune-promotion-banner-copy', 'color: var(--kitsune-banner-copy);'))
       .toContain('color: var(--kitsune-banner-copy);');
-    expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: 11px;'))
+    expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: var(--font-size-subtitle);'))
       .toContain('color: var(--kitsune-banner-wordmark);');
-    expect(cssBlock('.kitsune-promotion-banner:hover', 'transform: translate(-50%, -50%);'))
-      .not.toContain('translateY');
+    expect(cssBlock('.kitsune-promotion-banner:hover', 'background: var(--kitsune-banner-bg-hover);'))
+      .not.toContain('transform');
     expect(cssBlock('.kitsune-promotion-banner::before', 'rgba(255, 245, 236, 0.24)'))
       .toContain('transform: translateX(-240%) skewX(-18deg);');
     expect(cssBlock('.kitsune-promotion-banner:hover::before,', 'animation: kitsune-promotion-gloss-wipe'))

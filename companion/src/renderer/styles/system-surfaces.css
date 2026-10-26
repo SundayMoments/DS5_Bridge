@@ -1,0 +1,268 @@
+.system-card-heading {
+  margin-bottom: 14px;
+}
+
+.system-page .system-card .feature-card-title {
+  min-height: 62px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.system-card-heading + .system-fields,
+.system-card-heading + .device-diagnostics,
+.system-card-heading + .device-summary {
+  margin-top: 0;
+}
+
+.system-icon {
+  pointer-events: none;
+}
+
+.system-mode-selector {
+  align-self: start;
+  justify-self: end;
+  grid-auto-columns: 92px;
+}
+
+.system-mode-selector button {
+  padding: 0 6px;
+}
+
+.system-fields {
+  display: grid;
+  align-content: start;
+  gap: 0;
+}
+
+.system-fields .select-row {
+  min-height: var(--system-row-height);
+  border-bottom: 1px solid var(--surface-divider);
+  grid-template-columns: var(--system-label-column) minmax(0, 1fr);
+}
+
+.modifier-block {
+  display: grid;
+  gap: 0;
+  padding: 3px 0 4px;
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.system-fields .quiet-state {
+  min-height: var(--system-row-height);
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.system-fields > :last-child {
+  border-bottom: 0;
+}
+
+.system-fields .select-row > span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.device-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.device-list {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-rows:
+    repeat(4, minmax(var(--system-row-height), auto))
+    minmax(var(--system-row-height), 1fr);
+}
+
+.device-row {
+  min-height: var(--system-row-height);
+  border-bottom: 1px solid var(--surface-divider);
+  display: grid;
+  grid-template-columns: var(--system-label-column) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+}
+
+.device-list > .device-row:last-child {
+  border-bottom: 0;
+}
+
+.device-status-row > span,
+.device-status-row > .health-label {
+  position: relative;
+  top: -6px;
+}
+
+.device-row strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  justify-self: end;
+}
+
+.device-control-row .custom-select {
+  width: min(100%, 320px);
+  justify-self: end;
+}
+
+.device-control-row .host-persona-selector {
+  width: min(100%, 270px);
+  justify-self: end;
+}
+
+.health-label {
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.health-label .dot {
+  width: 9px;
+  height: 9px;
+}
+
+.card-flip-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: #edf3ff;
+  background: rgba(255, 255, 255, 0.055);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
+}
+
+.card-flip-button:hover {
+  border-color: var(--accent-border-strong);
+  background: var(--accent-soft);
+}
+
+.system-flip-button {
+  min-width: 128px;
+}
+
+.device-diagnostics {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  margin-top: 0;
+  padding-top: 0;
+  overflow: auto;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+  contain: layout paint;
+}
+
+.device-diagnostics dl {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 6px;
+  font-size: var(--font-size-subtitle);
+  line-height: 1.3;
+  overflow-anchor: none;
+}
+
+.device-diagnostics dl > div {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.device-diagnostics .debug-entry {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.device-diagnostics dt {
+  color: #8f9caf;
+  font-size: var(--font-size-subtitle);
+  line-height: 1.3;
+}
+
+.device-diagnostics dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: var(--text-secondary);
+  font-size: var(--font-size-subtitle);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.uptime-value {
+  display: inline-block;
+  min-width: 7ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostic-number {
+  display: inline-block;
+  min-width: 7ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-diagnostics .debug-entry dd {
+  overflow: visible;
+  white-space: normal;
+}
+
+.firmware-log-details {
+  display: grid;
+  gap: 4px;
+}
+
+.firmware-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.firmware-log-actions .secondary-action {
+  min-height: 32px;
+  padding: 6px 12px;
+}
+
+.device-diagnostics textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  padding: 9px;
+  color: var(--text-control);
+  background: var(--surface-control);
+  font: var(--font-size-subtitle)/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.inline-switch {
+  flex: 0 0 auto;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: 650;
+}
+
+.shell.controller-unavailable .inline-switch {
+  color: var(--text-disabled);
+}
+
+.shell.controller-unavailable .inline-switch .inline-state-badge {
+  opacity: var(--disabled-opacity);
+}
+
+.shell.controller-unavailable .inline-switch .switch.on,
+.shell.controller-unavailable .inline-switch .switch.on.warn {
+  border-color: var(--surface-border);
+  background: var(--surface-disabled-strong);
+}

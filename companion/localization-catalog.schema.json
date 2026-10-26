@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kitsuneinput.com/schemas/localization-catalog.schema.json",
+  "title": "Kitsune Input renderer localization catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "translations"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "name", "nativeName", "direction"],
+      "properties": {
+        "locale": { "type": "string", "minLength": 2 },
+        "name": { "type": "string", "minLength": 1 },
+        "nativeName": { "type": "string", "minLength": 1 },
+        "direction": { "enum": ["ltr", "rtl"] }
+      }
+    },
+    "translations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

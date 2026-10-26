@@ -1,0 +1,44 @@
+.system-heading {
+  display: grid;
+  grid-template-columns: var(--feature-left-column) var(--feature-right-column);
+  align-items: start;
+  gap: var(--card-gap);
+}
+
+.system-heading > div:first-child {
+  min-width: 0;
+}
+
+.profile-controls {
+  grid-column: 2;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.system-page .profile-controls {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.profile-controls .heading-icon-action,
+.profile-controls .heading-action {
+  height: 38px;
+  min-height: 38px;
+}
+
+.profile-controls .heading-action {
+  white-space: nowrap;
+}
+
+.system-card {
+  --system-label-column: 118px;
+  --system-row-height: 47px;
+  min-width: 0;
+  padding: var(--card-padding);
+  border-color: var(--surface-border);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-panel);
+}

@@ -1,0 +1,258 @@
+@import './theme-palettes.css';
+@import './theme-ds5.css';
+
+:root {
+  color: var(--text-primary);
+  background: var(--app-bg-flat);
+  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.35;
+  /*
+   * Central UI type scale. Electron's 1.25 base zoom renders these as
+   * 18px titles, 14px body text, and 12px subtitles at the 100% setting.
+   */
+  --font-size-title: 14.4px;
+  --font-size-body: 11.2px;
+  --font-size-subtitle: 9.6px;
+  font-size: var(--font-size-body);
+  /* Central typography weights, from regular copy to emphasized headings. */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-strong: 700;
+  --font-weight-wordmark: 500;
+  font-weight: var(--font-weight-regular);
+  --window-bar-height: 40px;
+  --top-chrome-height: 56px;
+  --app-content-width: none;
+  --app-content-gutter: 0px;
+  --sidebar-width: 244px;
+  --workspace-top-inset: var(--window-bar-height);
+  --workspace-corner-radius: 12px;
+  --layout-gap: 0px;
+  --card-gap: 12px;
+  --card-radius: 4px;
+  --control-radius: 3px;
+  --card-padding: 16px;
+  --feature-left-column: minmax(0, 1fr);
+  --feature-right-column: minmax(0, 1fr);
+  --feature-card-min-height: 250px;
+  --feature-card-height: 370px;
+  --feature-card-header-height: 66px;
+  --dual-selector-segment-width: 76px;
+  --control-height: 36px;
+  --action-height: 48px;
+}
+
+/* Resolve the shared aliases at both roots. A nested shell must not inherit
+ * aliases already resolved against a different palette on documentElement. */
+:root,
+.shell {
+  color-scheme: var(--theme-color-scheme);
+  --theme-color-scheme: dark;
+  --glyph-filter: none;
+  --palette-shadow: rgb(0 0 0 / 0.36);
+  --success: #35e15f;
+  --warning: #ffbc52;
+  --danger: #ff6b7e;
+  --info: #71b2ff;
+  --success-selected: #087c39;
+  --warning-selected: #915508;
+  --danger-selected: #c51e45;
+  --info-selected: #145dd7;
+  --success-selected-text: #ffffff;
+  --warning-selected-text: #ffffff;
+  --danger-selected-text: #ffffff;
+  --info-selected-text: #ffffff;
+
+  /* The DS5 mark keeps its own identity; functional controls use the theme accent. */
+  --ds5-blue: #046fff;
+  --bridge-mark-primary: var(--text-strong);
+  --bridge-mark-secondary: var(--ds5-blue);
+  --brand-wordmark-accent: #3d8bff;
+  /* The Kitsune Input promotion keeps its own dark banner in every theme. */
+  --kitsune-banner-bg: #111821;
+  --kitsune-banner-bg-hover: #182330;
+  --kitsune-banner-copy: #d7e0ec;
+  --kitsune-banner-wordmark: #ffffff;
+  --app-bg: var(--palette-canvas);
+  --app-bg-flat: var(--palette-canvas);
+  --window-bar-bg-flat: var(--palette-sidebar);
+  --window-bar-bg: var(--window-bar-bg-flat);
+  --window-bar-border: var(--surface-border);
+  --sidebar-bg: var(--palette-sidebar);
+  --sidebar-overlay: transparent;
+  --sidebar-border: var(--surface-border);
+  --sidebar-label: var(--text-muted);
+  --sidebar-link: var(--text-secondary);
+  --sidebar-link-hover: var(--text-strong);
+  --sidebar-link-disabled: var(--text-disabled);
+  --text-primary: var(--palette-text);
+  --text-strong: var(--palette-text);
+  --text-secondary: var(--palette-secondary);
+  --text-muted: var(--palette-muted);
+  --text-dim: var(--text-muted);
+  --text-control: var(--text-primary);
+  --text-disabled: var(--text-muted);
+  --page-heading-text: var(--text-strong);
+  --page-subtitle-text: var(--text-secondary);
+  --card-heading-text: var(--text-strong);
+  --card-subtitle-text: var(--text-secondary);
+  --settings-copy-text: var(--text-secondary);
+  --disabled-opacity: 0.62;
+
+  /* Opaque content surfaces make contrast independent of nesting and backdrop. */
+  --surface-border: var(--palette-border);
+  --surface-border-strong: var(--palette-control-border);
+  --surface-divider: var(--palette-border);
+  --surface-card: var(--palette-surface);
+  --surface-card-hover: var(--palette-hover);
+  --surface-card-header: var(--palette-surface);
+  --surface-panel: var(--palette-surface);
+  --surface-column: var(--palette-surface);
+  --surface-menu: var(--palette-raised);
+  --surface-control: var(--palette-control);
+  --surface-control-opaque: var(--palette-control);
+  --surface-control-soft: var(--palette-control);
+  --surface-control-hover: var(--palette-hover);
+  --surface-control-muted: var(--palette-control);
+  --surface-disabled: var(--palette-control);
+  --surface-disabled-strong: var(--palette-hover);
+  --surface-raised: var(--palette-raised);
+  --surface-section: var(--palette-surface);
+  --surface-inset: var(--palette-control);
+  --section-border: var(--surface-border);
+  --surface-popup: var(--surface-menu);
+  --surface-hero-main: var(--palette-surface);
+  --overview-accent-gradient: none;
+  --overview-accent-gradient-hover: none;
+  --modal-backdrop-bg: rgb(0 0 0 / 0.55);
+  --accent: var(--palette-accent);
+  --accent-strong: var(--palette-accent);
+  --accent-text: var(--palette-on-accent);
+  --accent-selected: var(--palette-accent-fill);
+  --accent-solid: var(--palette-accent-fill);
+  --accent-solid-hover: var(--palette-accent-fill);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface-panel));
+  --accent-muted: color-mix(in srgb, var(--accent) 6%, var(--surface-panel));
+  --accent-border: var(--accent);
+  --accent-border-strong: var(--accent);
+  --focus-ring: var(--accent);
+  --nav-hover-bg: var(--surface-control-hover);
+  --nav-hover-border: transparent;
+  --nav-active-base: var(--palette-canvas);
+  --nav-active-bg-weight: 28%;
+  --nav-active-border-weight: 74%;
+  --nav-active-rail-weight: 84%;
+  --nav-active-rail-shadow: none;
+  --nav-active-rail: var(--accent);
+  --nav-active-text: var(--text-strong);
+  --nav-active-icon: var(--accent);
+  --command-chip-base: var(--palette-canvas);
+  --command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base));
+  --command-chip-border: color-mix(in srgb, var(--accent) 58%, var(--command-chip-base));
+  --command-chip-text: var(--text-control);
+  --command-chip-hover-bg: color-mix(in srgb, var(--accent) 28%, var(--command-chip-base));
+  --command-chip-hover-border: color-mix(in srgb, var(--accent) 82%, var(--command-chip-base));
+  --command-chip-hover-text: var(--text-strong);
+  --command-chip-active-bg: var(--accent-selected);
+  --command-chip-active-border: var(--accent-selected);
+  --command-chip-active-text: var(--accent-text);
+  --command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base));
+  --command-chip-muted-border: color-mix(in srgb, var(--accent) 38%, var(--command-chip-base));
+  --command-chip-muted-text: var(--text-secondary);
+  --command-chip-success-bg: var(--success-selected);
+  --command-chip-success-hover-bg: var(--success-selected);
+  --command-chip-success-border: var(--success);
+  --command-chip-success-text: var(--success-selected-text);
+  --success-bg: color-mix(in srgb, var(--success) 8%, var(--surface-panel));
+  --success-bg-hover: color-mix(in srgb, var(--success) 12%, var(--surface-panel));
+  --success-border: var(--success);
+  --success-border-strong: var(--success);
+  --success-glow: transparent;
+  --success-glow-strong: transparent;
+  --warning-bg: color-mix(in srgb, var(--warning) 8%, var(--surface-panel));
+  --warning-border: var(--warning);
+  --warning-border-strong: var(--warning);
+  --danger-bg: color-mix(in srgb, var(--danger) 8%, var(--surface-panel));
+  --danger-bg-hover: color-mix(in srgb, var(--danger) 12%, var(--surface-panel));
+  --danger-border: var(--danger);
+  --danger-border-strong: var(--danger);
+  --info-bg: color-mix(in srgb, var(--info) 8%, var(--surface-panel));
+  --info-border: var(--info);
+  --info-border-strong: var(--info);
+  --glyph-surface: var(--surface-control);
+  --glyph-border: var(--surface-border-strong);
+  --shadow-card: none;
+  --shadow-panel: none;
+  --shadow-menu: 0 12px 32px var(--palette-shadow);
+  --shadow-control: none;
+  --scrollbar-thumb: var(--palette-control-border);
+  --scrollbar-track: var(--palette-surface);
+  --range-track-rest: var(--palette-control-border);
+  --range-disabled-track: var(--palette-border);
+  --range-thumb-bg: var(--text-strong);
+  --range-disabled-thumb-bg: var(--text-muted);
+  --range-tick: var(--palette-control-border);
+  --range-tick-strong: var(--text-muted);
+  --range-tick-endpoint: var(--text-muted);
+  --remapping-card-bg: var(--surface-panel);
+  --remapping-strip-bg: var(--surface-control);
+  --remapping-pill-bg: var(--surface-control);
+  --remapping-pill-hover-bg: var(--surface-control-hover);
+  --remapping-callout-underlay: var(--surface-panel);
+  --remapping-callout-underlay-active: var(--accent-soft);
+  --remapping-callout-line: var(--text-secondary);
+  --remapping-glyph-filter: var(--glyph-filter);
+}
+
+:root:is([data-theme="light"], [data-theme="bubble-gum"]),
+.shell:is([data-theme="light"], [data-theme="bubble-gum"]) {
+  --theme-color-scheme: light;
+  --glyph-filter: invert(1) brightness(0.25);
+  --palette-shadow: rgb(29 35 52 / 0.15);
+  --brand-wordmark-accent: #0050c8;
+  --success: #006b30;
+  --warning: #8b4d00;
+  --danger: #c0003b;
+  --info: #005bd0;
+  --nav-active-base: #ffffff;
+  --nav-active-bg-weight: 40%;
+  --nav-active-border-weight: 78%;
+  --command-chip-base: #ffffff;
+  --command-chip-bg: color-mix(in srgb, var(--accent) 8%, var(--command-chip-base));
+  --command-chip-hover-bg: color-mix(in srgb, var(--accent) 12%, var(--command-chip-base));
+  --command-chip-muted-bg: color-mix(in srgb, var(--accent) 6%, var(--command-chip-base));
+}
+
+/* Text-only accessibility scaling. Geometry remains on the separate UI scale. */
+.shell {
+  font-size: var(--font-size-body);
+}
+
+:root[data-text-scale="80"],
+.shell[data-text-scale="80"] {
+  --font-size-title: 11.52px;
+  --font-size-body: 8.96px;
+  --font-size-subtitle: 7.68px;
+}
+
+:root[data-text-scale="90"],
+.shell[data-text-scale="90"] {
+  --font-size-title: 12.96px;
+  --font-size-body: 10.08px;
+  --font-size-subtitle: 8.64px;
+}
+
+:root[data-text-scale="110"],
+.shell[data-text-scale="110"] {
+  --font-size-title: 15.84px;
+  --font-size-body: 12.32px;
+  --font-size-subtitle: 10.56px;
+}
+
+:root[data-text-scale="120"],
+.shell[data-text-scale="120"] {
+  --font-size-title: 17.28px;
+  --font-size-body: 13.44px;
+  --font-size-subtitle: 11.52px;
+}
