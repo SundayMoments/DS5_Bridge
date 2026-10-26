@@ -43,8 +43,9 @@ extern "C" [[noreturn]] void __wrap_run_analysis() {
     runtime_fail_fast();
 }
 
-extern "C" void __wrap_tonality_analysis_init(void *, int) {}
+// These three run from the SRAM codec on core 1, so they stay beside it.
+extern "C" void __not_in_flash_func(__wrap_tonality_analysis_init)(void *, int) {}
 
-extern "C" void __wrap_tonality_analysis_reset(void *) {}
+extern "C" void __not_in_flash_func(__wrap_tonality_analysis_reset)(void *) {}
 
-extern "C" void __wrap_tonality_get_info(void *, void *, int) {}
+extern "C" void __not_in_flash_func(__wrap_tonality_get_info)(void *, void *, int) {}

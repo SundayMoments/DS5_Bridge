@@ -167,7 +167,7 @@ void usb_descriptor_set_bridge_only_active(bool active) {
     descriptor_bridge_only_active = active;
 }
 
-bool usb_descriptor_bridge_only_active(void) {
+bool __not_in_flash_func(usb_descriptor_bridge_only_active)(void) {
     return descriptor_bridge_only_active;
 }
 

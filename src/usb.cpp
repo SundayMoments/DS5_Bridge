@@ -262,7 +262,7 @@ bool usb_host_suspended_active() {
     return usb_bus_suspended();
 }
 
-bool usb_mounted_active() {
+bool __not_in_flash_func(usb_mounted_active)() {
     return usb_mounted;
 }
 

@@ -239,13 +239,20 @@ relocate_to_ram(
 )
 relocate_to_ram(
         src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cybt_shared_bus.c.o
-        ".text.cyw43_btbus_write=.time_critical.cyw43_btbus_write"
-        "Relocating CYW43 shared-bus write to SRAM"
+        ".text.cyw43_btbus_write=.time_critical.cyw43_btbus_write@.text.cyw43_btbus_read=.time_critical.cyw43_btbus_read@.text.cybt_hci_read=.time_critical.cybt_hci_read"
+        "Relocating CYW43 shared-bus read and write to SRAM"
 )
 relocate_to_ram(
         src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cybt_shared_bus_driver.c.o
-        ".text.cybt_awake=.time_critical.cybt_awake@.text.cybt_set_bt_awake=.time_critical.cybt_set_bt_awake@.text.cybt_get_bt_buf_index=.time_critical.cybt_get_bt_buf_index@.text.cybt_toggle_bt_intr=.time_critical.cybt_toggle_bt_intr@.text.cybt_reg_write_idx=.time_critical.cybt_reg_write_idx@.text.cybt_mem_write_idx=.time_critical.cybt_mem_write_idx"
+        ".text.cybt_awake=.time_critical.cybt_awake@.text.cybt_set_bt_awake=.time_critical.cybt_set_bt_awake@.text.cybt_get_bt_buf_index=.time_critical.cybt_get_bt_buf_index@.text.cybt_toggle_bt_intr=.time_critical.cybt_toggle_bt_intr@.text.cybt_reg_write_idx=.time_critical.cybt_reg_write_idx@.text.cybt_mem_write_idx=.time_critical.cybt_mem_write_idx@.text.cybt_mem_read_idx=.time_critical.cybt_mem_read_idx"
         "Relocating CYW43 shared-bus packet helpers to SRAM"
+)
+# Every received Bluetooth packet is read by the transport's data-source
+# callback through cyw43_btbus_read, cybt_hci_read and cybt_mem_read_idx.
+relocate_to_ram(
+        src/rp2_common/pico_cyw43_driver/btstack_hci_transport_cyw43.c.o
+        ".text.hci_transport_data_source_process=.time_critical.hci_transport_data_source_process@.text.cyw43_bluetooth_hci_process=.time_critical.cyw43_bluetooth_hci_process"
+        "Relocating the CYW43 HCI receive callback to SRAM"
 )
 relocate_to_ram(
         src/rp2_common/pico_cyw43_driver/cyw43_driver.c.o
@@ -314,15 +321,33 @@ relocate_to_ram(
         ".text.cyw43_ll_write_backplane_mem=.time_critical.cyw43_ll_write_backplane_mem@.text.cyw43_ll_read_backplane_mem=.time_critical.cyw43_ll_read_backplane_mem@.text.cyw43_write_backplane=.time_critical.cyw43_write_backplane@.text.cyw43_read_backplane.constprop.0=.time_critical.cyw43_read_backplane"
         "Relocating CYW43 backplane accessors to SRAM"
 )
+# tud_task locks its event queue through usbd_int_set -> dcd_int_enable/disable
+# -> irq_set_enabled on every call, several times per main-loop pass. Each
+# input report also claims, checks and starts its endpoint transfer.
 relocate_to_ram(
         lib/tinyusb/src/device/usbd.c.o
-        ".text.tud_task_ext=.time_critical.tud_task_ext@.text.usbd_edpt_xfer=.time_critical.usbd_edpt_xfer@.text.usbd_edpt_xfer_fifo=.time_critical.usbd_edpt_xfer_fifo"
+        ".text.tud_task_ext=.time_critical.tud_task_ext@.text.usbd_edpt_xfer=.time_critical.usbd_edpt_xfer@.text.usbd_edpt_xfer_fifo=.time_critical.usbd_edpt_xfer_fifo@.text.usbd_int_set=.time_critical.usbd_int_set@.text.usbd_edpt_claim=.time_critical.usbd_edpt_claim@.text.usbd_edpt_busy=.time_critical.usbd_edpt_busy@.text.tud_mounted=.time_critical.tud_mounted@.text.tud_suspended=.time_critical.tud_suspended@.text.tud_event_hook_cb=.time_critical.tud_event_hook_cb"
         "Relocating TinyUSB device task and transfers to SRAM"
 )
 relocate_to_ram(
+        lib/tinyusb/src/tusb.c.o
+        ".text.tu_edpt_claim=.time_critical.tu_edpt_claim"
+        "Relocating TinyUSB endpoint claim to SRAM"
+)
+relocate_to_ram(
         lib/tinyusb/src/portable/raspberrypi/rp2040/dcd_rp2040.c.o
-        ".text.dcd_edpt_xfer=.time_critical.dcd_edpt_xfer@.text.dcd_edpt_iso_activate=.time_critical.dcd_edpt_iso_activate"
+        ".text.dcd_edpt_xfer=.time_critical.dcd_edpt_xfer@.text.dcd_edpt_iso_activate=.time_critical.dcd_edpt_iso_activate@.text.dcd_int_enable=.time_critical.dcd_int_enable@.text.dcd_int_disable=.time_critical.dcd_int_disable"
         "Relocating RP2040 USB transfer submission to SRAM"
+)
+relocate_to_ram(
+        lib/tinyusb/src/portable/raspberrypi/rp2040/rp2040_usb.c.o
+        ".text.rp2usb_xfer_start=.time_critical.rp2usb_xfer_start"
+        "Relocating RP2040 USB transfer start to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/hardware_irq/irq.c.o
+        ".text.irq_set_enabled=.time_critical.irq_set_enabled"
+        "Relocating the IRQ enable helper to SRAM"
 )
 relocate_to_ram(
         lib/tinyusb/src/class/audio/audio_device.c.o
@@ -336,11 +361,13 @@ relocate_to_ram(
         ".text._Z10on_bt_data12CHANNEL_TYPEPht=.time_critical.controller_input_bt_callback@.text._Z14interrupt_loopv=.time_critical.controller_input_usb_submit"
         "Relocating controller input receive and USB submission to SRAM"
 )
-relocate_to_ram(
-        src/companion.cpp.o
-        ".text._ZN12_GLOBAL__N_120queue_shortcut_eventEh|.text._ZN12_GLOBAL__N_1L20queue_shortcut_eventEh=.time_critical.controller_input_shortcut_queue@.text._ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb|.text._ZN12_GLOBAL__N_1L27dpad_direction_from_buttonsEbbbb=.time_critical.controller_input_dpad_remap@.text._Z35companion_process_controller_reportPht=.time_critical.controller_input_companion_process@.text._Z34companion_update_controller_reportPKht=.time_critical.controller_input_companion_snapshot"
-        "Relocating companion controller-report processing to SRAM"
-)
+if(ENABLE_COMPANION)
+    relocate_to_ram(
+            src/companion.cpp.o
+            ".text._ZN12_GLOBAL__N_120queue_shortcut_eventEh|.text._ZN12_GLOBAL__N_1L20queue_shortcut_eventEh=.time_critical.controller_input_shortcut_queue@.text._ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb|.text._ZN12_GLOBAL__N_1L27dpad_direction_from_buttonsEbbbb=.time_critical.controller_input_dpad_remap@.text._Z35companion_process_controller_reportPht=.time_critical.controller_input_companion_process@.text._Z34companion_update_controller_reportPKht=.time_critical.controller_input_companion_snapshot"
+            "Relocating companion controller-report processing to SRAM"
+    )
+endif()
 relocate_to_ram(
         src/dualsense_input_decoder.cpp.o
         ".text._Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState=.time_critical.controller_input_decode"
@@ -397,6 +424,26 @@ relocate_to_ram(
         "Relocating BTstack run-loop poll path to SRAM"
 )
 
+# Tier 4: core 1's double-precision math. The SRAM-resident Opus encoder calls
+# cos per quantized band, exp/log/acos/atan2 and double arithmetic per frame,
+# and floor/sqrt per sample or band in both codec directions. pico_double
+# links these in flash by default, so every speaker frame left SRAM.
+relocate_to_ram(
+        src/rp2_common/pico_double/double_sci_m33.S.o
+        ".text.__wrap_sin_cos=.time_critical.double_sin_cos@.text.drrcore=.time_critical.double_range_reduce_core@.text.rtwopi=.time_critical.double_two_over_pi@.text.dpack=.time_critical.double_pack@.text.dreduce=.time_critical.double_reduce@.text.exptab=.time_critical.double_exptab@.text.__wrap_exp=.time_critical.double_exp@.text.__wrap_log=.time_critical.double_log@.text.trigtab=.time_critical.double_trigtab@.text.__wrap_atan2=.time_critical.double_atan2"
+        "Relocating Opus double sin/cos, exp, log and atan2 to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_double/double_aeabi_dcp.S.o
+        ".text.__rp2350_dcp_engaged_state_save_restore=.time_critical.double_dcp_state@.text.__wrap___aeabi_dadd=.time_critical.double_add@.text.__wrap___aeabi_dsub=.time_critical.double_sub@.text.__wrap___aeabi_drsub=.time_critical.double_rsub@.text.__wrap___aeabi_dmul=.time_critical.double_mul@.text.ddiv_fast=.time_critical.double_div_fast@.text.__wrap___aeabi_ddiv=.time_critical.double_div@.text.sqrt_fast=.time_critical.double_sqrt_fast@.text.__wrap_sqrt=.time_critical.double_sqrt@.text.dclassify=.time_critical.double_classify@.text.__wrap___aeabi_d2f=.time_critical.double_to_float@.text.__wrap___aeabi_i2d=.time_critical.int_to_double@.text.double2int=.time_critical.double_to_int_impl@.text.__wrap___aeabi_d2iz=.time_critical.double_to_int@.text.__wrap___aeabi_dcmp=.time_critical.double_compare@.text.__wrap___aeabi_dcmpun=.time_critical.double_compare_unordered@.text.__wrap___aeabi_dcmpeq=.time_critical.double_compare_eq@.text.__wrap___aeabi_dcmplt=.time_critical.double_compare_lt@.text.__wrap___aeabi_dcmple=.time_critical.double_compare_le@.text.__wrap___aeabi_dcmpge=.time_critical.double_compare_ge@.text.__wrap___aeabi_dcmpgt=.time_critical.double_compare_gt"
+        "Relocating Opus double arithmetic and sqrt to SRAM"
+)
+relocate_to_ram(
+        src/rp2_common/pico_double/double_math.c.o
+        ".text.__wrap_floor=.time_critical.double_floor@.text.__wrap_acos=.time_critical.double_acos"
+        "Relocating Opus double floor and acos to SRAM"
+)
+
 # These strong RAM-resident definitions replace newlib's flash-backed memory
 # operations. Prevent the compiler from lowering their loops back into recursive
 # calls to the functions being defined.
@@ -427,6 +474,9 @@ target_compile_definitions(ds5-bridge PRIVATE
         # Bound each CYW43/BTstack service pass so connection-event bursts
         # cannot starve TinyUSB, audio, BOOTSEL, or the watchdog.
         PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4
+        # Put TinyUSB's RP2 IRQ path (handler, buffer start and completion) in
+        # SRAM; every input-report completion otherwise ran from flash.
+        PICO_RP2040_USB_FAST_IRQ=1
         WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ_VALUE}
@@ -574,6 +624,7 @@ add_custom_command(TARGET ds5-bridge POST_BUILD
         COMMAND ${CMAKE_COMMAND}
                 "-DNM=${CMAKE_NM}"
                 "-DELF=$<TARGET_FILE:ds5-bridge>"
+                "-DCOMPANION_ENABLED=${ENABLE_COMPANION}"
                 "-DMIN_HEAP_BYTES=${DS5_MIN_RUNTIME_HEAP_BYTES}"
                 "-DKNOWN_STARTUP_HEAP_BYTES=${DS5_KNOWN_STARTUP_HEAP_BYTES}"
                 -P "${CMAKE_SOURCE_DIR}/cmake/verify_core1_sram.cmake"

@@ -26,10 +26,8 @@ endif()
 set(required_sram_symbols
         "_Z10on_bt_data12CHANNEL_TYPEPht"
         "_Z14interrupt_loopv"
-        "_Z35companion_process_controller_reportPht"
-        "_Z34companion_update_controller_reportPKht"
-        "_ZN12_GLOBAL__N_120queue_shortcut_eventEh|_ZN12_GLOBAL__N_1L20queue_shortcut_eventEh"
-        "_ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb|_ZN12_GLOBAL__N_1L27dpad_direction_from_buttonsEbbbb"
+        "_Z18usb_mounted_activev"
+        "usb_descriptor_bridge_only_active"
         "_Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState"
         "host_persona_active"
         "host_persona_descriptors_verified"
@@ -96,12 +94,17 @@ set(required_sram_symbols
         "cyw43_ensure_up"
         "cyw43_cb_ensure_awake"
         "cyw43_btbus_write"
+        "cyw43_btbus_read"
+        "cybt_hci_read"
+        "hci_transport_data_source_process"
+        "cyw43_bluetooth_hci_process"
         "cybt_awake"
         "cybt_set_bt_awake"
         "cybt_get_bt_buf_index"
         "cybt_toggle_bt_intr"
         "cybt_reg_write_idx"
         "cybt_mem_write_idx"
+        "cybt_mem_read_idx"
         "cyw43_ll_bus_sleep"
         "cyw43_thread_enter"
         "cyw43_thread_exit"
@@ -134,8 +137,20 @@ set(required_sram_symbols
         "tud_task_ext"
         "usbd_edpt_xfer"
         "usbd_edpt_xfer_fifo"
+        "usbd_int_set"
+        "usbd_edpt_claim"
+        "usbd_edpt_busy"
+        "tud_mounted"
+        "tud_suspended"
+        "tud_event_hook_cb"
+        "tu_edpt_claim"
         "dcd_edpt_xfer"
         "dcd_edpt_iso_activate"
+        "dcd_int_enable"
+        "dcd_int_disable"
+        "dcd_rp2040_irq"
+        "rp2usb_xfer_start"
+        "irq_set_enabled"
         "tud_audio_n_read"
         "tud_audio_n_write"
         "tud_audio_n_available"
@@ -151,7 +166,36 @@ set(required_sram_symbols
         "memcpy"
         "memset"
         "memmove"
+        # Core 1's double-precision math reached from the SRAM Opus codec.
+        "__wrap_cos"
+        "__wrap_sin"
+        "__wrap_exp"
+        "__wrap_log"
+        "__wrap_atan2"
+        "__wrap_acos"
+        "__wrap_sqrt"
+        "__wrap_floor"
+        "__wrap___aeabi_dadd"
+        "__wrap___aeabi_dsub"
+        "__wrap___aeabi_dmul"
+        "__wrap___aeabi_ddiv"
+        "__wrap___aeabi_d2f"
+        "__wrap___aeabi_d2iz"
+        "__wrap___aeabi_dcmplt"
+        "__wrap___aeabi_dcmpgt"
+        "__wrap_tonality_analysis_init"
+        "__wrap_tonality_analysis_reset"
+        "__wrap_tonality_get_info"
 )
+if(COMPANION_ENABLED)
+    list(APPEND required_sram_symbols
+            "_Z35companion_process_controller_reportPht"
+            "_Z34companion_update_controller_reportPKht"
+            "_Z24audio_quiet_mode_enabledv"
+            "_ZN12_GLOBAL__N_120queue_shortcut_eventEh|_ZN12_GLOBAL__N_1L20queue_shortcut_eventEh"
+            "_ZN12_GLOBAL__N_127dpad_direction_from_buttonsEbbbb|_ZN12_GLOBAL__N_1L27dpad_direction_from_buttonsEbbbb"
+    )
+endif()
 
 # RP2350 SRAM spans [0x20000000, 0x20082000).
 set(rp2350_sram_start 536870912)
@@ -188,6 +232,30 @@ foreach(symbol_group ${required_sram_symbols})
                 "verify_core1_sram: '${linked_symbol}' linked outside SRAM at ${symbol_address}"
         )
     endif()
+
+    # GCC can split a guarded function and move most of its body into a
+    # .part/.constprop/.isra clone, which keeps its own section and lands in
+    # flash while the named entry point stays in SRAM. Cold partitions are
+    # exempt: they hold the paths the compiler expects never to run.
+    string(REGEX REPLACE "([.$])" "[\\1]" escaped_symbol "${linked_symbol}")
+    string(REGEX MATCHALL
+            "(^|\n)${escaped_symbol}[.](part|constprop|isra)[.][0-9]+[^ \n]* [A-Za-z] [0-9A-Fa-f]+"
+            clone_matches
+            "${symbol_table}"
+    )
+    foreach(clone_match IN LISTS clone_matches)
+        if(clone_match MATCHES "[.]cold[ .]")
+            continue()
+        endif()
+        string(REGEX MATCH "([0-9A-Fa-f]+)$" clone_address_match "${clone_match}")
+        math(EXPR clone_address "0x${CMAKE_MATCH_1}")
+        if(clone_address LESS ${rp2350_sram_start} OR NOT clone_address LESS ${rp2350_sram_end})
+            string(STRIP "${clone_match}" clone_match)
+            message(FATAL_ERROR
+                    "verify_core1_sram: clone of '${linked_symbol}' linked outside SRAM: ${clone_match}"
+            )
+        endif()
+    endforeach()
 endforeach()
 
 string(REGEX MATCH

@@ -1660,7 +1660,7 @@ void audio_set_quiet_mode(bool enabled) {
     );
 }
 
-bool audio_quiet_mode_enabled() {
+bool __not_in_flash_func(audio_quiet_mode_enabled)() {
     return quiet_mode_enabled;
 }
 
