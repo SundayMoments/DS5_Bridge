@@ -38,6 +38,8 @@ const allowedSourceIdenticalPhrases = [
   /^(?:Bubble Gum|Kiwi|Pomegranate)$/,
   // USB vendor and product IDs are written the same way in every language.
   /^VID \/ PID$/,
+  // Keyboard keys keep the legends printed on them.
+  /^(?:Caps Lock|Num Lock|Page Down|Page Up|Print Screen|Scroll Lock)$/,
   /^\{\{0\}\}%$/
 ];
 

@@ -62,8 +62,8 @@ describe('renderer behavior guards', () => {
   });
 
   it('presents DualSense Edge as a PlayStation host persona', () => {
+    // The chord persona actions are covered in features/chords/model.test.ts.
     expect(appSource).toContain("['DualSense Edge', 'dualsense-edge']");
-    expect(appSource).toContain("['DualSense Edge', 'persona-dualsense-edge']");
     const option = extractFunction('HostPersonaOption');
     expect(option).toContain("value === 'dualsense-edge'");
     expect(option).toContain('host-persona-brand-icon');
@@ -285,10 +285,9 @@ describe('renderer behavior guards', () => {
   });
 
   it('shows mute as a chord starter when chord mode or keyboard chord starter is active', () => {
-    expect(appSource).toContain("mute: { id: CHORD_MUTE_STARTER_ID, label: 'Mute Button', Icon: MicOff }");
-    expect(appSource).toContain('[CHORD_STARTERS.mute.label, CHORD_MUTE_STARTER_ID]');
-    expect(appSource).toContain('chords-starter-icon-glyph');
-    expect(appSource).toContain('<Icon size={18} />');
+    // The mute starter definition is covered in features/chords/model.test.ts.
+    expect(featureSource('chords/ChordGlyphs.tsx')).toContain('chords-starter-icon-glyph');
+    expect(featureSource('chords/ChordGlyphs.tsx')).toContain('<Icon size={18} />');
     expect(appSource).toContain('function chordStarterOptionsFor(currentStarter?: ChordStarterId)');
     expect(appSource).toContain("currentStarter === CHORD_MUTE_STARTER_ID");
     expect(appSource).toContain('mute-starter-inactive');
@@ -304,25 +303,6 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('Chord Starter');
     expect(appSource).toContain("window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior, keyChordStarterEnabled)");
     expect(appSource).toContain('Pair PS, LFN, RFN, or Mute with a button.');
-  });
-
-  it('offers Print Screen and numpad numerals as chord keyboard shortcut keys', () => {
-    const optionsStart = appSource.indexOf('const CHORD_KEYBOARD_KEY_OPTIONS');
-    expect(optionsStart).toBeGreaterThanOrEqual(0);
-    const optionsEnd = appSource.indexOf('const CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH', optionsStart);
-    expect(optionsEnd).toBeGreaterThan(optionsStart);
-    const optionsSource = appSource.slice(optionsStart, optionsEnd);
-
-    expect(optionsSource).toContain("['Print Screen', 'Print Screen']");
-    expect(optionsSource).toContain('`Numpad ${digit}`');
-    expect(optionsSource).toContain('`Numpad${digit}`');
-
-    const normalizeSource = extractFunction('normalizeChordKeyLabel');
-    expect(normalizeSource).toContain("case 'print screen':");
-    expect(normalizeSource).toContain("case 'printscreen':");
-    expect(normalizeSource).toContain("case 'prtsc':");
-    expect(normalizeSource).toContain("case 'prtscn':");
-    expect(normalizeSource).toContain("return 'Print Screen';");
   });
 
   it('exposes bridge selection, stable naming, and direct USB controller status', () => {
