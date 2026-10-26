@@ -1544,6 +1544,78 @@ describe('BridgeService', () => {
     }), 'ds4');
   });
 
+  it('backs off system audio haptics restarts while the helper keeps exiting', async () => {
+    const service = serviceFixture({
+      audioReactiveHapticsEnabled: true
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'ds4', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+
+    let running = false;
+    const start = vi.fn(async () => {
+      running = true;
+    });
+    const stop = vi.fn(async () => {
+      running = false;
+    });
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start: typeof start;
+        stop: typeof stop;
+        isActive(): boolean;
+      };
+      systemAudioHapticsRetryAt: number;
+      handleSystemAudioHapticsStatus(line: string): Promise<void>;
+      updateSystemAudioHapticsEngine(): Promise<void>;
+    };
+    internals.systemAudioHapticsEngine = {
+      start,
+      stop,
+      isActive: () => running
+    };
+
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const crashAfterStart = async () => {
+        await internals.updateSystemAudioHapticsEngine();
+        now += 1000;
+        running = false;
+        await internals.handleSystemAudioHapticsStatus('system audio haptics helper exited (1)');
+        return internals.systemAudioHapticsRetryAt - now;
+      };
+
+      expect(await crashAfterStart()).toBe(5000);
+      start.mockClear();
+      await internals.updateSystemAudioHapticsEngine();
+      expect(start).not.toHaveBeenCalled();
+
+      now = internals.systemAudioHapticsRetryAt;
+      expect(await crashAfterStart()).toBe(10000);
+      now = internals.systemAudioHapticsRetryAt;
+      expect(await crashAfterStart()).toBe(20000);
+      now = internals.systemAudioHapticsRetryAt;
+      expect(await crashAfterStart()).toBe(30000);
+      now = internals.systemAudioHapticsRetryAt;
+      expect(await crashAfterStart()).toBe(30000);
+
+      // A run that lasts past the stability window clears the backoff.
+      now = internals.systemAudioHapticsRetryAt;
+      await internals.updateSystemAudioHapticsEngine();
+      now += 15000;
+      running = false;
+      await internals.handleSystemAudioHapticsStatus('system audio haptics helper exited (0)');
+      expect(internals.systemAudioHapticsRetryAt).toBe(0);
+      expect(await crashAfterStart()).toBe(5000);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('restarts system audio haptics after a host persona transition completes', async () => {
     const service = serviceFixture({
       audioReactiveHapticsEnabled: true

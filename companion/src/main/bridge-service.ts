@@ -118,6 +118,8 @@ const TRIGGER_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.triggerTraceDiagn
 const FEEDBACK_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.feedbackTraceDiagnosticsEnabled;
 const MIC_KEEPALIVE_ENABLED = CompanionDebugConfig.micKeepaliveEnabled;
 const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
+const SYSTEM_AUDIO_HAPTICS_MAX_RETRY_MS = 30000;
+const SYSTEM_AUDIO_HAPTICS_STABLE_MS = 10000;
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
@@ -1284,6 +1286,8 @@ export class BridgeService extends EventEmitter {
   private incompatibleCompanionProtocolVersion: ReportProtocolVersion | null = null;
   private lastAudioStatsSignature: string | null = null;
   private systemAudioHapticsRetryAt = 0;
+  private systemAudioHapticsFailures = 0;
+  private systemAudioHapticsRunningSince: number | null = null;
   private systemAudioHapticsPassthroughActive = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private lastAudioStatusReadAt = 0;
@@ -1519,7 +1523,7 @@ export class BridgeService extends EventEmitter {
   }
 
   private async stopControllerAudioPolling(): Promise<void> {
-    this.systemAudioHapticsRetryAt = 0;
+    this.resetSystemAudioHapticsRecovery();
     this.systemAudioHapticsPassthroughActive = false;
     await this.systemAudioHapticsEngine.stop();
     await this.stopAudioHapticsSessionPolling();
@@ -1936,7 +1940,7 @@ export class BridgeService extends EventEmitter {
   }
 
   private async restartSystemAudioHapticsAfterPersonaTransition(mode: HostPersonaMode): Promise<void> {
-    this.systemAudioHapticsRetryAt = 0;
+    this.resetSystemAudioHapticsRecovery();
     await this.systemAudioHapticsEngine.stop();
     await this.updateSystemAudioHapticsEngine();
     this.appendAudioDebugLines([`[SystemHaptics] restarted after persona transition persona=${mode}`]);
@@ -3191,7 +3195,7 @@ export class BridgeService extends EventEmitter {
           this.hostPersonaDefaultRenderRestore = null;
         }
         this.beginHostPersonaTransition(normalizedMode, previousMode);
-        this.systemAudioHapticsRetryAt = 0;
+        this.resetSystemAudioHapticsRecovery();
         void this.systemAudioHapticsEngine.stop().catch((error) => {
           const message = error instanceof Error ? error.message : String(error);
           this.appendAudioDebugLines([`[SystemHaptics] persona switch stop failed: ${message}`]);
@@ -3541,7 +3545,7 @@ export class BridgeService extends EventEmitter {
     ) {
       const wasPassthroughActive = this.systemAudioHapticsPassthroughActive;
       this.systemAudioHapticsPassthroughActive = false;
-      this.systemAudioHapticsRetryAt = 0;
+      this.resetSystemAudioHapticsRecovery();
       await this.systemAudioHapticsEngine.stop();
       if (wasPassthroughActive && this.device && this.audioReactiveHapticsSupported()) {
         await this.applyAudioReactiveHapticsSettings(settings, false);
@@ -3555,12 +3559,16 @@ export class BridgeService extends EventEmitter {
     }
 
     try {
+      const wasRunning = this.systemAudioHapticsEngine.isActive();
       await this.systemAudioHapticsEngine.start(this.systemAudioHapticsConfig(settings), this.currentHostPersonaMode());
       if (this.systemAudioHapticsPassthroughActive) {
         this.systemAudioHapticsPassthroughActive = false;
         await this.applyAudioReactiveHapticsSettings(settings, false);
       }
       this.systemAudioHapticsRetryAt = 0;
+      if (!wasRunning) {
+        this.systemAudioHapticsRunningSince = Date.now();
+      }
     } catch (error) {
       await this.systemAudioHapticsEngine.stop();
       if (this.systemAudioHapticsPassthroughActive) {
@@ -3571,12 +3579,47 @@ export class BridgeService extends EventEmitter {
         ]);
         return;
       }
-      this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_RETRY_MS;
+      const retryInMs = this.scheduleSystemAudioHapticsRetry();
       const message = error instanceof Error ? error.message : String(error);
       this.appendAudioDebugLines([
-        `[SystemHaptics] capture unavailable retryInMs=${SYSTEM_AUDIO_HAPTICS_RETRY_MS} error=${message}`
+        `[SystemHaptics] capture unavailable retryInMs=${retryInMs} error=${message}`
       ]);
     }
+  }
+
+  // A helper that starts and then exits shortly afterwards (for example a
+  // device that keeps failing) used to be relaunched on every status poll,
+  // recreating the Windows audio session and flashing the volume mixer.
+  // Back off exponentially up to 30 s; a stable run resets the backoff.
+  private scheduleSystemAudioHapticsRetry(): number {
+    this.systemAudioHapticsRunningSince = null;
+    const delay = Math.min(
+      SYSTEM_AUDIO_HAPTICS_MAX_RETRY_MS,
+      SYSTEM_AUDIO_HAPTICS_RETRY_MS * 2 ** Math.min(this.systemAudioHapticsFailures, 6)
+    );
+    this.systemAudioHapticsFailures += 1;
+    this.systemAudioHapticsRetryAt = Date.now() + delay;
+    return delay;
+  }
+
+  private noteSystemAudioHapticsHelperExited(): void {
+    const runningSince = this.systemAudioHapticsRunningSince;
+    this.systemAudioHapticsRunningSince = null;
+    if (runningSince !== null && Date.now() - runningSince >= SYSTEM_AUDIO_HAPTICS_STABLE_MS) {
+      this.systemAudioHapticsFailures = 0;
+      return;
+    }
+    const retryInMs = this.scheduleSystemAudioHapticsRetry();
+    this.appendAudioDebugLines([
+      `[SystemHaptics] helper exited soon after starting retryInMs=${retryInMs}`
+    ]);
+  }
+
+  // Route, persona, settings and connection changes start a fresh recovery.
+  private resetSystemAudioHapticsRecovery(): void {
+    this.systemAudioHapticsRetryAt = 0;
+    this.systemAudioHapticsFailures = 0;
+    this.systemAudioHapticsRunningSince = null;
   }
 
   private async handleSystemAudioHapticsStatus(line: string): Promise<void> {
@@ -3586,11 +3629,15 @@ export class BridgeService extends EventEmitter {
 
     try {
       const settings = this.settingsStore.get();
+      if (line.startsWith('system audio haptics helper exited')) {
+        this.noteSystemAudioHapticsHelperExited();
+        return;
+      }
       if (
         line.includes('route-changed')
         && this.systemAudioHapticsDesired(settings)
       ) {
-        this.systemAudioHapticsRetryAt = 0;
+        this.resetSystemAudioHapticsRecovery();
         await this.systemAudioHapticsEngine.stop();
         await this.updateSystemAudioHapticsEngine();
         return;
@@ -4480,7 +4527,7 @@ export class BridgeService extends EventEmitter {
     this.feedbackTraceSupported = null;
     this.firmwareLogEnabled = null;
     this.controllerPowerSavingActive = null;
-    this.systemAudioHapticsRetryAt = 0;
+    this.resetSystemAudioHapticsRecovery();
     this.systemAudioHapticsPassthroughActive = false;
     this.syncAudioHelperBridgeTarget();
     void this.stopControllerAudioPolling();
