@@ -23,13 +23,13 @@ inline Reading decode_status(uint8_t status) {
     switch (reading.raw_power_state) {
     case kPowerDischarging:
     case kPowerCharging:
+    // State 2 means external power, not necessarily a full charge; its
+    // capacity bits stay valid, so it is decoded like the others.
+    case kPowerFull:
         if (capacity <= 10) {
             reading.percent = static_cast<uint8_t>(
                 capacity == 10 ? 100 : capacity * 10 + 5);
         }
-        break;
-    case kPowerFull:
-        reading.percent = 100;
         break;
     default:
         // Fault and unknown power states do not carry a reliable capacity.

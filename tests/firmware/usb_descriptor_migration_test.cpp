@@ -2398,11 +2398,11 @@ void assert_dualsense_battery_buckets_preserve_power_state(
         decoder.find("dualsense_battery::decode_status(report[52])") == std::string::npos
         || companion.find("dualsense_battery::decode_status(report[52])") == std::string::npos
         || battery.find("case kPowerFull:") == std::string::npos
-        || battery.find("reading.percent = 100;") == std::string::npos
+        || battery.find("reading.percent = 100;") != std::string::npos
         || battery.find("kUnknownPercent = 0xff") == std::string::npos
     ) {
         throw std::runtime_error(
-            "DualSense battery decoding must centralize full, fault, and unknown power-state semantics"
+            "DualSense battery decoding must centralize power-state semantics and keep capacity on external power"
         );
     }
 }

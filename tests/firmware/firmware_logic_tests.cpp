@@ -1125,9 +1125,15 @@ void dualsense_decoder_interprets_battery_power_states() {
     EXPECT_EQ(state.battery_percent, 85);
     EXPECT_EQ(state.raw_power_state, 1);
 
+    // External power (state 2) keeps the real capacity rather than reading 100%.
+    report[52] = 0x24;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 45);
+    EXPECT_EQ(state.raw_power_state, 2);
+
     report[52] = 0x28;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 100);
+    EXPECT_EQ(state.battery_percent, 85);
     EXPECT_EQ(state.raw_power_state, 2);
 
     report[52] = 0x2a;
@@ -1137,7 +1143,7 @@ void dualsense_decoder_interprets_battery_power_states() {
 
     report[52] = 0x2f;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 100);
+    EXPECT_EQ(state.battery_percent, 0xff);
     EXPECT_EQ(state.raw_power_state, 2);
 
     report[52] = 0xa8;
