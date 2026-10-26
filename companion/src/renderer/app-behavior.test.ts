@@ -80,40 +80,9 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('paired directly to Windows over Bluetooth may need to be paired again');
   });
 
-  it('does not block haptic testing just because audio is active', () => {
-    const start = appSource.indexOf('const testHapticsUnavailable =');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('const hapticsStatusReady =', start);
-    const unavailableSource = appSource.slice(start, end);
-
-    expect(unavailableSource).not.toContain('gameStreamActive');
-    expect(unavailableSource).not.toContain('audioRecent');
-    expect(unavailableSource).not.toContain('host' + 'AudioActive');
-    expect(unavailableSource).not.toContain('streamActive');
-  });
-
-  it('does not block rumble testing while game output is active', () => {
-    const start = appSource.indexOf('const testRumbleUnavailable =');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('const hapticsStatusReady =', start);
-    const unavailableSource = appSource.slice(start, end);
-
-    expect(unavailableSource).not.toContain('gameStreamActive');
-    expect(unavailableSource).not.toContain('audioRecent');
-    expect(unavailableSource).not.toContain('host' + 'AudioActive');
-    expect(unavailableSource).not.toContain('streamActive');
-  });
-
-  it('keeps haptic test and cooldown labels as real test state', () => {
-    const start = appSource.indexOf('<button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable}');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</button>', start);
-    const buttonSource = appSource.slice(start, end);
-
-    expect(buttonSource).not.toContain('Audio Active');
-    expect(buttonSource).toContain('testLocked');
-    expect(buttonSource).toContain('snapshot.status?.testHapticsCooldown');
-  });
+  // Haptics and rumble tests staying available while game audio plays, and their
+  // Testing and Cooling Down labels, are rendered in
+  // features/controller-feedback/ControllerFeedbackPage.rendered.test.tsx.
 
   it('does not show generic command-pending copy in renderer status badges', () => {
     expect(appSource).not.toContain('Command Pending');
@@ -221,36 +190,6 @@ describe('renderer behavior guards', () => {
     expect(shellSidebarStyles).toContain('.device-battery-meta');
   });
 
-  it('keeps the haptics test button actionable instead of relabeling it as game-active', () => {
-    const start = appSource.indexOf('<button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable}');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</button>', start);
-    const buttonSource = appSource.slice(start, end);
-    const hapticsStart = buttonSource.indexOf(': connected && testLocked');
-    expect(hapticsStart).toBeGreaterThanOrEqual(0);
-    const hapticsButtonSource = buttonSource.slice(hapticsStart);
-
-    expect(hapticsButtonSource).not.toContain('Game Active');
-    expect(hapticsButtonSource).toContain('testLocked');
-    expect(hapticsButtonSource).toContain('Test Haptics');
-  });
-
-  it('keeps the rumble test button actionable instead of relabeling it as game-active', () => {
-    const start = appSource.indexOf('<button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable}');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</button>', start);
-    const buttonSource = appSource.slice(start, end);
-    const classicStart = buttonSource.indexOf('{showClassicRumbleControl');
-    expect(classicStart).toBeGreaterThanOrEqual(0);
-    const hapticsStart = buttonSource.indexOf(': connected && testLocked', classicStart);
-    expect(hapticsStart).toBeGreaterThanOrEqual(0);
-    const classicButtonSource = buttonSource.slice(classicStart, hapticsStart);
-
-    expect(classicButtonSource).not.toContain('Game Active');
-    expect(classicButtonSource).toContain('testLocked');
-    expect(classicButtonSource).toContain('Test Rumble');
-  });
-
   it('does not let initial status overwrite a newer live snapshot', () => {
     const start = appSource.indexOf('let cancelled = false;');
     expect(start).toBeGreaterThanOrEqual(0);
@@ -330,15 +269,6 @@ describe('renderer behavior guards', () => {
     }
     expect(featureSource('kitsune-promotion/links.ts')).toContain("KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';");
     expect(featureSource('kitsune-promotion/links.ts')).toContain("KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';");
-  });
-
-  it('keeps Audio Haptics page enablement aligned with its feature tile', () => {
-    expect(appSource).toContain(
-      'aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}'
-    );
-    expect(appSource).toContain('if (enabled && !snapshot.settings.hapticsEnabled)');
-    expect(appSource).toContain('await window.bridge.setHapticsEnabled(true);');
-    expect(appSource).toContain('window.bridge.setAudioReactiveHapticsConfig({ enabled })');
   });
 
   // Trigger Lab enablement and restore are rendered in

@@ -409,17 +409,13 @@ describe('companion layout CSS', () => {
     expect(ds5Chips).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);');
   });
 
-  it('uses the main haptics gain control in the Audio Haptics card', () => {
-    expect(appSource).not.toContain('AUDIO_REACTIVE_HAPTICS_GAIN_PERCENT');
-    expect(appSource).not.toContain('audioReactiveHapticsGainValue');
-    expect(appSource).not.toContain('commitAudioReactiveHapticsGain');
-    expect(appSource).not.toContain('setAudioReactiveHapticsPreset');
-    expect(appSource).toContain('aria-label="Haptics gain"');
-    expect(appSource).toContain('value={hapticsValue}');
-    expect(appSource).toContain('max={hapticsSliderMax}');
-    expect(appSource).toContain('onPointerUp={() => void commitHapticsValue()}');
-    expect(appSource).toContain('{HAPTICS_PRESETS.map(([label, value]) => {');
-    expect(appSource).toContain('onClick={() => setHapticsPreset(presetValue)}');
+  it('has no separate audio haptics gain', () => {
+    // The Audio Haptics card's use of the main haptics gain is rendered in
+    // features/controller-feedback/ControllerFeedbackPage.rendered.test.tsx.
+    const labSource = readFileSync(new URL('./features/audio-haptics-lab/use-audio-haptics-lab-controller.ts', import.meta.url), 'utf8');
+    for (const retired of ['AUDIO_REACTIVE_HAPTICS_GAIN_PERCENT', 'audioReactiveHapticsGainValue', 'commitAudioReactiveHapticsGain', 'setAudioReactiveHapticsPreset']) {
+      expect(labSource).not.toContain(retired);
+    }
   });
 
   it('keeps the audio buffer length control compact and aligned', () => {

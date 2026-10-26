@@ -141,6 +141,9 @@ import { useButtonRemappingController } from './features/button-remapping/use-bu
 import { ChordFunctionDialog } from './features/chords/ChordFunctionDialog';
 import { useChordsController } from './features/chords/use-chords-controller';
 import { BootloaderConfirmationDialog } from './features/bootloader-confirmation';
+import { ControllerFeedbackPage, useControllerFeedbackController } from './features/controller-feedback';
+import { HAPTICS_STEP, snapHapticsValue } from './features/controller-feedback/model';
+import { useAudioHapticsLabController } from './features/audio-haptics-lab';
 import {
   KITSUNE_INPUT_PURCHASE_URL,
   KITSUNE_INPUT_URL,
@@ -213,17 +216,7 @@ type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
 type ControllerProfileDialogMode = 'save' | 'rename' | 'delete';
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
 
-const HAPTICS_STEP = 20;
-const STANDARD_FEEDBACK_GAIN_PERCENT = 200;
-const BOOSTED_FEEDBACK_GAIN_PERCENT = 500;
-const TEST_HAPTICS_LOCK_MS = 1100;
 const SLEEP_CONFIRM_MS = 2400;
-const HAPTICS_PRESETS: Array<[string, number]> = [
-  ['Low', 50],
-  ['Medium', 100],
-  ['High', 150]
-];
-const STANDARD_HAPTICS_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 20);
 const MUTE_KEY_OPTIONS: Array<[string, number]> = [
   ['F1', 0x3A], ['F2', 0x3B], ['F3', 0x3C], ['F4', 0x3D], ['F5', 0x3E], ['F6', 0x3F],
   ['F7', 0x40], ['F8', 0x41], ['F9', 0x42], ['F10', 0x43], ['F11', 0x44], ['F12', 0x45],
@@ -271,116 +264,6 @@ const HOST_PERSONA_SHORT_LABELS: Record<HostPersonaMode, string> = {
   ds4: 'DS4',
   xbox: 'XBOX'
 };
-const AUDIO_REACTIVE_HAPTICS_MODE_OPTIONS: Array<[string, AudioReactiveHapticsMode]> = [
-  ['Mix', 'mix'],
-  ['Replace', 'replace']
-];
-const AUDIO_REACTIVE_HAPTICS_BASS_FOCUS_OPTIONS: Array<[string, AudioReactiveHapticsBassFocus]> = [
-  ['80 Hz', 'deep'],
-  ['160 Hz', 'balanced'],
-  ['240 Hz', 'punchy'],
-  ['400 Hz', 'wide']
-];
-const AUDIO_REACTIVE_HAPTICS_RESPONSE_OPTIONS: Array<[string, AudioReactiveHapticsResponse]> = [
-  ['Subtle', 'subtle'],
-  ['Dynamic', 'balanced'],
-  ['Aggressive', 'strong']
-];
-const AUDIO_REACTIVE_HAPTICS_ATTACK_OPTIONS: Array<[string, AudioReactiveHapticsAttack]> = [
-  ['Slow Ramp', 'soft'],
-  ['Medium Ramp', 'balanced'],
-  ['Fast Ramp', 'fast'],
-  ['Instant Ramp', 'sharp']
-];
-const AUDIO_REACTIVE_HAPTICS_RELEASE_OPTIONS: Array<[string, AudioReactiveHapticsRelease]> = [
-  ['Fast Fade', 'tight'],
-  ['Medium Fade', 'balanced'],
-  ['Slow Fade', 'smooth'],
-  ['Long Fade', 'long']
-];
-const AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS = {
-  bassFocus: 'Applies a low-pass filter that chooses which part of the low-end audio becomes vibration.',
-  response: 'Controls how strongly haptics react to audio, especially louder peaks.',
-  attack: 'Controls how quickly the haptics ramp when a sound rises or spikes.',
-  release: 'Controls how quickly the haptics fade when a sound drops.'
-} as const;
-function snapHapticsValue(value: number, max = STANDARD_FEEDBACK_GAIN_PERCENT): number {
-  return Math.max(0, Math.min(max, Math.round(value / HAPTICS_STEP) * HAPTICS_STEP));
-}
-
-function audioHapticsAppSource(source: AudioReactiveHapticsSource | null | undefined) {
-  return source && typeof source === 'object' && source.kind === 'app-session' ? source : null;
-}
-
-function audioHapticsSessionKey(session: AudioHapticsSession): string {
-  if (session.processPath) {
-    return `app-path:${session.processPath.toLowerCase()}`;
-  }
-  if (session.executableName) {
-    return `app-exe:${session.executableName.toLowerCase()}`;
-  }
-  return `app-pid:${session.processId}`;
-}
-
-function audioHapticsSourceKey(source: AudioReactiveHapticsSource | null | undefined): string {
-  const appSource = audioHapticsAppSource(source);
-  if (!appSource) {
-    return 'system-audio';
-  }
-  if (appSource.processPath) {
-    return `app-path:${appSource.processPath.toLowerCase()}`;
-  }
-  if (appSource.executableName) {
-    return `app-exe:${appSource.executableName.toLowerCase()}`;
-  }
-  return `app-pid:${Math.max(0, Math.round(appSource.processId))}`;
-}
-
-function audioHapticsSourceFromSession(session: AudioHapticsSession): AudioReactiveHapticsSource {
-  return {
-    kind: 'app-session',
-    processId: session.processId,
-    displayName: session.displayName,
-    ...(session.executableName ? { executableName: session.executableName } : {}),
-    ...(session.processPath ? { processPath: session.processPath } : {}),
-    ...(session.sessionIdentifier ? { sessionIdentifier: session.sessionIdentifier } : {}),
-    ...(session.sessionInstanceIdentifier ? { sessionInstanceIdentifier: session.sessionInstanceIdentifier } : {})
-  };
-}
-
-function audioHapticsSourceDisplayName(source: AudioReactiveHapticsSource | null | undefined): string {
-  const appSource = audioHapticsAppSource(source);
-  if (!appSource) {
-    return 'System';
-  }
-  return appSource.displayName
-    || appSource.executableName?.replace(/\.[^.]+$/, '')
-    || 'Selected app';
-}
-
-function feedbackSliderMaxFromSnapshot(snapshot: BridgeSnapshot | null | undefined): number {
-  if (controllerPowerSavingActiveFromSnapshot(snapshot)) {
-    return CONTROLLER_POWER_SAVING_CAP_PERCENT;
-  }
-  return snapshot?.settings.feedbackBoostEnabled ? BOOSTED_FEEDBACK_GAIN_PERCENT : STANDARD_FEEDBACK_GAIN_PERCENT;
-}
-
-function feedbackSliderTicks(max: number): number[] {
-  if (max === STANDARD_FEEDBACK_GAIN_PERCENT) {
-    return STANDARD_HAPTICS_SLIDER_TICKS;
-  }
-  return Array.from({ length: 11 }, (_, index) => (max / 10) * index);
-}
-
-function displayHapticsValue(snapshot: BridgeSnapshot): number {
-  return capControllerPowerSavingValue(snapshot.settings.hapticsGainPercent, snapshot);
-}
-
-function displayClassicRumbleValue(snapshot: BridgeSnapshot): number {
-  return capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot);
-}
-
-
 function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): ControllerProfileSettings {
   return {
     leftStickRadialDeadzonePercent: snapshot.settings.leftStickRadialDeadzonePercent,
@@ -635,59 +518,13 @@ function HostPersonaOption({ label, value }: { label: string; value: HostPersona
   );
 }
 
-function AudioHapticsSourceOption({
-  label,
-  value,
-  session,
-  loading
-}: {
-  label: string;
-  value: string;
-  session?: AudioHapticsSession;
-  loading?: boolean;
-}) {
-  const system = value === 'system-audio';
-  const unavailable = !system && !session;
-  let sublabel = 'System mix';
-  if (!system) {
-    if (!session) {
-      sublabel = loading ? 'Scanning' : 'Unavailable';
-    } else {
-      sublabel = session.state === 'active'
-        ? session.endpointName || 'Active'
-        : 'Idle';
-    }
-  }
-  return (
-    <span className={`audio-haptics-source-option ${unavailable ? 'unavailable' : ''}`}>
-      <span className="audio-haptics-source-icon" aria-hidden="true">
-        {system ? (
-          <IconDeviceAudioTape size={17} />
-        ) : session?.iconDataUrl ? (
-          <img src={session.iconDataUrl} alt="" />
-        ) : (
-          <IconBrandDeezer size={17} />
-        )}
-      </span>
-      <span className="audio-haptics-source-copy">
-        <strong>{label}</strong>
-        <small>{sublabel}</small>
-      </span>
-    </span>
-  );
-}
-
 export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
-  const [hapticsValue, setHapticsValue] = useState(100);
-  const [classicRumbleValue, setClassicRumbleValue] = useState(100);
   const triggerLabOpen = activeControlTab === 'trigger-lab';
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
-  const [audioHapticsSessions, setAudioHapticsSessions] = useState<AudioHapticsSession[]>([]);
-  const [audioHapticsSessionsLoading, setAudioHapticsSessionsLoading] = useState(false);
   const [controllerProfileDialogMode, setControllerProfileDialogMode] = useState<ControllerProfileDialogMode | null>(null);
   const [controllerProfileNameDraft, setControllerProfileNameDraft] = useState('');
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -696,19 +533,12 @@ export function App() {
   const [notificationFocusTarget, setNotificationFocusTarget] = useState<NotificationFocusTarget | null>(null);
   const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
   const [showKitsuneInputPromotion, setShowKitsuneInputPromotion] = useState(false);
-  const [showClassicRumbleControl, setShowClassicRumbleControl] = useState(false);
   const [windowDragging, setWindowDragging] = useState(false);
-  const [testLocked, setTestLocked] = useState(false);
   const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
   const [startupTextScale, setStartupTextScale] = useState<UiTextScalePercent>(storedUiTextScalePercent);
   const localization = useLocalization();
   // Hidden or minimized, the app stops rendering snapshots and pauses its polling.
   const windowVisible = useDocumentVisible();
-  const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
-  const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
-  const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
-  const [feedbackBoostCommitPending, setFeedbackBoostCommitPending] = useState(false);
-  const [audioReactiveHapticsCommitPending, setAudioReactiveHapticsCommitPending] = useState(false);
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
   const [deviceCleanupConfirmVisible, setDeviceCleanupConfirmVisible] = useState(false);
   const startupTutorial = useStartupTutorial();
@@ -716,8 +546,6 @@ export function App() {
   const [deviceCleanupError, setDeviceCleanupError] = useState<string | null>(null);
   const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
   const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
-  const hapticsEditingRef = useRef(false);
-  const classicRumbleEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const bridgeRenameCancelledRef = useRef(false);
   const overviewSleepConfirmTimerRef = useRef<number | null>(null);
@@ -782,6 +610,23 @@ export function App() {
   const buttonRemapping = useButtonRemappingController(runtime, activeControlTab === 'remapping');
   const { showDualSenseEdgeRemapButtons } = buttonRemapping;
   const chords = useChordsController(runtime, { active: activeControlTab === 'chords', showDualSenseEdgeRemapButtons });
+  const feedback = useControllerFeedbackController(runtime, {
+    speakerVolumeCommitPending: audio.speakerVolumeCommitPending,
+    lightbarCommitPending: lighting.lightbarCommitPending
+  });
+  const audioHapticsLab = useAudioHapticsLabController(runtime, { active: audioHapticsOpen });
+  const {
+    hapticsValue,
+    setHapticsValue,
+    hapticsEditingRef,
+    hapticsCommitPending,
+    hapticsSliderMax,
+    hapticsSliderTicks,
+    controllerPowerSavingActive,
+    activeFeedbackTestUnavailable,
+    commitHapticsValue,
+    runFeedbackTest
+  } = feedback;
   const selectedControllerProfile = snapshot?.settings.controllerProfiles.find((profile) => (
     profile.id === snapshot.settings.selectedControllerProfileId
   ));
@@ -794,13 +639,8 @@ export function App() {
   function applySnapshot(next: BridgeSnapshot) {
     setSnapshot(next);
     buttonRemapping.syncSnapshot(next);
-    if (!hapticsEditingRef.current) {
-      setHapticsValue(displayHapticsValue(next));
-    }
+    feedback.syncSnapshot(next);
     stickDeadzones.syncSnapshot(next);
-    if (!classicRumbleEditingRef.current) {
-      setClassicRumbleValue(displayClassicRumbleValue(next));
-    }
     audio.syncSnapshot(next);
     lighting.syncSnapshot(next);
     triggers.syncSnapshot(next);
@@ -830,9 +670,6 @@ export function App() {
     window.addEventListener('mouseup', finishWindowDrag, { once: true });
     window.addEventListener('blur', finishWindowDrag, { once: true });
   }
-
-  const audioReactiveHapticsSource = snapshot?.settings.audioReactiveHapticsSource ?? 'system-audio';
-  const audioReactiveHapticsSourceKey = audioHapticsSourceKey(audioReactiveHapticsSource);
 
   useEffect(() => {
     let cancelled = false;
@@ -887,51 +724,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const controllerAudioReady = connected && controllerConnected;
-    if (!audioHapticsOpen || !controllerAudioReady) {
-      setAudioHapticsSessions([]);
-      setAudioHapticsSessionsLoading(false);
-      return undefined;
-    }
-    if (!windowVisible) {
-      // Keep the listed sessions; they refresh when the window is shown again.
-      return undefined;
-    }
-
-    let cancelled = false;
-    let refreshInFlight = false;
-    async function refreshSessions() {
-      if (refreshInFlight) {
-        return;
-      }
-      refreshInFlight = true;
-      setAudioHapticsSessionsLoading(true);
-      try {
-        const sessions = await window.bridge.listAudioHapticsSessions();
-        if (!cancelled) {
-          setAudioHapticsSessions(sessions);
-        }
-      } catch {
-        if (!cancelled) {
-          setAudioHapticsSessions([]);
-        }
-      } finally {
-        refreshInFlight = false;
-        if (!cancelled) {
-          setAudioHapticsSessionsLoading(false);
-        }
-      }
-    }
-
-    void refreshSessions();
-    const interval = window.setInterval(refreshSessions, 15000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [audioHapticsOpen, audioReactiveHapticsSourceKey, connected, controllerConnected, windowVisible]);
-
-  useEffect(() => {
     if (!showNotificationsMenu) {
       return;
     }
@@ -980,44 +772,11 @@ export function App() {
   const pollingRateControlSupported = Boolean(snapshot?.status?.firmwareFlags.pollingRateControl);
   const hostPersonaControlSupported = Boolean(snapshot?.status?.firmwareFlags.hostPersonaControl);
   const audioBufferLengthControlSupported = Boolean(snapshot?.status?.firmwareFlags.hapticsBufferLengthControl);
-  const audioReactiveHapticsSupported = Boolean(snapshot?.status?.firmwareFlags.audioReactiveHapticsControl);
   const supportedHostPersonaModes: HostPersonaMode[] = snapshot?.status?.supportedHostPersonaModes ?? ['dualsense'];
   const hostPersonaOptions = HOST_PERSONA_OPTIONS.filter(([, mode]) => (
     supportedHostPersonaModes.includes(mode) || snapshot?.settings.hostPersonaMode === mode
   ));
   const overviewHostPersonaMode = personaTransition?.to ?? snapshot?.settings.hostPersonaMode ?? 'dualsense';
-  const hapticsEnabled = Boolean(snapshot?.settings.hapticsEnabled);
-  const audioReactiveHapticsEnabled = Boolean(snapshot?.settings.audioReactiveHapticsEnabled);
-  const audioHapticsSessionByKey = useMemo(() => {
-    const sessions = new Map<string, AudioHapticsSession>();
-    for (const session of audioHapticsSessions) {
-      sessions.set(audioHapticsSessionKey(session), session);
-    }
-    return sessions;
-  }, [audioHapticsSessions]);
-  const selectedAudioHapticsSourceDisplayName = audioHapticsSessionByKey.get(audioReactiveHapticsSourceKey)?.displayName
-    ?? audioHapticsSourceDisplayName(audioReactiveHapticsSource);
-  const audioHapticsSourceOptions = useMemo<Array<[string, string]>>(() => {
-    const options: Array<[string, string]> = [['System', 'system-audio']];
-    for (const session of audioHapticsSessions) {
-      options.push([session.displayName, audioHapticsSessionKey(session)]);
-    }
-    if (
-      audioReactiveHapticsSourceKey !== 'system-audio'
-      && !audioHapticsSessionByKey.has(audioReactiveHapticsSourceKey)
-    ) {
-      options.push([`${audioHapticsSourceDisplayName(audioReactiveHapticsSource)} unavailable`, audioReactiveHapticsSourceKey]);
-    }
-    return options;
-  }, [
-    audioHapticsSessionByKey,
-    audioHapticsSessions,
-    audioReactiveHapticsSource,
-    audioReactiveHapticsSourceKey
-  ]);
-  const classicRumbleEnabled = Boolean(snapshot?.settings.classicRumbleEnabled);
-  const classicRumbleV1Enabled = Boolean(snapshot?.settings.classicRumbleV1Enabled);
-  const activeHapticsFeatureEnabled = showClassicRumbleControl ? classicRumbleEnabled : hapticsEnabled;
   const adaptiveTriggersEnabled = Boolean(snapshot?.settings.adaptiveTriggersEnabled);
   const lightbarEnabled = Boolean(snapshot?.settings.lightbarEnabled);
   const sleepKeybindEnabled = Boolean(snapshot?.settings.sleepKeybindEnabled);
@@ -1027,97 +786,7 @@ export function App() {
   const adaptiveTriggerOutputActive = Boolean(snapshot?.status?.adaptiveTriggerOutputRecent);
   const audioStatus = snapshot?.diagnostics.audioStatus;
   const headsetOutputDetected = Boolean(audioStatus?.headsetPlugged);
-  const controllerPowerSavingActive = controllerPowerSavingActiveFromSnapshot(snapshot);
-  const feedbackBoostEnabled = Boolean(snapshot?.settings.feedbackBoostEnabled);
-  const hapticsSliderMax = feedbackSliderMaxFromSnapshot(snapshot);
-  const hapticsSliderTicks = feedbackSliderTicks(hapticsSliderMax);
   const percentSliderMax = controllerPowerSavingActive ? CONTROLLER_POWER_SAVING_CAP_PERCENT : 100;
-  const audioReactiveHapticsRouteSupported = audioReactiveHapticsSupported;
-  const audioReactiveHapticsBlocked = !connected
-    || !audioReactiveHapticsSupported
-    || !audioReactiveHapticsRouteSupported
-    || !hapticsEnabled;
-  const audioReactiveHapticsControlDisabled = !connected
-    || !audioReactiveHapticsSupported
-    || pendingAction !== null
-    || audioReactiveHapticsCommitPending;
-  const audioReactiveHapticsConfigDisabled = audioReactiveHapticsBlocked
-    || pendingAction !== null
-    || audioReactiveHapticsCommitPending
-    || !audioReactiveHapticsEnabled;
-  const audioReactiveHapticsStatusLabel = !connected
-    ? 'Unavailable'
-    : !audioReactiveHapticsSupported
-      ? 'Update Firmware'
-      : !hapticsEnabled
-        ? 'Haptics Off'
-        : audioReactiveHapticsEnabled
-          ? 'Ready'
-          : 'Off';
-  const audioReactiveHapticsStatusTone = audioReactiveHapticsEnabled
-    && hapticsEnabled
-    && audioReactiveHapticsRouteSupported
-    ? 'good'
-    : connected && (
-        !audioReactiveHapticsRouteSupported
-        || !hapticsEnabled
-      )
-      ? 'warn'
-      : 'idle';
-  const audioReactiveHapticsOverrideMode = snapshot?.settings.audioReactiveHapticsMode === 'replace';
-  const audioReactiveHapticsModeBadgeLabel = audioReactiveHapticsEnabled
-    ? audioReactiveHapticsOverrideMode ? 'Override' : 'Mixed'
-    : null;
-  const audioReactiveHapticsModeTooltip = audioReactiveHapticsOverrideMode
-    ? 'Audio haptics are replacing native haptic output.'
-    : 'Audio haptics are mixed with native haptic output.';
-  const testHapticsUnavailable = !connected
-    || !hapticsEnabled
-    || pendingAction !== null
-    || audio.speakerVolumeCommitPending
-    || lighting.lightbarCommitPending
-    || testLocked
-    || Boolean(snapshot?.status?.testHapticsBusy)
-    || Boolean(snapshot?.status?.testHapticsCooldown);
-  const testRumbleUnavailable = !connected
-    || !classicRumbleEnabled
-    || pendingAction !== null
-    || audio.speakerVolumeCommitPending
-    || lighting.lightbarCommitPending
-    || testLocked
-    || Boolean(snapshot?.status?.testHapticsBusy);
-  const hapticsStatusReady = connected
-    && hapticsEnabled
-    && !testLocked
-    && !snapshot?.status?.testHapticsBusy
-    && !snapshot?.status?.testHapticsCooldown;
-  const rumbleStatusReady = connected
-    && classicRumbleEnabled
-    && !testLocked
-    && !snapshot?.status?.testHapticsBusy;
-  const hapticsStatusLabel = testLocked || snapshot?.status?.testHapticsBusy
-    ? 'Testing'
-      : snapshot?.status?.testHapticsCooldown
-        ? 'Cooling Down'
-      : hapticsStatusReady
-        ? 'Ready'
-        : 'Unavailable';
-  const rumbleStatusLabel = testLocked
-    ? 'Testing'
-    : rumbleStatusReady
-      ? 'Ready'
-      : 'Unavailable';
-  const hapticsStatusTone = testLocked || snapshot?.status?.testHapticsBusy || hapticsStatusReady
-    ? 'good'
-    : connected && snapshot?.status?.testHapticsCooldown
-      ? 'warn'
-      : 'idle';
-  const rumbleStatusTone = testLocked || rumbleStatusReady
-    ? 'good'
-    : 'idle';
-  const activeFeedbackTestUnavailable = showClassicRumbleControl ? testRumbleUnavailable : testHapticsUnavailable;
-  const activeFeedbackStatusLabel = showClassicRumbleControl ? rumbleStatusLabel : hapticsStatusLabel;
-  const activeFeedbackStatusTone = showClassicRumbleControl ? rumbleStatusTone : hapticsStatusTone;
   const sidebarControllerCard = devices.model.cards.find(
     (device) => device.label === 'Current controller'
   ) ?? devices.model.cards[0] ?? null;
@@ -1378,201 +1047,6 @@ export function App() {
     }
   }
 
-  async function commitHapticsValue(value = hapticsValue) {
-    const snappedValue = snapHapticsValue(value, hapticsSliderMax);
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !snapshot.settings.hapticsEnabled
-      || (controllerPowerSavingActive && snapshot.settings.hapticsGainPercent > CONTROLLER_POWER_SAVING_CAP_PERCENT && snappedValue === CONTROLLER_POWER_SAVING_CAP_PERCENT)
-      || snappedValue === snapshot.settings.hapticsGainPercent
-      || hapticsCommitPending
-    ) {
-      hapticsEditingRef.current = false;
-      return;
-    }
-
-    setHapticsCommitPending(true);
-    hapticsEditingRef.current = true;
-    try {
-      const next = await window.bridge.setHapticsGain(snappedValue);
-      setSnapshot(next);
-      setHapticsValue(displayHapticsValue(next));
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setHapticsValue(displayHapticsValue(next));
-    } finally {
-      setHapticsCommitPending(false);
-      hapticsEditingRef.current = false;
-    }
-  }
-
-  async function commitClassicRumbleValue(value = classicRumbleValue) {
-    const snappedValue = snapHapticsValue(value, hapticsSliderMax);
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !snapshot.settings.classicRumbleEnabled
-      || (controllerPowerSavingActive && snapshot.settings.classicRumbleGainPercent > CONTROLLER_POWER_SAVING_CAP_PERCENT && snappedValue === CONTROLLER_POWER_SAVING_CAP_PERCENT)
-      || snappedValue === snapshot.settings.classicRumbleGainPercent
-      || classicRumbleCommitPending
-    ) {
-      classicRumbleEditingRef.current = false;
-      return;
-    }
-
-    setClassicRumbleCommitPending(true);
-    classicRumbleEditingRef.current = true;
-    try {
-      const next = await window.bridge.setClassicRumbleGain(snappedValue);
-      setSnapshot(next);
-      setClassicRumbleValue(displayClassicRumbleValue(next));
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setClassicRumbleValue(displayClassicRumbleValue(next));
-    } finally {
-      setClassicRumbleCommitPending(false);
-      classicRumbleEditingRef.current = false;
-    }
-  }
-
-  function setHapticsPreset(value: number) {
-    const snappedValue = snapHapticsValue(capControllerPowerSavingValue(value, snapshot), hapticsSliderMax);
-    hapticsEditingRef.current = true;
-    setHapticsValue(snappedValue);
-    void commitHapticsValue(snappedValue);
-  }
-
-  function setClassicRumblePreset(value: number) {
-    const snappedValue = snapHapticsValue(capControllerPowerSavingValue(value, snapshot), hapticsSliderMax);
-    classicRumbleEditingRef.current = true;
-    setClassicRumbleValue(snappedValue);
-    void commitClassicRumbleValue(snappedValue);
-  }
-
-  async function commitAudioReactiveHapticsConfig(config: Partial<AudioReactiveHapticsConfig>): Promise<BridgeSnapshot | null> {
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !audioReactiveHapticsSupported
-      || !hapticsEnabled
-      || audioReactiveHapticsCommitPending
-    ) {
-      return null;
-    }
-
-    setAudioReactiveHapticsCommitPending(true);
-    try {
-      const next = await window.bridge.setAudioReactiveHapticsConfig(config);
-      applySnapshot(next);
-      return next;
-    } catch {
-      const next = await window.bridge.getStatus();
-      applySnapshot(next);
-      return next;
-    } finally {
-      setAudioReactiveHapticsCommitPending(false);
-    }
-  }
-
-  async function toggleAudioReactiveHapticsEnabled() {
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !audioReactiveHapticsSupported
-      || pendingAction !== null
-      || audioReactiveHapticsCommitPending
-    ) {
-      return;
-    }
-
-    const enabled = !snapshot.settings.audioReactiveHapticsEnabled;
-    setAudioReactiveHapticsCommitPending(true);
-    try {
-      if (enabled && !snapshot.settings.hapticsEnabled) {
-        await window.bridge.setHapticsEnabled(true);
-      }
-      const next = await window.bridge.setAudioReactiveHapticsConfig({ enabled });
-      applySnapshot(next);
-    } catch {
-      const next = await window.bridge.getStatus();
-      applySnapshot(next);
-    } finally {
-      setAudioReactiveHapticsCommitPending(false);
-    }
-  }
-
-  function setAudioReactiveHapticsMode(mode: AudioReactiveHapticsMode) {
-    if (!snapshot || mode === snapshot.settings.audioReactiveHapticsMode) return;
-    void commitAudioReactiveHapticsConfig({ mode });
-  }
-
-  function setAudioReactiveHapticsSourceValue(value: string) {
-    if (!snapshot || value === audioReactiveHapticsSourceKey) return;
-    if (value === 'system-audio') {
-      void commitAudioReactiveHapticsConfig({ source: 'system-audio' });
-      return;
-    }
-    const session = audioHapticsSessionByKey.get(value);
-    if (!session) {
-      return;
-    }
-    void commitAudioReactiveHapticsConfig({ source: audioHapticsSourceFromSession(session) });
-  }
-
-  function setAudioReactiveHapticsBassFocus(bassFocus: AudioReactiveHapticsBassFocus) {
-    if (!snapshot || bassFocus === snapshot.settings.audioReactiveHapticsBassFocus) return;
-    void commitAudioReactiveHapticsConfig({ bassFocus });
-  }
-
-  function setAudioReactiveHapticsResponse(response: AudioReactiveHapticsResponse) {
-    if (!snapshot || response === snapshot.settings.audioReactiveHapticsResponse) return;
-    void commitAudioReactiveHapticsConfig({ response });
-  }
-
-  function setAudioReactiveHapticsAttack(attack: AudioReactiveHapticsAttack) {
-    if (!snapshot || attack === snapshot.settings.audioReactiveHapticsAttack) return;
-    void commitAudioReactiveHapticsConfig({ attack });
-  }
-
-  function setAudioReactiveHapticsRelease(release: AudioReactiveHapticsRelease) {
-    if (!snapshot || release === snapshot.settings.audioReactiveHapticsRelease) return;
-    void commitAudioReactiveHapticsConfig({ release });
-  }
-
-  function isPreservingPowerSavingCap(savedValue: number, visibleValue: number): boolean {
-    return controllerPowerSavingActive
-      && savedValue > CONTROLLER_POWER_SAVING_CAP_PERCENT
-      && visibleValue === CONTROLLER_POWER_SAVING_CAP_PERCENT;
-  }
-
-  function runFeedbackTest() {
-    setTestLocked(true);
-    void runAction(showClassicRumbleControl ? 'test-rumble' : 'test', async () => {
-      if (snapshot && showClassicRumbleControl) {
-        if (
-          classicRumbleValue !== snapshot.settings.classicRumbleGainPercent
-          && !isPreservingPowerSavingCap(snapshot.settings.classicRumbleGainPercent, classicRumbleValue)
-        ) {
-          await window.bridge.setClassicRumbleGain(classicRumbleValue);
-        }
-        return window.bridge.testClassicRumble();
-      }
-      if (
-        snapshot
-        && hapticsValue !== snapshot.settings.hapticsGainPercent
-        && !isPreservingPowerSavingCap(snapshot.settings.hapticsGainPercent, hapticsValue)
-      ) {
-        await window.bridge.setHapticsGain(hapticsValue);
-      }
-      return window.bridge.testHaptics();
-    }).finally(() => {
-      window.setTimeout(() => setTestLocked(false), TEST_HAPTICS_LOCK_MS);
-    });
-  }
-
   function selectControllerProfile(profileId: string) {
     void runAction('controller-profile', () => window.bridge.selectControllerProfile(profileId));
   }
@@ -1641,56 +1115,6 @@ export function App() {
 
   function clearFirmwareLogDirectory() {
     void runAction('firmware-log-directory', () => window.bridge.clearFirmwareLogDirectory());
-  }
-
-  function toggleHapticsEnabled() {
-    if (!snapshot) return;
-    void runAction('haptics-enabled', () => window.bridge.setHapticsEnabled(!snapshot.settings.hapticsEnabled));
-  }
-
-  function toggleClassicRumbleEnabled() {
-    if (!snapshot) return;
-    void runAction('classic-rumble-enabled', () => (
-      window.bridge.setClassicRumbleEnabled(!snapshot.settings.classicRumbleEnabled)
-    ));
-  }
-
-  function toggleClassicRumbleV1Enabled() {
-    if (!snapshot || classicRumbleV1CommitPending) return;
-
-    setClassicRumbleV1CommitPending(true);
-    void (async () => {
-      try {
-        const next = await window.bridge.setClassicRumbleV1Enabled(!snapshot.settings.classicRumbleV1Enabled);
-        setSnapshot(next);
-      } catch {
-        const next = await window.bridge.getStatus();
-        setSnapshot(next);
-      } finally {
-        setClassicRumbleV1CommitPending(false);
-      }
-    })();
-  }
-
-  function toggleFeedbackBoostEnabled() {
-    if (!snapshot || feedbackBoostCommitPending) return;
-
-    setFeedbackBoostCommitPending(true);
-    void (async () => {
-      try {
-        const next = await window.bridge.setFeedbackBoostEnabled(!snapshot.settings.feedbackBoostEnabled);
-        setSnapshot(next);
-        setHapticsValue(displayHapticsValue(next));
-        setClassicRumbleValue(displayClassicRumbleValue(next));
-      } catch {
-        const next = await window.bridge.getStatus();
-        setSnapshot(next);
-        setHapticsValue(displayHapticsValue(next));
-        setClassicRumbleValue(displayClassicRumbleValue(next));
-      } finally {
-        setFeedbackBoostCommitPending(false);
-      }
-    })();
   }
 
   function openDeviceCleanupConfirm() {
@@ -2558,468 +1982,17 @@ export function App() {
           </DeferredPage>
 
           <DeferredPage active={activeControlTab === 'haptics' || audioHapticsOpen}>
-          <div
-            className={`control-page haptics-page ${activeControlTab === 'haptics' || audioHapticsOpen ? 'active' : ''}`}
-            role="tabpanel"
-            id="control-panel-haptics"
-            aria-labelledby={audioHapticsOpen ? 'control-tab-audio-haptics' : 'control-tab-haptics'}
-            aria-hidden={activeControlTab !== 'haptics' && !audioHapticsOpen}
-          >
-              <div className="feature-heading">
-                <div>
-                  <h2>{audioHapticsOpen ? 'Audio Haptics' : 'Haptics'}</h2>
-                  <p>{audioHapticsOpen ? 'Turn system audio into haptic feedback.' : 'Adjust controller haptic feedback and run a quick test.'}</p>
-                </div>
-                <div className="audio-heading-controls">
-                  {audioReactiveHapticsModeBadgeLabel ? (
-                    <div className="inline-switch audio-haptics-mode-indicator">
-                      <span className={`inline-state-badge audio-haptics-mode-state ${audioReactiveHapticsOverrideMode ? 'warn' : 'retry'}`}>
-                        {audioReactiveHapticsModeBadgeLabel}
-                      </span>
-                      <span className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-haptics-mode-tooltip">
-                        {audioReactiveHapticsModeTooltip}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="inline-switch">
-                    <span>Enabled</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}
-                      className={`switch ${(audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled) ? 'on' : ''}`}
-                      disabled={audioHapticsOpen
-                        ? audioReactiveHapticsControlDisabled
-                        : !controllerControlsAvailable || pendingAction !== null}
-                      onClick={audioHapticsOpen
-                        ? () => void toggleAudioReactiveHapticsEnabled()
-                        : showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {audioHapticsOpen ? (
-                <div className="feature-card-grid audio-haptics-grid">
-                  <section className="feature-card audio-haptics-card">
-                    <div className="feature-card-title">
-                      <button
-                        type="button"
-                        className={`feature-icon audio-haptics-enable-button icon-compact ${audioReactiveHapticsEnabled ? 'active' : ''}`}
-                        aria-pressed={audioReactiveHapticsEnabled}
-                        aria-label={audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'}
-                        title={audioReactiveHapticsStatusLabel}
-                        disabled={audioReactiveHapticsControlDisabled}
-                        onClick={() => void toggleAudioReactiveHapticsEnabled()}
-                      >
-                        <IconDeviceAudioTape size={20} />
-                      </button>
-                      <div className="title-copy">
-                        <h3>Audio Haptics</h3>
-                        <p>System audio feedback</p>
-                      </div>
-                    </div>
-                    <div className="framed-slider">
-                      <label className="slider-row">
-                        <span>0%</span>
-                        <div className="range-control">
-                          <input
-                            type="range"
-                            min="0"
-                            max={hapticsSliderMax}
-                            step={HAPTICS_STEP}
-                            value={hapticsValue}
-                            disabled={!connected || !snapshot.settings.hapticsEnabled || hapticsCommitPending}
-                            style={{ '--range-fill': `${(hapticsValue / hapticsSliderMax) * 100}%` } as CSSProperties}
-                            aria-label="Haptics gain"
-                            onPointerDown={() => {
-                              hapticsEditingRef.current = true;
-                            }}
-                            onChange={(event) => setHapticsValue(snapHapticsValue(
-                              Number(event.currentTarget.value),
-                              hapticsSliderMax
-                            ))}
-                            onPointerUp={() => void commitHapticsValue()}
-                            onKeyDown={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                hapticsEditingRef.current = true;
-                              }
-                            }}
-                            onKeyUp={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                void commitHapticsValue();
-                              }
-                            }}
-                            onBlur={() => void commitHapticsValue()}
-                          />
-                          <div className="range-ticks" aria-hidden="true">
-                            {hapticsSliderTicks.map((value) => (
-                              <span key={value} className={sliderTickClass(value, hapticsSliderMax)} />
-                            ))}
-                          </div>
-                        </div>
-                        <strong>{hapticsValue}%</strong>
-                      </label>
-                    </div>
-                    <span className="audio-haptics-slider-spacer" aria-hidden="true" />
-                    <div className="segmented-row">
-                      {HAPTICS_PRESETS.map(([label, value]) => {
-                        const presetValue = snapHapticsValue(Number(value), hapticsSliderMax);
-                        return (
-                          <button
-                            key={label}
-                            type="button"
-                            className={hapticsValue === presetValue ? 'active' : ''}
-                            disabled={!connected || !snapshot.settings.hapticsEnabled || hapticsCommitPending}
-                            onClick={() => setHapticsPreset(presetValue)}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="audio-haptics-routing-stack">
-                      <label className="audio-haptics-source-field">
-                        <CustomSelect
-                          value={audioReactiveHapticsSourceKey}
-                          options={audioHapticsSourceOptions}
-                          disabled={audioReactiveHapticsConfigDisabled}
-                          className="audio-haptics-source-select"
-                          ariaLabel="Audio haptics source"
-                          renderValue={(label, value) => (
-                            <AudioHapticsSourceOption
-                              label={label}
-                              value={value}
-                              session={audioHapticsSessionByKey.get(value)}
-                              loading={audioHapticsSessionsLoading}
-                            />
-                          )}
-                          renderOption={(label, value) => (
-                            <AudioHapticsSourceOption
-                              label={label}
-                              value={value}
-                              session={audioHapticsSessionByKey.get(value)}
-                              loading={audioHapticsSessionsLoading}
-                            />
-                          )}
-                          onChange={setAudioReactiveHapticsSourceValue}
-                        />
-                      </label>
-                      <div className="dual-selector audio-haptics-mode-selector" role="tablist" aria-label="Audio haptics mode">
-                        {AUDIO_REACTIVE_HAPTICS_MODE_OPTIONS.map(([label, mode]) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            role="tab"
-                            aria-selected={snapshot.settings.audioReactiveHapticsMode === mode}
-                            className={snapshot.settings.audioReactiveHapticsMode === mode ? 'active' : ''}
-                            disabled={audioReactiveHapticsConfigDisabled}
-                            onClick={() => setAudioReactiveHapticsMode(mode)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </section>
-                  <section className="feature-card audio-haptics-card audio-haptics-response-card">
-                    <div className="feature-card-title">
-                      <span className="feature-icon"><IconBrandDeezer size={20} /></span>
-                      <div className="title-copy">
-                        <h3>Response</h3>
-                        <p>Frequency focus and strength</p>
-                      </div>
-                    </div>
-                    <div className="audio-haptics-config-stack">
-                      <div className="audio-haptics-config-pair-row">
-                        <label>
-                          <AudioHapticsConfigLabel
-                            id="audio-haptics-bass-focus-tooltip"
-                            label="Bass Focus"
-                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.bassFocus}
-                          />
-                          <CustomSelect
-                            value={snapshot.settings.audioReactiveHapticsBassFocus}
-                            options={AUDIO_REACTIVE_HAPTICS_BASS_FOCUS_OPTIONS}
-                            disabled={audioReactiveHapticsConfigDisabled}
-                            className="audio-haptics-select"
-                            ariaLabel="Audio haptics bass focus"
-                            onChange={setAudioReactiveHapticsBassFocus}
-                          />
-                        </label>
-                        <label>
-                          <AudioHapticsConfigLabel
-                            id="audio-haptics-response-tooltip"
-                            label="Response"
-                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.response}
-                          />
-                          <CustomSelect
-                            value={snapshot.settings.audioReactiveHapticsResponse}
-                            options={AUDIO_REACTIVE_HAPTICS_RESPONSE_OPTIONS}
-                            disabled={audioReactiveHapticsConfigDisabled}
-                            className="audio-haptics-select"
-                            ariaLabel="Audio haptics response"
-                            onChange={setAudioReactiveHapticsResponse}
-                          />
-                        </label>
-                      </div>
-                      <div className="audio-haptics-config-pair-row">
-                        <label>
-                          <AudioHapticsConfigLabel
-                            id="audio-haptics-attack-tooltip"
-                            label="Ramp"
-                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.attack}
-                          />
-                          <CustomSelect
-                            value={snapshot.settings.audioReactiveHapticsAttack}
-                            options={AUDIO_REACTIVE_HAPTICS_ATTACK_OPTIONS}
-                            disabled={audioReactiveHapticsConfigDisabled}
-                            className="audio-haptics-select"
-                            ariaLabel="Audio haptics attack"
-                            onChange={setAudioReactiveHapticsAttack}
-                          />
-                        </label>
-                        <label>
-                          <AudioHapticsConfigLabel
-                            id="audio-haptics-release-tooltip"
-                            label="Fade"
-                            tooltip={AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS.release}
-                          />
-                          <CustomSelect
-                            value={snapshot.settings.audioReactiveHapticsRelease}
-                            options={AUDIO_REACTIVE_HAPTICS_RELEASE_OPTIONS}
-                            disabled={audioReactiveHapticsConfigDisabled}
-                            className="audio-haptics-select"
-                            ariaLabel="Audio haptics release"
-                            onChange={setAudioReactiveHapticsRelease}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    <div className="feature-status test-status audio-haptics-status">
-                      <span className={`status-badge ${audioReactiveHapticsStatusTone}`} title={audioReactiveHapticsStatusLabel}>
-                        <span className={`dot ${audioReactiveHapticsStatusTone}`} />
-                        <strong>{audioReactiveHapticsStatusLabel}</strong>
-                      </span>
-                      <span className={`status-badge ${audioReactiveHapticsStatusTone}`} title={audioReactiveHapticsSourceKey === 'system-audio' ? 'Using the mixed Windows output.' : 'Using the selected app audio session.'}>
-                        <span className={`dot ${audioReactiveHapticsEnabled ? audioReactiveHapticsStatusTone : 'idle'}`} />
-                        <strong>{selectedAudioHapticsSourceDisplayName}</strong>
-                      </span>
-                    </div>
-                  </section>
-                </div>
-              ) : (
-              <div className="feature-card-grid">
-                <section className="feature-card preset-card">
-                  <div className="feature-card-title">
-                    <button
-                      type="button"
-                      className={`feature-icon haptics-enable-button ${showClassicRumbleControl ? 'icon-medium' : 'icon-compact'} ${activeHapticsFeatureEnabled ? 'active' : ''} ${controllerPowerSavingActive && activeHapticsFeatureEnabled ? 'power-saving-active' : ''}`}
-                      aria-pressed={activeHapticsFeatureEnabled}
-                      aria-label={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
-                      title={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
-                      disabled={!controllerControlsAvailable || pendingAction !== null}
-                      onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
-                    >
-                      {showClassicRumbleControl ? <Vibrate size={20} /> : <Sparkles size={20} />}
-                    </button>
-                    <div className="title-copy">
-                      <h3>{showClassicRumbleControl ? 'Rumble' : 'Intensity'}</h3>
-                      <p>{showClassicRumbleControl ? 'Rumble Strength' : 'Haptic Strength'}</p>
-                    </div>
-                    <div className="dual-selector haptics-mode-selector" role="tablist" aria-label="Haptics control mode">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={!showClassicRumbleControl}
-                        className={!showClassicRumbleControl ? 'active' : ''}
-                        onClick={() => setShowClassicRumbleControl(false)}
-                      >
-                        Haptics
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={showClassicRumbleControl}
-                        className={showClassicRumbleControl ? 'active' : ''}
-                        onClick={() => setShowClassicRumbleControl(true)}
-                      >
-                        Rumble
-                      </button>
-                    </div>
-                  </div>
-                  <div className="framed-slider">
-                    <label className="slider-row">
-                      <span>0%</span>
-                      <div className="range-control">
-                        {showClassicRumbleControl ? (
-                          <input
-                            type="range"
-                            min="0"
-                            max={hapticsSliderMax}
-                            step={HAPTICS_STEP}
-                            value={classicRumbleValue}
-                            disabled={!connected || !snapshot.settings.classicRumbleEnabled}
-                            style={{ '--range-fill': `${(classicRumbleValue / hapticsSliderMax) * 100}%` } as CSSProperties}
-                            onPointerDown={() => {
-                              classicRumbleEditingRef.current = true;
-                            }}
-                            onChange={(event) => setClassicRumbleValue(snapHapticsValue(
-                              Number(event.currentTarget.value),
-                              hapticsSliderMax
-                            ))}
-                            onPointerUp={() => void commitClassicRumbleValue()}
-                            onKeyDown={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                classicRumbleEditingRef.current = true;
-                              }
-                            }}
-                            onKeyUp={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                void commitClassicRumbleValue();
-                              }
-                            }}
-                            onBlur={() => void commitClassicRumbleValue()}
-                          />
-                        ) : (
-                          <input
-                            type="range"
-                            min="0"
-                            max={hapticsSliderMax}
-                            step={HAPTICS_STEP}
-                            value={hapticsValue}
-                            disabled={!connected || !snapshot.settings.hapticsEnabled}
-                            style={{ '--range-fill': `${(hapticsValue / hapticsSliderMax) * 100}%` } as CSSProperties}
-                            onPointerDown={() => {
-                              hapticsEditingRef.current = true;
-                            }}
-                            onChange={(event) => setHapticsValue(snapHapticsValue(
-                              Number(event.currentTarget.value),
-                              hapticsSliderMax
-                            ))}
-                            onPointerUp={() => void commitHapticsValue()}
-                            onKeyDown={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                hapticsEditingRef.current = true;
-                              }
-                            }}
-                            onKeyUp={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                void commitHapticsValue();
-                              }
-                            }}
-                            onBlur={() => void commitHapticsValue()}
-                          />
-                        )}
-                        <div className="range-ticks" aria-hidden="true">
-                          {hapticsSliderTicks.map((value) => (
-                            <span key={value} className={sliderTickClass(value, hapticsSliderMax)} />
-                          ))}
-                        </div>
-                      </div>
-                      <strong>{showClassicRumbleControl ? classicRumbleValue : hapticsValue}%</strong>
-                    </label>
-                  </div>
-                  <div className="segmented-row">
-                    {HAPTICS_PRESETS.map(([label, value]) => {
-                      const presetValue = snapHapticsValue(Number(value), hapticsSliderMax);
-                      const currentValue = showClassicRumbleControl ? classicRumbleValue : hapticsValue;
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          className={currentValue === presetValue ? 'active' : ''}
-                          disabled={
-                            !connected
-                            || (showClassicRumbleControl ? !snapshot.settings.classicRumbleEnabled : !snapshot.settings.hapticsEnabled)
-                          }
-                          onClick={() => (
-                            showClassicRumbleControl
-                              ? setClassicRumblePreset(presetValue)
-                              : setHapticsPreset(presetValue)
-                          )}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div
-                    className="inline-switch feedback-boost-control haptics-boost-control"
-                    title={feedbackBoostEnabled ? 'Feedback boost: up to 500%' : 'Enable feedback boost up to 500%'}
-                  >
-                    <span className="feedback-boost-label">
-                      <IconFlame size={16} aria-hidden="true" />
-                      Boost
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={feedbackBoostEnabled}
-                      aria-label={feedbackBoostEnabled ? 'Disable feedback boost' : 'Enable feedback boost'}
-                      className={`switch ${feedbackBoostEnabled ? 'on' : ''}`}
-                      disabled={!connected || pendingAction !== null || feedbackBoostCommitPending}
-                      onClick={toggleFeedbackBoostEnabled}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                  {showClassicRumbleControl ? (
-                    <div
-                      className="inline-switch feedback-boost-control haptics-rumble-v1-control"
-                      title={classicRumbleV1Enabled ? 'Classic rumble: v1 compatibility mode' : 'Classic rumble: v2 default mode'}
-                    >
-                      <span className="feedback-boost-label">v1 Rumble</span>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={classicRumbleV1Enabled}
-                        aria-label={classicRumbleV1Enabled ? 'Disable v1 rumble mode' : 'Enable v1 rumble mode'}
-                        className={`switch ${classicRumbleV1Enabled ? 'on' : ''}`}
-                        disabled={!connected || pendingAction !== null || classicRumbleV1CommitPending}
-                        onClick={toggleClassicRumbleV1Enabled}
-                      >
-                        <span />
-                      </button>
-                    </div>
-                  ) : null}
-                </section>
-                <section className="feature-card test-card">
-                  <div className="feature-card-title">
-                    <span className="feature-icon"><IconTestPipe size={20} /></span>
-                    <div className="title-copy">
-                      <h3>Testing</h3>
-                      <p>Run a short test to feel the current settings.</p>
-                    </div>
-                  </div>
-                  <button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable} onClick={runFeedbackTest}>
-                    <Play size={15} />
-                    {showClassicRumbleControl
-                      ? connected && testLocked
-                        ? 'Testing'
-                        : 'Test Rumble'
-                    : connected && testLocked
-                        ? 'Testing'
-                      : connected && snapshot.status?.testHapticsCooldown
-                        ? 'Cooling Down'
-                        : 'Test Haptics'}
-                  </button>
-                  <button className="secondary-action" type="button" disabled={!testLocked} onClick={() => setTestLocked(false)}>
-                    <span className="stop-glyph" aria-hidden="true" />
-                    Stop Test
-                  </button>
-                  <div className={`feature-status test-status ${activeFeedbackStatusTone}`}>
-                    <span className="status-badge">
-                      <span className={`dot ${activeFeedbackStatusTone}`} />
-                      <strong>{activeFeedbackStatusLabel}</strong>
-                    </span>
-                  </div>
-                </section>
-              </div>
-              )}
-              <FeatureTipsPanel tab="haptics" onSettingsFocusRequest={focusBridgeSettings} audioHapticsOpen={audioHapticsOpen} />
-          </div>
+          <ControllerFeedbackPage
+            active={activeControlTab === 'haptics' || audioHapticsOpen}
+            audioHapticsOpen={audioHapticsOpen}
+            feedback={feedback}
+            lab={audioHapticsLab}
+            snapshot={snapshot}
+            connected={connected}
+            controllerControlsAvailable={controllerControlsAvailable}
+            pendingAction={pendingAction}
+            onSettingsFocusRequest={focusBridgeSettings}
+          />
           </DeferredPage>
 
           <DeferredPage active={activeControlTab === 'audio'}>
