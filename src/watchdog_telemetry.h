@@ -22,18 +22,38 @@ enum class WatchdogMainLoopPhase : uint8_t {
     FirmwareLogFlush = 15,
 };
 
+// Why the firmware reset itself. A watchdog timeout with no recorded reason
+// means a main-loop phase stopped returning.
+enum class WatchdogResetReason : uint8_t {
+    None = 0,
+    Panic = 1,
+    OutOfMemory = 2,
+    CodecFatal = 3,
+    AudioStackOverflow = 4,
+    ContainerContract = 5,
+};
+
 struct WatchdogTelemetrySnapshot {
     bool prior_watchdog_timeout;
     bool prior_snapshot_valid;
     uint8_t prior_phase;
-    uint32_t prior_sequence;
-    uint32_t prior_phase_entered_at_ms;
+    WatchdogResetReason prior_reason;
+    // Consecutive abnormal resets since the last clean boot, saturating at 255.
+    uint8_t prior_abnormal_reset_count;
+    // Uptime recorded by the last heartbeat before the reset (1 s resolution).
+    uint32_t prior_uptime_ms;
 };
 
 // Capture must happen before watchdog_enable() overwrites the SDK reset marker.
 void watchdog_telemetry_boot_capture();
+// One register write; cheap enough to bracket every main-loop phase.
 void watchdog_telemetry_note_phase(WatchdogMainLoopPhase phase);
+// Refreshes the retained uptime at most once per second.
+void watchdog_telemetry_heartbeat(uint32_t now_us);
+// Called only from the fail-fast path, immediately before the reset.
+void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason);
 void watchdog_telemetry_snapshot(WatchdogTelemetrySnapshot *snapshot);
 const char *watchdog_telemetry_phase_name(uint8_t phase);
+const char *watchdog_telemetry_reason_name(uint8_t reason);
 
 #endif // DS5_BRIDGE_WATCHDOG_TELEMETRY_H

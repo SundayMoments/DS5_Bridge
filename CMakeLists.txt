@@ -477,6 +477,11 @@ target_compile_definitions(ds5-bridge PRIVATE
         # Put TinyUSB's RP2 IRQ path (handler, buffer start and completion) in
         # SRAM; every input-report completion otherwise ran from flash.
         PICO_RP2040_USB_FAST_IRQ=1
+        # Forward panic, including allocation failure, directly to the bounded
+        # reset path on either core instead of halting until the watchdog (or,
+        # before it is armed, forever).
+        PICO_PANIC_FUNCTION=ds5_runtime_panic
+        PICO_PANIC_FUNCTION_DOES_NOT_RETURN=1
         WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ_VALUE}
@@ -546,7 +551,6 @@ if(DS5_ENABLE_FIRMWARE_LOGS)
             DS5_ENABLE_DEBUG_LOGS
             DS5_DEBUG_LOGS_ENABLED=1
             PICO_DEFAULT_UART_BAUD_RATE=921600
-            PICO_STACK_SIZE=4096
     )
 else()
     # Release builds have no stdio sink. The CYW43 driver's CYW43_PRINTF sites
@@ -572,6 +576,21 @@ if(DS5_ENABLE_FEEDBACK_TRACE_REPORTS)
             DS5_FEEDBACK_TRACE_ENABLED=1
     )
 endif()
+
+# Core 0 previously ran on the SDK's unguarded 2 KiB scratch stack and could
+# silently grow across both scratch banks toward the heap. Give it the final
+# 7 KiB of the contiguous scratch banks with the ARMv8-M MSPLIM guard, so an
+# overflow faults and resets through the watchdog instead of corrupting memory.
+# Core 1 keeps its dedicated guarded audio stack in main RAM.
+target_compile_definitions(ds5-bridge PRIVATE
+        PICO_STACK_SIZE=7168
+        PICO_CORE1_STACK_SIZE=0
+        PICO_USE_STACK_GUARDS=1
+)
+pico_add_linker_script_override_path(ds5-bridge
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/linker/rp2350-core0-stack"
+        FILES memory_scratch.incl section_extra_post_platform_end.incl
+)
 
 pico_set_program_name(ds5-bridge "ds5-bridge")
 pico_set_program_version(ds5-bridge "${DS5_FIRMWARE_VERSION}")

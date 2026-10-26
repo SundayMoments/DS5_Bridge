@@ -11,6 +11,7 @@
 #include "dualsense_output.h"
 #include "haptics_test_signal.h"
 #include "persona/host_persona.h"
+#include "runtime_fail_fast.h"
 #include "usb_audio_render_gain.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
@@ -793,7 +794,7 @@ static void __no_inline_not_in_flash_func(audio_core1_stack_poll)(uint32_t now) 
 
     for (uint32_t word : audio_core1_stack_storage.guard) {
         if (word != AUDIO_CORE1_STACK_CANARY) {
-            panic("audio Core 1 stack overflow");
+            runtime_fail_fast(WatchdogResetReason::AudioStackOverflow);
         }
     }
 
@@ -2636,7 +2637,12 @@ static void __not_in_flash_func(core1_entry)() {
         }
         if (!did_speaker && !did_mic) {
             const uint32_t sleep_start_us = time_us_32();
-            sleep_us(10);
+            // Spin rather than sleep_us(): every sleep arms a hardware alarm whose
+            // interrupts land on core 0, about 180k per second while core 1 idles.
+            // Interrupts stay enabled, so multicore flash lockout still works.
+            while (static_cast<uint32_t>(time_us_32() - sleep_start_us) < 10u) {
+                tight_loop_contents();
+            }
             core1_sleep_us += static_cast<uint32_t>(time_us_32() - sleep_start_us);
         }
         const uint32_t now_us = time_us_32();

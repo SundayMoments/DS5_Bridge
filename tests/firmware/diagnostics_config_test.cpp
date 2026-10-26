@@ -76,8 +76,23 @@ int main() {
         );
         require_contains(
             cmake,
-            "PICO_STACK_SIZE=4096",
-            "Diagnostic logging must retain the larger firmware stack"
+            "PICO_STACK_SIZE=7168",
+            "Every build must run Core 0 on the 7 KiB scratch-bank stack"
+        );
+        require_contains(
+            cmake,
+            "PICO_USE_STACK_GUARDS=1",
+            "Core 0 stack overflow must fault instead of corrupting memory"
+        );
+        require_contains(
+            cmake,
+            "cmake/linker/rp2350-core0-stack",
+            "The Core 0 stack layout must use the checked linker override"
+        );
+        require_contains(
+            cmake,
+            "PICO_PANIC_FUNCTION=ds5_runtime_panic",
+            "Panic and allocation failure must reset through the fail-fast path"
         );
         require_contains(
             main,
@@ -251,8 +266,13 @@ int main() {
         );
         require_contains(
             main,
-            "[Watchdog] retained phase=%s(%u) valid=%u",
+            "[Watchdog] retained valid=%u reason=%s(%u) phase=%s(%u)",
             "The next boot must print the retained watchdog breadcrumb"
+        );
+        require_contains(
+            main,
+            "watchdog_telemetry_heartbeat(time_us_32());",
+            "The main loop must refresh the retained uptime"
         );
         require_contains(
             watchdog_telemetry,
@@ -261,9 +281,22 @@ int main() {
         );
         require_contains(
             watchdog_telemetry,
-            "kScratchSignature | scratch_crc(word1, word2, word3);",
+            "watchdog_hw->scratch[0] = commit_marker();",
             "Watchdog telemetry must publish a checksummed commit marker last"
         );
+        const std::string fail_fast =
+            read_text(root / "src" / "runtime_fail_fast.cpp");
+        require_before(
+            fail_fast,
+            "watchdog_telemetry_record_reset_reason(reason);",
+            "watchdog_enable(0, false);",
+            "Fail-fast resets must record their reason before resetting"
+        );
+        if (fail_fast.find("watchdog_reboot(") != std::string::npos) {
+            throw std::runtime_error(
+                "Fail-fast resets must keep the SCRATCH4 marker; watchdog_reboot clears it"
+            );
+        }
         require_contains(
             debug_config,
             "#if DS5_AUDIO_DEBUG_ENABLED || DS5_DEBUG_LOGS_ENABLED",

@@ -1,0 +1,16 @@
+/* RP2350 SRAM8 and SRAM9 are contiguous 4 KiB scratch banks. DS5 Bridge places
+ * no code there, and Core 1 runs on its own guarded audio stack in main RAM, so
+ * Core 0 gets the final 7 KiB as one descending stack guarded by MSPLIM. The
+ * first 1 KiB stays available for small scratch payloads. Main RAM and its heap
+ * boundary are unchanged.
+ */
+SCRATCH_X_ORIGIN = 0x20080000;
+SCRATCH_X_LENGTH = 1k;
+SCRATCH_Y_ORIGIN = 0x20080400;
+SCRATCH_Y_LENGTH = 7k;
+
+MEMORY
+{
+    SCRATCH_X(rwx) : ORIGIN = SCRATCH_X_ORIGIN, LENGTH = SCRATCH_X_LENGTH
+    SCRATCH_Y(rwx) : ORIGIN = SCRATCH_Y_ORIGIN, LENGTH = SCRATCH_Y_LENGTH
+}

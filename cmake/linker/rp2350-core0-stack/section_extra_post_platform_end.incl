@@ -1,0 +1,22 @@
+/* Fail closed if a board/SDK change invalidates the Core 0 stack layout. */
+SECTIONS
+{
+    ASSERT(ORIGIN(RAM) == 0x20000000 && LENGTH(RAM) == 512k,
+           "Core 0 stack layout requires RP2350 main RAM")
+    ASSERT(ORIGIN(SCRATCH_X) == 0x20080000 && LENGTH(SCRATCH_X) == 1k,
+           "scratch payload region must be the first 1 KiB of SRAM8")
+    ASSERT(ORIGIN(SCRATCH_Y) == 0x20080400 && LENGTH(SCRATCH_Y) == 7k,
+           "Core 0 stack region must span the final 7 KiB of SRAM8/9")
+    ASSERT(SIZEOF(.stack_dummy) == 7k,
+           "Core 0 stack layout requires PICO_STACK_SIZE=7168")
+    ASSERT(SIZEOF(.stack1_dummy) == 0,
+           "Core 1 must use its dedicated audio stack, not a scratch stack")
+    ASSERT(SIZEOF(.scratch_y) == 0,
+           "Core 0 stack region cannot also contain scratch code/data")
+    ASSERT(__scratch_x_end__ <= 0x20080400,
+           "scratch payload exceeds its 1 KiB reservation")
+    ASSERT(__StackBottom == 0x20080400 && __StackTop == 0x20082000,
+           "unexpected Core 0 stack bounds")
+    ASSERT(__HeapLimit == 0x20080000 && __StackLimit == 0x20080000,
+           "Core 0 stack layout must preserve the main RAM heap limit")
+}

@@ -740,15 +740,15 @@ int main() {
         WatchdogTelemetrySnapshot watchdog_snapshot{};
         watchdog_telemetry_snapshot(&watchdog_snapshot);
         DS5_LOG(
-            "[Watchdog] retained phase=%s(%u) valid=%u sequence=%lu "
-            "enteredAtMs=%lu\n",
+            "[Watchdog] retained valid=%u reason=%s(%u) phase=%s(%u) "
+            "uptimeMs=%lu consecutive=%u\n",
+            watchdog_snapshot.prior_snapshot_valid ? 1u : 0u,
+            watchdog_telemetry_reason_name(static_cast<uint8_t>(watchdog_snapshot.prior_reason)),
+            static_cast<unsigned int>(watchdog_snapshot.prior_reason),
             watchdog_telemetry_phase_name(watchdog_snapshot.prior_phase),
             static_cast<unsigned int>(watchdog_snapshot.prior_phase),
-            watchdog_snapshot.prior_snapshot_valid ? 1u : 0u,
-            static_cast<unsigned long>(watchdog_snapshot.prior_sequence),
-            static_cast<unsigned long>(
-                watchdog_snapshot.prior_phase_entered_at_ms
-            )
+            static_cast<unsigned long>(watchdog_snapshot.prior_uptime_ms),
+            static_cast<unsigned int>(watchdog_snapshot.prior_abnormal_reset_count)
         );
     } else {
         DS5_LOG("Clean boot\n");
@@ -823,6 +823,7 @@ int main() {
                 interrupt_loop();
             }
         );
+        watchdog_telemetry_heartbeat(time_us_32());
 #if DS5_DEBUG_LOGS_ENABLED
         audio_transport_uart_log_if_due(time_us_32());
 #endif

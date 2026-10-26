@@ -1853,7 +1853,9 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         || audio_cpp.find("ExactAudioQueue<mic_packet_element, HOST_MIC_QUEUE_DEPTH> mic_fifo")
             == std::string::npos
         || audio_cpp.find("if (!did_speaker && !did_mic)") == std::string::npos
-        || audio_cpp.find("sleep_us(10);") == std::string::npos
+        || audio_cpp.find("sleep_us(10);") != std::string::npos
+        || audio_cpp.find("while (static_cast<uint32_t>(time_us_32() - sleep_start_us) < 10u) {")
+            == std::string::npos
         || audio_cpp.find(
             "static bool __not_in_flash_func(process_usb_audio_packet)() {"
         ) == std::string::npos
