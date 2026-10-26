@@ -27,8 +27,10 @@ const settingSetters = {
   setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon',
   setKitsuneInputPromotionDismissed: 'kitsuneInputPromotionDismissed'
 };
+// Holds back the first snapshot so a capture can show the startup placeholders.
+const statusDelayMs = Number(process.env.DS5_UI_REVIEW_STATUS_DELAY_MS ?? 0);
 const handlers = {
-  getStatus: async () => snapshot,
+  getStatus: () => new Promise((resolve) => setTimeout(() => resolve(snapshot), statusDelayMs)),
   getDiagnostics: async () => snapshot.diagnostics,
   listAudioHapticsSessions: async () => [],
   listDevices: async () => [],

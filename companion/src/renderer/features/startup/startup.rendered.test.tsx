@@ -43,6 +43,8 @@ describe('startup', () => {
     expect(host.querySelector('.shell.starting nav[aria-label="Controls"]')).not.toBeNull();
     expect(host.querySelector('.hero-main strong')?.textContent).toBe('Controller');
     expect(host.querySelector('.bridge-state')?.textContent).toBe('Starting');
+    // The selector holds its place so the navigation does not shift when bridges load.
+    expect(host.querySelector('.sidebar-bridge-selector')?.textContent).toContain('Looking for bridges…');
     const placeholder = host.querySelector('.startup-placeholder-page.active');
     expect(placeholder?.getAttribute('aria-busy')).toBe('true');
     expect(placeholder?.querySelector('h2')?.textContent).toBe('Overview');

@@ -106,6 +106,7 @@ import { ShellSidebarDevice } from './features/shell/ShellSidebarDevice';
 import { ShellSupportBadge } from './features/shell/ShellSupportBadge';
 import { CONTROL_TAB_DEFINITIONS, controlPanelIdFor, type ControlTab } from './features/shell/control-tabs';
 import {
+  STARTING_BRIDGE_LABEL,
   StartupPlaceholderPage,
   StartupTutorial,
   startingDevicePresentation,
@@ -1997,7 +1998,23 @@ export function App() {
         onMinimize={() => void window.bridge.minimizeWindow()}
         onHide={() => void window.bridge.hideWindow()}
         sidebarDevice={(
-          <ShellSidebarDevice device={startingDevicePresentation(controllerImage)} />
+          <ShellSidebarDevice
+            device={startingDevicePresentation(controllerImage)}
+            bridgeSelector={(
+              <ShellBridgeSelector
+                bridges={[]}
+                selectedPath=""
+                selectedName={null}
+                selectedUniqueId={null}
+                directControllers={[]}
+                busy
+                emptyLabel={STARTING_BRIDGE_LABEL}
+                onSelect={() => undefined}
+                onRefresh={() => undefined}
+                onRename={() => undefined}
+              />
+            )}
+          />
         )}
         pages={<StartupPlaceholderPage title={CONTROL_TAB_DEFINITIONS[activeControlTab].label} />}
       />

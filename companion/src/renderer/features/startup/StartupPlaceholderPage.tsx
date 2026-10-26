@@ -1,6 +1,9 @@
 import type { ShellDevicePresentation } from '../shell/ShellSidebarDevice';
 
-/** The sidebar device card before the first snapshot says who the bridge is serving. */
+/** The bridge selector's text before the first snapshot lists the bridges. */
+export const STARTING_BRIDGE_LABEL = 'Looking for bridges…';
+
+/** The sidebar device card before the first snapshot. */
 export function startingDevicePresentation(controllerArt: string): ShellDevicePresentation {
   return {
     title: 'Controller',

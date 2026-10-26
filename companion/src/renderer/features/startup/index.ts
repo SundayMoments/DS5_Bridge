@@ -1,4 +1,4 @@
-export { StartupPlaceholderPage, startingDevicePresentation } from './StartupPlaceholderPage';
+export { STARTING_BRIDGE_LABEL, StartupPlaceholderPage, startingDevicePresentation } from './StartupPlaceholderPage';
 export { StartupTutorial, type StartupTutorialProps } from './StartupTutorial';
 export {
   STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY,
