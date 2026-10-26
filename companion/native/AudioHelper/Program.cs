@@ -901,11 +901,6 @@ sealed class AudioHelper : IDisposable
 
         RegisterDefaultRenderNotification(enumerator);
 
-        if (TryStartSystemMixCapture(targetName, targetFormat))
-        {
-            return;
-        }
-
         directCaptureAudioClient = sourceDevice.AudioClient;
         var captureFormat = directCaptureAudioClient.MixFormat;
         var bufferDuration = AudioConstants.WasapiBufferMilliseconds * 10000L;
@@ -928,54 +923,6 @@ sealed class AudioHelper : IDisposable
         directCaptureTask = Task.Run(() => RunDirectRawPcmCapture(captureFormat));
         directCaptureAudioClient.Start();
         Console.Error.WriteLine("status: recording-started");
-    }
-
-    // Process loopback is endpoint-independent: excluding this helper's own
-    // process tree captures every app on every render device, not just the
-    // default one, without feeding the helper's haptic render stream back into
-    // capture. Default-endpoint loopback remains the fallback.
-    private bool TryStartSystemMixCapture(string targetName, WaveFormat targetFormat)
-    {
-        var captureFormat = new WaveFormat(44100, 16, 2);
-        var excludedProcessId = Environment.ProcessId;
-        AudioClient? client = null;
-        try
-        {
-            client = ProcessLoopbackAudioClient.Activate(
-                excludedProcessId,
-                includeProcessTree: false,
-                TimeSpan.FromMilliseconds(AudioConstants.ProcessLoopbackActivationTimeoutMilliseconds));
-            var bufferDuration = AudioConstants.ProcessLoopbackBufferMilliseconds * 10000L;
-            client.Initialize(
-                AudioClientShareMode.Shared,
-                AudioClientStreamFlags.Loopback | AudioClientStreamFlags.EventCallback,
-                bufferDuration,
-                0,
-                captureFormat,
-                Guid.Empty
-            );
-        }
-        catch (Exception error)
-        {
-            client?.Dispose();
-            Console.Error.WriteLine(
-                $"status: system-haptics-capture-fallback source=default-render error='{EscapeStatusValue(error.GetType().Name + ": " + error.Message)}'");
-            return false;
-        }
-
-        directCaptureAudioClient = client;
-        directCaptureEvent = new EventWaitHandle(false, EventResetMode.AutoReset);
-        directCaptureAudioClient.SetEventHandle(directCaptureEvent.SafeWaitHandle.DangerousGetHandle());
-        directCaptureClient = directCaptureAudioClient.AudioCaptureClient;
-        Console.Error.WriteLine(
-            $"status: audio-capture-format source=system-haptics-mirror scope=all-render-endpoints excludedProcessId={excludedProcessId} device='System mix' target='{EscapeStatusValue(targetName)}' sampleRate={captureFormat.SampleRate} channels={captureFormat.Channels} bits={captureFormat.BitsPerSample} encoding={captureFormat.Encoding} targetRate={targetFormat.SampleRate} targetChannels={targetFormat.Channels} targetBits={targetFormat.BitsPerSample} targetEncoding={targetFormat.Encoding} bufferMs={AudioConstants.ProcessLoopbackBufferMilliseconds} engineBufferFrames={directCaptureAudioClient.BufferSize}");
-        StartRawCaptureDump(captureFormat);
-
-        pcmEncoderTask = Task.Run(ProcessQueuedPcm);
-        directCaptureTask = Task.Run(() => RunDirectRawPcmCapture(captureFormat));
-        directCaptureAudioClient.Start();
-        Console.Error.WriteLine("status: recording-started");
-        return true;
     }
 
     private void StartAppAudioHapticsMirror(MMDeviceEnumerator enumerator)
