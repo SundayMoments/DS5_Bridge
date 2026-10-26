@@ -14,6 +14,8 @@ export interface AppRuntime {
   /** The label of the command in flight, if any. Most controls lock while one runs. */
   readonly pendingAction: string | null;
   setSnapshot(next: BridgeSnapshot): void;
+  /** Adopts a snapshot and refreshes every slider that is not being dragged. */
+  applySnapshot(next: BridgeSnapshot): void;
   setPendingAction(label: string | null): void;
   /** Runs a labelled command that locks other commands until it settles. */
   runAction(label: string, action: () => Promise<BridgeSnapshot>): Promise<void>;

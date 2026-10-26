@@ -14,10 +14,6 @@ const appSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.
 const stylesSource = rendererStyles();
 const shellSidebarStyles = rendererStyleModule('features/shell/shell-sidebar.css');
 const rendererEntrySource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
-const controllerDevicesPageSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), 'ControllerDevicesPage.tsx'),
-  'utf8'
-);
 
 function featureSource(relativePath: string): string {
   return readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'features', relativePath), 'utf8');
@@ -47,21 +43,9 @@ describe('renderer behavior guards', () => {
   });
 
   it('ports Devices as a firmware-backed controller management tab', () => {
+    // Pairing, forgetting, and renaming are rendered in features/devices/DevicesPage.rendered.test.tsx.
     expect(CONTROL_TAB_DEFINITIONS.devices).toEqual({ id: 'devices', label: 'Devices', Icon: IconBluetooth });
-    expect(appSource).toContain('<ControllerDevicesPage');
-    expect(appSource).toContain('window.bridge.requestControllerScan()');
-    expect(appSource).toContain('window.bridge.forgetControllerPairings()');
-    expect(appSource).toContain('window.bridge.forgetControllerPairing(request.bluetoothAddress)');
-    expect(appSource).toContain('observeControllerDevice(');
-    expect(appSource).toContain('saveControllerDeviceCache(window.localStorage');
-    expect(controllerDevicesPageSource).toContain('id="control-panel-devices"');
-    expect(controllerDevicesPageSource).toContain('Current and last controllers.');
-    expect(controllerDevicesPageSource).toContain('className="devices-heading-copy"');
-    expect(controllerDevicesPageSource).toContain('<IconScan size={16} />');
-    expect(controllerDevicesPageSource).toContain('Forget Controllers');
-    expect(controllerDevicesPageSource).toContain('className="trusted-device-menu"');
-    expect(controllerDevicesPageSource).toContain('controller-forget-modal');
-    expect(controllerDevicesPageSource).not.toContain('ControllerProfile');
+    expect(featureSource('devices/ControllerDevicesPage.tsx')).not.toContain('ControllerProfile');
     expect(stylesSource).toContain('.devices-page');
     expect(stylesSource).toContain('.feature-heading.devices-heading');
     expect(stylesSource).toContain('.devices-heading-copy');
@@ -259,8 +243,8 @@ describe('renderer behavior guards', () => {
   });
 
   it('uses the compact Kitsune device card as a Devices shortcut', () => {
-    expect(appSource).toContain('const sidebarControllerCard = controllerDevicesModel.cards.find(');
-    expect(appSource).toContain("onOpenDevices={() => selectControlTab('devices')}");
+    // Opening Devices from the card is rendered in features/devices/DevicesPage.rendered.test.tsx.
+    expect(appSource).toContain('const sidebarControllerCard = devices.model.cards.find(');
     expect(appSource).not.toContain('className={`battery-icon');
     expect(shellSidebarStyles).toContain('grid-template-columns: minmax(0, 1fr) 48px;');
     expect(shellSidebarStyles).toContain('min-height: 72px;');

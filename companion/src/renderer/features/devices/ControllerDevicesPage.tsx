@@ -6,7 +6,7 @@ import {
   IconTrash as Trash2,
   IconX as X
 } from '@tabler/icons-react';
-import controllerImage from '../../../assets/controllers/dualsense-edge-front.svg';
+import controllerImage from '@product-assets/controllers/dualsense-edge-front.svg';
 import type { DevicesModel } from './controller-devices';
 
 export interface ControllerDeviceRenameDialog {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   BridgeStatusPayload,
   CompanionDeviceIdentityPayload
-} from '../shared/protocol';
+} from '@shared/protocol';
 import {
   CONTROLLER_DEVICE_CACHE_LIMIT,
   CONTROLLER_DEVICE_CACHE_STORAGE_KEY,

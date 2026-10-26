@@ -36,6 +36,8 @@ const allowedSourceIdenticalPhrases = [
   /^Kitsune Input$/,
   /^(?:DualSense|DualSense Edge|DualShock 4|Pico LED|Pico 2 W|Ko-fi|GitHub|Discord)$/,
   /^(?:Bubble Gum|Kiwi|Pomegranate)$/,
+  // USB vendor and product IDs are written the same way in every language.
+  /^VID \/ PID$/,
   /^\{\{0\}\}%$/
 ];
 

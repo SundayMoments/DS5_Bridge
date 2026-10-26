@@ -1,7 +1,7 @@
 import type {
   BridgeStatusPayload,
   CompanionDeviceIdentityPayload
-} from '../shared/protocol';
+} from '@shared/protocol';
 
 export const CONTROLLER_DEVICE_CACHE_STORAGE_KEY = 'ds5bridge.controllerDeviceCache.v1';
 export const CONTROLLER_DEVICE_CACHE_LIMIT = 4;
