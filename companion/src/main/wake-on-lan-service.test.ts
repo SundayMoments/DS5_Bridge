@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { ACK_RESULT } from '../shared/protocol';
 import { WAKE_ON_LAN_OPERATION as OP, wakeOnLanCrc32 } from '../shared/wake-on-lan-protocol';
 import type { WakeOnLanTarget } from '../shared/wake-on-lan-types';
 import {
   WAKE_ON_LAN_CONNECTION_LOST_MESSAGE,
   WAKE_ON_LAN_DISCOVERY_FAILED_MESSAGE,
   WakeOnLanService,
+  wakeOnLanAckError,
   type WakeOnLanBridgeSession
 } from './wake-on-lan-service';
 import type { WakeOnLanTargetsPort } from './wake-on-lan-targets';
@@ -233,6 +235,17 @@ describe('WakeOnLanService', () => {
     expect(await service.get()).toMatchObject({ supported: false, bridgeId: '' });
     await expect(service.setEnabled(true)).rejects.toThrow(WAKE_ON_LAN_CONNECTION_LOST_MESSAGE);
     expect(bridge.commands).toEqual([]);
+  });
+
+  it('passes the firmware ACK reason through instead of a generic failure', async () => {
+    const { bridge, service } = harness();
+    bridge.send = () => { throw wakeOnLanAckError(ACK_RESULT.ERR_BUSY); };
+    await expect(service.configure(input)).rejects.toThrow(/busy\. Turn off the controller/);
+    expect(wakeOnLanAckError(ACK_RESULT.ERR_PERSISTENCE_FAILED).message).toMatch(/could not save/);
+    expect(wakeOnLanAckError(ACK_RESULT.ERR_UNKNOWN_COMMAND).message).toMatch(/Update this bridge/);
+    // Anything else from the transport stays generic: it may carry request data.
+    bridge.send = () => { throw new Error('WinUSB failure with secret bytes'); };
+    await expect(service.forget()).rejects.toThrow('Could not change the saved wake settings.');
   });
 
   it('treats a returned-host cancellation as normal, not a fault', async () => {

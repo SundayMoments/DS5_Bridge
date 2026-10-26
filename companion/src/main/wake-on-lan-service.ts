@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { ACK_RESULT } from '../shared/protocol';
 import type {
   WakeOnLanConfigurationInput,
   WakeOnLanMetadata,
@@ -50,6 +51,24 @@ export class WakeOperationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'WakeOperationError';
+  }
+}
+
+/** A non-OK companion ACK for a Wake-on-LAN opcode, as a fixed message. */
+export function wakeOnLanAckError(resultCode: number): WakeOperationError {
+  switch (resultCode) {
+    case ACK_RESULT.ERR_BUSY:
+      // The bridge needs no controller link, no pairing window and a few quiet seconds.
+      return new WakeOperationError('The bridge is busy. Turn off the controller, wait a few seconds, then try again.');
+    case ACK_RESULT.ERR_INVALID_VALUE:
+      return new WakeOperationError('The bridge rejected the network settings.');
+    case ACK_RESULT.ERR_PERSISTENCE_FAILED:
+      return new WakeOperationError('The bridge could not save or erase its network configuration.');
+    case ACK_RESULT.ERR_BAD_VERSION:
+    case ACK_RESULT.ERR_UNKNOWN_COMMAND:
+      return new WakeOperationError('Update this bridge’s firmware to use Wake-on-LAN.');
+    default:
+      return new WakeOperationError('The bridge did not accept the wake operation.');
   }
 }
 

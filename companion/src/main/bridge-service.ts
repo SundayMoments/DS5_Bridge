@@ -114,7 +114,7 @@ import {
   normalizeUiThemePreset
 } from './settings-store';
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
-import { WakeOnLanService, type WakeOnLanBridgeSession } from './wake-on-lan-service';
+import { WakeOnLanService, wakeOnLanAckError, type WakeOnLanBridgeSession } from './wake-on-lan-service';
 import { WindowsWakeOnLanTargets, type WakeOnLanTargetsPort } from './wake-on-lan-targets';
 import type {
   WakeOnLanConfigurationInput,
@@ -3281,10 +3281,14 @@ export class BridgeService extends EventEmitter {
   }
 
   private async sendWakeOnLanCommand(operation: number, payload: Uint8Array): Promise<void> {
-    await this.sendCommand(COMMAND_ID.WAKE_ON_LAN, operation, {
+    const ack = await this.sendCommand(COMMAND_ID.WAKE_ON_LAN, operation, {
       extraPayload: payload,
-      deferredAckTimeoutMs: WAKE_ON_LAN_ACK_TIMEOUT_MS
+      deferredAckTimeoutMs: WAKE_ON_LAN_ACK_TIMEOUT_MS,
+      throwOnCommandError: false
     });
+    if (ack.resultCode !== ACK_RESULT.OK) {
+      throw wakeOnLanAckError(ack.resultCode);
+    }
   }
 
   async setNotifyControllerConnection(enabled: boolean): Promise<BridgeSnapshot> {
