@@ -74,6 +74,7 @@ import type {
   TriggerTestTarget
 } from '../shared/protocol';
 import type {
+  BootloaderConfirmationPresentation,
   BridgeDiagnostics,
   BridgeSnapshot,
   CompanionSettings,
@@ -101,7 +102,9 @@ import {
   type DefaultRenderEndpointStatus,
   type SystemAudioHapticsConfig
 } from './audio-helper';
+import type { BootloaderAuthorizationStorePort } from './bootloader-authorization-store';
 import { CompanionDebugConfig } from './debug-config';
+import { PicoBootloaderAuthorizationCoordinator } from './pico-bootloader-authorization-coordinator';
 import { HidDiscoveryClient } from './hid-discovery-client';
 import {
   SettingsStore,
@@ -1309,6 +1312,8 @@ export class BridgeService extends EventEmitter {
   private systemAudioHapticsRunningSince: number | null = null;
   private systemAudioHapticsWaitingForApp = false;
   private systemAudioHapticsExitedAppProcessId: number | null = null;
+  private bootloaderConfirmation: BootloaderConfirmationPresentation | null = null;
+  private bootloaderConfirmationCancelled = false;
   private hapticsTestInFlight: Promise<BridgeSnapshot> | null = null;
   private hapticsTestActive = false;
   private systemAudioHapticsPassthroughActive = false;
@@ -1335,7 +1340,10 @@ export class BridgeService extends EventEmitter {
     [SHORTCUT_EVENT.MIC_MUTE_OFF]: () => this.applyControllerMicMuteEvent(false)
   };
 
-  constructor(private readonly settingsStore: SettingsStore) {
+  constructor(
+    private readonly settingsStore: SettingsStore,
+    private readonly bootloaderAuthorizationStore?: BootloaderAuthorizationStorePort
+  ) {
     super();
     this.snapshot = {
       state: 'no-bridge',
@@ -1484,7 +1492,8 @@ export class BridgeService extends EventEmitter {
       ...this.snapshot,
       stickInputPreview: this.stickInputPreviewLeaseUntil > Date.now()
         ? this.stickInputPreview
-        : null
+        : null,
+      bootloaderConfirmation: this.bootloaderConfirmation
     });
   }
 
@@ -3141,11 +3150,50 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  // UF2 mode from the app needs this computer's enrolled key and a face-button
+  // sequence entered on the controller; see the coordinator for the flow.
   async mountPicoBootloader(): Promise<void> {
-    await this.sendCommand(COMMAND_ID.ENTER_BOOTLOADER, 0, {
-      allowAckTransportLoss: true,
-      allowProtocolMismatch: true
+    this.bootloaderConfirmationCancelled = false;
+    const readFeatureReport = async (reportId: number, length: number): Promise<number[]> => {
+      await this.ensureCompanionDevice({ allowProtocolMismatch: true });
+      if (!this.device) {
+        throw new Error('No companion bridge is connected.');
+      }
+      return this.device.getFeatureReport(reportId, length);
+    };
+    const coordinator = new PicoBootloaderAuthorizationCoordinator({
+      store: this.bootloaderAuthorizationStore,
+      // Every firmware answers the ACK report, so its header gives the
+      // protocol even when the status report is incompatible.
+      firmwareProtocolVersion: async () => readReportProtocolVersion(
+        await readFeatureReport(REPORT_ID.ACK, REPORT_LENGTH),
+        REPORT_ID.ACK
+      ),
+      readFeatureReport: (reportId, length) => readFeatureReport(reportId, length),
+      sendCommand: (commandId, value, options = {}) => this.sendCommand(commandId, value, {
+        ...options,
+        allowProtocolMismatch: true
+      }),
+      showConfirmation: (presentation) => {
+        this.bootloaderConfirmation = presentation;
+        this.emitSnapshot();
+      },
+      hideConfirmation: () => {
+        this.bootloaderConfirmation = null;
+        this.emitSnapshot();
+      },
+      confirmationCancelled: () => this.bootloaderConfirmationCancelled,
+      delay: (milliseconds) => new Promise<void>((resolve) => {
+        setTimeout(resolve, milliseconds);
+      }),
+      now: () => Date.now()
     });
+    await coordinator.enter();
+  }
+
+  cancelBootloaderConfirmation(): BridgeSnapshot {
+    this.bootloaderConfirmationCancelled = true;
+    return this.getSnapshot();
   }
 
   async setNotifyControllerConnection(enabled: boolean): Promise<BridgeSnapshot> {
@@ -4750,6 +4798,7 @@ export class BridgeService extends EventEmitter {
       personaTransition: this.snapshot.personaTransition,
       bridgeDevices: this.snapshot.bridgeDevices,
       stickInputPreview: publicSnapshot.stickInputPreview,
+      bootloaderConfirmation: publicSnapshot.bootloaderConfirmation,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,

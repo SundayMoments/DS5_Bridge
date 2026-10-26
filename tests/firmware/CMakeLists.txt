@@ -66,6 +66,11 @@ add_executable(keyboard_tap_sequencer_test
     ../../src/keyboard_tap_sequencer.cpp
 )
 target_include_directories(keyboard_tap_sequencer_test PRIVATE ../../src)
+add_executable(bootloader_maintenance_test
+    bootloader_maintenance_test.cpp
+    ../../src/bootloader_maintenance.cpp
+)
+target_include_directories(bootloader_maintenance_test PRIVATE ../../src)
 
 # The exact CYW43 transport fragments compiled into the generated SDK copies,
 # exercised against modeled ring, window and receive-loop behavior.
@@ -92,6 +97,7 @@ add_test(NAME bt_output_send_dispatcher_test COMMAND bt_output_send_dispatcher_t
 add_test(NAME bounded_containers_test COMMAND bounded_containers_test)
 add_test(NAME trigger_motor_power_test COMMAND trigger_motor_power_test)
 add_test(NAME keyboard_tap_sequencer_test COMMAND keyboard_tap_sequencer_test)
+add_test(NAME bootloader_maintenance_test COMMAND bootloader_maintenance_test)
 add_test(NAME cyw43_rx_packet_read_test COMMAND cyw43_rx_packet_read_test)
 add_test(NAME cyw43_tx_window_write_test COMMAND cyw43_tx_window_write_test)
 add_test(NAME cyw43_hci_receive_continuation_test COMMAND cyw43_hci_receive_continuation_test)

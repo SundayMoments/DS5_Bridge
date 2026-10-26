@@ -1,10 +1,15 @@
+import type { BootloaderConfirmationFaceButton } from './types';
+
 export const COMPANION_USAGE_PAGE = 0xff5d;
 export const COMPANION_USAGE = 0x0001;
 export const REPORT_LENGTH = 64;
 export const PAYLOAD_LENGTH = 63;
 export const MAGIC = 'DS5B';
 export const PROTOCOL_MAJOR = 1;
-export const PROTOCOL_MINOR = 23;
+export const PROTOCOL_MINOR = 24;
+// Firmware from this minor authenticates bootloader entry; older firmware still
+// takes the plain ENTER_BOOTLOADER command so it can be updated.
+export const BOOTLOADER_AUTHORIZATION_PROTOCOL_MINOR = 24;
 
 export const REPORT_ID = {
   STATUS: 0x01,
@@ -17,7 +22,8 @@ export const REPORT_ID = {
   TRIGGER_TRACE: 0x09,
   FEEDBACK_TRACE: 0x0a,
   DEVICE_IDENTITY: 0x0d,
-  FIRMWARE_LOG: 0x0e
+  FIRMWARE_LOG: 0x0e,
+  BOOTLOADER_AUTHORIZATION: 0x12
 } as const;
 
 export const SHORTCUT_EVENT = {
@@ -98,7 +104,13 @@ export const COMMAND_ID = {
   SET_WAKE_ON_CONNECT: 0x35,
   SET_LIGHTBAR_RESTORE_ENABLED: 0x36,
   SET_RADIAL_DEADZONES: 0x37,
-  SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45
+  SET_EDGE_PROFILE_SWITCHING_BLOCKED: 0x45,
+  BOOTLOADER_AUTH_ENROLL_BEGIN: 0x50,
+  BOOTLOADER_AUTH_ENROLL_COMMIT: 0x51,
+  BOOTLOADER_AUTH_CHALLENGE: 0x52,
+  BOOTLOADER_AUTH_REVOKE: 0x53,
+  BOOTLOADER_AUTH_CONFIRMATION_CANCEL: 0x54,
+  BOOTLOADER_AUTH_PHYSICAL_BEGIN: 0x55
 } as const;
 
 export const RADIAL_DEADZONE_MAX_PERCENT = 50;
@@ -125,7 +137,8 @@ export const ACK_RESULT = {
   ERR_UNKNOWN_COMMAND: 0x05,
   ERR_NOT_CONNECTED: 0x06,
   ERR_BUSY: 0x07,
-  ERR_PERSISTENCE_FAILED: 0x08
+  ERR_PERSISTENCE_FAILED: 0x08,
+  ERR_UNAUTHORIZED: 0x09
 } as const;
 
 export type AckResultCode = typeof ACK_RESULT[keyof typeof ACK_RESULT];
@@ -689,6 +702,76 @@ function assertCurrentOrOlderVersion(report: ArrayLike<number>): void {
       'bad-version'
     );
   }
+}
+
+const BOOTLOADER_CONFIRMATION_FACE_BUTTONS = [
+  'triangle',
+  'circle',
+  'cross',
+  'square'
+] as const satisfies readonly BootloaderConfirmationFaceButton[];
+
+export interface BootloaderAuthorizationPayload {
+  schemaVersion: number;
+  authorized: boolean;
+  enrollmentPending: boolean;
+  enrollmentPhysicallyConfirmed: boolean;
+  challengeActive: boolean;
+  rateLimited: boolean;
+  bootloaderEntryConfirmationPending: boolean;
+  bootloaderEntryPhysicallyConfirmed: boolean;
+  keyId: number[];
+  challengeId: number;
+  nonce: number[];
+  challengeRemainingMs: number;
+  confirmationSequence: BootloaderConfirmationFaceButton[];
+  confirmationProgress: number;
+  confirmationMistakes: number;
+  confirmationRemainingMs: number;
+  protocolVersion: string;
+}
+
+// Ported from Kitsune Input's bootloader authorization report.
+export function parseBootloaderAuthorizationReport(
+  report: ArrayLike<number>
+): BootloaderAuthorizationPayload {
+  assertReport(report, REPORT_ID.BOOTLOADER_AUTHORIZATION);
+  if (report[5] !== PROTOCOL_MAJOR
+    || report[6] < BOOTLOADER_AUTHORIZATION_PROTOCOL_MINOR
+    || report[6] > PROTOCOL_MINOR) {
+    throw new ProtocolError(
+      `Firmware update required. Expected bootloader authorization protocol ${PROTOCOL_MAJOR}.${BOOTLOADER_AUTHORIZATION_PROTOCOL_MINOR}-${PROTOCOL_MAJOR}.${PROTOCOL_MINOR}, received ${report[5]}.${report[6]}.`,
+      'bad-version'
+    );
+  }
+  const flags = report[8];
+  const confirmationSequence = Array.from({ length: 8 }, (_, index) => {
+    const value = report[37 + index];
+    const button = BOOTLOADER_CONFIRMATION_FACE_BUTTONS[value];
+    if (!button) {
+      throw new ProtocolError(`Invalid bootloader confirmation face button ${value}.`, 'bad-confirmation-sequence');
+    }
+    return button;
+  });
+  return {
+    schemaVersion: report[7],
+    authorized: (flags & 0x01) !== 0,
+    enrollmentPending: (flags & 0x02) !== 0,
+    enrollmentPhysicallyConfirmed: (flags & 0x04) !== 0,
+    challengeActive: (flags & 0x08) !== 0,
+    rateLimited: (flags & 0x10) !== 0,
+    bootloaderEntryConfirmationPending: (flags & 0x20) !== 0,
+    bootloaderEntryPhysicallyConfirmed: (flags & 0x40) !== 0,
+    keyId: Array.from({ length: 4 }, (_, index) => report[9 + index]),
+    challengeId: readU32(report, 13),
+    nonce: Array.from({ length: 16 }, (_, index) => report[17 + index]),
+    challengeRemainingMs: readU32(report, 33),
+    confirmationSequence,
+    confirmationProgress: Math.min(report[45], confirmationSequence.length),
+    confirmationMistakes: report[46],
+    confirmationRemainingMs: readU32(report, 49),
+    protocolVersion: `${report[5]}.${report[6]}`
+  };
 }
 
 export function readReportProtocolVersion(

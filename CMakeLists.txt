@@ -531,6 +531,8 @@ option(ENABLE_COMPANION "Enable the optional companion HID interface" OFF)
 if(ENABLE_COMPANION)
     target_sources(ds5-bridge PRIVATE
             src/companion.cpp
+            src/bootloader_maintenance.cpp
+            src/bootloader_authorization_flash.cpp
             src/keyboard_tap_sequencer.cpp
             src/host_bridge.cpp
             src/usb_app_drivers.cpp
@@ -538,6 +540,9 @@ if(ENABLE_COMPANION)
     target_compile_definitions(ds5-bridge PRIVATE
             ENABLE_COMPANION
     )
+    # Bootloader authorization: HMAC-SHA256 on the RP2350 SHA block and a
+    # flash-backed enrollment record.
+    target_link_libraries(ds5-bridge pico_sha256 pico_flash hardware_flash)
 endif()
 
 # Diagnostics live in one place. Quick presets:

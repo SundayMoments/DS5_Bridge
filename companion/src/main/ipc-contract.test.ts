@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest';
 const preloadSource = readFileSync(new URL('../preload.ts', import.meta.url), 'utf8');
 const mainSource = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
 const bridgeServiceSource = readFileSync(new URL('./bridge-service.ts', import.meta.url), 'utf8');
+const bootloaderCoordinatorSource = readFileSync(
+  new URL('./pico-bootloader-authorization-coordinator.ts', import.meta.url),
+  'utf8'
+);
 const packageSource = readFileSync(new URL('../../package.json', import.meta.url), 'utf8');
 const packageWinSource = readFileSync(new URL('../../scripts/package-win.mjs', import.meta.url), 'utf8');
 
@@ -79,7 +83,11 @@ describe('IPC contract', () => {
     expect(mainSource).toContain('function runPicoFirmwareIpcAction(');
     expect(mainSource).toContain("return 'No companion bridge is connected. Connect the companion bridge, then try again.';");
     expect(bridgeServiceSource).toContain('async mountPicoBootloader(): Promise<void>');
-    expect(bridgeServiceSource).toContain('COMMAND_ID.ENTER_BOOTLOADER');
+    expect(bridgeServiceSource).toContain('new PicoBootloaderAuthorizationCoordinator(');
+    expect(bootloaderCoordinatorSource).toContain('COMMAND_ID.ENTER_BOOTLOADER');
+    expect(preloadSource).toContain("ipcRenderer.invoke('bridge:cancelBootloaderConfirmation')");
+    expect(mainSource).toContain("ipcMain.handle('bridge:cancelBootloaderConfirmation'");
+    expect(mainSource).toContain("new BootloaderAuthorizationStore(app.getPath('userData'), safeStorage)");
   });
 
   it('exposes controller scan and pairing deletion actions', () => {

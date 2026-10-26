@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerMonitor, safeStorage, screen, shell } from 'electron';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BootloaderAuthorizationStore } from './bootloader-authorization-store';
 import { BridgeService } from './bridge-service';
 import {
   PICO_UNIVERSAL_FLASH_NUKE_FILE,
@@ -1197,6 +1198,7 @@ function registerIpc(service: BridgeService): void {
     'mount',
     () => mountPicoBootloaderDrive(picoFirmwareOptions(service))
   ));
+  ipcMain.handle('bridge:cancelBootloaderConfirmation', () => service.cancelBootloaderConfirmation());
   ipcMain.handle('bridge:flashPicoFirmware', () => runPicoFirmwareIpcAction(
     'flash',
     () => flashSelectedPicoFirmware(service)
@@ -1301,7 +1303,10 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   const settingsStore = new SettingsStore(app.getPath('userData'));
   applyLaunchAtStartup(settingsStore.get().launchAtStartupEnabled);
-  bridgeService = new BridgeService(settingsStore);
+  bridgeService = new BridgeService(
+    settingsStore,
+    new BootloaderAuthorizationStore(app.getPath('userData'), safeStorage)
+  );
   registerIpc(bridgeService);
 
   mainWindow = createWindow(settingsStore.get().uiScalePercent);

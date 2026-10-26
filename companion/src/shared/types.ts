@@ -193,6 +193,21 @@ export interface BridgeSnapshot {
   personaTransition?: HostPersonaTransition | null;
   bridgeDevices?: BridgeDeviceCensus | null;
   stickInputPreview?: StickInputPreviewPayload | null;
+  /** Set while the user must enter a face-button sequence to allow UF2 mode. */
+  bootloaderConfirmation?: BootloaderConfirmationPresentation | null;
+}
+
+export type BootloaderConfirmationFaceButton = 'triangle' | 'circle' | 'cross' | 'square';
+
+export interface BootloaderConfirmationPresentation {
+  /** Enrollment pairs this computer with the bridge once; entry repeats per UF2 mount. */
+  purpose: 'enrollment' | 'bootloader-entry';
+  sequence: BootloaderConfirmationFaceButton[];
+  /** Buttons of the sequence entered correctly so far. */
+  progress: number;
+  /** Wrong presses so far; each restarts the sequence. */
+  mistakes: number;
+  expiresAtUnixMs: number;
 }
 
 export interface BridgeDeviceInfo {
