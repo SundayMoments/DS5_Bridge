@@ -32,6 +32,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
+#include "pico/unique_id.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
 #endif
@@ -222,7 +223,8 @@ void controller_output_submit_usb_payload(uint8_t const *payload, uint16_t paylo
     }
 
     const bool lightbarOverride = companion_lightbar_override_active();
-    const bool hostClearsLeds = controller_output_policy_host_output_clears_leds(outputData + 3, payloadLen);
+    const bool hostClearsLightbar = controller_output_policy_host_output_clears_lightbar(outputData + 3, payloadLen);
+    const bool hostSetsLightbar = controller_output_policy_host_output_sets_lightbar(outputData + 3, payloadLen);
 #ifdef ENABLE_COMPANION
     const bool triggerIntensityChanged = companion_apply_trigger_effect_intensity(outputData + 3, payloadLen);
     uint8_t companionOutput[sizeof(outputData)]{};
@@ -285,8 +287,13 @@ void controller_output_submit_usb_payload(uint8_t const *payload, uint16_t paylo
         return;
     }
     audio_set_state_data(audioStateData, static_cast<uint8_t>(payloadLen));
-    if (hostClearsLeds && !lightbarOverride) {
-        bt_schedule_lightbar_restore(HOST_LIGHTBAR_RESTORE_DELAY_MS);
+    if (!lightbarOverride) {
+        if (hostClearsLightbar) {
+            bt_note_host_lightbar_released();
+            bt_schedule_lightbar_restore(HOST_LIGHTBAR_RESTORE_DELAY_MS);
+        } else if (hostSetsLightbar) {
+            bt_note_host_lightbar_set();
+        }
     }
 }
 
@@ -326,7 +333,9 @@ static bool host_input_quiet_active(uint32_t now) {
     if (!host_input_waiting_for_mount) {
         return false;
     }
-    if (host_input_fallback_until_us != 0 && time_reached_u32(now, host_input_fallback_until_us)) {
+    // The waiting flag owns the deadline; zero is a valid deadline when the
+    // 32-bit microsecond clock wraps during the fallback interval.
+    if (time_reached_u32(now, host_input_fallback_until_us)) {
         host_input_waiting_for_mount = false;
         host_input_fallback_until_us = 0;
         return false;
@@ -706,6 +715,14 @@ int main() {
 
     board_init();
     watchdog_telemetry_boot_capture();
+    {
+        // Synthetic persona identities are per bridge, so Steam and SDL never
+        // merge two bridges into one controller. Set before USB enumerates.
+        pico_unique_board_id_t board_id{};
+        pico_get_unique_board_id(&board_id);
+        ds4_persona_set_identity_seed(board_id.id, sizeof(board_id.id));
+        dualsense_persona_set_identity_seed(board_id.id, sizeof(board_id.id));
+    }
     usb_device_stack_init_disconnected();
 #if DS5_DEBUG_LOGS_ENABLED
     // TinyUSB's board_init() configures its UART at 115200. Reinitialize stdio

@@ -248,6 +248,7 @@ void assert_dualsense_edge_persona_is_edge_facing(
     const auto companion_cpp = read_text(source_root / "src" / "companion.cpp");
     const auto host_persona_h = read_text(source_root / "src" / "persona" / "host_persona.h");
     const auto audio_cpp = read_text(source_root / "src" / "audio.cpp");
+    const auto usb_cpp = read_text(source_root / "src" / "usb.cpp");
     const auto tusb_config_h = read_text(source_root / "src" / "tusb_config.h");
 
     if (
@@ -312,12 +313,31 @@ void assert_dualsense_edge_persona_is_edge_facing(
         || source.find("build_dualsense_edge_configuration_descriptor") == std::string::npos
         || source.find("descriptor_configuration_dualsense_edge") == std::string::npos
         || source.find("source_interface == 2") == std::string::npos
-        || audio_cpp.find("host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1") == std::string::npos
+        || usb_cpp.find("usb_mic_endpoint_channels = host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1;")
+            == std::string::npos
+        || extract_between(usb_cpp, "extern \"C\" void tud_mount_cb(void) {", "\n}\n")
+            .find("usb_latch_mic_endpoint_channels();") == std::string::npos
+        || audio_cpp.find("return usb_mic_endpoint_channels;") == std::string::npos
         || audio_cpp.find("host_mic_usb_channel_count()") == std::string::npos
     ) {
         throw std::runtime_error(
             "DualSense Edge must expose its stereo microphone contract without changing the mono contract of other personas"
         );
+    }
+}
+
+void assert_host_microphone_mute_silences_capture(std::filesystem::path const &source_root) {
+    const auto audio_cpp = read_text(source_root / "src" / "audio.cpp");
+    const std::string pending_frame_writer = extract_between(
+        audio_cpp,
+        "bool __not_in_flash_func(write_mic_usb_pending_frame)(",
+        "\n}\n"
+    );
+    if (
+        pending_frame_writer.find("mic_output_muted || usb_host_mute[1] != 0 ? 0 : mic_output_volume_percent")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Windows microphone mute must silence captured PCM written to USB");
     }
 }
 
@@ -670,6 +690,23 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
         throw std::runtime_error("USB PM poll must commit debounced power-off and defer reconnect work while suspended");
     }
 
+    const auto retire_reconnect_wait = pm_poll.find(
+        "if (usb_reconnect_wait_pending && time_reached(now, usb_reconnect_at_us))"
+    );
+    const auto suspended_return = pm_poll.find("if (usb_host_suspended) {");
+    if (
+        retire_reconnect_wait == std::string::npos
+        || suspended_return == std::string::npos
+        || retire_reconnect_wait > suspended_return
+        || pm_poll.find("usb_reconnect_connect_pending && !usb_reconnect_wait_pending") == std::string::npos
+        || pm_poll.find("usb_reconnect_requested && !usb_reconnect_wait_pending") == std::string::npos
+        || pm_poll.find("usb_reconnect_target_bridge_only = !usb_controller_transport_ready;") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "USB PM poll must retire reconnect waits while suspended and keep a detach's reattach through controller loss"
+        );
+    }
+
     const std::string disconnect_block = extract_between(
         usb_cpp,
         "void usb_handle_controller_transport_disconnect(bool expected_disconnect) {",
@@ -795,7 +832,10 @@ void assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(std::filesy
     if (
         descriptors.find("#define BRIDGE_ONLY_VENDOR_ID 0x1209") == std::string::npos
         || descriptors.find("#define BRIDGE_ONLY_PRODUCT_ID 0xDB08") == std::string::npos
-        || descriptors.find("#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0105") == std::string::npos
+        || descriptors.find("#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0106") == std::string::npos
+        || descriptors.find(
+            "if (descriptor_bridge_only_active || host_persona_active() != HostPersonaModeXusb360) {\n                return NULL;"
+        ) == std::string::npos
         || descriptors.find("#define BRIDGE_ONLY_CONFIG_INTERFACE_COUNT 0x03") == std::string::npos
         || descriptors.find("descriptor_configuration_bridge_only[]") == std::string::npos
         || descriptors.find("BRIDGE_ONLY_VENDOR_BRIDGE_INTERFACE_NUMBER") == std::string::npos
@@ -830,6 +870,25 @@ void assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(std::filesy
     ) {
         throw std::runtime_error(
             "The serialized bridge-only receiver must remain manageable, gate remote wake, and hand off safely to the full persona"
+        );
+    }
+}
+
+void assert_mute_keyboard_shortcut_is_typed_in_stages(std::filesystem::path const &root) {
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const std::string loop_block = extract_between(companion_cpp, "void mute_keyboard_loop() {", "\n}\n");
+    if (
+        companion_cpp.find("ds5::KeyboardTapSequencer mute_keyboard_taps;") == std::string::npos
+        || companion_cpp.find("mute_keyboard_taps.enqueue(report, hold);") == std::string::npos
+        || companion_cpp.find("mute_keyboard_taps.release();") == std::string::npos
+        || loop_block.find("mute_keyboard_taps.next_report(now, ready, report)") == std::string::npos
+        || loop_block.find("mute_keyboard_taps.accept_report(now);") == std::string::npos
+        || loop_block.find("mute_keyboard_taps.cancel();") == std::string::npos
+        || loop_block.find("keyboard_hid_instance < CFG_TUD_HID && tud_hid_n_ready(keyboard_hid_instance)")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "The mute-button shortcut must be typed in stages and never index past TinyUSB's HID instances"
         );
     }
 }
@@ -1517,9 +1576,9 @@ void assert_companion_device_management_contract(std::filesystem::path const &ro
     const auto protocol_ts = read_text(root / "companion" / "src" / "shared" / "protocol.ts");
 
     if (
-        companion_cpp.find("constexpr uint8_t kProtocolMinor = 23;")
+        companion_cpp.find("constexpr uint8_t kProtocolMinor = 24;")
             == std::string::npos
-        || protocol_ts.find("export const PROTOCOL_MINOR = 23;")
+        || protocol_ts.find("export const PROTOCOL_MINOR = 24;")
             == std::string::npos
         || companion_cpp.find("constexpr uint8_t kAudioHapticsSessionProtocolMinor = 23;")
             == std::string::npos
@@ -2339,11 +2398,11 @@ void assert_dualsense_battery_buckets_preserve_power_state(
         decoder.find("dualsense_battery::decode_status(report[52])") == std::string::npos
         || companion.find("dualsense_battery::decode_status(report[52])") == std::string::npos
         || battery.find("case kPowerFull:") == std::string::npos
-        || battery.find("reading.percent = 100;") == std::string::npos
+        || battery.find("reading.percent = 100;") != std::string::npos
         || battery.find("kUnknownPercent = 0xff") == std::string::npos
     ) {
         throw std::runtime_error(
-            "DualSense battery decoding must centralize full, fault, and unknown power-state semantics"
+            "DualSense battery decoding must centralize power-state semantics and keep capacity on external power"
         );
     }
 }
@@ -2360,6 +2419,7 @@ int main() {
         assert_persona_support_requires_verified_descriptors(source, source_root);
         assert_dualsense_persona_identity_reports_are_isolated(source_root);
         assert_dualsense_edge_persona_is_edge_facing(source, source_root);
+        assert_host_microphone_mute_silences_capture(source_root);
         assert_selected_polling_rate_is_applied_to_every_persona_descriptor(source, source_root);
         assert_xusb_persona_strings_are_xbox_facing(source);
         assert_ds4_persona_identity_is_ds4_facing(source);
@@ -2367,6 +2427,7 @@ int main() {
         assert_usb_suspend_poweroff_is_debounced(source_root);
         assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(source_root);
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
+        assert_mute_keyboard_shortcut_is_typed_in_stages(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);
         assert_bluetooth_pairing_and_reconnect_policy(source_root);

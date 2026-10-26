@@ -124,7 +124,9 @@ struct mic_decode_element {
 };
 
 static uint8_t host_mic_usb_channel_count() {
-    return host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1;
+    // Follow the attached descriptor, not a persona change still waiting for
+    // its USB reconnect (DualSense Edge exposes a stereo microphone).
+    return usb_mic_endpoint_channels;
 }
 
 static uint16_t host_mic_usb_packet_bytes() {
@@ -1045,7 +1047,7 @@ void audio_handle_controller_disconnect() {
     last_audio_us = 0;
 }
 
-static bool should_keep_speaker_route_open() {
+static bool __not_in_flash_func(should_keep_speaker_route_open)() {
     return bt_is_controller_connected() && controller_state_ready && volume[0] > 0.0f;
 }
 
@@ -1826,6 +1828,16 @@ void audio_debug_get_stats(audio_debug_stats *stats) {
 }
 
 void audio_test_haptics_loop() {
+    // Retire an elapsed cooldown on every pass. Left in place, it would read
+    // as future again once the signed clock difference wraps (~36 minutes),
+    // refusing Test Haptics for up to as long again.
+    if (
+        test_haptics_cooldown_until_us != 0
+        && time_reached(time_us_32(), test_haptics_cooldown_until_us)
+    ) {
+        test_haptics_cooldown_until_us = 0;
+    }
+
     if (quiet_mode_enabled) {
         return;
     }
@@ -1877,6 +1889,14 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
     const int haptic_input_frames = std::min(frames, requested_haptic_frames);
     const float speaker_gain = usb_host_mute[0] ? 0.0f : clamp(volume[0], 0.0f, 1.0f);
     const float haptic_gain = clamp(volume[1], 0.0f, MAX_HAPTICS_GAIN);
+    // Zero speaker volume, or a controller that has not reported its headset
+    // state yet, keeps the speaker route closed. Sending speaker payloads anyway
+    // reopened the route on every packet while update_persistent_speaker_route
+    // closed it again on every pass. Audio haptics still flow without it.
+    const bool speaker_route_demanded = should_keep_speaker_route_open();
+    if (!speaker_route_demanded) {
+        audio_buf_pos = 0;
+    }
     // Windows sends USB Audio volume controls for this endpoint instead of pre-scaling PCM.
     const float host_render_gain = clamp(usb_host_speaker_gain, 0.0f, 1.0f);
     for (int i = 0; i < frames; i++) {
@@ -1893,8 +1913,10 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
         const int16_t speaker_r = rendered.speaker_right;
         const int16_t haptic_l = rendered.haptic_left;
         const int16_t haptic_r = rendered.haptic_right;
-        audio_buf[audio_buf_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
-        audio_buf[audio_buf_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
+        if (speaker_route_demanded) {
+            audio_buf[audio_buf_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
+            audio_buf[audio_buf_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
+        }
         if (audio_buf_pos == 512 * 2) {
             static audio_raw_element element{};
             memcpy(element.data,audio_buf,512 * 2 * 4);
@@ -1939,7 +1961,7 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
     const int out_frames = resampler.ResampleOut(out_buf, haptic_input_frames, SAMPLE_SIZE / OUTPUT_CHANNELS, OUTPUT_CHANNELS);
     for (int i = 0; i < out_frames; i++) {
         if (append_resampled_haptic_sample(out_buf[i * OUTPUT_CHANNELS], out_buf[i * OUTPUT_CHANNELS + 1], haptic_gain)) {
-            send_audio_haptics_packet(audio_haptic_buf, true);
+            send_audio_haptics_packet(audio_haptic_buf, speaker_route_demanded);
         }
     }
     return true;
@@ -2117,7 +2139,9 @@ static __attribute__((noinline, noclone)) bool __not_in_flash_func(write_mic_usb
     const uint8_t *data = reinterpret_cast<uint8_t const *>(mic_usb_pending.data) + mic_usb_pending_offset;
     alignas(2) uint8_t scaled_data[HOST_MIC_USB_PACKET_BYTES_MAX]{};
     uint8_t const *write_data = data;
-    const uint8_t output_percent = mic_output_muted ? 0 : mic_output_volume_percent;
+    // Windows mutes the microphone through the UAC feature unit, independent
+    // of the companion mute (which also drives the controller's mute LED).
+    const uint8_t output_percent = mic_output_muted || usb_host_mute[1] != 0 ? 0 : mic_output_volume_percent;
     if (output_percent < 100) {
         const int16_t *samples = reinterpret_cast<int16_t const *>(data);
         int16_t *scaled_samples = reinterpret_cast<int16_t *>(scaled_data);
@@ -2571,7 +2595,12 @@ static bool __not_in_flash_func(core1_process_speaker)() {
         in_buf[i] = audio_element.data[i];
     }
     static WDL_ResampleSample out_buf[480 * 2];
-    resampler_audio.ResampleOut(out_buf,nframes,480,2);
+    const int output_frames = resampler_audio.ResampleOut(out_buf, nframes, 480, 2);
+    // WDL can return fewer than 480 frames, for example on the first block
+    // after a reset. Never feed the encoder samples left from the last block.
+    if (output_frames < 480) {
+        std::fill(out_buf + std::max(0, output_frames) * 2, out_buf + 480 * 2, 0.0f);
+    }
     static uint8_t encoded[SPEAKER_OPUS_SIZE];
 #if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     const uint32_t encode_start_us = time_us_32();

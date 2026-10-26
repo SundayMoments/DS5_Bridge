@@ -1,5 +1,7 @@
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <deque>
 #include <exception>
 #include <iostream>
@@ -565,24 +567,32 @@ void lightbar_override_removes_host_led_claims_without_mutating_color_bytes() {
     EXPECT_EQ(payload[kLightbarBlueOffset], 7);
 }
 
-void host_led_clear_detection_covers_release_player_and_lightbar_paths() {
+void host_lightbar_clear_detection_covers_release_and_blank_lightbar_only() {
     auto payload = empty_payload();
-    EXPECT_FALSE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
 
     payload[kValidFlag1Offset] = kFlag1ReleaseLeds;
-    EXPECT_TRUE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_TRUE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
 
+    // Turning the player LEDs off leaves the game's lightbar color alone.
     payload = empty_payload();
     payload[kValidFlag1Offset] = kFlag1PlayerIndicatorControlEnable;
     payload[kPlayerLedsOffset] = 0;
-    EXPECT_TRUE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
 
     payload = empty_payload();
-    payload[kValidFlag1Offset] = kFlag1LightbarControlEnable;
+    payload[kValidFlag1Offset] = kFlag1LightbarControlEnable | kFlag1PlayerIndicatorControlEnable;
     payload[kLightbarRedOffset] = 1;
-    EXPECT_FALSE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
+    EXPECT_TRUE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
     payload[kLightbarRedOffset] = 0;
-    EXPECT_TRUE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_TRUE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
+
+    payload[kLightbarBlueOffset] = 9;
+    payload[kValidFlag1Offset] |= kFlag1ReleaseLeds;
+    EXPECT_FALSE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
 }
 
 void output_state_audio_snapshot_routes_to_speaker_and_headphones_safely() {
@@ -1115,9 +1125,15 @@ void dualsense_decoder_interprets_battery_power_states() {
     EXPECT_EQ(state.battery_percent, 85);
     EXPECT_EQ(state.raw_power_state, 1);
 
+    // External power (state 2) keeps the real capacity rather than reading 100%.
+    report[52] = 0x24;
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    EXPECT_EQ(state.battery_percent, 45);
+    EXPECT_EQ(state.raw_power_state, 2);
+
     report[52] = 0x28;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 100);
+    EXPECT_EQ(state.battery_percent, 85);
     EXPECT_EQ(state.raw_power_state, 2);
 
     report[52] = 0x2a;
@@ -1127,7 +1143,7 @@ void dualsense_decoder_interprets_battery_power_states() {
 
     report[52] = 0x2f;
     EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
-    EXPECT_EQ(state.battery_percent, 100);
+    EXPECT_EQ(state.battery_percent, 0xff);
     EXPECT_EQ(state.raw_power_state, 2);
 
     report[52] = 0xa8;
@@ -1254,6 +1270,36 @@ void xusb360_persona_maps_standard_gamepad_fields() {
     EXPECT_FALSE((buttons & 0x2000) != 0); // B.
     EXPECT_EQ(encoded.bytes[4], 0x22);
     EXPECT_EQ(encoded.bytes[5], 0xcc);
+}
+
+void xusb360_persona_centers_sticks_and_reaches_both_endpoints() {
+    const auto axis = [](HostPersonaInputReport const &report, size_t offset) {
+        return static_cast<int16_t>(report.bytes[offset] | (report.bytes[offset + 1] << 8));
+    };
+    const auto encode = [](uint8_t x, uint8_t y) {
+        BridgeControllerState state{};
+        state.left_stick_x = x;
+        state.left_stick_y = y;
+        state.right_stick_x = x;
+        state.right_stick_y = y;
+        HostPersonaInputReport encoded{};
+        EXPECT_TRUE(host_persona_encode_input(HostPersonaModeXusb360, state, encoded));
+        return encoded;
+    };
+
+    const auto centered = encode(128, 128);
+    EXPECT_EQ(axis(centered, 6), 0);
+    EXPECT_EQ(axis(centered, 8), 0);
+    EXPECT_EQ(axis(centered, 10), 0);
+    EXPECT_EQ(axis(centered, 12), 0);
+
+    // Sony Y grows downward; XUSB Y grows upward.
+    const auto low = encode(0, 0);
+    EXPECT_EQ(axis(low, 6), -32768);
+    EXPECT_EQ(axis(low, 8), 32767);
+    const auto high = encode(255, 255);
+    EXPECT_EQ(axis(high, 6), 32767);
+    EXPECT_EQ(axis(high, 8), -32768);
 }
 
 void xusb360_rumble_decodes_to_ds5_classic_rumble_payload() {
@@ -1571,6 +1617,44 @@ void ds4_feature_reports_cover_native_probe_surface() {
     EXPECT_EQ(feature[4], 0x00);
 }
 
+// Changes the personas' synthetic identity for the rest of the run, so it is
+// registered last.
+void synthetic_persona_identities_are_per_bridge_and_locally_administered() {
+    const auto ds4_address = [](uint8_t const *seed) {
+        ds4_persona_set_identity_seed(seed, 8);
+        std::array<uint8_t, 64> feature{};
+        EXPECT_EQ(ds4_persona_get_feature_report(0x12, feature.data(), 15), 15);
+        // Bytes 0-5 carry the address little-endian.
+        return std::array<uint8_t, 6>{feature[5], feature[4], feature[3], feature[2], feature[1], feature[0]};
+    };
+    const uint8_t first_board[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    const uint8_t second_board[8] = {1, 2, 3, 4, 5, 6, 7, 9};
+
+    const auto first = ds4_address(first_board);
+    const auto second = ds4_address(second_board);
+    EXPECT_EQ(first[0], 0x02);
+    EXPECT_EQ(second[0], 0x02);
+    EXPECT_TRUE(first != second);
+    EXPECT_TRUE(ds4_address(first_board) == first);
+
+    std::array<uint8_t, 64> identity{};
+    EXPECT_EQ(ds4_persona_get_feature_report(0x81, identity.data(), 63), 63);
+    char expected_serial[17]{};
+    std::snprintf(
+        expected_serial,
+        sizeof(expected_serial),
+        "1111%02X%02X%02X%02X%02X%02X",
+        first[0], first[1], first[2], first[3], first[4], first[5]
+    );
+    EXPECT_EQ(std::memcmp(identity.data() + 17, expected_serial, 16), 0);
+
+    dualsense_persona_set_identity_seed(first_board, sizeof(first_board));
+    std::array<uint8_t, 64> pairing{};
+    EXPECT_EQ(dualsense_persona_get_feature_report(HostPersonaModeDualSense, 0x09, pairing.data(), 19), 19);
+    EXPECT_EQ(pairing[5], 0x02);
+    EXPECT_TRUE(!(pairing[4] == first[1] && pairing[3] == first[2] && pairing[2] == first[3]));
+}
+
 void radial_deadzone_preserves_direction_and_rescales_remaining_travel() {
     using ds5::radial_deadzone::apply;
 
@@ -1619,7 +1703,7 @@ std::vector<TestCase> tests{
     {"speaker sanitizer strips host amp flags and zeroes only controlled fields", speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields},
     {"mic sanitizer removes mute led and only mic power save bit", mic_sanitizer_removes_mute_led_and_only_mic_power_save_bit},
     {"lightbar override removes host led claims without mutating color bytes", lightbar_override_removes_host_led_claims_without_mutating_color_bytes},
-    {"host led clear detection covers release player and lightbar paths", host_led_clear_detection_covers_release_player_and_lightbar_paths},
+    {"host lightbar clear detection covers release and blank lightbar only", host_lightbar_clear_detection_covers_release_and_blank_lightbar_only},
     {"output state audio snapshot routes to speaker and headphones safely", output_state_audio_snapshot_routes_to_speaker_and_headphones_safely},
     {"output state audio snapshot preserves adaptive trigger effects and motor power", output_state_audio_snapshot_preserves_adaptive_trigger_effects_and_motor_power},
     {"output state lightbar override is scaled and survives audio snapshot", output_state_lightbar_override_is_scaled_and_survives_audio_snapshot},
@@ -1642,6 +1726,7 @@ std::vector<TestCase> tests{
     {"bootsel gesture policy emits click double triple and hold", bootsel_gesture_policy_emits_click_double_triple_and_hold},
     {"dualsense persona preserves native report bytes", dualsense_persona_preserves_native_report_bytes},
     {"xusb360 persona maps standard gamepad fields", xusb360_persona_maps_standard_gamepad_fields},
+    {"xusb360 persona centers sticks and reaches both endpoints", xusb360_persona_centers_sticks_and_reaches_both_endpoints},
     {"xusb360 rumble decodes to ds5 classic rumble payload", xusb360_rumble_decodes_to_ds5_classic_rumble_payload},
     {"classic rumble renderer can emit v1 classic rumble", classic_rumble_renderer_can_emit_v1_classic_rumble},
     {"classic rumble renderer restores audio haptics on stop", classic_rumble_renderer_restores_audio_haptics_on_stop},
@@ -1651,6 +1736,8 @@ std::vector<TestCase> tests{
     {"dualsense persona feature reports cover identity probe surface", dualsense_persona_feature_reports_cover_identity_probe_surface},
     {"ds4 feature reports cover native probe surface", ds4_feature_reports_cover_native_probe_surface},
     {"radial deadzone preserves direction and rescales remaining travel", radial_deadzone_preserves_direction_and_rescales_remaining_travel},
+    // Must stay last: it replaces the personas' default synthetic identity.
+    {"synthetic persona identities are per bridge and locally administered", synthetic_persona_identities_are_per_bridge_and_locally_administered},
 };
 
 } // namespace

@@ -33,17 +33,17 @@ void write_i16(uint8_t *data, int16_t value) {
 }
 
 int16_t axis_u8_to_xusb(uint8_t value, bool invert) {
-    int32_t scaled = static_cast<int32_t>(value) * 257 - 32768;
-    if (invert) {
-        scaled = -scaled;
+    // Sticks center at 128. Scale each half independently so 128 maps to 0
+    // and both signed endpoints are reached even when Y is inverted, instead
+    // of a linear map that leaves a 128-count offset at rest.
+    if (value < 128) {
+        const int32_t span = invert ? 32767 : 32768;
+        const int32_t magnitude = ((128 - value) * span + 64) / 128;
+        return static_cast<int16_t>(invert ? magnitude : -magnitude);
     }
-    if (scaled > 32767) {
-        scaled = 32767;
-    }
-    if (scaled < -32768) {
-        scaled = -32768;
-    }
-    return static_cast<int16_t>(scaled);
+    const int32_t span = invert ? 32768 : 32767;
+    const int32_t magnitude = ((value - 128) * span + 63) / 127;
+    return static_cast<int16_t>(invert ? -magnitude : magnitude);
 }
 
 } // namespace

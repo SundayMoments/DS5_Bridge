@@ -74,6 +74,7 @@ import type {
   TriggerTestTarget
 } from '../shared/protocol';
 import type {
+  BootloaderConfirmationPresentation,
   BridgeDiagnostics,
   BridgeSnapshot,
   CompanionSettings,
@@ -101,7 +102,9 @@ import {
   type DefaultRenderEndpointStatus,
   type SystemAudioHapticsConfig
 } from './audio-helper';
+import type { BootloaderAuthorizationStorePort } from './bootloader-authorization-store';
 import { CompanionDebugConfig } from './debug-config';
+import { PicoBootloaderAuthorizationCoordinator } from './pico-bootloader-authorization-coordinator';
 import { HidDiscoveryClient } from './hid-discovery-client';
 import {
   SettingsStore,
@@ -128,6 +131,17 @@ const MIC_KEEPALIVE_ENABLED = CompanionDebugConfig.micKeepaliveEnabled;
 const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
 const SYSTEM_AUDIO_HAPTICS_MAX_RETRY_MS = 30000;
 const SYSTEM_AUDIO_HAPTICS_STABLE_MS = 10000;
+const SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS = 1000;
+// SET_LIGHTBAR_COLOR flags byte: save the color without replacing a game's.
+const LIGHTBAR_COLOR_REFRESH_FLAG = 0x01;
+const TEST_HAPTICS_ENDPOINT_WAIT_MS = 5000;
+const TEST_HAPTICS_ENDPOINT_RETRY_MS = 250;
+const TEST_HAPTICS_SWITCHING_MESSAGE =
+  'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.';
+const TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE =
+  'The controller audio endpoint is unavailable. Close any games using the controller and try again.';
+const TEST_HAPTICS_FAILED_MESSAGE =
+  'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.';
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
@@ -1296,6 +1310,12 @@ export class BridgeService extends EventEmitter {
   private systemAudioHapticsRetryAt = 0;
   private systemAudioHapticsFailures = 0;
   private systemAudioHapticsRunningSince: number | null = null;
+  private systemAudioHapticsWaitingForApp = false;
+  private systemAudioHapticsExitedAppProcessId: number | null = null;
+  private bootloaderConfirmation: BootloaderConfirmationPresentation | null = null;
+  private bootloaderConfirmationCancelled = false;
+  private hapticsTestInFlight: Promise<BridgeSnapshot> | null = null;
+  private hapticsTestActive = false;
   private systemAudioHapticsPassthroughActive = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private lastAudioStatusReadAt = 0;
@@ -1320,7 +1340,10 @@ export class BridgeService extends EventEmitter {
     [SHORTCUT_EVENT.MIC_MUTE_OFF]: () => this.applyControllerMicMuteEvent(false)
   };
 
-  constructor(private readonly settingsStore: SettingsStore) {
+  constructor(
+    private readonly settingsStore: SettingsStore,
+    private readonly bootloaderAuthorizationStore?: BootloaderAuthorizationStorePort
+  ) {
     super();
     this.snapshot = {
       state: 'no-bridge',
@@ -1469,7 +1492,8 @@ export class BridgeService extends EventEmitter {
       ...this.snapshot,
       stickInputPreview: this.stickInputPreviewLeaseUntil > Date.now()
         ? this.stickInputPreview
-        : null
+        : null,
+      bootloaderConfirmation: this.bootloaderConfirmation
     });
   }
 
@@ -1957,11 +1981,6 @@ export class BridgeService extends EventEmitter {
   private isBridgeRenderEndpointUnavailableError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('Render endpoint matching') && message.includes('was not found');
-  }
-
-  private skipBridgeHapticsTest(reason: string): BridgeSnapshot {
-    this.appendAudioDebugLines([`[HostBridge] test haptics skipped: ${reason}`]);
-    return this.getSnapshot();
   }
 
   private async readAudioDebugEvents(): Promise<void> {
@@ -2583,18 +2602,17 @@ export class BridgeService extends EventEmitter {
 
   async setDuplexMicEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     const nextEnabled = enabled;
-    if (!nextEnabled) {
-      await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 1, {
-        expectSettingsRevisionChange: true
-      });
-    }
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, nextEnabled ? 1 : 0, {
-      expectSettingsRevisionChange: true
-    });
+    // The controller lights its mute LED while the mic is enabled and muted.
+    // Unmute before enabling and disable before muting so a toggle never
+    // passes through that state and flashes the LED.
+    const options = { expectSettingsRevisionChange: true };
+    const sendMute = () => this.sendCommand(COMMAND_ID.SET_MIC_MUTE, nextEnabled ? 0 : 1, options);
     if (nextEnabled) {
-      await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 0, {
-        expectSettingsRevisionChange: true
-      });
+      await sendMute();
+    }
+    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, nextEnabled ? 1 : 0, options);
+    if (!nextEnabled) {
+      await sendMute();
     }
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
       duplexMicEnabled: nextEnabled,
@@ -2658,7 +2676,7 @@ export class BridgeService extends EventEmitter {
   async setLightbarEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({ lightbarEnabled: enabled }));
     if (this.snapshot.state === 'connected') {
-      await this.applyLightbarSettings(this.snapshot.settings, true);
+      await this.applyLightbarSettings(this.snapshot.settings, true, false);
     }
     this.emitSnapshot();
     return this.getSnapshot();
@@ -3132,11 +3150,50 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  // UF2 mode from the app needs this computer's enrolled key and a face-button
+  // sequence entered on the controller; see the coordinator for the flow.
   async mountPicoBootloader(): Promise<void> {
-    await this.sendCommand(COMMAND_ID.ENTER_BOOTLOADER, 0, {
-      allowAckTransportLoss: true,
-      allowProtocolMismatch: true
+    this.bootloaderConfirmationCancelled = false;
+    const readFeatureReport = async (reportId: number, length: number): Promise<number[]> => {
+      await this.ensureCompanionDevice({ allowProtocolMismatch: true });
+      if (!this.device) {
+        throw new Error('No companion bridge is connected.');
+      }
+      return this.device.getFeatureReport(reportId, length);
+    };
+    const coordinator = new PicoBootloaderAuthorizationCoordinator({
+      store: this.bootloaderAuthorizationStore,
+      // Every firmware answers the ACK report, so its header gives the
+      // protocol even when the status report is incompatible.
+      firmwareProtocolVersion: async () => readReportProtocolVersion(
+        await readFeatureReport(REPORT_ID.ACK, REPORT_LENGTH),
+        REPORT_ID.ACK
+      ),
+      readFeatureReport: (reportId, length) => readFeatureReport(reportId, length),
+      sendCommand: (commandId, value, options = {}) => this.sendCommand(commandId, value, {
+        ...options,
+        allowProtocolMismatch: true
+      }),
+      showConfirmation: (presentation) => {
+        this.bootloaderConfirmation = presentation;
+        this.emitSnapshot();
+      },
+      hideConfirmation: () => {
+        this.bootloaderConfirmation = null;
+        this.emitSnapshot();
+      },
+      confirmationCancelled: () => this.bootloaderConfirmationCancelled,
+      delay: (milliseconds) => new Promise<void>((resolve) => {
+        setTimeout(resolve, milliseconds);
+      }),
+      now: () => Date.now()
     });
+    await coordinator.enter();
+  }
+
+  cancelBootloaderConfirmation(): BridgeSnapshot {
+    this.bootloaderConfirmationCancelled = true;
+    return this.getSnapshot();
   }
 
   async setNotifyControllerConnection(enabled: boolean): Promise<BridgeSnapshot> {
@@ -3161,22 +3218,75 @@ export class BridgeService extends EventEmitter {
   }
 
   async testHaptics(): Promise<BridgeSnapshot> {
-    const transition = this.hostPersonaTransitionMaskSnapshot();
+    if (this.hapticsTestInFlight) {
+      return this.hapticsTestInFlight;
+    }
+    const test = this.runHapticsTest().finally(() => {
+      this.hapticsTestInFlight = null;
+    });
+    this.hapticsTestInFlight = test;
+    return test;
+  }
+
+  // Failures reject with guidance the app shows next to the test button.
+  private async runHapticsTest(): Promise<BridgeSnapshot> {
+    const transition = this.hostPersonaTransitionSnapshot();
     if (transition) {
-      return this.skipBridgeHapticsTest(`switching to ${transition.to}`);
+      this.appendAudioDebugLines([`[HostBridge] test haptics skipped: switching to ${transition.to}`]);
+      throw new Error(TEST_HAPTICS_SWITCHING_MESSAGE);
     }
 
     const settings = this.settingsStore.get();
     const hostPersonaMode = this.currentHostPersonaMode();
+    // System Audio Haptics writes the same bridge frames, so pause it while
+    // the pattern plays rather than interleave the two.
+    this.hapticsTestActive = true;
     try {
-      await playBridgeHapticsTestPattern(settings.hapticsGainPercent, hostPersonaMode);
+      await this.systemAudioHapticsEngine.stop();
+      await this.playHapticsTestWhenEndpointReady(settings.hapticsGainPercent, hostPersonaMode);
     } catch (error) {
-      if (this.isBridgeRenderEndpointUnavailableError(error)) {
-        return this.skipBridgeHapticsTest(`${hostPersonaModeLabel(hostPersonaMode)} audio endpoint unavailable`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([
+        `[HostBridge] test haptics failed persona=${hostPersonaMode} error=${message}`
+      ]);
+      throw new Error(
+        this.isBridgeRenderEndpointUnavailableError(error)
+          ? TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE
+          : TEST_HAPTICS_FAILED_MESSAGE,
+        { cause: error }
+      );
+    } finally {
+      this.hapticsTestActive = false;
+      try {
+        await this.updateSystemAudioHapticsEngine();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.appendAudioDebugLines([`[SystemHaptics] resume after test haptics failed: ${message}`]);
       }
-      throw error;
     }
     return this.getSnapshot();
+  }
+
+  // Right after a persona switch the bridge's audio endpoint can appear a
+  // moment after its HID interface, so a missing endpoint gets a short wait.
+  private async playHapticsTestWhenEndpointReady(
+    gainPercent: number,
+    hostPersonaMode: HostPersonaMode
+  ): Promise<void> {
+    const deadline = Date.now() + TEST_HAPTICS_ENDPOINT_WAIT_MS;
+    for (;;) {
+      try {
+        await playBridgeHapticsTestPattern(gainPercent, hostPersonaMode);
+        return;
+      } catch (error) {
+        if (!this.isBridgeRenderEndpointUnavailableError(error) || Date.now() >= deadline) {
+          throw error;
+        }
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, TEST_HAPTICS_ENDPOINT_RETRY_MS);
+      });
+    }
   }
 
   async testSpeaker(): Promise<BridgeSnapshot> {
@@ -3560,6 +3670,11 @@ export class BridgeService extends EventEmitter {
   }
 
   private async updateSystemAudioHapticsEngine(): Promise<void> {
+    if (this.hapticsTestActive) {
+      // Test Haptics owns the bridge frames and resumes this when it ends.
+      await this.systemAudioHapticsEngine.stop();
+      return;
+    }
     const settings = this.settingsStore.get();
     if (
       !this.systemAudioHapticsDesired(settings)
@@ -3590,11 +3705,24 @@ export class BridgeService extends EventEmitter {
         await this.applyAudioReactiveHapticsSettings(settings, false);
       }
       this.systemAudioHapticsRetryAt = 0;
+      this.systemAudioHapticsWaitingForApp = false;
+      this.systemAudioHapticsExitedAppProcessId = null;
       if (!wasRunning) {
         this.systemAudioHapticsRunningSince = Date.now();
       }
     } catch (error) {
       await this.systemAudioHapticsEngine.stop();
+      if ((error as { reason?: unknown } | null)?.reason === 'app-session-unavailable') {
+        // A closed game returns under a new process. Watch the session list for
+        // it every second rather than relaunching the helper on a backoff.
+        if (!this.systemAudioHapticsWaitingForApp) {
+          this.appendAudioDebugLines(['[SystemHaptics] waiting for the selected app to play audio']);
+        }
+        this.systemAudioHapticsWaitingForApp = true;
+        this.systemAudioHapticsRunningSince = null;
+        this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS;
+        return;
+      }
       if (this.systemAudioHapticsPassthroughActive) {
         this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS;
         await this.applyAudioReactiveHapticsSettings(settings, false);
@@ -3648,6 +3776,38 @@ export class BridgeService extends EventEmitter {
     this.systemAudioHapticsRetryAt = 0;
     this.systemAudioHapticsFailures = 0;
     this.systemAudioHapticsRunningSince = null;
+    this.systemAudioHapticsWaitingForApp = false;
+    this.systemAudioHapticsExitedAppProcessId = null;
+  }
+
+  // Matches the way the helper resolves the app: a saved path is
+  // authoritative, then the executable name, then the saved process id. The
+  // process that just exited may linger in the list and never counts.
+  private async selectedAudioHapticsAppAvailable(): Promise<boolean> {
+    const source = this.settingsStore.get().audioReactiveHapticsSource;
+    if (typeof source !== 'object' || source === null || source.kind !== 'app-session') {
+      return true;
+    }
+    const normalize = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
+    const path = normalize(source.processPath);
+    const executable = normalize(source.executableName);
+    const sessions = await this.listAudioHapticsSessions();
+    return sessions.some((session) => {
+      if (
+        session.processId <= 0
+        || session.state === 'expired'
+        || session.processId === this.systemAudioHapticsExitedAppProcessId
+      ) {
+        return false;
+      }
+      if (path) {
+        return normalize(session.processPath) === path;
+      }
+      if (executable) {
+        return normalize(session.executableName) === executable;
+      }
+      return session.processId === source.processId;
+    });
   }
 
   private async handleSystemAudioHapticsStatus(line: string): Promise<void> {
@@ -3666,6 +3826,10 @@ export class BridgeService extends EventEmitter {
         && this.systemAudioHapticsDesired(settings)
       ) {
         this.resetSystemAudioHapticsRecovery();
+        const exitedApp = /reason=app-session-exited processId=(\d+)/.exec(line);
+        if (exitedApp) {
+          this.systemAudioHapticsExitedAppProcessId = Number(exitedApp[1]);
+        }
         await this.systemAudioHapticsEngine.stop();
         await this.updateSystemAudioHapticsEngine();
         return;
@@ -3739,6 +3903,10 @@ export class BridgeService extends EventEmitter {
       || !this.controllerAudioReady()
       || !this.systemAudioHapticsDesired(this.settingsStore.get())
     ) {
+      return;
+    }
+    if (this.systemAudioHapticsWaitingForApp && !await this.selectedAudioHapticsAppAvailable()) {
+      this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS;
       return;
     }
     await this.updateSystemAudioHapticsEngine();
@@ -4209,14 +4377,21 @@ export class BridgeService extends EventEmitter {
     );
   }
 
-  private async applyLightbarSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
+  // A refresh (reconnect reapply, power-saving change) must not replace a
+  // color a game is showing, so firmware only saves it while a game owns the
+  // lightbar. An explicit change from the app always shows at once.
+  private async applyLightbarSettings(
+    settings: CompanionSettings,
+    expectSettingsRevisionChange: boolean,
+    refresh = true
+  ): Promise<void> {
     const color = settings.lightbarEnabled ? parseHexColor(settings.lightbarColor) : { red: 0, green: 0, blue: 0 };
     await this.sendCommand(
       COMMAND_ID.SET_LIGHTBAR_COLOR,
       this.effectiveLightbarBrightness(settings),
       {
         expectSettingsRevisionChange,
-        extraPayload: [color.red, color.green, color.blue]
+        extraPayload: [color.red, color.green, color.blue, refresh ? LIGHTBAR_COLOR_REFRESH_FLAG : 0]
       }
     );
     await this.sendCommand(COMMAND_ID.SET_LIGHTBAR_OVERRIDE, (!settings.lightbarEnabled || settings.lightbarOverrideEnabled) ? 1 : 0, {
@@ -4232,15 +4407,23 @@ export class BridgeService extends EventEmitter {
   }
 
   private async applyMicSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, settings.duplexMicEnabled ? 1 : 0, {
-      expectSettingsRevisionChange
-    });
-    await this.sendCommand(COMMAND_ID.SET_MIC_VOLUME, settings.micVolumePercent, {
-      expectSettingsRevisionChange
-    });
-    await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, settings.micMuted ? 1 : 0, {
-      expectSettingsRevisionChange
-    });
+    const options = { expectSettingsRevisionChange };
+    const sendEnabled = () => this.sendCommand(
+      COMMAND_ID.SET_DUPLEX_ENABLED,
+      settings.duplexMicEnabled ? 1 : 0,
+      options
+    );
+    // An enabled, muted mic lights the controller's mute LED. Disable before
+    // muting and set the mute state before enabling so a reapply that changes
+    // Mic Enabled does not flash the LED.
+    if (!settings.duplexMicEnabled) {
+      await sendEnabled();
+    }
+    await this.sendCommand(COMMAND_ID.SET_MIC_VOLUME, settings.micVolumePercent, options);
+    await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, settings.micMuted ? 1 : 0, options);
+    if (settings.duplexMicEnabled) {
+      await sendEnabled();
+    }
   }
 
   private async setFirmwareSpeakerVolume(percent: number, expectSettingsRevisionChange: boolean): Promise<void> {
@@ -4615,6 +4798,7 @@ export class BridgeService extends EventEmitter {
       personaTransition: this.snapshot.personaTransition,
       bridgeDevices: this.snapshot.bridgeDevices,
       stickInputPreview: publicSnapshot.stickInputPreview,
+      bootloaderConfirmation: publicSnapshot.bootloaderConfirmation,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,

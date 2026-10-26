@@ -134,9 +134,10 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY,
   COMMAND_ID.SET_SPEAKER_GAIN,
   COMMAND_ID.SET_SPEAKER_VOLUME,
-  COMMAND_ID.SET_DUPLEX_ENABLED,
+  // The mic is enabled by default, so its mute state is set before enabling.
   COMMAND_ID.SET_MIC_VOLUME,
   COMMAND_ID.SET_MIC_MUTE,
+  COMMAND_ID.SET_DUPLEX_ENABLED,
   COMMAND_ID.SET_LED_ENABLED,
   COMMAND_ID.SET_PLAYER_LED_ENABLED,
   COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED,
@@ -1016,6 +1017,81 @@ describe('BridgeService', () => {
     }), 'dualsense');
   });
 
+  it('resumes app audio haptics when the selected app comes back under a new process', async () => {
+    const appSource = {
+      kind: 'app-session' as const,
+      processId: 4321,
+      displayName: 'Microsoft Edge',
+      executableName: 'msedge.exe',
+      processPath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+    };
+    const service = serviceFixture({
+      audioReactiveHapticsEnabled: true,
+      audioReactiveHapticsSource: appSource
+    });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    let running = false;
+    const start = vi.fn(async () => {
+      running = true;
+    });
+    const stop = vi.fn(async () => {
+      running = false;
+    });
+    const session = (processId: number, state: string) => ({
+      processId,
+      displayName: 'Microsoft Edge',
+      executableName: 'msedge.exe',
+      processPath: appSource.processPath,
+      iconPath: null,
+      sessionIdentifier: null,
+      sessionInstanceIdentifier: null,
+      state,
+      endpointName: 'Speakers',
+      isSelected: true
+    });
+    let sessions = [session(4321, 'inactive')];
+    const listSessions = vi.fn(async () => sessions);
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: { start: typeof start; stop: typeof stop; isActive(): boolean };
+      audioHapticsSessionMonitor: { listSessions: typeof listSessions; stop(): Promise<void> };
+      audioHapticsSessionCache: unknown;
+      systemAudioHapticsRetryAt: number;
+      handleSystemAudioHapticsStatus(line: string): Promise<void>;
+    };
+    internals.systemAudioHapticsEngine = { start, stop, isActive: () => running };
+    internals.audioHapticsSessionMonitor = { listSessions, stop: async () => undefined };
+
+    await poll(service);
+    await flushReapply();
+    expect(start).toHaveBeenCalledOnce();
+
+    // The app exits; until it returns, the helper reports its session missing.
+    start.mockRejectedValueOnce(Object.assign(
+      new Error('Selected audio app is not available for haptics yet.'),
+      { reason: 'app-session-unavailable' }
+    ));
+    await internals.handleSystemAudioHapticsStatus('status: route-changed reason=app-session-exited processId=4321');
+    expect(start).toHaveBeenCalledTimes(2);
+
+    // The exited process's lingering session does not count as the app returning.
+    internals.systemAudioHapticsRetryAt = 0;
+    await poll(service);
+    expect(listSessions).toHaveBeenCalled();
+    expect(start).toHaveBeenCalledTimes(2);
+
+    sessions = [session(4321, 'expired'), session(9876, 'active')];
+    internals.audioHapticsSessionCache = null;
+    internals.systemAudioHapticsRetryAt = 0;
+    await poll(service);
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(running).toBe(true);
+  });
+
   it('ignores firmware-reported mic unmute when duplex mic is disabled', async () => {
     const service = serviceFixture({ duplexMicEnabled: false, micMuted: true });
     const device = new MockHidDevice();
@@ -1044,6 +1120,61 @@ describe('BridgeService', () => {
     await poll(service);
 
     expect(service.getSnapshot().settings.micMuted).toBe(true);
+  });
+
+  it('marks reapplied lightbar colors as refreshes and explicit changes as immediate', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    const lightbarFlags = (from: number) => device.sentReports.slice(from)
+      .filter((report) => report[7] === COMMAND_ID.SET_LIGHTBAR_COLOR)
+      .map((report) => report[14]);
+
+    // Firmware only saves a refreshed color while a game shows its own.
+    expect(lightbarFlags(0)).toEqual([1]);
+
+    let mark = device.sentReports.length;
+    await service.setLightbarColor('#112233', 50);
+    expect(lightbarFlags(mark)).toEqual([0]);
+
+    mark = device.sentReports.length;
+    await service.setLightbarEnabled(false);
+    expect(lightbarFlags(mark)).toEqual([0]);
+  });
+
+  it('toggles Mic Enabled without passing through an enabled, muted mic', async () => {
+    const service = serviceFixture({ duplexMicEnabled: true, micMuted: false });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    const micCommands = (from: number) => device.sentReports.slice(from)
+      .filter((report) => report[7] === COMMAND_ID.SET_DUPLEX_ENABLED || report[7] === COMMAND_ID.SET_MIC_MUTE)
+      .map((report) => [report[7], report[9]]);
+
+    let mark = device.sentReports.length;
+    await service.setDuplexMicEnabled(false);
+    expect(micCommands(mark)).toEqual([
+      [COMMAND_ID.SET_DUPLEX_ENABLED, 0],
+      [COMMAND_ID.SET_MIC_MUTE, 1]
+    ]);
+
+    mark = device.sentReports.length;
+    await service.setDuplexMicEnabled(true);
+    expect(micCommands(mark)).toEqual([
+      [COMMAND_ID.SET_MIC_MUTE, 0],
+      [COMMAND_ID.SET_DUPLEX_ENABLED, 1]
+    ]);
   });
 
   it('syncs firmware-reported mic mute after startup settings reapply when duplex mic is enabled', async () => {
@@ -1125,7 +1256,7 @@ describe('BridgeService', () => {
     expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, hostPersonaMode);
   });
 
-  it('skips test haptics while a host persona transition is active', async () => {
+  it('rejects test haptics with guidance while a host persona transition is active', async () => {
     const service = serviceFixture({ hapticsGainPercent: 130 });
     const device = new MockHidDevice();
     device.status = statusReport({
@@ -1138,14 +1269,17 @@ describe('BridgeService', () => {
 
     await poll(service);
     await service.setHostPersonaMode('xbox');
-    const snapshot = await service.testHaptics();
+    await expect(service.testHaptics()).rejects.toThrow(
+      'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.'
+    );
 
+    const snapshot = await service.getSnapshot();
     expect(audioHelperMock.playBridgeHapticsTestPattern).not.toHaveBeenCalled();
     expect(snapshot.personaTransition?.to).toBe('xbox');
     expect(snapshot.state).toBe('transitioning');
   });
 
-  it('does not reject test haptics when the persona audio endpoint is still reconnecting', async () => {
+  it('waits for a persona audio endpoint that is still reconnecting', async () => {
     const service = serviceFixture({ hapticsGainPercent: 130 });
     const device = new MockHidDevice();
     device.status = statusReport({ hostPersonaMode: 'xbox', supportedHostPersonaModesMask: 0x07 });
@@ -1158,8 +1292,103 @@ describe('BridgeService', () => {
     await poll(service);
     const snapshot = await service.testHaptics();
 
-    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, 'xbox');
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledTimes(2);
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenLastCalledWith(130, 'xbox');
     expect(snapshot.settings.hapticsGainPercent).toBe(130);
+  });
+
+  it('reports a missing persona audio endpoint once the wait expires', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'xbox', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    audioHelperMock.playBridgeHapticsTestPattern.mockRejectedValue(new Error(
+      "Unhandled exception. System.InvalidOperationException: Render endpoint matching persona 'xbox' ('Xbox 360 Controller for Windows') was not found."
+    ));
+
+    await poll(service);
+    let now = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
+      now += 3000;
+      return now;
+    });
+    try {
+      await expect(service.testHaptics()).rejects.toThrow(
+        'The controller audio endpoint is unavailable. Close any games using the controller and try again.'
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects other test haptics failures with retry guidance', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    audioHelperMock.playBridgeHapticsTestPattern.mockRejectedValueOnce(new Error('Haptics test helper timed out.'));
+
+    await poll(service);
+
+    await expect(service.testHaptics()).rejects.toThrow(
+      'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.'
+    );
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledOnce();
+  });
+
+  it('pauses system audio haptics while test haptics plays and runs one test at a time', async () => {
+    const service = serviceFixture({ audioReactiveHapticsEnabled: true, hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+
+    const events: string[] = [];
+    let running = true;
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start(): Promise<void>;
+        stop(): Promise<void>;
+        isActive(): boolean;
+      };
+      resetSystemAudioHapticsRecovery(): void;
+    };
+    // The fixture's real helper cannot launch here; clear its retry backoff.
+    internals.resetSystemAudioHapticsRecovery();
+    internals.systemAudioHapticsEngine = {
+      start: vi.fn(async () => {
+        events.push('system-start');
+        running = true;
+      }),
+      stop: vi.fn(async () => {
+        if (running) {
+          events.push('system-stop');
+        }
+        running = false;
+      }),
+      isActive: () => running
+    };
+    let finishPattern: () => void = () => undefined;
+    audioHelperMock.playBridgeHapticsTestPattern.mockImplementationOnce(async () => {
+      events.push('test-start');
+      await new Promise<void>((resolve) => {
+        finishPattern = resolve;
+      });
+      events.push('test-end');
+    });
+
+    const first = service.testHaptics();
+    const second = service.testHaptics();
+    await vi.waitFor(() => expect(events).toContain('test-start'));
+    finishPattern();
+    await Promise.all([first, second]);
+
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledOnce();
+    expect(events).toEqual(['system-stop', 'test-start', 'test-end', 'system-start']);
   });
 
   it('plays test speaker through the current persona audio endpoint', async () => {

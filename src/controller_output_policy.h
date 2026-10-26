@@ -40,6 +40,9 @@ bool controller_output_policy_sanitize_host_lightbar_payload(
     uint16_t len,
     bool lightbar_override
 );
-bool controller_output_policy_host_output_clears_leds(uint8_t const *payload, uint16_t len);
+// The host released the LEDs or blanked the lightbar, so the saved color can return.
+bool controller_output_policy_host_output_clears_lightbar(uint8_t const *payload, uint16_t len);
+// The host set a visible lightbar color, so the game owns the lightbar.
+bool controller_output_policy_host_output_sets_lightbar(uint8_t const *payload, uint16_t len);
 
 #endif // DS5_BRIDGE_CONTROLLER_OUTPUT_POLICY_H

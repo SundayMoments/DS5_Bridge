@@ -184,6 +184,9 @@ const api = {
   mountPicoBootloader: (): Promise<PicoFirmwareActionResult> => (
     ipcRenderer.invoke('bridge:mountPicoBootloader')
   ),
+  cancelBootloaderConfirmation: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:cancelBootloaderConfirmation')
+  ),
   flashPicoFirmware: (): Promise<PicoFirmwareActionResult> => (
     ipcRenderer.invoke('bridge:flashPicoFirmware')
   ),

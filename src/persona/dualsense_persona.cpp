@@ -3,13 +3,16 @@
 #include <algorithm>
 #include <cstring>
 
+#include "persona/persona_identity.h"
+
 namespace {
 
 constexpr uint8_t kDualSenseFeatureCapabilities = 0x03;
 constexpr uint8_t kDualSenseFeatureCalibration = 0x05;
 constexpr uint8_t kDualSenseFeaturePairingInfo = 0x09;
 constexpr uint8_t kDualSenseFeatureFirmwareInfo = 0x20;
-constexpr uint8_t kDualSenseSyntheticMac[6] = {0x00, 0xa5, 0x19, 0xf6, 0x0b, 0x02};
+// Little-endian, as the pairing report carries it. Replaced per bridge at boot.
+uint8_t dualsense_synthetic_mac[6] = {0x00, 0xa5, 0x19, 0xf6, 0x0b, 0x02};
 
 void write_u16(uint8_t *data, uint16_t value) {
     data[0] = static_cast<uint8_t>(value & 0xff);
@@ -77,7 +80,7 @@ void write_capabilities_feature_report(uint8_t *report) {
 }
 
 void write_pairing_feature_report(uint8_t *report) {
-    std::memcpy(report + 1, kDualSenseSyntheticMac, sizeof(kDualSenseSyntheticMac));
+    std::memcpy(report + 1, dualsense_synthetic_mac, sizeof(dualsense_synthetic_mac));
 }
 
 void write_dualsense_firmware_feature_report(uint8_t *report) {
@@ -198,4 +201,17 @@ void dualsense_persona_set_feature_report(
     (void)report_id;
     (void)buffer;
     (void)bufsize;
+}
+
+void dualsense_persona_set_identity_seed(uint8_t const *seed, uint16_t seed_len) {
+    uint8_t address[6]{};
+    ds5::persona_identity::derive_address(
+        seed,
+        seed_len,
+        ds5::persona_identity::kSaltDualSense,
+        address
+    );
+    for (std::size_t index = 0; index < sizeof(address); ++index) {
+        dualsense_synthetic_mac[index] = address[sizeof(address) - 1 - index];
+    }
 }

@@ -24,6 +24,7 @@ uint8_t usb_host_volume_percent[3] = {100, 100, 100};
 uint8_t usb_host_mute[3] = {0, 0, 0};
 uint32_t usb_host_volume_set_count[3] = {0, 0, 0};
 float usb_host_speaker_gain = 1.0f;
+volatile uint8_t usb_mic_endpoint_channels = 1;
 static uint32_t usb_last_hid_output_us = 0;
 static uint8_t usb_hid_polling_rate = 2;
 static bool usb_suspend_disconnect = true;
@@ -33,10 +34,15 @@ static volatile bool usb_line_streaming = false;
 static bool usb_reconnect_requested = false;
 static bool usb_reconnect_connect_pending = false;
 static uint32_t usb_reconnect_at_us = 0;
+// These flags own their deadlines. usb_pm_poll retires an elapsed wait even
+// while suspend defers topology changes, so a deadline left behind by a long
+// sleep cannot read as future again once the signed clock difference wraps.
+static bool usb_reconnect_wait_pending = false;
 static bool usb_controller_transport_ready = false;
 static bool usb_controller_transport_transition_pending = false;
 static bool usb_controller_transport_attached = false;
 static uint32_t usb_controller_transport_disconnect_not_before_us = 0;
+static bool usb_controller_transport_disconnect_grace_pending = false;
 static volatile bool usb_mounted = false;
 static volatile bool usb_host_suspended = false;
 static volatile uint32_t usb_suspend_at_us = 0;
@@ -81,6 +87,13 @@ static constexpr UsbAudioVolumeRange kUsbAudioVolumeRanges[3] = {
 
 static bool time_reached(uint32_t now, uint32_t target) {
     return static_cast<int32_t>(now - target) >= 0;
+}
+
+// Called where the host can next read descriptors (attach) and where it has
+// committed to them (mount), so the microphone format follows the enumerated
+// descriptor rather than a persona change still waiting for its reconnect.
+static void usb_latch_mic_endpoint_channels() {
+    usb_mic_endpoint_channels = host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1;
 }
 
 static void sleep_ms_with_watchdog(uint32_t total_ms) {
@@ -132,6 +145,7 @@ static void usb_begin_descriptor_reconnect(uint32_t now, bool bridge_only) {
     usb_reconnect_requested = false;
     usb_reconnect_connect_pending = true;
     usb_reconnect_at_us = now + USB_RECONNECT_HOLD_US;
+    usb_reconnect_wait_pending = true;
     usb_note_reconnect_disconnect(now);
     host_input_prepare_persona_switch();
     tud_disconnect();
@@ -149,6 +163,7 @@ static void usb_schedule_reconnect() {
     usb_reconnect_target_bridge_only = usb_attached_bridge_only;
     usb_reconnect_requested = true;
     usb_reconnect_at_us = time_us_32() + USB_RECONNECT_DELAY_US;
+    usb_reconnect_wait_pending = true;
 }
 
 static void usb_schedule_topology_reconnect(uint32_t now, bool bridge_only) {
@@ -216,6 +231,7 @@ static void usb_connect_transport(uint32_t now, bool bridge_only) {
     usb_attached_bridge_only = bridge_only;
     usb_reconnect_target_bridge_only = bridge_only;
     usb_device_stack_init_disconnected();
+    usb_latch_mic_endpoint_channels();
     tud_connect();
     usb_controller_transport_attached = true;
 }
@@ -290,12 +306,20 @@ bool usb_wake_on_connect_enabled() {
 }
 
 void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
+#ifdef ENABLE_COMPANION
+    // A controller loss does not apply an acknowledged descriptor change, and
+    // a detach already in progress must still reattach (as the management
+    // bridge if the controller stays away). usb_pm_poll consumes both.
+#else
+    // Without the management bridge, controller loss leaves USB detached.
     usb_reconnect_requested = false;
     usb_reconnect_connect_pending = false;
+#endif
     usb_controller_transport_ready = false;
     usb_controller_transport_disconnect_not_before_us = expected_disconnect
         ? time_us_32() + USB_EXPECTED_DISCONNECT_GRACE_US
         : 0;
+    usb_controller_transport_disconnect_grace_pending = expected_disconnect;
     // Bluetooth callbacks only publish desired state. TinyUSB is reconciled
     // from usb_pm_poll at the top level, so a controller loss can never tear
     // the USB stack down from inside cyw43_arch_poll or a TinyUSB callback.
@@ -319,12 +343,15 @@ void usb_handle_controller_transport_ready() {
     ) {
         return;
     }
-    usb_controller_transport_disconnect_not_before_us = 0;
+    usb_controller_transport_disconnect_grace_pending = false;
     usb_controller_transport_ready = true;
     usb_controller_transport_transition_pending = true;
 }
 
 extern "C" void tud_mount_cb(void) {
+    // A host bus reset can re-enumerate before a scheduled persona reconnect;
+    // mount is where the newly read descriptor becomes the active format.
+    usb_latch_mic_endpoint_channels();
     usb_mounted = true;
     usb_host_suspended = false;
     usb_remote_wakeup_armed = false;
@@ -395,11 +422,22 @@ extern "C" void tud_resume_cb(void) {
 // IRQ. A bus reset ends suspend (TinyUSB clears its own flag too); leaving
 // ours set let the suspend debounce power the controller off while the host
 // was already sending start-of-frames before SET_CONFIGURATION.
+// A bus reset also ends the configured session without tud_umount_cb, so
+// clear the mount and wake state until tud_mount_cb starts the next one. If
+// the host never configures the bridge again (the PC shut down), the same
+// debounce as an unmount powers the controller off.
 extern "C" void __not_in_flash_func(tud_event_hook_cb)(uint8_t rhport, uint32_t eventid, bool in_isr) {
     (void)rhport;
     (void)in_isr;
     if (eventid == DCD_EVENT_BUS_RESET) {
         usb_host_suspended = false;
+        const bool was_mounted = usb_mounted;
+        usb_mounted = false;
+        usb_remote_wakeup_armed = false;
+        usb_remote_wakeup_pending = false;
+        if (was_mounted) {
+            arm_suspend_disconnect(time_us_32());
+        }
     }
 }
 
@@ -407,6 +445,17 @@ void usb_pm_poll() {
     const uint32_t now = time_us_32();
     if (usb_reconnect_grace_until_us != 0 && time_reached(now, usb_reconnect_grace_until_us)) {
         usb_reconnect_grace_until_us = 0;
+    }
+    // Polling continues while suspend defers topology changes. Retire elapsed
+    // waits here; the detach and attach themselves stay gated below.
+    if (usb_reconnect_wait_pending && time_reached(now, usb_reconnect_at_us)) {
+        usb_reconnect_wait_pending = false;
+    }
+    if (
+        usb_controller_transport_disconnect_grace_pending
+        && time_reached(now, usb_controller_transport_disconnect_not_before_us)
+    ) {
+        usb_controller_transport_disconnect_grace_pending = false;
     }
 
     if (
@@ -445,7 +494,7 @@ void usb_pm_poll() {
         && !usb_reconnect_requested
     ) {
         usb_controller_transport_transition_pending = false;
-        usb_controller_transport_disconnect_not_before_us = 0;
+        usb_controller_transport_disconnect_grace_pending = false;
         usb_schedule_topology_reconnect(now, false);
         return;
     }
@@ -468,20 +517,24 @@ void usb_pm_poll() {
         && !usb_reconnect_target_bridge_only
     ) {
         usb_controller_transport_transition_pending = false;
-        usb_controller_transport_disconnect_not_before_us = 0;
+        usb_controller_transport_disconnect_grace_pending = false;
     }
 
     if (usb_controller_transport_transition_pending) {
         if (
             !usb_controller_transport_ready
-            && usb_controller_transport_disconnect_not_before_us != 0
-            && !time_reached(now, usb_controller_transport_disconnect_not_before_us)
+            && usb_controller_transport_disconnect_grace_pending
         ) {
             return;
         }
         usb_controller_transport_transition_pending = false;
-        usb_controller_transport_disconnect_not_before_us = 0;
-        if (usb_controller_transport_ready) {
+        usb_controller_transport_disconnect_grace_pending = false;
+        if (usb_reconnect_connect_pending) {
+            // Controller loss or recovery during the detach changes the
+            // target, but the reattach itself must still happen. Dropping it
+            // here left the bridge detached from the host.
+            usb_reconnect_target_bridge_only = !usb_controller_transport_ready;
+        } else if (usb_controller_transport_ready) {
             if (usb_controller_transport_attached) {
                 if (!usb_attached_bridge_only) {
                     return;
@@ -520,13 +573,14 @@ void usb_pm_poll() {
         }
     }
 
-    if (usb_reconnect_connect_pending && time_reached(now, usb_reconnect_at_us)) {
+    if (usb_reconnect_connect_pending && !usb_reconnect_wait_pending) {
         usb_reconnect_connect_pending = false;
         usb_descriptor_set_bridge_only_active(usb_reconnect_target_bridge_only);
         usb_attached_bridge_only = usb_reconnect_target_bridge_only;
+        usb_latch_mic_endpoint_channels();
         tud_connect();
     }
-    if (usb_reconnect_requested && time_reached(now, usb_reconnect_at_us)) {
+    if (usb_reconnect_requested && !usb_reconnect_wait_pending) {
         // Polling and persona changes alter descriptor state too. Use the same
         // endpoint teardown as topology handoffs so Windows cannot retain the
         // former bInterval or interface ownership.

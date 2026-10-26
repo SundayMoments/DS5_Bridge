@@ -34,4 +34,8 @@ void ds4_persona_set_feature_report(
     uint16_t bufsize
 );
 
+// Replaces the default synthetic serial and address with ones derived from
+// the bridge's unique board ID. Call once at boot, before USB enumerates.
+void ds4_persona_set_identity_seed(uint8_t const *seed, uint16_t seed_len);
+
 #endif // DS5_BRIDGE_DS4_PERSONA_H

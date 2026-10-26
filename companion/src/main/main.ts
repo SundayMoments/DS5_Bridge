@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerMonitor, safeStorage, screen, shell } from 'electron';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BootloaderAuthorizationStore } from './bootloader-authorization-store';
 import { BridgeService } from './bridge-service';
 import {
   PICO_UNIVERSAL_FLASH_NUKE_FILE,
@@ -50,6 +51,11 @@ const PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH = path.join('firmware', PICO_UNIVE
 const PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH = path.join('firmware', PICO_UNIVERSAL_FLASH_NUKE_SHA256_FILE);
 const START_IN_TRAY_ARG = '--start-in-tray';
 const ALLOW_PARALLEL_AUTOMATION_INSTANCE = process.env.DS5_BRIDGE_ALLOW_PARALLEL_AUTOMATION_INSTANCE === '1';
+// Automation instances (Playwright, smoke checks) share the installed app's
+// settings, Run value and Start Menu shortcut. Registering from one would
+// delete the real login item or point login and toasts at a development
+// electron.exe, so they leave Windows integration alone.
+const WINDOWS_REGISTRATION_ENABLED = !ALLOW_PARALLEL_AUTOMATION_INSTANCE;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let trayDefaultIcon: Electron.NativeImage | null = null;
@@ -387,7 +393,7 @@ function loginItemArgs(): string[] {
 }
 
 function applyLaunchAtStartup(enabled: boolean): void {
-  if (process.platform !== 'win32') {
+  if (process.platform !== 'win32' || !WINDOWS_REGISTRATION_ENABLED) {
     return;
   }
 
@@ -718,7 +724,7 @@ New-ItemProperty -Path $registryPath -Name 'IconUri' -Value ${powerShellString(i
 }
 
 function ensureWindowsNotificationShortcut(): void {
-  if (process.platform !== 'win32') {
+  if (process.platform !== 'win32' || !WINDOWS_REGISTRATION_ENABLED) {
     return;
   }
 
@@ -1192,6 +1198,7 @@ function registerIpc(service: BridgeService): void {
     'mount',
     () => mountPicoBootloaderDrive(picoFirmwareOptions(service))
   ));
+  ipcMain.handle('bridge:cancelBootloaderConfirmation', () => service.cancelBootloaderConfirmation());
   ipcMain.handle('bridge:flashPicoFirmware', () => runPicoFirmwareIpcAction(
     'flash',
     () => flashSelectedPicoFirmware(service)
@@ -1296,7 +1303,10 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   const settingsStore = new SettingsStore(app.getPath('userData'));
   applyLaunchAtStartup(settingsStore.get().launchAtStartupEnabled);
-  bridgeService = new BridgeService(settingsStore);
+  bridgeService = new BridgeService(
+    settingsStore,
+    new BootloaderAuthorizationStore(app.getPath('userData'), safeStorage)
+  );
   registerIpc(bridgeService);
 
   mainWindow = createWindow(settingsStore.get().uiScalePercent);
