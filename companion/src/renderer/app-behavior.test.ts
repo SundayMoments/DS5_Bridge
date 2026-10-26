@@ -163,28 +163,10 @@ describe('renderer behavior guards', () => {
   });
 
   it('exposes the firmware-gated audio buffer length control', () => {
-    expect(appSource).toContain('const AUDIO_BUFFER_LENGTH_MIN = 16;');
-    expect(appSource).toContain('const AUDIO_BUFFER_LENGTH_MAX = 128;');
-    expect(appSource).toContain('audioBufferLengthControlSupported');
-    expect(appSource).toContain('firmwareFlags.hapticsBufferLengthControl');
-    expect(appSource).toContain('window.bridge.setHapticsBufferLength(snappedValue)');
-    expect(appSource).toContain('Audio Buffer Length');
-    expect(appSource).toContain('audio-buffer-readout');
-    expect(appSource).toContain("className={`audio-buffer-control framed-slider ${audioBufferLengthControlDisabled ? 'disabled' : ''}`}");
-    expect(appSource).toContain('className="audio-buffer-title"');
-    expect(appSource).toContain('aria-valuetext={`${audioBufferLengthValue}, ${audioBufferDelayLabel(audioBufferLengthValue)}, ${audioBufferZoneLabel(audioBufferLengthValue)}`}');
-    const micPresetIndex = appSource.indexOf('{MIC_VOLUME_PRESETS.map(([label, value]) => (');
-    const speakerPresetIndex = appSource.indexOf('{SPEAKER_VOLUME_PRESETS.map(([label, value]) => (');
-    const bufferControlIndex = appSource.indexOf('className={`audio-buffer-control framed-slider');
-    const testCardIndex = appSource.indexOf('<section className="feature-card test-card">', speakerPresetIndex);
-    const bufferControlSource = appSource.slice(bufferControlIndex, testCardIndex);
-    expect(micPresetIndex).toBeGreaterThanOrEqual(0);
-    expect(speakerPresetIndex).toBeGreaterThan(micPresetIndex);
-    expect(bufferControlIndex).toBeGreaterThan(speakerPresetIndex);
-    expect(bufferControlIndex).toBeLessThan(testCardIndex);
-    expect(bufferControlSource).not.toContain('showQuestionMark={true}');
-    expect(appSource.slice(micPresetIndex, speakerPresetIndex)).not.toContain('audio-buffer-control');
-    expect(appSource).not.toContain('Math.min(255, Math.round(length))');
+    // The control is rendered in features/controller-audio/ControllerAudioPage.rendered.test.tsx.
+    expect(featureSource('controller-audio/model.ts')).toContain('export const AUDIO_BUFFER_LENGTH_MIN = 16;');
+    expect(featureSource('controller-audio/model.ts')).toContain('export const AUDIO_BUFFER_LENGTH_MAX = 128;');
+    expect(featureSource('controller-audio/use-controller-audio-controller.ts')).not.toContain('Math.min(255, Math.round(length))');
   });
 
   it('exposes Pico firmware maintenance actions in Settings', () => {

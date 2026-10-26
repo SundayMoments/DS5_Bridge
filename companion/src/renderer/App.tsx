@@ -3,6 +3,7 @@ import '@fontsource/montserrat/latin-600.css';
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { InlineSelect as CustomSelect } from './components/InlineSelect';
+import { AudioHapticsConfigLabel } from './common/AudioHapticsConfigLabel';
 import {
   type TablerIcon,
   IconAdjustmentsSpark,
@@ -75,12 +76,6 @@ import dpadUpGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg
 import psHomeGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Home.svg';
 import triangleGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Triangle.svg';
 import kitsuneInputLogoUrl from './assets/kitsune-input-logo.svg';
-import testSpeakerToneUrl from './assets/test-speaker-tone-silence-tail.mp3';
-import {
-  bridgeAudioInputLabelScore,
-  bridgeAudioOutputLabelScore,
-  isBridgeAudioDeviceLabel
-} from './audio-endpoint-matching';
 import {
   DEFAULT_UI_THEME_PRESET,
   UI_THEME_KOFI_BADGES,
@@ -123,6 +118,7 @@ import {
 import { StickDeadzonesPage, useStickDeadzonesController } from './features/stick-deadzones';
 import { DevicesPage, useDevicesController } from './features/devices';
 import { ControllerLightingPage, useControllerLightingController } from './features/controller-lighting';
+import { ControllerAudioPage, useControllerAudioController } from './features/controller-audio';
 import { AdaptiveTriggersPage, useAdaptiveTriggersController } from './features/adaptive-triggers';
 import { TRIGGER_EFFECT_STEP, snapTriggerEffectIntensity } from './features/adaptive-triggers/model';
 import { TriggerLabProfileDialog, useTriggerLabController } from './features/trigger-lab';
@@ -185,6 +181,8 @@ import { ControllerType, DEFAULT_REMAP_DRAFT, DualSenseEdgeRemapButtonId, KnownC
 import { EdgeRemapControlLayout, REMAP_EDGE_CONTROL_POINTS, REMAP_EDGE_LAYOUT_ASSET, REMAP_EDGE_LINE_POINTS, REMAP_STANDARD_LAYOUT_ASSET, RemapCalloutLayout } from './features/button-remapping/remap-layout';
 import { CHORD_BUTTON_MENU_IDS, CHORD_CONTROLLER_SETTING_ACTION_OPTIONS, CHORD_FUNCTION_TYPE_OPTIONS, CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH, CHORD_KEYBOARD_KEY_OPTIONS, CHORD_KEYBOARD_MODIFIER_OPTIONS, CHORD_MEDIA_ACTION_OPTIONS, CHORD_STARTERS, CHORD_STARTER_OPTIONS, CHORD_UNASSIGNED_BUTTON, ChordAssignmentDraftRow, ChordAssignmentDragSession, ChordAssignmentDropHint, ChordAssignmentScrollbarState, ChordButtonSelectValue, ChordFunctionDialogMode, ChordFunctionDialogState, ChordFunctionDraft, ChordKeyboardModifier, EMPTY_CHORD_FUNCTION_DRAFT, chordAssignmentKey, chordAssignmentLabel, chordBindingKey, chordButtonLabel, chordControllerSettingActionFromSelectValue, chordControllerSettingAdjustmentText, chordControllerSettingSelectValue, chordFunctionFromDraft, chordFunctionSummary, chordFunctionToDraft, chordFunctionTypeLabel, chordNotchTargetForAction, createChordAssignmentId } from './features/chords/model';
 import { ChordButtonGlyphOption, ChordStarterGlyphOption } from './features/chords/ChordGlyphs';
+import { AUDIO_BUFFER_LENGTH_MAX, AUDIO_BUFFER_LENGTH_MIN, BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE, BRIDGE_MIC_ENDPOINT_UNAVAILABLE, MIC_VOLUME_PRESETS, MIC_VOLUME_STEP, SPEAKER_GAIN_OPTIONS, SPEAKER_VOLUME_PRESETS, SPEAKER_VOLUME_STEP, TEST_MIC_LISTEN_MS, TEST_SPEAKER_ENDPOINT_REFRESH_MS, TEST_SPEAKER_LOCK_MS, TEST_SPEAKER_VOLUME_SETTLE_MS, audioBufferDelayLabel, audioBufferPercent, audioBufferZoneLabel, audioBufferZoneTone, audioBufferZoneTooltip, clampAudioBufferLength, snapMicVolume, snapSpeakerVolume } from './features/controller-audio/model';
+import { delay, findBridgeAudioOutputId, playMicLiveListen, stopMicLiveListen } from './features/controller-audio/audio-playback';
 
 type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
@@ -196,40 +194,14 @@ const KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';
 const HAPTICS_STEP = 20;
 const STANDARD_FEEDBACK_GAIN_PERCENT = 200;
 const BOOSTED_FEEDBACK_GAIN_PERCENT = 500;
-const SPEAKER_VOLUME_STEP = 10;
-const MIC_VOLUME_STEP = 10;
-const AUDIO_BUFFER_LENGTH_MIN = 16;
-const AUDIO_BUFFER_LENGTH_MAX = 128;
-const AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX = 44;
-const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
 const TEST_HAPTICS_LOCK_MS = 1100;
-const TEST_SPEAKER_LOCK_MS = 900;
-const TEST_MIC_LISTEN_MS = 5000;
-const TEST_SPEAKER_VOLUME_SETTLE_MS = 90;
-const TEST_SPEAKER_ENDPOINT_ATTEMPTS = 12;
-const TEST_SPEAKER_ENDPOINT_RETRY_MS = 150;
-const TEST_SPEAKER_ENDPOINT_REFRESH_MS = 1500;
-const TEST_SPEAKER_ENDPOINT_VERIFY_MS = 100;
-const TEST_SPEAKER_PREROLL_MS = 220;
 const SLEEP_CONFIRM_MS = 2400;
 const HAPTICS_PRESETS: Array<[string, number]> = [
   ['Low', 50],
   ['Medium', 100],
   ['High', 150]
 ];
-const SPEAKER_VOLUME_PRESETS: Array<[string, number]> = [
-  ['Low', 30],
-  ['Medium', 70],
-  ['High', 100]
-];
-const MIC_VOLUME_PRESETS: Array<[string, number]> = [
-  ['Low', 30],
-  ['Medium', 70],
-  ['High', 100]
-];
 const STANDARD_HAPTICS_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 20);
-const BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE = 'Controller audio endpoint unavailable';
-const BRIDGE_MIC_ENDPOINT_UNAVAILABLE = 'Controller microphone unavailable';
 const MUTE_KEY_OPTIONS: Array<[string, number]> = [
   ['F1', 0x3A], ['F2', 0x3B], ['F3', 0x3C], ['F4', 0x3D], ['F5', 0x3E], ['F6', 0x3F],
   ['F7', 0x40], ['F8', 0x41], ['F9', 0x42], ['F10', 0x43], ['F11', 0x44], ['F12', 0x45],
@@ -277,15 +249,6 @@ const HOST_PERSONA_SHORT_LABELS: Record<HostPersonaMode, string> = {
   ds4: 'DS4',
   xbox: 'XBOX'
 };
-const SPEAKER_GAIN_OPTIONS: Array<[string, number]> = [
-  ['1', 1],
-  ['2', 2],
-  ['3', 3],
-  ['4', 4],
-  ['5', 5],
-  ['6', 6],
-  ['7', 7]
-];
 const AUDIO_REACTIVE_HAPTICS_MODE_OPTIONS: Array<[string, AudioReactiveHapticsMode]> = [
   ['Mix', 'mix'],
   ['Replace', 'replace']
@@ -319,10 +282,6 @@ const AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS = {
   attack: 'Controls how quickly the haptics ramp when a sound rises or spikes.',
   release: 'Controls how quickly the haptics fade when a sound drops.'
 } as const;
-type SinkSelectableAudio = HTMLAudioElement & {
-  setSinkId?: (sinkId: string) => Promise<void>;
-  sinkId?: string;
-};
 const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
 const STARTUP_READY_HOLD_MS = 1000;
 
@@ -386,66 +345,6 @@ function audioHapticsSourceDisplayName(source: AudioReactiveHapticsSource | null
   return appSource.displayName
     || appSource.executableName?.replace(/\.[^.]+$/, '')
     || 'Selected app';
-}
-
-function snapSpeakerVolume(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value / SPEAKER_VOLUME_STEP) * SPEAKER_VOLUME_STEP));
-}
-
-function snapMicVolume(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value / MIC_VOLUME_STEP) * MIC_VOLUME_STEP));
-}
-
-function clampAudioBufferLength(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 64;
-  }
-  return Math.max(AUDIO_BUFFER_LENGTH_MIN, Math.min(AUDIO_BUFFER_LENGTH_MAX, Math.round(value)));
-}
-
-function audioBufferDelayMs(value: number): number {
-  return clampAudioBufferLength(value) / 3;
-}
-
-function audioBufferDelayLabel(value: number): string {
-  return `${audioBufferDelayMs(value).toFixed(1)} ms`;
-}
-
-function audioBufferPercent(value: number): number {
-  return ((clampAudioBufferLength(value) - AUDIO_BUFFER_LENGTH_MIN) / (AUDIO_BUFFER_LENGTH_MAX - AUDIO_BUFFER_LENGTH_MIN)) * 100;
-}
-
-function audioBufferZoneLabel(value: number): string {
-  const bufferLength = clampAudioBufferLength(value);
-  if (bufferLength <= AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX) {
-    return 'High stutter';
-  }
-  if (bufferLength <= AUDIO_BUFFER_LENGTH_RISKY_MAX) {
-    return 'Risky';
-  }
-  return 'Safe';
-}
-
-function audioBufferZoneTooltip(value: number): string {
-  const bufferLength = clampAudioBufferLength(value);
-  if (bufferLength <= AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX) {
-    return 'Danger: lowest haptic delay, but speaker audio is likely to stutter or underrun.';
-  }
-  if (bufferLength <= AUDIO_BUFFER_LENGTH_RISKY_MAX) {
-    return 'Warning: lower haptic delay, with a minimal chance of speaker stutter under load.';
-  }
-  return 'Safe: more speaker buffer headroom, with higher DualSense haptic delay.';
-}
-
-function audioBufferZoneTone(value: number): 'stutter' | 'risky' | 'safe' {
-  const bufferLength = clampAudioBufferLength(value);
-  if (bufferLength <= AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX) {
-    return 'stutter';
-  }
-  if (bufferLength <= AUDIO_BUFFER_LENGTH_RISKY_MAX) {
-    return 'risky';
-  }
-  return 'safe';
 }
 
 function feedbackSliderMaxFromSnapshot(snapshot: BridgeSnapshot | null | undefined): number {
@@ -904,354 +803,6 @@ function hexByte(value: number): string {
   return value.toString(16).padStart(2, '0').toUpperCase();
 }
 
-function bridgeAudioOutputScore(device: MediaDeviceInfo): number {
-  return bridgeAudioOutputLabelScore(device.label);
-}
-
-function bridgeAudioInputScore(device: MediaDeviceInfo): number {
-  return bridgeAudioInputLabelScore(device.label);
-}
-
-async function findBridgeAudioOutputIdOnce(): Promise<string | null> {
-  if (!navigator.mediaDevices?.enumerateDevices) {
-    return null;
-  }
-
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const outputs = devices.filter((device) => (
-      device.kind === 'audiooutput'
-      && isBridgeAudioDeviceLabel(device.label)
-      && device.deviceId
-      && device.deviceId !== 'default'
-      && device.deviceId !== 'communications'
-    ));
-    outputs.sort((left, right) => bridgeAudioOutputScore(right) - bridgeAudioOutputScore(left));
-    const output = outputs[0];
-    return output?.deviceId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function findBridgeAudioInputIdOnce(): Promise<string | null> {
-  if (!navigator.mediaDevices?.enumerateDevices) {
-    return null;
-  }
-
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const inputs = devices.filter((device) => (
-      device.kind === 'audioinput'
-      && isBridgeAudioDeviceLabel(device.label)
-      && device.deviceId
-      && device.deviceId !== 'default'
-      && device.deviceId !== 'communications'
-    ));
-    inputs.sort((left, right) => bridgeAudioInputScore(right) - bridgeAudioInputScore(left));
-    const input = inputs[0];
-    return input?.deviceId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function unlockMediaDeviceLabels(): Promise<boolean> {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    return false;
-  }
-
-  let permissionStream: MediaStream | null = null;
-  try {
-    permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    return true;
-  } catch {
-    return false;
-  } finally {
-    permissionStream?.getTracks().forEach((track) => track.stop());
-  }
-}
-
-async function findBridgeAudioInputId(): Promise<string | null> {
-  let inputId = await findBridgeAudioInputIdOnce();
-  if (inputId || !navigator.mediaDevices?.getUserMedia) {
-    return inputId;
-  }
-
-  if (!await unlockMediaDeviceLabels()) {
-    return null;
-  }
-
-  inputId = await findBridgeAudioInputIdOnce();
-  return inputId;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-function writeAscii(view: DataView, offset: number, value: string): void {
-  for (let index = 0; index < value.length; index += 1) {
-    view.setUint8(offset + index, value.charCodeAt(index));
-  }
-}
-
-let speakerPrerollSilenceUrl: string | null = null;
-
-function getSpeakerPrerollSilenceUrl(): string {
-  if (speakerPrerollSilenceUrl) {
-    return speakerPrerollSilenceUrl;
-  }
-
-  const sampleRate = 48000;
-  const channels = 2;
-  const bytesPerSample = 2;
-  const frames = Math.round((sampleRate * TEST_SPEAKER_PREROLL_MS) / 1000);
-  const dataSize = frames * channels * bytesPerSample;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  writeAscii(view, 0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
-  writeAscii(view, 8, 'WAVE');
-  writeAscii(view, 12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, channels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * channels * bytesPerSample, true);
-  view.setUint16(32, channels * bytesPerSample, true);
-  view.setUint16(34, bytesPerSample * 8, true);
-  writeAscii(view, 36, 'data');
-  view.setUint32(40, dataSize, true);
-
-  speakerPrerollSilenceUrl = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
-  return speakerPrerollSilenceUrl;
-}
-
-async function findBridgeAudioOutputId(attempts = 1): Promise<string | null> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const sinkId = await findBridgeAudioOutputIdOnce();
-    if (sinkId) {
-      return sinkId;
-    }
-    if (attempt + 1 < attempts) {
-      await delay(TEST_SPEAKER_ENDPOINT_RETRY_MS);
-    }
-  }
-  if (await unlockMediaDeviceLabels()) {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const sinkId = await findBridgeAudioOutputIdOnce();
-      if (sinkId) {
-        return sinkId;
-      }
-      if (attempt + 1 < attempts) {
-        await delay(TEST_SPEAKER_ENDPOINT_RETRY_MS);
-      }
-    }
-  }
-  return null;
-}
-
-let speakerToneAudio: SinkSelectableAudio | null = null;
-let speakerToneSinkId: string | null = null;
-
-function resetSpeakerToneAudio(): void {
-  if (speakerToneAudio) {
-    try {
-      speakerToneAudio.pause();
-      speakerToneAudio.removeAttribute('src');
-      speakerToneAudio.load();
-    } catch {
-      // Ignore teardown races while Windows is removing the audio endpoint.
-    }
-  }
-  speakerToneAudio = null;
-  speakerToneSinkId = null;
-}
-
-async function playSpeakerAudioSource(sourceUrl: string): Promise<void> {
-  const sinkId = await findBridgeAudioOutputId(TEST_SPEAKER_ENDPOINT_ATTEMPTS);
-  if (!sinkId) {
-    throw new Error(BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE);
-  }
-
-  // Reuse the persistent Audio element if the endpoint hasn't changed.
-  // This keeps the WASAPI session alive so the firmware audio pipeline stays warm.
-  if (!speakerToneAudio || speakerToneSinkId !== sinkId) {
-    const audio = new Audio() as SinkSelectableAudio;
-    audio.volume = 1;
-    if (!audio.setSinkId) {
-      throw new Error(BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE);
-    }
-    try {
-      await audio.setSinkId(sinkId);
-    } catch {
-      throw new Error(BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE);
-    }
-    if (audio.sinkId !== undefined && audio.sinkId !== sinkId) {
-      throw new Error(BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE);
-    }
-    speakerToneAudio = audio;
-    speakerToneSinkId = sinkId;
-  }
-
-  const audio = speakerToneAudio;
-  audio.src = sourceUrl;
-  audio.currentTime = 0;
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const mediaDevices = navigator.mediaDevices;
-    const fail = (error: Error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const finish = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve();
-    };
-    const verifySink = () => {
-      void (async () => {
-        const currentSinkId = await findBridgeAudioOutputIdOnce();
-        if (
-          currentSinkId !== sinkId
-          || (audio.sinkId !== undefined && audio.sinkId !== sinkId)
-        ) {
-          resetSpeakerToneAudio();
-          fail(new Error(BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE));
-        }
-      })();
-    };
-    const verifyTimer = window.setInterval(verifySink, TEST_SPEAKER_ENDPOINT_VERIFY_MS);
-    function cleanup() {
-      window.clearInterval(verifyTimer);
-      audio.removeEventListener('ended', finish);
-      audio.removeEventListener('error', onAudioError);
-      mediaDevices?.removeEventListener?.('devicechange', verifySink);
-    }
-    function onAudioError() {
-      fail(new Error('Speaker test audio playback failed.'));
-    }
-
-    audio.addEventListener('ended', finish, { once: true });
-    audio.addEventListener('error', onAudioError, { once: true });
-    mediaDevices?.addEventListener?.('devicechange', verifySink);
-    audio.play().then(verifySink).catch((error: unknown) => {
-      fail(error instanceof Error ? error : new Error('Speaker test audio playback failed.'));
-    });
-  });
-}
-
-async function playSpeakerToneFile(): Promise<void> {
-  await playSpeakerAudioSource(getSpeakerPrerollSilenceUrl());
-  await delay(25);
-  await playSpeakerAudioSource(testSpeakerToneUrl);
-}
-
-let micListenAudio: HTMLAudioElement | null = null;
-let micListenStream: MediaStream | null = null;
-let micListenTimer: number | null = null;
-let micListenResolve: (() => void) | null = null;
-
-function stopMicLiveListen(): void {
-  if (micListenTimer !== null) {
-    window.clearTimeout(micListenTimer);
-  }
-  micListenTimer = null;
-  if (micListenAudio) {
-    try {
-      micListenAudio.pause();
-      micListenAudio.srcObject = null;
-    } catch {
-      // Ignore teardown races while the mic endpoint is closing.
-    }
-  }
-  micListenAudio = null;
-  micListenStream?.getTracks().forEach((track) => track.stop());
-  micListenStream = null;
-  const resolve = micListenResolve;
-  micListenResolve = null;
-  resolve?.();
-}
-
-async function openBridgeMicStream(): Promise<MediaStream> {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error(BRIDGE_MIC_ENDPOINT_UNAVAILABLE);
-  }
-
-  const inputId = await findBridgeAudioInputId();
-  if (!inputId) {
-    throw new Error(BRIDGE_MIC_ENDPOINT_UNAVAILABLE);
-  }
-
-  return navigator.mediaDevices.getUserMedia({
-    audio: {
-      deviceId: { exact: inputId },
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false
-    },
-    video: false
-  });
-}
-
-async function playMicLiveListen(durationMs: number): Promise<void> {
-  stopMicLiveListen();
-  const stream = await openBridgeMicStream();
-  const audio = new Audio();
-  audio.srcObject = stream;
-  audio.volume = 1;
-  micListenAudio = audio;
-  micListenStream = stream;
-
-  try {
-    await audio.play();
-  } catch (error) {
-    stopMicLiveListen();
-    throw error;
-  }
-
-  await new Promise<void>((resolve) => {
-    micListenResolve = resolve;
-    micListenTimer = window.setTimeout(stopMicLiveListen, durationMs);
-  });
-}
-
-function AudioHapticsConfigLabel({
-  id,
-  label,
-  tooltip,
-  className = '',
-  showQuestionMark = false
-}: {
-  id: string;
-  label: string;
-  tooltip: string;
-  className?: string;
-  showQuestionMark?: boolean;
-}) {
-  return (
-    <span className={`audio-haptics-config-label ${className}`.trim()} tabIndex={0} aria-describedby={id}>
-      {label}
-      {showQuestionMark ? <IconQuestionMark size={12} stroke={3} aria-hidden="true" /> : null}
-      <span id={id} className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-haptics-config-tooltip" role="tooltip">
-        {tooltip}
-      </span>
-    </span>
-  );
-}
-
 function UptimeValue({
   active,
   lastPollAt,
@@ -1350,9 +901,6 @@ export function App() {
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const [hapticsValue, setHapticsValue] = useState(100);
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
-  const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
-  const [micVolumeValue, setMicVolumeValue] = useState(100);
-  const [audioBufferLengthValue, setAudioBufferLengthValue] = useState(64);
   const triggerLabOpen = activeControlTab === 'trigger-lab';
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
   const [audioHapticsSessions, setAudioHapticsSessions] = useState<AudioHapticsSession[]>([]);
@@ -1366,24 +914,15 @@ export function App() {
   const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
   const [showKitsuneInputPromotion, setShowKitsuneInputPromotion] = useState(false);
   const [showClassicRumbleControl, setShowClassicRumbleControl] = useState(false);
-  const [showMicrophoneControl, setShowMicrophoneControl] = useState(false);
   const [windowDragging, setWindowDragging] = useState(false);
   const [testLocked, setTestLocked] = useState(false);
   const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
   const [startupTextScale, setStartupTextScale] = useState<UiTextScalePercent>(storedUiTextScalePercent);
   const localization = useLocalization();
-  const [speakerTestLocked, setSpeakerTestLocked] = useState(false);
-  const [speakerOutputAvailable, setSpeakerOutputAvailable] = useState<boolean | null>(null);
-  const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
-  const [micTestLocked, setMicTestLocked] = useState(false);
-  const [micTestError, setMicTestError] = useState<string | null>(null);
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
   const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
   const [feedbackBoostCommitPending, setFeedbackBoostCommitPending] = useState(false);
-  const [speakerVolumeCommitPending, setSpeakerVolumeCommitPending] = useState(false);
-  const [micVolumeCommitPending, setMicVolumeCommitPending] = useState(false);
-  const [audioBufferLengthCommitPending, setAudioBufferLengthCommitPending] = useState(false);
   const [audioReactiveHapticsCommitPending, setAudioReactiveHapticsCommitPending] = useState(false);
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
   const [deviceCleanupConfirmVisible, setDeviceCleanupConfirmVisible] = useState(false);
@@ -1396,9 +935,6 @@ export function App() {
   const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
   const hapticsEditingRef = useRef(false);
   const classicRumbleEditingRef = useRef(false);
-  const speakerVolumeEditingRef = useRef(false);
-  const micVolumeEditingRef = useRef(false);
-  const audioBufferLengthEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const bridgeRenameCancelledRef = useRef(false);
   const overviewSleepConfirmTimerRef = useRef<number | null>(null);
@@ -1494,6 +1030,7 @@ export function App() {
   const stickDeadzones = useStickDeadzonesController(runtime, activeControlTab === 'deadzones');
   const devices = useDevicesController(runtime);
   const lighting = useControllerLightingController(runtime);
+  const audio = useControllerAudioController(runtime, { lightbarCommitPending: lighting.lightbarCommitPending });
   const triggers = useAdaptiveTriggersController(runtime);
   const triggerLab = useTriggerLabController(runtime, triggers);
   const buttonRemapping = useButtonRemappingController(runtime, activeControlTab === 'remapping');
@@ -1518,15 +1055,7 @@ export function App() {
     if (!classicRumbleEditingRef.current) {
       setClassicRumbleValue(displayClassicRumbleValue(next));
     }
-    if (!speakerVolumeEditingRef.current) {
-      setSpeakerVolumeValue(snapSpeakerVolume(next.settings.speakerVolumePercent));
-    }
-    if (!micVolumeEditingRef.current) {
-      setMicVolumeValue(snapMicVolume(next.settings.micVolumePercent));
-    }
-    if (!audioBufferLengthEditingRef.current) {
-      setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
-    }
+    audio.syncSnapshot(next);
     lighting.syncSnapshot(next);
     triggers.syncSnapshot(next);
   }
@@ -1663,16 +1192,6 @@ export function App() {
     };
   }, [showNotificationsMenu]);
 
-  useEffect(() => {
-    setSpeakerOutputAvailable(true);
-  }, []);
-
-  useEffect(() => {
-    if (!connected) {
-      setSpeakerTestError(null);
-    }
-  }, [connected]);
-
   const batteryPercentLabel = batteryLabel(snapshot);
   const batteryCharging = isChargingPowerState(snapshot?.status?.rawPowerState);
   const batteryExternalPower = isExternalPowerState(snapshot?.status?.rawPowerState);
@@ -1736,17 +1255,12 @@ export function App() {
   const classicRumbleEnabled = Boolean(snapshot?.settings.classicRumbleEnabled);
   const classicRumbleV1Enabled = Boolean(snapshot?.settings.classicRumbleV1Enabled);
   const activeHapticsFeatureEnabled = showClassicRumbleControl ? classicRumbleEnabled : hapticsEnabled;
-  const speakerEnabled = Boolean(snapshot?.settings.speakerEnabled);
-  const speakerGainLevel = Math.max(1, Math.min(7, Math.round(
-    snapshot?.settings.speakerGainLevel ?? snapshot?.status?.speakerGainLevel ?? 4
-  )));
   const adaptiveTriggersEnabled = Boolean(snapshot?.settings.adaptiveTriggersEnabled);
   const lightbarEnabled = Boolean(snapshot?.settings.lightbarEnabled);
   const sleepKeybindEnabled = Boolean(snapshot?.settings.sleepKeybindEnabled);
   const controllerToastEnabled = Boolean(snapshot?.settings.notifyControllerConnection);
   const lowBatteryToastEnabled = Boolean(snapshot?.settings.notifyLowBattery);
   const notificationsEnabled = controllerToastEnabled || lowBatteryToastEnabled;
-  const gameStreamActive = Boolean(snapshot?.status?.hostOutputRecent);
   const adaptiveTriggerOutputActive = Boolean(snapshot?.status?.adaptiveTriggerOutputRecent);
   const audioStatus = snapshot?.diagnostics.audioStatus;
   const headsetOutputDetected = Boolean(audioStatus?.headsetPlugged);
@@ -1755,26 +1269,6 @@ export function App() {
   const hapticsSliderMax = feedbackSliderMaxFromSnapshot(snapshot);
   const hapticsSliderTicks = feedbackSliderTicks(hapticsSliderMax);
   const percentSliderMax = controllerPowerSavingActive ? CONTROLLER_POWER_SAVING_CAP_PERCENT : 100;
-  const OutputIcon = headsetOutputDetected ? Headphones : Volume2;
-
-  const outputControlLabel = headsetOutputDetected ? 'Headphones' : 'Speaker';
-  const outputControlLower = headsetOutputDetected ? 'headphones' : 'speaker';
-  const outputPresetLower = headsetOutputDetected ? 'headphones' : 'speaker';
-  const duplexMicEnabled = Boolean(snapshot?.settings.duplexMicEnabled);
-  const audioEnabled = speakerEnabled || duplexMicEnabled;
-  const audioPathLabel = personaTransitionActive
-    ? 'Switching Mode'
-    : !connected
-    ? 'Unavailable'
-    : 'Pico Local';
-  const audioPathTooltip = personaTransitionActive
-    ? 'Waiting for the controller to re-enumerate.'
-    : audioPathLabel;
-  const audioPathTone = connected && !personaTransitionActive ? 'good' : 'idle';
-  const audioBufferLengthControlDisabled = !connected
-    || !audioBufferLengthControlSupported
-    || pendingAction !== null
-    || audioBufferLengthCommitPending;
   const audioReactiveHapticsRouteSupported = audioReactiveHapticsSupported;
   const audioReactiveHapticsBlocked = !connected
     || !audioReactiveHapticsSupported
@@ -1814,16 +1308,10 @@ export function App() {
   const audioReactiveHapticsModeTooltip = audioReactiveHapticsOverrideMode
     ? 'Audio haptics are replacing native haptic output.'
     : 'Audio haptics are mixed with native haptic output.';
-  const duplexMicLabel = audioStatus?.duplexActive
-    ? 'Duplex Active'
-    : duplexMicEnabled
-      ? 'Mic Standby'
-      : 'Off';
-  const speakerOutputMissing = false;
   const testHapticsUnavailable = !connected
     || !hapticsEnabled
     || pendingAction !== null
-    || speakerVolumeCommitPending
+    || audio.speakerVolumeCommitPending
     || lighting.lightbarCommitPending
     || testLocked
     || Boolean(snapshot?.status?.testHapticsBusy)
@@ -1831,7 +1319,7 @@ export function App() {
   const testRumbleUnavailable = !connected
     || !classicRumbleEnabled
     || pendingAction !== null
-    || speakerVolumeCommitPending
+    || audio.speakerVolumeCommitPending
     || lighting.lightbarCommitPending
     || testLocked
     || Boolean(snapshot?.status?.testHapticsBusy);
@@ -1867,67 +1355,6 @@ export function App() {
   const activeFeedbackTestUnavailable = showClassicRumbleControl ? testRumbleUnavailable : testHapticsUnavailable;
   const activeFeedbackStatusLabel = showClassicRumbleControl ? rumbleStatusLabel : hapticsStatusLabel;
   const activeFeedbackStatusTone = showClassicRumbleControl ? rumbleStatusTone : hapticsStatusTone;
-  const testSpeakerUnavailable = !connected
-    || !speakerVolumeSupported
-    || !speakerEnabled
-    || pendingAction !== null
-    || speakerVolumeCommitPending
-    || lighting.lightbarCommitPending
-    || speakerTestLocked
-    || gameStreamActive
-    || Boolean(snapshot?.status?.testHapticsBusy);
-  const testMicUnavailable = !connected
-    || !duplexMicEnabled
-    || pendingAction !== null
-    || micVolumeCommitPending
-    || lighting.lightbarCommitPending
-    || micTestLocked
-    || gameStreamActive;
-  const speakerStatusReady = connected
-    && speakerVolumeSupported
-    && speakerEnabled
-    && !speakerTestLocked
-    && !speakerOutputMissing
-    && !gameStreamActive
-    && !snapshot?.status?.testHapticsBusy;
-  const micStatusReady = connected
-    && duplexMicEnabled
-    && !micTestLocked
-    && !gameStreamActive;
-  const speakerStatusLabel = speakerTestLocked
-    ? 'Playing'
-    : connected && speakerTestError
-      ? speakerTestError
-    : connected && speakerOutputMissing
-        ? BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE
-        : speakerStatusReady
-          ? 'Ready'
-          : connected && gameStreamActive
-            ? 'Game Audio Active'
-            : 'Unavailable';
-  const speakerStatusTone = speakerTestLocked || speakerStatusReady
-    ? 'good'
-    : connected && (speakerTestError || speakerOutputMissing)
-        ? 'bad'
-      : connected && gameStreamActive
-        ? 'warn'
-        : 'idle';
-  const micTestStatusLabel = micTestLocked
-    ? 'Listening'
-    : connected && micTestError
-      ? micTestError
-      : micStatusReady
-        ? 'Ready'
-        : 'Unavailable';
-  const micTestStatusTone = micTestLocked || micStatusReady
-    ? 'good'
-    : connected && micTestError
-      ? 'bad'
-      : 'idle';
-  const activeAudioTestUnavailable = showMicrophoneControl ? testMicUnavailable : testSpeakerUnavailable;
-  const activeAudioTestLocked = showMicrophoneControl ? micTestLocked : speakerTestLocked;
-  const activeAudioTestStatusLabel = showMicrophoneControl ? micTestStatusLabel : speakerStatusLabel;
-  const activeAudioTestStatusTone = showMicrophoneControl ? micTestStatusTone : speakerStatusTone;
   const sidebarControllerCard = devices.model.cards.find(
     (device) => device.label === 'Current controller'
   ) ?? devices.model.cards[0] ?? null;
@@ -2009,7 +1436,7 @@ export function App() {
       ? 'Controller Ready'
       : 'Waiting';
   const overviewAudioOutputLabel = connected ? (headsetOutputDetected ? 'Headphones' : 'Speaker') : '--';
-  const overviewSpeakerVolumeValue = `${speakerVolumeValue}%`;
+  const overviewSpeakerVolumeValue = `${audio.speakerVolumeValue}%`;
   const overviewFirmwareLabel = snapshot?.status?.firmwareVersion ?? '--';
   const overviewSignalValue = connected ? snapshot?.status?.signalStrengthDbm : null;
   const overviewSignalQuality = overviewSignalValue === null || overviewSignalValue === undefined
@@ -2047,35 +1474,6 @@ export function App() {
       ? 'Active'
       : 'Enabled'
     : 'Off';
-  useEffect(() => {
-    if (!connected || speakerOutputAvailable !== false || speakerTestLocked) {
-      return undefined;
-    }
-
-    const refresh = () => {
-      void findBridgeAudioOutputId(2).then((sinkId) => {
-        if (!sinkId) {
-          return;
-        }
-        setSpeakerOutputAvailable(true);
-        setSpeakerTestError(null);
-      });
-    };
-
-    const handle = window.setInterval(refresh, TEST_SPEAKER_ENDPOINT_REFRESH_MS);
-    return () => window.clearInterval(handle);
-  }, [connected, speakerOutputAvailable, speakerTestLocked]);
-
-  useEffect(() => () => {
-    stopMicLiveListen();
-  }, []);
-
-  useEffect(() => {
-    if ((!connected || !showMicrophoneControl) && micTestLocked) {
-      stopMicLiveListen();
-    }
-  }, [connected, showMicrophoneControl, micTestLocked]);
-
   const diagnosticsVisible = activeControlTab === 'system' && showDiagnostics;
   const ackText = useMemo(() => {
     if (!diagnosticsVisible) return '';
@@ -2277,36 +1675,6 @@ export function App() {
     }
   }
 
-  async function commitSpeakerVolume(value = speakerVolumeValue) {
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !speakerVolumeSupported
-      || !snapshot.settings.speakerEnabled
-      || value === snapshot.settings.speakerVolumePercent
-      || speakerVolumeCommitPending
-    ) {
-      speakerVolumeEditingRef.current = false;
-      return;
-    }
-
-    setSpeakerVolumeCommitPending(true);
-    speakerVolumeEditingRef.current = true;
-    try {
-      const next = await window.bridge.setSpeakerVolume(value);
-      setSnapshot(next);
-      setSpeakerVolumeValue(snapSpeakerVolume(next.settings.speakerVolumePercent));
-      await delay(TEST_SPEAKER_VOLUME_SETTLE_MS);
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setSpeakerVolumeValue(snapSpeakerVolume(next.settings.speakerVolumePercent));
-    } finally {
-      setSpeakerVolumeCommitPending(false);
-      speakerVolumeEditingRef.current = false;
-    }
-  }
-
   function setHapticsPreset(value: number) {
     const snappedValue = snapHapticsValue(capControllerPowerSavingValue(value, snapshot), hapticsSliderMax);
     hapticsEditingRef.current = true;
@@ -2319,88 +1687,6 @@ export function App() {
     classicRumbleEditingRef.current = true;
     setClassicRumbleValue(snappedValue);
     void commitClassicRumbleValue(snappedValue);
-  }
-
-  function setSpeakerPreset(value: number) {
-    const snappedValue = snapSpeakerVolume(value);
-    speakerVolumeEditingRef.current = true;
-    setSpeakerVolumeValue(snappedValue);
-    void commitSpeakerVolume(snappedValue);
-  }
-
-  function setSpeakerGainLevel(level: number) {
-    if (!snapshot) {
-      return;
-    }
-    const value = Math.max(1, Math.min(7, Math.round(level)));
-    if (value === snapshot.settings.speakerGainLevel) {
-      return;
-    }
-    void runQuietAction(() => window.bridge.setSpeakerGainLevel(value));
-  }
-
-  async function commitMicVolume(value = micVolumeValue) {
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || value === snapshot.settings.micVolumePercent
-      || micVolumeCommitPending
-    ) {
-      micVolumeEditingRef.current = false;
-      return;
-    }
-
-    setMicVolumeCommitPending(true);
-    micVolumeEditingRef.current = true;
-    try {
-      const next = await window.bridge.setMicVolume(value);
-      setSnapshot(next);
-      setMicVolumeValue(snapMicVolume(next.settings.micVolumePercent));
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setMicVolumeValue(snapMicVolume(next.settings.micVolumePercent));
-    } finally {
-      setMicVolumeCommitPending(false);
-      micVolumeEditingRef.current = false;
-    }
-  }
-
-  function setMicPreset(value: number) {
-    const snappedValue = snapMicVolume(value);
-    micVolumeEditingRef.current = true;
-    setMicVolumeValue(snappedValue);
-    void commitMicVolume(snappedValue);
-  }
-
-  async function commitAudioBufferLength(value = audioBufferLengthValue) {
-    const snappedValue = clampAudioBufferLength(value);
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !audioBufferLengthControlSupported
-      || snappedValue === snapshot.settings.hapticsBufferLength
-      || audioBufferLengthCommitPending
-    ) {
-      audioBufferLengthEditingRef.current = false;
-      setAudioBufferLengthValue(snappedValue);
-      return;
-    }
-
-    setAudioBufferLengthCommitPending(true);
-    audioBufferLengthEditingRef.current = true;
-    try {
-      const next = await window.bridge.setHapticsBufferLength(snappedValue);
-      setSnapshot(next);
-      setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
-    } finally {
-      setAudioBufferLengthCommitPending(false);
-      audioBufferLengthEditingRef.current = false;
-    }
   }
 
   async function commitAudioReactiveHapticsConfig(config: Partial<AudioReactiveHapticsConfig>): Promise<BridgeSnapshot | null> {
@@ -2524,72 +1810,6 @@ export function App() {
     });
   }
 
-  function runTestSpeaker() {
-    setSpeakerTestLocked(true);
-    setPendingAction('speaker');
-    setSpeakerTestError(null);
-    void (async () => {
-      try {
-        let volumeChanged = false;
-        if (snapshot && speakerVolumeSupported && speakerVolumeValue !== snapshot.settings.speakerVolumePercent) {
-          speakerVolumeEditingRef.current = true;
-          const next = await window.bridge.setSpeakerVolume(speakerVolumeValue);
-          setSnapshot(next);
-          setSpeakerVolumeValue(snapSpeakerVolume(next.settings.speakerVolumePercent));
-          speakerVolumeEditingRef.current = false;
-          volumeChanged = true;
-        }
-        if (volumeChanged) {
-          await delay(TEST_SPEAKER_VOLUME_SETTLE_MS);
-        }
-        const next = await window.bridge.testSpeaker();
-        setSnapshot(next);
-        setSpeakerVolumeValue(snapSpeakerVolume(next.settings.speakerVolumePercent));
-        setSpeakerOutputAvailable(true);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE;
-        setSpeakerTestError(message);
-        setSpeakerOutputAvailable(true);
-        const next = await window.bridge.getStatus();
-        setSnapshot(next);
-        setSpeakerVolumeValue(snapSpeakerVolume(next.settings.speakerVolumePercent));
-        speakerVolumeEditingRef.current = false;
-      } finally {
-        speakerVolumeEditingRef.current = false;
-        setPendingAction(null);
-        window.setTimeout(() => setSpeakerTestLocked(false), TEST_SPEAKER_LOCK_MS);
-      }
-    })();
-  }
-
-  function runTestMic() {
-    setMicTestLocked(true);
-    setPendingAction('mic-test');
-    setMicTestError(null);
-    void (async () => {
-      try {
-        if (snapshot && micVolumeValue !== snapshot.settings.micVolumePercent) {
-          micVolumeEditingRef.current = true;
-          const next = await window.bridge.setMicVolume(micVolumeValue);
-          setSnapshot(next);
-          setMicVolumeValue(snapMicVolume(next.settings.micVolumePercent));
-          micVolumeEditingRef.current = false;
-        }
-        await playMicLiveListen(TEST_MIC_LISTEN_MS);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : BRIDGE_MIC_ENDPOINT_UNAVAILABLE;
-        setMicTestError(message);
-        const next = await window.bridge.getStatus();
-        setSnapshot(next);
-        setMicVolumeValue(snapMicVolume(next.settings.micVolumePercent));
-      } finally {
-        micVolumeEditingRef.current = false;
-        setPendingAction(null);
-        setMicTestLocked(false);
-      }
-    })();
-  }
-
   function selectControllerProfile(profileId: string) {
     void runAction('controller-profile', () => window.bridge.selectControllerProfile(profileId));
   }
@@ -2710,11 +1930,6 @@ export function App() {
     })();
   }
 
-  function toggleSpeakerEnabled() {
-    if (!snapshot) return;
-    void runAction('speaker-enabled', () => window.bridge.setSpeakerEnabled(!snapshot.settings.speakerEnabled));
-  }
-
   function openDeviceCleanupConfirm() {
     setDeviceCleanupMessage(null);
     setDeviceCleanupError(null);
@@ -2791,33 +2006,6 @@ export function App() {
 
   function nukePicoFlash() {
     void runPicoFirmwareAction('pico-firmware-nuke', () => window.bridge.nukePicoFlash());
-  }
-
-  function toggleAudioEnabled() {
-    if (!snapshot) return;
-    const enabled = !(snapshot.settings.speakerEnabled || snapshot.settings.duplexMicEnabled);
-    void runAction('audio-enabled', async () => {
-      let next = snapshot;
-      if (next.settings.speakerEnabled !== enabled) {
-        next = await window.bridge.setSpeakerEnabled(enabled);
-      }
-      if (!enabled && next.settings.duplexMicEnabled) {
-        next = await window.bridge.setDuplexMicEnabled(false);
-      }
-      return next;
-    });
-  }
-
-  function toggleDuplexMicEnabled() {
-    if (!snapshot) return;
-    void runAction('duplex-mic-enabled', () => (
-      window.bridge.setDuplexMicEnabled(!snapshot.settings.duplexMicEnabled)
-    ));
-  }
-
-  function toggleMicMute() {
-    if (!snapshot) return;
-    void runAction('mic-mute', () => window.bridge.setMicMute(!snapshot.settings.micMuted));
   }
 
   function focusBridgeSettings(target: SettingsFocusTarget) {
@@ -3234,16 +2422,16 @@ export function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={testSpeakerUnavailable}
-                    onClick={runTestSpeaker}
+                    disabled={audio.testSpeakerUnavailable}
+                    onClick={audio.runTestSpeaker}
                   >
                     <Volume2 size={15} />
                     Test Speaker
                   </button>
                   <button
                     type="button"
-                    disabled={testMicUnavailable}
-                    onClick={runTestMic}
+                    disabled={audio.testMicUnavailable}
+                    onClick={audio.runTestMic}
                   >
                     <Mic size={15} />
                     Listen Mic
@@ -3345,7 +2533,7 @@ export function App() {
                     </div>
                     <strong>{hapticsValue}%</strong>
                   </label>
-                  <label className={`overview-slider-row ${(!connected || !speakerVolumeSupported || !snapshot.settings.speakerEnabled || speakerVolumeCommitPending) ? 'disabled' : ''}`}>
+                  <label className={`overview-slider-row ${(!connected || !speakerVolumeSupported || !snapshot.settings.speakerEnabled || audio.speakerVolumeCommitPending) ? 'disabled' : ''}`}>
                     <span>Speaker</span>
                     <div className="overview-range-control">
                       <input
@@ -3353,25 +2541,25 @@ export function App() {
                         min="0"
                         max="100"
                         step={SPEAKER_VOLUME_STEP}
-                        value={speakerVolumeValue}
-                        disabled={!connected || !speakerVolumeSupported || !snapshot.settings.speakerEnabled || speakerVolumeCommitPending}
-                        style={{ '--range-fill': `${speakerVolumeValue}%` } as CSSProperties}
+                        value={audio.speakerVolumeValue}
+                        disabled={!connected || !speakerVolumeSupported || !snapshot.settings.speakerEnabled || audio.speakerVolumeCommitPending}
+                        style={{ '--range-fill': `${audio.speakerVolumeValue}%` } as CSSProperties}
                         onPointerDown={() => {
-                          speakerVolumeEditingRef.current = true;
+                          audio.speakerVolumeEditingRef.current = true;
                         }}
-                        onChange={(event) => setSpeakerVolumeValue(snapSpeakerVolume(Number(event.currentTarget.value)))}
-                        onPointerUp={() => void commitSpeakerVolume()}
+                        onChange={(event) => audio.setSpeakerVolumeValue(snapSpeakerVolume(Number(event.currentTarget.value)))}
+                        onPointerUp={() => void audio.commitSpeakerVolume()}
                         onKeyDown={(event) => {
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                            speakerVolumeEditingRef.current = true;
+                            audio.speakerVolumeEditingRef.current = true;
                           }
                         }}
                         onKeyUp={(event) => {
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                            void commitSpeakerVolume();
+                            void audio.commitSpeakerVolume();
                           }
                         }}
-                        onBlur={() => void commitSpeakerVolume()}
+                        onBlur={() => void audio.commitSpeakerVolume()}
                       />
                       <div className="overview-range-ticks" aria-hidden="true">
                         {PERCENT_SLIDER_TICKS.map((value) => (
@@ -3379,9 +2567,9 @@ export function App() {
                         ))}
                       </div>
                     </div>
-                    <strong>{speakerVolumeValue}%</strong>
+                    <strong>{audio.speakerVolumeValue}%</strong>
                   </label>
-                  <label className={`overview-slider-row ${(!connected || !duplexMicEnabled || micVolumeCommitPending) ? 'disabled' : ''}`}>
+                  <label className={`overview-slider-row ${(!connected || !audio.duplexMicEnabled || audio.micVolumeCommitPending) ? 'disabled' : ''}`}>
                     <span>Mic</span>
                     <div className="overview-range-control">
                       <input
@@ -3389,25 +2577,25 @@ export function App() {
                         min="0"
                         max="100"
                         step={MIC_VOLUME_STEP}
-                        value={micVolumeValue}
-                        disabled={!connected || !duplexMicEnabled || micVolumeCommitPending}
-                        style={{ '--range-fill': `${micVolumeValue}%` } as CSSProperties}
+                        value={audio.micVolumeValue}
+                        disabled={!connected || !audio.duplexMicEnabled || audio.micVolumeCommitPending}
+                        style={{ '--range-fill': `${audio.micVolumeValue}%` } as CSSProperties}
                         onPointerDown={() => {
-                          micVolumeEditingRef.current = true;
+                          audio.micVolumeEditingRef.current = true;
                         }}
-                        onChange={(event) => setMicVolumeValue(snapMicVolume(Number(event.currentTarget.value)))}
-                        onPointerUp={() => void commitMicVolume()}
+                        onChange={(event) => audio.setMicVolumeValue(snapMicVolume(Number(event.currentTarget.value)))}
+                        onPointerUp={() => void audio.commitMicVolume()}
                         onKeyDown={(event) => {
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                            micVolumeEditingRef.current = true;
+                            audio.micVolumeEditingRef.current = true;
                           }
                         }}
                         onKeyUp={(event) => {
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                            void commitMicVolume();
+                            void audio.commitMicVolume();
                           }
                         }}
-                        onBlur={() => void commitMicVolume()}
+                        onBlur={() => void audio.commitMicVolume()}
                       />
                       <div className="overview-range-ticks" aria-hidden="true">
                         {PERCENT_SLIDER_TICKS.map((value) => (
@@ -3415,7 +2603,7 @@ export function App() {
                         ))}
                       </div>
                     </div>
-                    <strong>{micVolumeValue}%</strong>
+                    <strong>{audio.micVolumeValue}%</strong>
                   </label>
                   <label className={`overview-slider-row ${(!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled || lighting.lightbarCommitPending) ? 'disabled' : ''}`}>
                     <span>Lightbar</span>
@@ -4030,353 +3218,15 @@ export function App() {
               <FeatureTipsPanel tab="haptics" onSettingsFocusRequest={focusBridgeSettings} audioHapticsOpen={audioHapticsOpen} />
           </div>
 
-          <div
-            className={`control-page audio-page ${activeControlTab === 'audio' ? 'active' : ''}`}
-            role="tabpanel"
-            id="control-panel-audio"
-            aria-labelledby="control-tab-audio"
-            aria-hidden={activeControlTab !== 'audio'}
-          >
-              <div className="feature-heading">
-                <div>
-                  <h2>Audio</h2>
-                  <p>{`Adjust controller ${outputControlLower} and microphone levels.`}</p>
-                </div>
-                <div className="audio-heading-actions">
-                  <div className="chords-field chords-inline-field audio-speaker-gain-field">
-                    <span>Speaker Gain</span>
-                    <CustomSelect
-                      value={speakerGainLevel}
-                      options={SPEAKER_GAIN_OPTIONS}
-                      disabled={!controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null}
-                      ariaLabel="Speaker gain"
-                      className="audio-speaker-gain-select"
-                      closeOnSelect={true}
-                      onChange={setSpeakerGainLevel}
-                      renderValue={(_label, value) => (
-                        <span>{value}</span>
-                      )}
-                      renderOption={(label) => (
-                        <span className="speaker-gain-option">
-                          <strong>{label}</strong>
-                        </span>
-                      )}
-                    />
-                  </div>
-                  <div className="audio-heading-controls">
-                    <div className="inline-switch">
-                      <span>Enabled</span>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={audioEnabled}
-                        aria-label="Enable audio"
-                        className={`switch ${audioEnabled ? 'on' : ''}`}
-                        disabled={!controllerControlsAvailable || pendingAction !== null}
-                        onClick={toggleAudioEnabled}
-                      >
-                        <span />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="feature-card-grid">
-                <section className="feature-card preset-card">
-                  <div className="feature-card-title">
-                    <button
-                      type="button"
-                      className={`feature-icon audio-enable-button icon-medium ${
-                        showMicrophoneControl
-                          ? duplexMicEnabled
-                            ? 'active'
-                            : ''
-                          : snapshot.settings.speakerEnabled
-                            ? 'active'
-                            : ''
-                      }`}
-                      aria-pressed={showMicrophoneControl ? duplexMicEnabled : snapshot.settings.speakerEnabled}
-                      aria-label={showMicrophoneControl ? duplexMicLabel : `Enable controller ${outputControlLower}`}
-                      title={showMicrophoneControl ? duplexMicLabel : `Enable controller ${outputControlLower}`}
-                      disabled={
-                        showMicrophoneControl
-                          ? !controllerControlsAvailable || pendingAction !== null
-                          : !controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null
-                      }
-                      onClick={showMicrophoneControl ? toggleDuplexMicEnabled : toggleSpeakerEnabled}
-                    >
-                      {showMicrophoneControl ? <Mic size={20} /> : <OutputIcon size={20} />}
-                    </button>
-                    <div className="title-copy">
-                      <h3>{showMicrophoneControl ? 'Microphone' : outputControlLabel}</h3>
-                      <p>
-                        {showMicrophoneControl
-                          ? 'Microphone level'
-                          : `${outputControlLabel} level`}
-                      </p>
-                    </div>
-                    <div className="dual-selector audio-mode-selector" role="tablist" aria-label="Audio control mode">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={!showMicrophoneControl}
-                        className={!showMicrophoneControl ? 'active' : ''}
-                        onClick={() => setShowMicrophoneControl(false)}
-                      >
-                        {outputControlLabel}
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={showMicrophoneControl}
-                        className={showMicrophoneControl ? 'active' : ''}
-                        onClick={() => setShowMicrophoneControl(true)}
-                      >
-                        Mic
-                      </button>
-                    </div>
-                  </div>
-                  <div className="framed-slider">
-                    <label className="slider-row">
-                      <span>0%</span>
-                      <div className="range-control">
-                        {showMicrophoneControl ? (
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step={MIC_VOLUME_STEP}
-                            value={micVolumeValue}
-                            disabled={!connected || !duplexMicEnabled || micVolumeCommitPending}
-                            style={{ '--range-fill': `${micVolumeValue}%` } as CSSProperties}
-                            aria-label="Microphone level"
-                            onPointerDown={() => {
-                              micVolumeEditingRef.current = true;
-                            }}
-                            onChange={(event) => setMicVolumeValue(snapMicVolume(Number(event.currentTarget.value)))}
-                            onPointerUp={() => void commitMicVolume()}
-                            onKeyDown={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                micVolumeEditingRef.current = true;
-                              }
-                            }}
-                            onKeyUp={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                void commitMicVolume();
-                              }
-                            }}
-                            onBlur={() => void commitMicVolume()}
-                          />
-                        ) : (
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step={SPEAKER_VOLUME_STEP}
-                            value={speakerVolumeValue}
-                            disabled={!connected || !speakerVolumeSupported || !snapshot.settings.speakerEnabled}
-                            style={{ '--range-fill': `${speakerVolumeValue}%` } as CSSProperties}
-                            onPointerDown={() => {
-                              speakerVolumeEditingRef.current = true;
-                            }}
-                            onChange={(event) => setSpeakerVolumeValue(snapSpeakerVolume(Number(event.currentTarget.value)))}
-                            onPointerUp={() => void commitSpeakerVolume()}
-                            onKeyDown={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                speakerVolumeEditingRef.current = true;
-                              }
-                            }}
-                            onKeyUp={(event) => {
-                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                void commitSpeakerVolume();
-                              }
-                            }}
-                            onBlur={() => void commitSpeakerVolume()}
-                          />
-                        )}
-                        <div className="range-ticks" aria-hidden="true">
-                          {PERCENT_SLIDER_TICKS.map((value) => (
-                            <span key={value} className={sliderTickClass(value, 100)} />
-                          ))}
-                        </div>
-                      </div>
-                      <strong>{showMicrophoneControl ? micVolumeValue : speakerVolumeValue}%</strong>
-                    </label>
-                  </div>
-                  {showMicrophoneControl ? (
-                    <>
-                      <div className="segmented-row">
-                        {MIC_VOLUME_PRESETS.map(([label, value]) => (
-                          <button
-                            key={label}
-                            type="button"
-                            className={micVolumeValue === value ? 'active' : ''}
-                            disabled={!connected || !duplexMicEnabled || micVolumeCommitPending}
-                            onClick={() => setMicPreset(Number(value))}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="mic-option-grid">
-                        <button
-                          type="button"
-                          className={snapshot.settings.micMuted ? 'active danger' : ''}
-                          aria-pressed={snapshot.settings.micMuted}
-                          disabled={!connected || !duplexMicEnabled || pendingAction !== null}
-                          onClick={toggleMicMute}
-                        >
-                          <VolumeX size={15} />
-                          Mute
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="segmented-row">
-                        {SPEAKER_VOLUME_PRESETS.map(([label, value]) => (
-                          <button
-                            key={label}
-                            type="button"
-                            className={speakerVolumeValue === value ? 'active' : ''}
-                            disabled={!connected || !speakerVolumeSupported || !snapshot.settings.speakerEnabled || speakerVolumeCommitPending}
-                            onClick={() => setSpeakerPreset(Number(value))}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="audio-secondary-controls">
-                        <div
-                          className={`audio-buffer-control framed-slider ${audioBufferLengthControlDisabled ? 'disabled' : ''}`}
-                          style={{ '--range-fill': `${audioBufferPercent(audioBufferLengthValue)}%` } as CSSProperties}
-                        >
-                          <div className="audio-buffer-header">
-                            <AudioHapticsConfigLabel
-                              id="audio-buffer-length-tooltip"
-                              label="Audio Buffer Length"
-                              tooltip="Sets the DualSense audio buffer value. Lower values reduce haptic delay but increase stutter risk; higher values improve speaker stability at the cost of latency."
-                              className="audio-buffer-title"
-                            />
-                            <div className="audio-buffer-readout">
-                              <strong>{audioBufferLengthValue}</strong>
-                              <span>{audioBufferDelayLabel(audioBufferLengthValue)}</span>
-                            </div>
-                            <div
-                              className={`audio-buffer-status-icon ${audioBufferZoneTone(audioBufferLengthValue)}`}
-                              aria-label={audioBufferZoneLabel(audioBufferLengthValue)}
-                              aria-describedby="audio-buffer-zone-tooltip"
-                              tabIndex={0}
-                            >
-                              {audioBufferZoneTone(audioBufferLengthValue) === 'safe' && (
-                                <IconCircleCheck size={18} stroke={2.35} aria-hidden="true" />
-                              )}
-                              {audioBufferZoneTone(audioBufferLengthValue) === 'risky' && (
-                                <IconAlertTriangle size={18} stroke={2.35} aria-hidden="true" />
-                              )}
-                              {audioBufferZoneTone(audioBufferLengthValue) === 'stutter' && (
-                                <IconAlertHexagon size={18} stroke={2.35} aria-hidden="true" />
-                              )}
-                              <span
-                                id="audio-buffer-zone-tooltip"
-                                className="settings-shortcut-tooltip shortcut-glyph-tooltip audio-buffer-zone-tooltip"
-                                role="tooltip"
-                              >
-                                {audioBufferZoneTooltip(audioBufferLengthValue)}
-                              </span>
-                            </div>
-                          </div>
-                          <label className="audio-slider-row audio-buffer-slider-row">
-                            <div className="range-control audio-buffer-range-control">
-                              <input
-                                type="range"
-                                min={AUDIO_BUFFER_LENGTH_MIN}
-                                max={AUDIO_BUFFER_LENGTH_MAX}
-                                step="1"
-                                value={audioBufferLengthValue}
-                                aria-label="Audio buffer length"
-                                aria-valuetext={`${audioBufferLengthValue}, ${audioBufferDelayLabel(audioBufferLengthValue)}, ${audioBufferZoneLabel(audioBufferLengthValue)}`}
-                                disabled={audioBufferLengthControlDisabled}
-                                onPointerDown={() => {
-                                  audioBufferLengthEditingRef.current = true;
-                                }}
-                                onPointerCancel={() => void commitAudioBufferLength()}
-                                onChange={(event) => {
-                                  audioBufferLengthEditingRef.current = true;
-                                  setAudioBufferLengthValue(clampAudioBufferLength(Number(event.currentTarget.value)));
-                                }}
-                                onPointerUp={() => void commitAudioBufferLength()}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                    audioBufferLengthEditingRef.current = true;
-                                  }
-                                }}
-                                onKeyUp={(event) => {
-                                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                                    void commitAudioBufferLength();
-                                  }
-                                }}
-                                onBlur={() => void commitAudioBufferLength()}
-                              />
-                            </div>
-                          </label>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </section>
-                <section className="feature-card test-card">
-                  <div className="feature-card-title">
-                    <span className="feature-icon"><IconTestPipe size={20} /></span>
-                    <div className="title-copy">
-                      <h3>Testing</h3>
-                      <p>{showMicrophoneControl ? 'Listen to the controller microphone for five seconds.' : `Play a short sample through the controller ${outputControlLower}.`}</p>
-                    </div>
-                  </div>
-                  <button
-                    className="primary-action"
-                    type="button"
-                    disabled={activeAudioTestUnavailable}
-                    onClick={showMicrophoneControl ? runTestMic : runTestSpeaker}
-                  >
-                    {showMicrophoneControl ? <Mic size={15} /> : <Play size={15} />}
-                    {showMicrophoneControl
-                      ? connected && micTestLocked
-                        ? 'Live Listening'
-                        : connected && micTestError
-                          ? 'Retry Mic'
-                          : 'Test Mic'
-                      : connected && speakerTestLocked
-                        ? 'Playing Tone'
-                        : connected && gameStreamActive
-                          ? 'Game Active'
-                        : connected && speakerOutputMissing
-                            ? `Retry ${outputControlLabel}`
-                          : `Test ${outputControlLabel}`}
-                  </button>
-                  <button
-                    className="secondary-action"
-                    type="button"
-                    disabled={!activeAudioTestLocked}
-                    onClick={showMicrophoneControl ? stopMicLiveListen : () => setSpeakerTestLocked(false)}
-                  >
-                    <span className="stop-glyph" aria-hidden="true" />
-                    Stop Test
-                  </button>
-                  <div className="feature-status test-status audio-test-status">
-                    <span className={`status-badge ${activeAudioTestStatusTone}`} title={activeAudioTestStatusLabel}>
-                      <span className={`dot ${activeAudioTestStatusTone}`} />
-                      <strong>{activeAudioTestStatusLabel}</strong>
-                    </span>
-                    <span className={`status-badge ${audioPathTone}`} title={audioPathTooltip}>
-                      <span className={`dot ${audioPathTone}`} />
-                      <strong>{audioPathLabel}</strong>
-                    </span>
-                  </div>
-                </section>
-              </div>
-              <FeatureTipsPanel tab="audio" />
-          </div>
+          <ControllerAudioPage
+            active={activeControlTab === 'audio'}
+            controller={audio}
+            snapshot={snapshot}
+            connected={connected}
+            controllerControlsAvailable={controllerControlsAvailable}
+            pendingAction={pendingAction}
+          />
+
 
           <AdaptiveTriggersPage
             active={activeControlTab === 'triggers' || triggerLabOpen}
@@ -4446,7 +3296,7 @@ export function App() {
                   <button
                     className="heading-action"
                     type="button"
-                    disabled={!connected || pendingAction !== null || hapticsCommitPending || speakerVolumeCommitPending || lighting.lightbarCommitPending}
+                    disabled={!connected || pendingAction !== null || hapticsCommitPending || audio.speakerVolumeCommitPending || lighting.lightbarCommitPending}
                     onClick={() => void runAction('restore', () => window.bridge.restoreDefaults())}
                   >
                     <RefreshCcw size={18} />
