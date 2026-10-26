@@ -18,6 +18,7 @@ import type {
   BridgeDiagnostics,
   BridgeSnapshot,
   PicoFirmwareActionResult,
+  UiLocalePreference,
   UiScalePercent,
   UiTextScalePercent,
   UiThemePreset,
@@ -164,6 +165,7 @@ const api = {
   setUiTextScalePercent: (value: UiTextScalePercent): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setUiTextScalePercent', value)
   ),
+  setUiLocale: (value: UiLocalePreference): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiLocale', value),
   setUiThemePreset: (value: UiThemePreset): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setUiThemePreset', value)
   ),

@@ -33,6 +33,7 @@ import type {
   BridgeSnapshot,
   PicoFirmwareAction,
   PicoFirmwareActionResult,
+  UiLocalePreference,
   UiScalePercent,
   UiTextScalePercent,
   UiThemePreset
@@ -1157,6 +1158,9 @@ function registerIpc(service: BridgeService): void {
   });
   ipcMain.handle('bridge:setUiTextScalePercent', (_event, value: UiTextScalePercent) => (
     service.setUiTextScalePercent(value)
+  ));
+  ipcMain.handle('bridge:setUiLocale', (_event, value: UiLocalePreference) => (
+    service.setUiLocale(value)
   ));
   ipcMain.handle('bridge:setUiThemePreset', (_event, value: UiThemePreset) => (
     service.setUiThemePreset(value)

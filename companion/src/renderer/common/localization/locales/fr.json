@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../../localization-catalog.schema.json",
+  "meta": {
+    "locale": "fr",
+    "name": "French",
+    "nativeName": "Français",
+    "direction": "ltr"
+  },
+  "translations": {
+    "Changes Are Automatically Saved": "Les modifications sont enregistrées automatiquement",
+    "DS5 Bridge could not finish loading": "DS5 Bridge n’a pas pu terminer le chargement",
+    "Reload app": "Recharger l’application",
+    "Reload the app to try again. If this keeps happening, keep the terminal output so the renderer error can be diagnosed.": "Rechargez l’application pour réessayer. Si le problème persiste, conservez la sortie du terminal afin de diagnostiquer l’erreur de rendu.",
+    "Renderer stopped": "Arrêt du moteur de rendu",
+    "Unknown renderer failure": "Échec inconnu du moteur de rendu",
+    "Use system language": "Utiliser la langue du système"
+  }
+}

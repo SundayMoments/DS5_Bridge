@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../../localization-catalog.schema.json",
+  "meta": {
+    "locale": "en",
+    "name": "English",
+    "nativeName": "English",
+    "direction": "ltr"
+  },
+  "translations": {
+    "Changes Are Automatically Saved": "Changes Are Automatically Saved",
+    "DS5 Bridge could not finish loading": "DS5 Bridge could not finish loading",
+    "Reload app": "Reload app",
+    "Reload the app to try again. If this keeps happening, keep the terminal output so the renderer error can be diagnosed.": "Reload the app to try again. If this keeps happening, keep the terminal output so the renderer error can be diagnosed.",
+    "Renderer stopped": "Renderer stopped",
+    "Unknown renderer failure": "Unknown renderer failure",
+    "Use system language": "Use system language"
+  }
+}

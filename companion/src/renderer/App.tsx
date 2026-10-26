@@ -113,6 +113,8 @@ import {
   storedUiTextScalePercent
 } from './ui-text-scale-preferences';
 import { useDocumentTheme } from './common/use-document-theme';
+import { useLocalization, type UiLocalePreference } from './common/localization';
+import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
   CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
   CHORD_CONTROLLER_SETTING_STEP_MAX,
@@ -2828,6 +2830,7 @@ export function App() {
   const [testLocked, setTestLocked] = useState(false);
   const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
   const [startupTextScale, setStartupTextScale] = useState<UiTextScalePercent>(storedUiTextScalePercent);
+  const localization = useLocalization();
   const [speakerTestLocked, setSpeakerTestLocked] = useState(false);
   const [speakerOutputAvailable, setSpeakerOutputAvailable] = useState<boolean | null>(null);
   const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
@@ -2912,6 +2915,12 @@ export function App() {
     setStartupTheme(liveTheme);
     saveUiThemePreset(liveTheme);
   }, [snapshot?.settings.uiThemePreset]);
+
+  useEffect(() => {
+    const liveLocale = snapshot?.settings.uiLocale;
+    if (!liveLocale || liveLocale === localization.preference) return;
+    localization.setPreference(liveLocale);
+  }, [snapshot?.settings.uiLocale]);
 
   useEffect(() => {
     const liveTextScale = snapshot?.settings.uiTextScalePercent;
@@ -10147,6 +10156,22 @@ export function App() {
                     disabled={pendingAction !== null}
                     onChange={(value) => {
                       void runAction('ui-scale', () => window.bridge.setUiScalePercent(value));
+                    }}
+                  />
+                </div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Language</strong>
+                  </div>
+                  <CustomSelect<UiLocalePreference>
+                    value={localization.preference}
+                    options={localization.options}
+                    className="settings-scale-select"
+                    showSelectedCheck={false}
+                    ariaLabel="Language"
+                    disabled={pendingAction !== null}
+                    onChange={(value) => {
+                      void runAction('ui-locale', () => window.bridge.setUiLocale(normalizeUiLocalePreference(value)));
                     }}
                   />
                 </div>

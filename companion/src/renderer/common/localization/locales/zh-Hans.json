@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../../localization-catalog.schema.json",
+  "meta": {
+    "locale": "zh-Hans",
+    "name": "Chinese (Simplified)",
+    "nativeName": "简体中文",
+    "direction": "ltr"
+  },
+  "translations": {
+    "Changes Are Automatically Saved": "更改会自动保存",
+    "DS5 Bridge could not finish loading": "DS5 Bridge 未能完成加载",
+    "Reload app": "重新加载应用",
+    "Reload the app to try again. If this keeps happening, keep the terminal output so the renderer error can be diagnosed.": "重新加载应用后重试。如果问题持续出现，请保留终端输出，以便诊断渲染器错误。",
+    "Renderer stopped": "渲染器已停止",
+    "Unknown renderer failure": "未知渲染器故障",
+    "Use system language": "使用系统语言"
+  }
+}

@@ -13,6 +13,7 @@ import {
   CURRENT_SETTINGS_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   SettingsStore,
+  normalizeUiLocalePreference,
   normalizeUiScalePercent,
   normalizeUiTextScalePercent
 } from './settings-store';
@@ -739,6 +740,32 @@ describe('SettingsStore', () => {
     expect(updated.uiThemePreset).toBe('kiwi');
     expect(persistedSettings(userDataPath).uiThemePreset).toBe('kiwi');
     expect(new SettingsStore(userDataPath).get().uiThemePreset).toBe('kiwi');
+  });
+
+  it('defaults the UI language to the system language and persists bundled choices', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    expect(store.get().uiLocale).toBe('system');
+
+    store.update({ uiLocale: 'pt-BR' });
+    expect(persistedSettings(userDataPath).uiLocale).toBe('pt-BR');
+    expect(new SettingsStore(userDataPath).get().uiLocale).toBe('pt-BR');
+  });
+
+  it('normalizes saved UI languages to bundled catalogs or the system language', () => {
+    expect(normalizeUiLocalePreference('system')).toBe('system');
+    expect(normalizeUiLocalePreference('zh-CN')).toBe('zh-Hans');
+    expect(normalizeUiLocalePreference('es-MX')).toBe('es-419');
+    expect(normalizeUiLocalePreference('zh-TW')).toBe('system');
+    expect(normalizeUiLocalePreference('klingon')).toBe('system');
+    expect(normalizeUiLocalePreference(null)).toBe('system');
+
+    const userDataPath = tempUserDataPath();
+    writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({
+      settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
+      uiLocale: 'tlh'
+    }), 'utf8');
+    expect(new SettingsStore(userDataPath).get().uiLocale).toBe('system');
   });
 
   it.each(['bubble-gum', 'pomegranate', 'kiwi'] as const)('accepts the %s theme preset', (preset) => {

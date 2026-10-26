@@ -42,6 +42,8 @@ import type {
 } from '../shared/protocol';
 import { isUiScalePercent, isUiTextScalePercent } from '../shared/types';
 import { isUiThemePreset } from '../shared/ui-theme';
+import { SYSTEM_UI_LOCALE, normalizeUiLocalePreference } from '../shared/ui-locale-matching';
+export { normalizeUiLocalePreference };
 import type { CompanionSettings, UiScalePercent, UiTextScalePercent, UiThemePreset } from '../shared/types';
 
 const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
@@ -152,6 +154,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   uiScalePercent: 100,
   uiTextScalePercent: 100,
   uiThemePreset: 'dark',
+  uiLocale: SYSTEM_UI_LOCALE,
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
   kitsuneInputPromotionDismissed: false,
@@ -918,6 +921,7 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     uiScalePercent: normalizeUiScalePercent(value?.uiScalePercent),
     uiTextScalePercent: normalizeUiTextScalePercent(value?.uiTextScalePercent),
     uiThemePreset: normalizeUiThemePreset(value?.uiThemePreset),
+    uiLocale: normalizeUiLocalePreference(value?.uiLocale),
     launchAtStartupEnabled: typeof value?.launchAtStartupEnabled === 'boolean'
       ? value.launchAtStartupEnabled
       : DEFAULT_SETTINGS.launchAtStartupEnabled,

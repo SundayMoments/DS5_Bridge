@@ -29,6 +29,7 @@ export type UiScalePercent = 60 | 80 | 100 | 120;
 /** Text-only accessibility scale; geometry stays on the window scale. */
 export type UiTextScalePercent = 80 | 90 | 100 | 110 | 120;
 export type UiThemePreset = import('./ui-theme').UiThemePreset;
+export type UiLocalePreference = import('./ui-locale-matching').UiLocalePreference;
 
 export const UI_SCALE_PERCENTS: readonly UiScalePercent[] = [60, 80, 100, 120];
 export const UI_TEXT_SCALE_PERCENTS: readonly UiTextScalePercent[] = [80, 90, 100, 110, 120];
@@ -51,6 +52,7 @@ export interface CompanionSettings {
   uiScalePercent: UiScalePercent;
   uiTextScalePercent: UiTextScalePercent;
   uiThemePreset: UiThemePreset;
+  uiLocale: UiLocalePreference;
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
   kitsuneInputPromotionDismissed: boolean;

@@ -80,6 +80,7 @@ import type {
   AudioHapticsSession,
   HostPersonaTransition,
   HidDeviceSummary,
+  UiLocalePreference,
   UiScalePercent,
   UiTextScalePercent,
   UiThemePreset,
@@ -104,6 +105,7 @@ import { CompanionDebugConfig } from './debug-config';
 import { HidDiscoveryClient } from './hid-discovery-client';
 import {
   SettingsStore,
+  normalizeUiLocalePreference,
   normalizeUiScalePercent,
   normalizeUiTextScalePercent,
   normalizeUiThemePreset
@@ -3047,6 +3049,14 @@ export class BridgeService extends EventEmitter {
   setUiTextScalePercent(value: UiTextScalePercent): BridgeSnapshot {
     this.snapshot.settings = this.settingsStore.update({
       uiTextScalePercent: normalizeUiTextScalePercent(value)
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  setUiLocale(value: UiLocalePreference): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      uiLocale: normalizeUiLocalePreference(value)
     });
     this.emitSnapshot();
     return this.getSnapshot();
