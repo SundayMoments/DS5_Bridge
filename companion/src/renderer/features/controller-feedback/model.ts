@@ -9,6 +9,7 @@ export const HAPTICS_STEP = 20;
 export const STANDARD_FEEDBACK_GAIN_PERCENT = 200;
 export const BOOSTED_FEEDBACK_GAIN_PERCENT = 500;
 export const TEST_HAPTICS_LOCK_MS = 1100;
+export const FEEDBACK_TEST_FALLBACK_ERROR = 'The feedback test could not run. Please try again.';
 export const HAPTICS_PRESETS: Array<[string, number]> = [
   ['Low', 50],
   ['Medium', 100],
@@ -40,4 +41,10 @@ export function displayHapticsValue(snapshot: BridgeSnapshot): number {
 
 export function displayClassicRumbleValue(snapshot: BridgeSnapshot): number {
   return capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot);
+}
+
+/** Why a haptics or rumble test failed: the bridge's reason without Electron's IPC prefix. */
+export function feedbackTestErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '').trim() || FEEDBACK_TEST_FALLBACK_ERROR;
 }

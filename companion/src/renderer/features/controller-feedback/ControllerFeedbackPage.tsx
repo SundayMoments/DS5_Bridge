@@ -74,6 +74,7 @@ export function ControllerFeedbackPage({
     activeFeedbackTestUnavailable,
     activeFeedbackStatusLabel,
     activeFeedbackStatusTone,
+    feedbackTestError,
     commitHapticsValue,
     commitClassicRumbleValue,
     setHapticsPreset,
@@ -544,7 +545,16 @@ export function ControllerFeedbackPage({
                 <p>Run a short test to feel the current settings.</p>
               </div>
             </div>
-            <button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable} onClick={runFeedbackTest}>
+            {feedbackTestError ? (
+              <p id="feedback-test-error" className="feedback-test-error" role="alert">{feedbackTestError}</p>
+            ) : null}
+            <button
+              className="primary-action"
+              type="button"
+              disabled={activeFeedbackTestUnavailable}
+              aria-describedby={feedbackTestError ? 'feedback-test-error' : undefined}
+              onClick={runFeedbackTest}
+            >
               <Play size={15} />
               {showClassicRumbleControl
                 ? connected && testLocked

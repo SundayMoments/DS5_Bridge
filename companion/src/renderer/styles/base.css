@@ -27,6 +27,19 @@ button {
   cursor: pointer;
 }
 
+/* Read by screen readers, never drawn. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .shell {
   --nav-active-bg: color-mix(in srgb, var(--accent) var(--nav-active-bg-weight), var(--nav-active-base));
   --nav-active-border: color-mix(in srgb, var(--accent) var(--nav-active-border-weight), var(--nav-active-base));

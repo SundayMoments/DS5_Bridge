@@ -4,6 +4,7 @@ import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import {
   IconAdjustmentsSpark,
   IconActivity as Activity,
+  IconAlertTriangle,
   IconBatteryEco,
   IconBell as Bell,
   IconBinary,
@@ -925,12 +926,20 @@ export function App() {
                 <div className="overview-action-grid">
                   <button
                     type="button"
+                    className={feedback.feedbackTestError ? 'failed' : undefined}
                     disabled={activeFeedbackTestUnavailable}
+                    title={feedback.feedbackTestError ?? undefined}
+                    aria-describedby={feedback.feedbackTestError ? 'overview-feedback-test-error' : undefined}
                     onClick={runFeedbackTest}
                   >
-                    <Play size={15} />
-                    Test Haptics
+                    {feedback.feedbackTestError ? <IconAlertTriangle size={15} /> : <Play size={15} />}
+                    {feedback.feedbackTestError ? 'Failed' : 'Test Haptics'}
                   </button>
+                  {feedback.feedbackTestError ? (
+                    <span id="overview-feedback-test-error" className="visually-hidden" role="alert">
+                      {feedback.feedbackTestError}
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     disabled={audio.testSpeakerUnavailable}

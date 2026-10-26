@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BridgeSnapshot } from '@shared/types';
 import type { AppRuntime } from '../../composition/app-runtime';
 import {
@@ -12,6 +12,7 @@ import {
   displayClassicRumbleValue,
   displayHapticsValue,
   feedbackSliderMaxFromSnapshot,
+  feedbackTestErrorMessage,
   feedbackSliderTicks,
   snapHapticsValue
 } from './model';
@@ -34,6 +35,8 @@ export function useControllerFeedbackController(runtime: AppRuntime, input: Cont
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
   const [showClassicRumbleControl, setShowClassicRumbleControl] = useState(false);
   const [testLocked, setTestLocked] = useState(false);
+  // Why the last test of the selected mode failed; cleared by the next test or a mode switch.
+  const [testError, setTestError] = useState<string | null>(null);
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
   const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
@@ -93,9 +96,19 @@ export function useControllerFeedbackController(runtime: AppRuntime, input: Cont
   const rumbleStatusTone = testLocked || rumbleStatusReady
     ? 'good'
     : 'idle';
+  // A failure stays on screen until the next test, unless the bridge or the feature goes away first.
+  const feedbackTestError = testError && connected && activeHapticsFeatureEnabled && !testLocked ? testError : null;
   const activeFeedbackTestUnavailable = showClassicRumbleControl ? testRumbleUnavailable : testHapticsUnavailable;
-  const activeFeedbackStatusLabel = showClassicRumbleControl ? rumbleStatusLabel : hapticsStatusLabel;
-  const activeFeedbackStatusTone = showClassicRumbleControl ? rumbleStatusTone : hapticsStatusTone;
+  const activeFeedbackStatusLabel = feedbackTestError
+    ? 'Failed'
+    : showClassicRumbleControl ? rumbleStatusLabel : hapticsStatusLabel;
+  const activeFeedbackStatusTone = feedbackTestError
+    ? 'warn'
+    : showClassicRumbleControl ? rumbleStatusTone : hapticsStatusTone;
+
+  useEffect(() => {
+    setTestError(null);
+  }, [showClassicRumbleControl]);
 
   function syncSnapshot(next: BridgeSnapshot) {
     if (!hapticsEditingRef.current) {
@@ -180,28 +193,47 @@ export function useControllerFeedbackController(runtime: AppRuntime, input: Cont
     void commitClassicRumbleValue(snappedValue);
   }
 
-  function runFeedbackTest() {
-    setTestLocked(true);
-    void runAction(showClassicRumbleControl ? 'test-rumble' : 'test', async () => {
-      if (snapshot && showClassicRumbleControl) {
-        if (
-          classicRumbleValue !== snapshot.settings.classicRumbleGainPercent
-          && !isPreservingPowerSavingCap(snapshot, snapshot.settings.classicRumbleGainPercent, classicRumbleValue)
-        ) {
-          await window.bridge.setClassicRumbleGain(classicRumbleValue);
-        }
-        return window.bridge.testClassicRumble();
-      }
+  async function startFeedbackTest(rumble: boolean): Promise<BridgeSnapshot> {
+    if (snapshot && rumble) {
       if (
-        snapshot
-        && hapticsValue !== snapshot.settings.hapticsGainPercent
-        && !isPreservingPowerSavingCap(snapshot, snapshot.settings.hapticsGainPercent, hapticsValue)
+        classicRumbleValue !== snapshot.settings.classicRumbleGainPercent
+        && !isPreservingPowerSavingCap(snapshot, snapshot.settings.classicRumbleGainPercent, classicRumbleValue)
       ) {
-        await window.bridge.setHapticsGain(hapticsValue);
+        await window.bridge.setClassicRumbleGain(classicRumbleValue);
       }
-      return window.bridge.testHaptics();
+      return window.bridge.testClassicRumble();
+    }
+    if (
+      snapshot
+      && hapticsValue !== snapshot.settings.hapticsGainPercent
+      && !isPreservingPowerSavingCap(snapshot, snapshot.settings.hapticsGainPercent, hapticsValue)
+    ) {
+      await window.bridge.setHapticsGain(hapticsValue);
+    }
+    return window.bridge.testHaptics();
+  }
+
+  function runFeedbackTest() {
+    const rumble = showClassicRumbleControl;
+    let started = false;
+    setTestLocked(true);
+    setTestError(null);
+    void runAction(rumble ? 'test-rumble' : 'test', async () => {
+      try {
+        const next = await startFeedbackTest(rumble);
+        started = true;
+        return next;
+      } catch (error) {
+        // The bridge refused the test; say why and let the user retry at once.
+        setTestError(feedbackTestErrorMessage(error));
+        throw error;
+      }
     }).finally(() => {
-      window.setTimeout(() => setTestLocked(false), TEST_HAPTICS_LOCK_MS);
+      if (started) {
+        window.setTimeout(() => setTestLocked(false), TEST_HAPTICS_LOCK_MS);
+      } else {
+        setTestLocked(false);
+      }
     });
   }
 
@@ -281,6 +313,7 @@ export function useControllerFeedbackController(runtime: AppRuntime, input: Cont
     activeFeedbackTestUnavailable,
     activeFeedbackStatusLabel,
     activeFeedbackStatusTone,
+    feedbackTestError,
     syncSnapshot,
     commitHapticsValue,
     commitClassicRumbleValue,
