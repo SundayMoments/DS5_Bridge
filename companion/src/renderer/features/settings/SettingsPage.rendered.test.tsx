@@ -50,6 +50,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
     focusTarget: null,
     picoFirmware: { message: null, error: null },
     wakeOnLan: { connectionKey: 'connected', controllerConnected: false },
+    bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null },
     ...overrides
   };
 }
@@ -192,6 +193,23 @@ describe('Settings page', () => {
     expect(actions.flashPicoFirmware).toHaveBeenCalledOnce();
     expect(host.querySelector('.pico-firmware-message.good')?.textContent).toBe('Mounted RP2350');
     expect(host.querySelector('.pico-firmware-message.bad')?.textContent).toBe('Drive missing');
+  });
+
+  it('shows the last restart under the firmware tools when the firmware reports it', () => {
+    const resetEvidence = {
+      watchdogReset: true, evidenceValid: true, phase: 'companion', reason: 'watchdog-timeout',
+      consecutiveAbnormalResets: 1, uptimeBeforeResetMs: 600_000, detail: 0, uptimeMs: 5_000
+    };
+    const host = render(<Harness model={baseModel({ bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence } })} actions={createActions()} />);
+    act(() => sectionButton(host, 'Bridge Firmware').click());
+    const row = host.querySelector('#settings-section-maintenance .last-restart-row');
+    expect(row?.querySelector('.last-restart-text')?.textContent).toBe('Recovered from a system freeze in app commands after 10m');
+
+    act(() => root?.unmount());
+    root = null;
+    const older = render(<Harness model={baseModel()} actions={createActions()} />);
+    act(() => sectionButton(older, 'Bridge Firmware').click());
+    expect(older.querySelector('.last-restart-row')).toBeNull();
   });
 
   it('links Discord and GitHub from Help & About', () => {

@@ -1997,6 +1997,10 @@ export function App() {
     wakeOnLan: {
       connectionKey: `${snapshot.state}:${snapshot.settings.selectedBridgePath ?? ''}:${snapshot.status?.protocolVersion ?? ''}:${controllerConnected}`,
       controllerConnected
+    },
+    bridgeHealth: {
+      firmwareVersion: snapshot.status?.firmwareVersion ?? null,
+      resetEvidence: connected ? snapshot.diagnostics.resetEvidence : null
     }
   };
   const currentSettings = snapshot.settings;

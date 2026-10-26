@@ -64,7 +64,8 @@ function model(overrides: Partial<SettingsPageModel['wakeOnLan']> = {}): Setting
     support: { usbSuspendDisconnect: true, wakeOnConnect: true, sleepController: true },
     focusTarget: null,
     picoFirmware: { message: null, error: null },
-    wakeOnLan: { connectionKey: 'connected', controllerConnected: false, ...overrides }
+    wakeOnLan: { connectionKey: 'connected', controllerConnected: false, ...overrides },
+    bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null }
   };
 }
 

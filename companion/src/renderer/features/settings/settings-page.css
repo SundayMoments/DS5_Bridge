@@ -303,6 +303,23 @@
   border-radius: 0 6px 6px 0;
 }
 
+/* Last restart: selectable so it can go into a bug report as is. */
+.settings-page .last-restart-text {
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .last-restart-text.abnormal {
+  color: var(--warning);
+}
+
+.settings-page .last-restart-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 /* Keep operation results distinct from ordinary descriptions. */
 .settings-page .settings-menu-copy > .pico-firmware-message.good {
   color: var(--success);

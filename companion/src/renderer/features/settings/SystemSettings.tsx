@@ -7,6 +7,7 @@ import {
   IconUsb
 } from '@tabler/icons-react';
 import { SearchableSetting, type SettingsCategoryProps } from './SettingsCategoryContentSupport';
+import { LastRestartRow } from './LastRestartRow';
 
 export const DS5_BRIDGE_GITHUB_URL = 'https://github.com/SundayMoments';
 export const DS5_BRIDGE_DISCORD_URL = 'https://discord.gg/By5jhh73wr';
@@ -47,6 +48,11 @@ export function FirmwareSettings({ model, actions, matchingSettingIds }: Setting
         </div>
       </div>
     </SearchableSetting>
+    {model.bridgeHealth.resetEvidence ? (
+      <SearchableSetting id="last-restart" matchingSettingIds={matchingSettingIds}>
+        <LastRestartRow evidence={model.bridgeHealth.resetEvidence} firmwareVersion={model.bridgeHealth.firmwareVersion} />
+      </SearchableSetting>
+    ) : null}
   </>;
 }
 

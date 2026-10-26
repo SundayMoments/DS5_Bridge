@@ -69,6 +69,7 @@ export type SettingsSearchEntryId =
   | 'remote-wake'
   | 'wake-on-lan'
   | 'pico-tools'
+  | 'last-restart'
   | 'github'
   | 'discord';
 
@@ -106,6 +107,7 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'remote-wake', label: 'Wake PC via USB', category: 'pc-wake', keywords: 'usb remote wake sleep windows controller reconnect' },
   { id: 'wake-on-lan', label: 'Wake-on-LAN', category: 'pc-wake', keywords: 'wifi wi-fi network ethernet magic packet lan sleep shutdown router' },
   { id: 'pico-tools', label: 'Bridge Firmware', category: 'maintenance', keywords: 'pico bridge firmware update recovery erase mount flash nuke uf2' },
+  { id: 'last-restart', label: 'Last Restart', category: 'maintenance', keywords: 'reset crash freeze watchdog reboot diagnostics bug report' },
   { id: 'github', label: 'GitHub', category: 'about', keywords: 'sunday moments profile developer source' },
   { id: 'discord', label: 'Support & Community', category: 'about', keywords: 'discord invite help server' }
 ];
