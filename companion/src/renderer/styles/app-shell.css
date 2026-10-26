@@ -1,30 +1,27 @@
-@keyframes kitsune-promotion-gloss-wipe {
-  0% {
-    transform: translateX(-240%) skewX(-18deg);
-    opacity: 0;
-  }
-
-  18% {
-    opacity: 0.72;
-  }
-
-  100% {
-    transform: translateX(520%) skewX(-18deg);
-    opacity: 0;
-  }
+.window-bar {
+  position: absolute;
+  z-index: 40;
+  top: 0;
+  right: 0;
+  left: var(--sidebar-width);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  height: var(--window-bar-height);
+  padding: 0 0 0 18px;
+  color: var(--text-control);
+  border-bottom: 0;
+  background: transparent;
+  -webkit-app-region: drag;
 }
 
-.window-bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--window-bar-height);
-  padding: 0 0 0 16px;
-  color: var(--text-control);
-  border-bottom: 1px solid var(--window-bar-border);
-  background: var(--window-bar-bg);
-  -webkit-app-region: drag;
+.window-bar-center {
+  grid-column: 1;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  place-items: center;
 }
 
 .shell.window-dragging,
@@ -35,10 +32,6 @@
 
 .shell.window-dragging {
   background: var(--app-bg-flat);
-}
-
-.shell.window-dragging .window-bar {
-  background: var(--window-bar-bg-flat);
 }
 
 .shell.window-dragging .hero-card,
@@ -60,43 +53,29 @@
   filter: none !important;
 }
 
-.bridge-wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-strong);
-  line-height: 1;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
+/* The Kitsune Input promotion keeps its own dark banner and orange edge in every theme. */
+@keyframes kitsune-promotion-gloss-wipe {
+  0% {
+    transform: translateX(-240%) skewX(-18deg);
+    opacity: 0;
+  }
 
-.bridge-mark {
-  width: 18px;
-  height: auto;
-  flex: 0 0 auto;
-  display: block;
-}
+  18% {
+    opacity: 0.72;
+  }
 
-.bridge-wordmark-ds {
-  margin-left: 2px;
-  font-size: var(--font-size-title);
-  font-weight: var(--font-weight-semibold);
-}
-
-.bridge-wordmark-name {
-  font-size: var(--font-size-title);
-  font-weight: 350;
+  100% {
+    transform: translateX(520%) skewX(-18deg);
+    opacity: 0;
+  }
 }
 
 .kitsune-promotion-banner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(330px, 38vw);
-  height: 24px;
-  transform: translate(-50%, -50%);
+  position: relative;
+  width: min(330px, 100%);
+  height: 26px;
   border: 1px solid #ff5c00;
-  border-radius: 3px;
+  border-radius: 6px;
   padding: 0 14px;
   display: inline-flex;
   align-items: center;
@@ -129,7 +108,6 @@
 }
 
 .kitsune-promotion-banner:hover {
-  transform: translate(-50%, -50%);
   border-color: #ff5c00;
   background: var(--kitsune-banner-bg-hover);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
@@ -200,11 +178,17 @@
 }
 
 .topbar-right {
+  grid-column: 2;
+  justify-self: end;
   gap: 10px;
+  height: 100%;
+  align-self: stretch;
 }
 
 .bridge-tools {
+  height: 100%;
   gap: 8px;
+  -webkit-app-region: no-drag;
 }
 
 .bridge-tool-divider {
@@ -215,13 +199,15 @@
 }
 
 .window-actions {
+  height: 100%;
   padding-left: 0;
   gap: 0;
+  -webkit-app-region: no-drag;
 }
 
 .window-actions button {
   width: 46px;
-  height: var(--window-bar-height);
+  height: 100%;
   border: 0;
   border-radius: 0;
   display: grid;
@@ -264,26 +250,22 @@
   transform: none;
 }
 
+.notification-tool,
 .notification-tool:hover,
 .notification-tool.active {
-  color: #ffffff;
   border-color: transparent;
   background: transparent;
   box-shadow: none;
   transform: none;
 }
 
-.notification-tool.armed {
-  color: var(--success);
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
+.notification-tool:hover,
+.notification-tool.active {
+  color: var(--text-strong);
 }
 
-.notification-tool {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
+.notification-tool.armed {
+  color: var(--success);
 }
 
 .notification-tool:hover svg,
@@ -292,6 +274,8 @@
 }
 
 .app-content {
+  position: relative;
+  isolation: isolate;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -302,11 +286,28 @@
   grid-template-rows: minmax(0, 1fr);
   align-content: stretch;
   gap: 0;
-  background: var(--app-bg-flat);
+  background: var(--sidebar-bg);
   overflow-y: hidden;
   overflow-x: hidden;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   scrollbar-width: thin;
+}
+
+/* The workspace sits on its own rounded panel inside the sidebar color. */
+.app-content::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: var(--workspace-top-inset);
+  right: 0;
+  bottom: 0;
+  left: var(--sidebar-width);
+  border: 1px solid var(--sidebar-border);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: var(--workspace-corner-radius) 0 0 0;
+  pointer-events: none;
+  background: var(--app-bg-flat);
 }
 
 .app-content::-webkit-scrollbar {
@@ -334,135 +335,12 @@
   box-shadow: var(--shadow-card);
 }
 
-.hero-card {
-  position: relative;
-  grid-column: 1;
-  grid-row: 1;
-  overflow: hidden;
-  min-height: 0;
-  height: 100%;
-  padding: 20px 16px 18px;
-  display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 10px;
-  border: 0;
-  border-right: 1px solid var(--sidebar-border);
-  border-radius: 0;
-  background: var(--sidebar-bg);
-  box-shadow: none;
-}
-
-.hero-card > .sidebar-actions {
-  margin-top: 0;
-}
-
-.hero-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 0;
-  pointer-events: none;
-  background: var(--sidebar-overlay);
-}
-
-.hero-main {
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 60px;
-  gap: 6px;
-  align-items: center;
-  min-height: 70px;
-  padding: 8px 10px;
-  border: 1px solid var(--surface-divider);
-  border-radius: var(--card-radius);
-  background: var(--surface-hero-main);
-  box-shadow: var(--shadow-panel);
-}
-
-.hero-main[role="button"] {
-  width: 100%;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
-  transition: filter 140ms ease, box-shadow 140ms ease;
-  -webkit-app-region: no-drag;
-}
-
-.hero-main[role="button"]:hover {
-  filter: brightness(1.06);
-}
-
-.hero-main[role="button"]:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.hero-main.device-status-good {
-  border-color: var(--success-border-strong);
-}
-
-.hero-main.device-status-warn {
-  border-color: var(--warning-border-strong);
-}
-
-.hero-main.device-status-bad {
-  border-color: var(--danger-border-strong);
-}
-
-.controller-art {
-  width: min(60px, 100%);
-  max-height: 38px;
-  object-fit: contain;
-  opacity: 0.78;
-  filter: none;
-  justify-self: center;
-  align-self: center;
-  order: 2;
-}
-
-.status-copy {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.connection-row,
-.bridge-state,
-.health-label,
-.button-row button,
-.modifier-grid button,
-.quiet-state,
-.inline-switch {
-  display: flex;
-  align-items: center;
-}
-
-.connection-row {
-  gap: 8px;
-  font-size: var(--font-size-subtitle);
-  color: var(--text-primary);
-}
-
-.connection-row strong {
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 650;
-  line-height: 1.22;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .dot {
   flex: 0 0 auto;
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #778397;
+  background: var(--text-muted);
 }
 
 .dot.good {
@@ -479,48 +357,6 @@
 
 .dot.info {
   background: var(--accent);
-}
-
-.bridge-state {
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: var(--font-size-subtitle);
-}
-
-.device-meta-row {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  column-gap: 6px;
-  row-gap: 2px;
-}
-
-.device-battery-meta {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.device-meta-separator {
-  flex: 0 0 auto;
-  color: var(--text-dim);
-  line-height: 1;
-}
-
-.device-battery-percentage {
-  color: var(--text-muted);
-  font-size: var(--font-size-subtitle);
-  line-height: 1.2;
-}
-
-.device-power-indicator {
-  flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  color: var(--success);
-  line-height: 0;
 }
 
 .battery-track {
@@ -547,35 +383,21 @@
 }
 
 .battery-track.warning {
-  --battery-color: #f3c846;
+  --battery-color: var(--warning);
 }
 
 .battery-track.low {
-  --battery-color: #ff5a70;
+  --battery-color: var(--danger);
 }
 
 .battery-track.unknown {
-  --battery-color: #8d9aae;
-}
-
-.hero-actions {
-  position: relative;
-  z-index: 5;
-  display: grid;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.header-settings {
-  position: relative;
-  z-index: 5;
-  width: 100%;
+  --battery-color: var(--text-muted);
 }
 
 .notifications-control {
   position: relative;
   z-index: 30;
-  width: 48px;
+  width: 36px;
   display: grid;
   place-items: center;
 }
@@ -598,7 +420,7 @@
 }
 
 .icon-button.armed {
-  border-color: rgba(125, 217, 93, 0.48);
-  color: #e9fff0;
-  background: rgba(83, 170, 92, 0.14);
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-bg);
 }

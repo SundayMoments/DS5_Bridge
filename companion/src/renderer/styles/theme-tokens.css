@@ -21,10 +21,13 @@
   --font-weight-strong: 700;
   --font-weight-wordmark: 500;
   font-weight: var(--font-weight-regular);
-  --window-bar-height: 32px;
+  --window-bar-height: 40px;
+  --top-chrome-height: 56px;
   --app-content-width: none;
   --app-content-gutter: 0px;
-  --sidebar-width: 276px;
+  --sidebar-width: 244px;
+  --workspace-top-inset: var(--window-bar-height);
+  --workspace-corner-radius: 12px;
   --layout-gap: 0px;
   --card-gap: 12px;
   --card-radius: 4px;

@@ -1,8 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/inter/standard.css';
-import { App } from './App';
+// The base stylesheet loads first so feature stylesheets imported by components cascade after it.
 import './styles.css';
+import { App } from './App';
 import { RendererFailureBoundary } from './common/RendererFailureBoundary';
 import { RendererLocalization } from './composition/RendererLocalization';
 import { applyStoredUiThemePreset } from './ui-theme-preferences';

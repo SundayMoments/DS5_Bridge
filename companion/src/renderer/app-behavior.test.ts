@@ -2,10 +2,17 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { rendererStyles } from './test-support/renderer-styles';
+import { IconBluetooth, IconViewfinder } from '@tabler/icons-react';
+import {
+  CONTROL_TAB_DEFINITIONS,
+  CONTROL_TAB_GROUPS,
+  CONTROL_TAB_TRAILING_ROWS
+} from './features/shell/control-tabs';
+import { rendererStyleModule, rendererStyles } from './test-support/renderer-styles';
 
 const appSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
 const stylesSource = rendererStyles();
+const shellSidebarStyles = rendererStyleModule('features/shell/shell-sidebar.css');
 const rendererEntrySource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
 const controllerDevicesPageSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'ControllerDevicesPage.tsx'),
@@ -26,7 +33,7 @@ describe('renderer behavior guards', () => {
   });
 
   it('ports Devices as a firmware-backed controller management tab', () => {
-    expect(appSource).toContain("{ id: 'devices', label: 'Devices', Icon: IconBluetooth }");
+    expect(CONTROL_TAB_DEFINITIONS.devices).toEqual({ id: 'devices', label: 'Devices', Icon: IconBluetooth });
     expect(appSource).toContain('<ControllerDevicesPage');
     expect(appSource).toContain('window.bridge.requestControllerScan()');
     expect(appSource).toContain('window.bridge.forgetControllerPairings()');
@@ -161,14 +168,9 @@ describe('renderer behavior guards', () => {
   });
 
   it('uses the device container border instead of a compact status dot', () => {
+    // The rendered card is covered in features/shell/MainAppShell.rendered.test.tsx.
     expect(appSource).toContain('const sidebarDeviceTone =');
-    expect(appSource).toContain('className={`hero-main device-status-${sidebarDeviceTone}`}');
-    const start = appSource.indexOf('<div className="bridge-state compact-device-status">');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</div>', start);
-    const compactStatusSource = appSource.slice(start, end);
-
-    expect(compactStatusSource).not.toContain('className={`dot');
+    expect(appSource).toContain('tone: sidebarDeviceTone,');
   });
 
   it('exposes the firmware-gated audio buffer length control', () => {
@@ -238,21 +240,18 @@ describe('renderer behavior guards', () => {
     );
     expect(appSource).toContain('return rawPowerState === 0x01 || rawPowerState === 0x02;');
     expect(appSource).toContain("batteryCharging ? 'Charging' : 'Connected to power'");
-    expect(appSource).toContain('className="device-power-indicator"');
-    expect(stylesSource).toContain('.device-power-indicator');
+    expect(appSource).toContain('powerLabel: batteryPowerLabel,');
+    expect(shellSidebarStyles).toContain('.device-power-indicator');
   });
 
   it('uses the compact Kitsune device card as a Devices shortcut', () => {
     expect(appSource).toContain('const sidebarControllerCard = controllerDevicesModel.cards.find(');
-    expect(appSource).toContain('aria-label="Open Devices"');
-    expect(appSource).toContain("onClick={() => selectControlTab('devices')}");
-    expect(appSource).toContain('className="device-meta-row"');
-    expect(appSource).toContain('className="device-battery-percentage"');
+    expect(appSource).toContain("onOpenDevices={() => selectControlTab('devices')}");
     expect(appSource).not.toContain('className={`battery-icon');
-    expect(stylesSource).toContain('grid-template-columns: minmax(0, 1fr) 60px;');
-    expect(stylesSource).toContain('min-height: 70px;');
-    expect(stylesSource).toContain('.hero-main[role="button"]:focus-visible');
-    expect(stylesSource).toContain('.device-battery-meta');
+    expect(shellSidebarStyles).toContain('grid-template-columns: minmax(0, 1fr) 48px;');
+    expect(shellSidebarStyles).toContain('min-height: 72px;');
+    expect(shellSidebarStyles).toContain('.hero-main[role="button"]:focus-visible');
+    expect(shellSidebarStyles).toContain('.device-battery-meta');
   });
 
   it('keeps the haptics test button actionable instead of relabeling it as game-active', () => {
@@ -353,31 +352,30 @@ describe('renderer behavior guards', () => {
   });
 
   it('exposes bridge selection, stable naming, and direct USB controller status', () => {
+    // The selector's rename, refresh, and USB-direct rows are rendered in
+    // features/shell/MainAppShell.rendered.test.tsx.
     expect(appSource).toContain('snapshot?.bridgeDevices ?? null');
-    expect(appSource).toContain("window.bridge.selectBridge(String(devicePath))");
-    expect(appSource).toContain('window.bridge.setBridgeLabel(draft.uniqueId, draft.value.trim() || null)');
-    expect(appSource).toContain('title="Rename bridge"');
-    expect(appSource).toContain('title="Refresh bridges"');
+    expect(appSource).toContain('window.bridge.selectBridge(devicePath)');
+    expect(appSource).toContain('window.bridge.setBridgeLabel(uniqueId, name)');
     expect(appSource).toContain('window.bridge.refreshBridgeDevices()');
-    expect(appSource).toContain("label || 'No bridge detected'");
-    expect(appSource).toContain('USB direct');
+    expect(appSource).toContain('directControllers={directControllers}');
     expect(stylesSource).toContain('.sidebar-bridge-selector');
-    expect(stylesSource).toContain('.hero-card > .sidebar-actions');
+    expect(stylesSource).toContain('.bridge-direct-controller');
   });
 
   it('groups sidebar controls and promotes the two labs to navigation destinations', () => {
-    expect(appSource).toContain("type ControlTabGroupId = 'controller' | 'input' | 'labs'");
-    expect(appSource).toContain("id: 'labs',");
-    expect(appSource).toContain("label: 'Labs',");
-    expect(appSource).toContain("'audio-haptics': { id: 'audio-haptics', label: 'Audio Haptics'");
-    expect(appSource).toContain("'trigger-lab': { id: 'trigger-lab', label: 'Trigger Lab'");
-    expect(appSource).toContain('CONTROL_TAB_GROUPS.map(({ id, label, Icon, tabs }) =>');
-    expect(appSource).toContain('aria-expanded={expanded}');
-    expect(appSource).toContain('tabIndex={expanded ? undefined : -1}');
+    expect(CONTROL_TAB_GROUPS.map(({ id, label }) => [id, label])).toEqual([
+      ['controller', 'Controller'],
+      ['input', 'Input'],
+      ['labs', 'Labs']
+    ]);
+    expect(CONTROL_TAB_DEFINITIONS['audio-haptics'].label).toBe('Audio Haptics');
+    expect(CONTROL_TAB_DEFINITIONS['trigger-lab'].label).toBe('Trigger Lab');
+    expect(CONTROL_TAB_GROUPS.find(({ id }) => id === 'labs')?.tabs.map(({ id }) => id))
+      .toEqual(['audio-haptics', 'trigger-lab']);
+    expect(CONTROL_TAB_TRAILING_ROWS.map(({ id }) => id)).toEqual(['system']);
     expect(appSource).toContain("const triggerLabOpen = activeControlTab === 'trigger-lab'");
     expect(appSource).toContain("const audioHapticsOpen = activeControlTab === 'audio-haptics'");
-    expect(appSource).toContain('className={`sidebar-action-button ${activeControlTab === \'system\' ? \'active\' : \'\'}`}');
-    expect(appSource).not.toContain("id: 'tools',");
     expect(appSource).not.toContain('setTriggerLabOpen');
     expect(appSource).not.toContain('setAudioHapticsOpen');
   });
@@ -387,8 +385,7 @@ describe('renderer behavior guards', () => {
     const deadzonesPanelEnd = appSource.indexOf('<FeatureTipsPanel tab="deadzones" />', deadzonesPanelStart);
     const deadzonesPanelSource = appSource.slice(deadzonesPanelStart, deadzonesPanelEnd);
 
-    expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones'");
-    expect(appSource).toContain("deadzones: { id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder }");
+    expect(CONTROL_TAB_DEFINITIONS.deadzones).toEqual({ id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder });
     expect(deadzonesPanelSource).toContain('<span className="feature-icon"><IconViewfinder size={20} /></span>');
     expect(deadzonesPanelSource).not.toContain('<ProfileSaveStatus />');
     expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');

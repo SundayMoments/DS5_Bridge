@@ -3,8 +3,8 @@
 @import './styles/startup.css';
 @import './styles/app-shell.css';
 @import './styles/modal-surfaces.css';
+@import './styles/floating-surfaces.css';
 @import './styles/settings-controls.css';
-@import './styles/sidebar-navigation.css';
 @import './styles/control-pages.css';
 @import './styles/devices.css';
 @import './styles/page-layouts.css';

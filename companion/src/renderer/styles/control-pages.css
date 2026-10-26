@@ -12,9 +12,13 @@
 }
 
 .control-panel.flat-control-panel {
+  --control-panel-inline-padding: 22px;
+  --control-panel-bottom-padding: 26px;
+  position: relative;
+  z-index: 1;
   height: 100%;
   align-self: stretch;
-  padding: 26px 22px;
+  padding: var(--top-chrome-height) var(--control-panel-inline-padding) var(--control-panel-bottom-padding);
   border: 0;
   background: transparent;
   box-shadow: none;

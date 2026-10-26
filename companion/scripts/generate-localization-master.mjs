@@ -101,6 +101,22 @@ function isVisibleProperty(name) {
   return visibleProperties.has(name) || visiblePropertySuffix.test(name);
 }
 
+/** `tab === 'settings'` compares an identifier; it is not copy. */
+function isComparisonOperand(node) {
+  const parent = node.parent;
+  return Boolean(parent && ts.isBinaryExpression(parent) && [
+    ts.SyntaxKind.EqualsEqualsEqualsToken,
+    ts.SyntaxKind.ExclamationEqualsEqualsToken,
+    ts.SyntaxKind.EqualsEqualsToken,
+    ts.SyntaxKind.ExclamationEqualsToken
+  ].includes(parent.operatorToken.kind));
+}
+
+/** Class lists are not copy even though `className` ends in "name". */
+function isClassNameVariable(name) {
+  return /classname$/i.test(name);
+}
+
 function addExpressionLiterals(messages, node, predicate = () => true) {
   function visit(current) {
     if (ts.isJsxAttribute(current)) {
@@ -115,7 +131,7 @@ function addExpressionLiterals(messages, node, predicate = () => true) {
     }
     if (ts.isStringLiteralLike(current) || ts.isTemplateExpression(current)) {
       const value = literalText(current);
-      if (value && predicate(value)) addLiteral(messages, current);
+      if (value && predicate(value) && !isComparisonOperand(current)) addLiteral(messages, current);
       if (ts.isTemplateExpression(current)) {
         current.templateSpans.forEach((span) => visit(span.expression));
       }
@@ -190,7 +206,7 @@ function collectSourceFile(filePath, messages) {
     } else if (ts.isPropertyAssignment(node) && isVisibleProperty(propertyName(node.name))) {
       addExpressionLiterals(messages, node.initializer);
     } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
-      && visibleVariable.test(node.name.text) && node.initializer) {
+      && visibleVariable.test(node.name.text) && !isClassNameVariable(node.name.text) && node.initializer) {
       addExpressionLiterals(messages, node.initializer);
     } else if (ts.isReturnStatement(node) && node.expression
       && visibleReturnFunction.test(enclosingFunctionName(node))) {

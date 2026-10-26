@@ -16,6 +16,8 @@ const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const palettesSource = rendererStyleModule('styles/theme-palettes.css');
 const tokensSource = rendererStyleModule('styles/theme-tokens.css');
 const ds5ThemeSource = rendererStyleModule('styles/theme-ds5.css');
+const shellSidebarSource = rendererStyleModule('features/shell/shell-sidebar.css');
+const bridgeMarkSource = readFileSync(new URL('./features/shell/BridgeMark.tsx', import.meta.url), 'utf8');
 const normalizedStyles = styles.replace(/\s+/g, ' ').trim();
 
 function cssBlock(selector: string, requiredText?: string): string {
@@ -218,8 +220,8 @@ describe('companion layout CSS', () => {
   });
 
   it('keeps the DS5 mark in brand blue while its primary shape follows the theme text', () => {
-    expect(appSource).toContain('fill="var(--bridge-mark-primary)"');
-    expect(appSource).toContain('fill="var(--bridge-mark-secondary)"');
+    expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-primary)"');
+    expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-secondary)"');
     expect(appSource).not.toContain('bridgeMarkUrl');
     const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--bridge-mark-primary:');
     expect(ds5Theme).toContain('--bridge-mark-primary: #ffffff;');
@@ -238,16 +240,15 @@ describe('companion layout CSS', () => {
     expect(sharedTokens).toContain('--sidebar-link-disabled: var(--text-disabled);');
     const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--sidebar-label:');
     expect(ds5Theme).toContain('--sidebar-label: var(--text-dim);');
-    expect(cssBlock('.sidebar-section-label', 'color: var(--sidebar-label);')).toContain(
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-section-label', 'color: var(--sidebar-label);')).toContain(
       'color: var(--sidebar-label);'
     );
-    expect(cssBlock('.control-tabs button,', 'color: var(--sidebar-link);')).toContain(
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button,', 'color: var(--sidebar-link);')).toContain(
       'color: var(--sidebar-link);'
     );
-    expect(cssBlock('.control-tabs button:not(.active):hover,', 'color: var(--sidebar-link-hover);')).toContain(
-      'color: var(--sidebar-link-hover);'
-    );
-    const disabledSidebarButton = cssBlock('.sidebar-nav-button:disabled', 'color: var(--sidebar-link-disabled);');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button:not(.active):hover,', 'color: var(--sidebar-link-hover);'))
+      .toContain('color: var(--sidebar-link-hover);');
+    const disabledSidebarButton = cssBlockIn(shellSidebarSource, '.sidebar-nav-button:disabled', 'color: var(--sidebar-link-disabled);');
     expect(disabledSidebarButton).toContain('color: var(--sidebar-link-disabled);');
     expect(disabledSidebarButton).toContain('opacity: 1;');
   });
@@ -348,15 +349,10 @@ describe('companion layout CSS', () => {
   });
 
   it('colors the device container border by device status', () => {
-    expect(cssBlock('.hero-main.device-status-good', 'border-color: var(--success-border-strong);')).toContain(
-      'border-color: var(--success-border-strong);'
-    );
-    expect(cssBlock('.hero-main.device-status-warn', 'border-color: var(--warning-border-strong);')).toContain(
-      'border-color: var(--warning-border-strong);'
-    );
-    expect(cssBlock('.hero-main.device-status-bad', 'border-color: var(--danger-border-strong);')).toContain(
-      'border-color: var(--danger-border-strong);'
-    );
+    for (const [tone, token] of [['good', 'success'], ['warn', 'warning'], ['bad', 'danger']]) {
+      expect(cssBlockIn(shellSidebarSource, `.hero-main.device-status-${tone}`, `border-color: var(--${token}-border-strong);`))
+        .toContain(`border-color: var(--${token}-border-strong);`);
+    }
   });
 
   it('renders the Power Saving Green Icon tip as the filled success tile with a white glyph', () => {
@@ -385,14 +381,15 @@ describe('companion layout CSS', () => {
     const shellTokens = cssBlock('.shell', '--nav-active-bg:');
     const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--nav-active-base:');
     const lightFamily = cssBlockIn(tokensSource, '.shell:is([data-theme="light"], [data-theme="bubble-gum"])', '--nav-active-base:');
-    expect(cssBlock('.control-tabs button.active', 'background: var(--nav-active-bg);')).toContain(
-      'background: var(--nav-active-bg);'
-    );
-    expect(cssBlock('.control-tabs button.active svg', 'color: var(--nav-active-icon);')).toContain(
+    // Active rows use a neutral text-tinted fill; only the icon carries the accent.
+    const activeRow = cssBlockIn(shellSidebarSource, '.control-tab-button.active', 'color: var(--nav-active-text);');
+    expect(activeRow).toContain('background: color-mix(in srgb, var(--text-strong) 8%, transparent);');
+    expect(activeRow).toContain('font-weight: var(--font-weight-strong);');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button.active svg,', 'color: var(--nav-active-icon);')).toContain(
       'color: var(--nav-active-icon);'
     );
-    expect(cssBlock('.sidebar-action-button.active', 'background: var(--nav-active-bg);')).toContain(
-      'background: var(--nav-active-bg);'
+    expect(cssBlock('.studio-tab-strip button.active', 'box-shadow: inset 0 -3px 0 var(--nav-active-rail);')).toContain(
+      'color: var(--accent);'
     );
     expect(cssBlock('.audio-haptics-mode-state.warn', 'background: var(--info-selected);')).toContain(
       'color: var(--info-selected-text);'
@@ -555,33 +552,37 @@ describe('companion layout CSS', () => {
   });
 
   it('animates collapsible sidebar groups without leaving collapsed controls focusable', () => {
-    expect(cssBlock('.control-tabs', 'flex-direction: column;')).toContain('display: flex;');
-    expect(cssBlock('.control-tab-group-panel', 'grid-template-rows: 0fr;')).toContain('grid-template-rows: 0fr;');
-    expect(cssBlock('.control-tab-group.expanded > .control-tab-group-panel', 'grid-template-rows: 1fr;')).toContain(
-      'grid-template-rows: 1fr;'
-    );
-    expect(cssBlock('.control-tab-group-clip', 'overflow: hidden;')).toContain('overflow: hidden;');
-    expect(cssBlock('.control-tab-button.nested', 'padding-left: 42px;')).toContain('padding-left: 42px;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-list', 'flex-direction: column;')).toContain('display: flex;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-group-panel', 'grid-template-rows: 0fr;')).toContain('grid-template-rows: 0fr;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-group.expanded > .control-tab-group-panel', 'grid-template-rows: 1fr;'))
+      .toContain('grid-template-rows: 1fr;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-group-clip', 'overflow: hidden;')).toContain('overflow: hidden;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tab-button.nested', 'padding-left: 42px;')).toContain('padding-left: 42px;');
+    expect(shellSidebarSource).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
-  it('keeps the sidebar device and actions fixed while only the controls region scrolls', () => {
-    const sidebar = cssBlock('.hero-card', 'grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;');
-    expect(sidebar).toContain('overflow: hidden;');
-    expect(sidebar).toContain('display: grid;');
-    expect(sidebar).toContain('grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;');
-    const controlsRegion = cssBlock('.sidebar-controls', 'overflow-y: auto;');
-    expect(controlsRegion).toContain('min-height: 0;');
-    expect(controlsRegion).toContain('overflow-y: auto;');
-    expect(controlsRegion).toContain('overscroll-behavior: contain;');
-    expect(cssBlock('.hero-card > .sidebar-actions', 'margin-top: 0;')).toContain('margin-top: 0;');
+  it('keeps the brand and device card fixed while only the navigation list scrolls', () => {
+    const sidebar = cssBlockIn(shellSidebarSource, '.hero-card', 'grid-template-rows: auto auto minmax(0, 1fr);');
+    expect(sidebar).toContain('overflow-y: hidden;');
+    expect(sidebar).toContain('-webkit-app-region: drag;');
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-controls', 'grid-template-rows: auto minmax(0, 1fr);'))
+      .toContain('overflow: hidden;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tabs', 'grid-template-rows: minmax(0, 1fr) auto;'))
+      .toContain('min-height: 0;');
+    const list = cssBlockIn(shellSidebarSource, '.control-tab-list', 'overflow-y: auto;');
+    expect(list).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-footer', 'display: grid;')).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlock('.app-content', 'grid-template-columns: var(--sidebar-width) minmax(0, 1fr);'))
+      .toContain('background: var(--sidebar-bg);');
+    expect(cssBlock('.app-content::before', 'border-radius: var(--workspace-corner-radius) 0 0 0;'))
+      .toContain('top: var(--workspace-top-inset);');
+    expect(cssBlock('.window-bar', 'left: var(--sidebar-width);')).toContain('position: absolute;');
   });
 
   it('centers the Kitsune promotion and gives its modal actions a clear hierarchy', () => {
-    const banner = cssBlock('.kitsune-promotion-banner', 'position: absolute;');
-    expect(banner).toContain('left: 50%;');
-    expect(banner).toContain('transform: translate(-50%, -50%);');
+    expect(cssBlock('.window-bar-center', 'place-items: center;')).toContain('grid-column: 1;');
+    const banner = cssBlock('.kitsune-promotion-banner', 'width: min(330px, 100%);');
     expect(banner).toContain('border: 1px solid #ff5c00;');
-    expect(banner).toContain('border-radius: 3px;');
     expect(banner).toContain('background: var(--kitsune-banner-bg);');
     expect(banner).not.toContain('linear-gradient');
     expect(banner).toContain('-webkit-app-region: no-drag;');
@@ -593,8 +594,8 @@ describe('companion layout CSS', () => {
       .toContain('color: var(--kitsune-banner-copy);');
     expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: var(--font-size-subtitle);'))
       .toContain('color: var(--kitsune-banner-wordmark);');
-    expect(cssBlock('.kitsune-promotion-banner:hover', 'transform: translate(-50%, -50%);'))
-      .not.toContain('translateY');
+    expect(cssBlock('.kitsune-promotion-banner:hover', 'background: var(--kitsune-banner-bg-hover);'))
+      .not.toContain('transform');
     expect(cssBlock('.kitsune-promotion-banner::before', 'rgba(255, 245, 236, 0.24)'))
       .toContain('transform: translateX(-240%) skewX(-18deg);');
     expect(cssBlock('.kitsune-promotion-banner:hover::before,', 'animation: kitsune-promotion-gloss-wipe'))
