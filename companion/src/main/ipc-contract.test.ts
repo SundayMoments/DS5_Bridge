@@ -90,6 +90,18 @@ describe('IPC contract', () => {
     expect(mainSource).toContain("new BootloaderAuthorizationStore(app.getPath('userData'), safeStorage)");
   });
 
+  it('exposes Wake-on-LAN through result-wrapped channels', () => {
+    for (const channel of [
+      'getWakeOnLan', 'getWakeOnLanTargets', 'configureWakeOnLan',
+      'setWakeOnLanEnabled', 'forgetWakeOnLan', 'cancelWakeOnLan'
+    ]) {
+      expect(preloadSource).toContain(`ipcRenderer.invoke('bridge:${channel}'`);
+      expect(mainSource).toMatch(new RegExp(`ipcMain\\.handle\\('bridge:${channel}', [^\\n]*wakeOnLanResult`));
+    }
+    // The sandboxed preload may only require electron.
+    expect(preloadSource).not.toMatch(/^import (?!type)[^;]*from '\.\/shared/m);
+  });
+
   it('exposes controller scan and pairing deletion actions', () => {
     expect(preloadSource).toContain("ipcRenderer.invoke('bridge:requestControllerScan')");
     expect(preloadSource).toContain("ipcRenderer.invoke('bridge:forgetControllerPairings')");

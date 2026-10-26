@@ -1464,6 +1464,36 @@ describe('BridgeService', () => {
     expect(snapshot.diagnostics.lastError).toContain('expected command 0x01 sequence');
   });
 
+  it('waits for the deferred Wake-on-LAN ACK instead of rejecting the previous one', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    // Firmware ACKs a queued Wake-on-LAN command on its next main-loop pass,
+    // so the first reads can still show the previous command.
+    for (let index = 0; index < 2; index++) {
+      device.ackReports.push(ackReport({
+        commandId: COMMAND_ID.SET_SPEAKER_VOLUME,
+        sequence: 99,
+        result: ACK_RESULT.OK,
+        settingsRevision: 0
+      }));
+    }
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    await (service as unknown as {
+      sendWakeOnLanCommand(operation: number, payload: Uint8Array): Promise<void>;
+    }).sendWakeOnLanCommand(7, new Uint8Array([4, 0, 0, 0]));
+
+    const sent = device.sentReports.at(-1)!;
+    expect(sent[7]).toBe(COMMAND_ID.WAKE_ON_LAN);
+    expect(sent[9]).toBe(7);
+    expect(sent.slice(11, 15)).toEqual([4, 0, 0, 0]);
+    expect(device.featureReportIds.filter((id) => id === REPORT_ID.ACK).length).toBeGreaterThanOrEqual(3);
+    expect(service.getSnapshot().diagnostics.lastError).toBeNull();
+  });
+
   it('serializes overlapping companion commands before reading ACK reports', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();

@@ -24,6 +24,19 @@ import type {
   UiThemePreset,
   WindowsDeviceCleanupResult
 } from './shared/types';
+import type {
+  WakeOnLanConfigurationInput,
+  WakeOnLanMetadata,
+  WakeOnLanTarget
+} from './shared/wake-on-lan-types';
+import type { WakeOnLanResult } from './shared/wake-on-lan-result';
+
+// The sandboxed preload can only require electron, so this mirrors
+// unwrapWakeOnLanResult in shared/wake-on-lan-result.ts.
+function unwrapWakeOnLanResult<T>(result: WakeOnLanResult<T>): T {
+  if (result.ok) return result.value;
+  throw new Error(result.error);
+}
 
 const api = {
   getStatus: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:getStatus'),
@@ -186,6 +199,24 @@ const api = {
   ),
   cancelBootloaderConfirmation: (): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:cancelBootloaderConfirmation')
+  ),
+  getWakeOnLan: async (): Promise<WakeOnLanMetadata> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:getWakeOnLan')
+  ),
+  getWakeOnLanTargets: async (refresh = false): Promise<WakeOnLanTarget[]> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:getWakeOnLanTargets', refresh)
+  ),
+  configureWakeOnLan: async (input: WakeOnLanConfigurationInput): Promise<WakeOnLanMetadata> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:configureWakeOnLan', input)
+  ),
+  setWakeOnLanEnabled: async (enabled: boolean): Promise<WakeOnLanMetadata> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:setWakeOnLanEnabled', enabled)
+  ),
+  forgetWakeOnLan: async (): Promise<WakeOnLanMetadata> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:forgetWakeOnLan')
+  ),
+  cancelWakeOnLan: async (): Promise<void> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:cancelWakeOnLan')
   ),
   flashPicoFirmware: (): Promise<PicoFirmwareActionResult> => (
     ipcRenderer.invoke('bridge:flashPicoFirmware')

@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BootloaderAuthorizationStore } from './bootloader-authorization-store';
+import { wakeOnLanResult } from '../shared/wake-on-lan-result';
+import type { WakeOnLanConfigurationInput } from '../shared/wake-on-lan-types';
 import { BridgeService } from './bridge-service';
 import {
   PICO_UNIVERSAL_FLASH_NUKE_FILE,
@@ -1199,6 +1201,18 @@ function registerIpc(service: BridgeService): void {
     () => mountPicoBootloaderDrive(picoFirmwareOptions(service))
   ));
   ipcMain.handle('bridge:cancelBootloaderConfirmation', () => service.cancelBootloaderConfirmation());
+  ipcMain.handle('bridge:getWakeOnLan', () => wakeOnLanResult(() => service.getWakeOnLan()));
+  ipcMain.handle('bridge:getWakeOnLanTargets', (_event, refresh: unknown) => wakeOnLanResult(
+    () => service.getWakeOnLanTargets(refresh === true)
+  ));
+  ipcMain.handle('bridge:configureWakeOnLan', (_event, input: unknown) => wakeOnLanResult(
+    () => service.configureWakeOnLan(input as WakeOnLanConfigurationInput)
+  ));
+  ipcMain.handle('bridge:setWakeOnLanEnabled', (_event, enabled: unknown) => wakeOnLanResult(
+    () => service.setWakeOnLanEnabled(enabled as boolean)
+  ));
+  ipcMain.handle('bridge:forgetWakeOnLan', () => wakeOnLanResult(() => service.forgetWakeOnLan()));
+  ipcMain.handle('bridge:cancelWakeOnLan', () => wakeOnLanResult(() => service.cancelWakeOnLan()));
   ipcMain.handle('bridge:flashPicoFirmware', () => runPicoFirmwareIpcAction(
     'flash',
     () => flashSelectedPicoFirmware(service)

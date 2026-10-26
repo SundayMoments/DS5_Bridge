@@ -23,7 +23,8 @@ export const REPORT_ID = {
   FEEDBACK_TRACE: 0x0a,
   DEVICE_IDENTITY: 0x0d,
   FIRMWARE_LOG: 0x0e,
-  BOOTLOADER_AUTHORIZATION: 0x12
+  BOOTLOADER_AUTHORIZATION: 0x12,
+  WAKE_ON_LAN: 0x1d
 } as const;
 
 export const SHORTCUT_EVENT = {
@@ -110,7 +111,9 @@ export const COMMAND_ID = {
   BOOTLOADER_AUTH_CHALLENGE: 0x52,
   BOOTLOADER_AUTH_REVOKE: 0x53,
   BOOTLOADER_AUTH_CONFIRMATION_CANCEL: 0x54,
-  BOOTLOADER_AUTH_PHYSICAL_BEGIN: 0x55
+  BOOTLOADER_AUTH_PHYSICAL_BEGIN: 0x55,
+  // The Wake-on-LAN opcode travels in value (see wake-on-lan-protocol.ts).
+  WAKE_ON_LAN: 0x57
 } as const;
 
 export const RADIAL_DEADZONE_MAX_PERCENT = 50;
@@ -673,6 +676,11 @@ export interface ReportProtocolVersion {
   minor: number;
 }
 
+/** Length, report ID and DS5B magic; the caller checks the version. */
+export function assertCompanionReport(report: ArrayLike<number>, reportId: number): void {
+  assertReport(report, reportId);
+}
+
 function assertReport(report: ArrayLike<number>, reportId: number): void {
   if (report.length !== REPORT_LENGTH) {
     throw new ProtocolError(`Expected ${REPORT_LENGTH} bytes, received ${report.length}.`, 'bad-length');
@@ -787,6 +795,10 @@ export function readReportProtocolVersion(
 
 function readU16(report: ArrayLike<number>, offset: number): number {
   return report[offset] | (report[offset + 1] << 8);
+}
+
+export function readWireU32(report: ArrayLike<number>, offset: number): number {
+  return readU32(report, offset);
 }
 
 function readU32(report: ArrayLike<number>, offset: number): number {

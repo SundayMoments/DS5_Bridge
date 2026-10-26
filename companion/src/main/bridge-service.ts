@@ -114,8 +114,18 @@ import {
   normalizeUiThemePreset
 } from './settings-store';
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
+import { WakeOnLanService, type WakeOnLanBridgeSession } from './wake-on-lan-service';
+import { WindowsWakeOnLanTargets, type WakeOnLanTargetsPort } from './wake-on-lan-targets';
+import type {
+  WakeOnLanConfigurationInput,
+  WakeOnLanMetadata,
+  WakeOnLanTarget
+} from '../shared/wake-on-lan-types';
 
 const POLL_INTERVAL_MS = 500;
+// A queued Wake-on-LAN command is ACKed on the firmware's next main-loop pass;
+// saving waits for a flash sector erase and program.
+const WAKE_ON_LAN_ACK_TIMEOUT_MS = 1500;
 const SHORTCUT_POLL_INTERVAL_MS = 50;
 const SHORTCUT_POLL_ERROR_RETRY_MS = 250;
 const STICK_INPUT_PREVIEW_LEASE_MS = 1500;
@@ -206,7 +216,15 @@ type CommandOptions = {
   extraPayload?: ArrayLike<number>;
   allowAckTransportLoss?: boolean;
   allowProtocolMismatch?: boolean;
+  /**
+   * The firmware queues this command and ACKs it from its main loop, so the
+   * first ACK read can still hold the previous command's result. Re-read it
+   * until the sequence matches or this many milliseconds pass.
+   */
+  deferredAckTimeoutMs?: number;
 };
+
+const DEFERRED_ACK_POLL_MS = 5;
 
 type HostPersonaTransitionState = HostPersonaTransition & {
   settlingUntil: number | null;
@@ -1340,11 +1358,24 @@ export class BridgeService extends EventEmitter {
     [SHORTCUT_EVENT.MIC_MUTE_OFF]: () => this.applyControllerMicMuteEvent(false)
   };
 
+  private readonly wakeOnLan: WakeOnLanService;
+
   constructor(
     private readonly settingsStore: SettingsStore,
-    private readonly bootloaderAuthorizationStore?: BootloaderAuthorizationStorePort
+    private readonly bootloaderAuthorizationStore?: BootloaderAuthorizationStorePort,
+    wakeOnLanTargets: WakeOnLanTargetsPort = new WindowsWakeOnLanTargets()
   ) {
     super();
+    this.wakeOnLan = new WakeOnLanService({
+      session: () => this.wakeOnLanSession(),
+      read: () => this.readWakeOnLanStatus(),
+      send: (operation, payload) => this.sendWakeOnLanCommand(operation, payload),
+      targets: wakeOnLanTargets,
+      now: () => Date.now(),
+      delay: (milliseconds) => new Promise<void>((resolve) => {
+        setTimeout(resolve, milliseconds);
+      })
+    });
     this.snapshot = {
       state: 'no-bridge',
       message: 'No bridge detected',
@@ -1482,6 +1513,9 @@ export class BridgeService extends EventEmitter {
       this.shortcutPollTimer = null;
     }
 
+    // A running Wake-on-LAN change stops at its next step; the firmware owns
+    // the radio teardown and drops unsaved staging on its own deadline.
+    this.wakeOnLan.stop();
     await this.stopControllerAudioPolling();
     this.hidDiscovery.stop();
     this.closeDevice();
@@ -3196,6 +3230,58 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  getWakeOnLan(): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.get();
+  }
+
+  getWakeOnLanTargets(refresh = false): Promise<WakeOnLanTarget[]> {
+    return this.wakeOnLan.listTargets(refresh);
+  }
+
+  configureWakeOnLan(input: WakeOnLanConfigurationInput): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.configure(input);
+  }
+
+  setWakeOnLanEnabled(enabled: boolean): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.setEnabled(enabled);
+  }
+
+  forgetWakeOnLan(): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.forget();
+  }
+
+  cancelWakeOnLan(): Promise<void> {
+    return this.wakeOnLan.cancel();
+  }
+
+  private wakeOnLanSession(): WakeOnLanBridgeSession | null {
+    const bridgeId = this.snapshot.diagnostics.deviceIdentity?.bridgeId;
+    if (!this.device || this.snapshot.state !== 'connected' || !bridgeId) {
+      return null;
+    }
+    return {
+      bridgeId,
+      protocolVersion: this.snapshot.diagnostics.protocolVersion,
+      controllerConnected: Boolean(this.snapshot.status?.controllerConnected)
+    };
+  }
+
+  private readWakeOnLanStatus(): Promise<number[]> {
+    return this.enqueueCommand(async () => {
+      if (!this.device) {
+        throw new Error('No companion bridge is connected.');
+      }
+      return this.device.getFeatureReport(REPORT_ID.WAKE_ON_LAN, REPORT_LENGTH);
+    });
+  }
+
+  private async sendWakeOnLanCommand(operation: number, payload: Uint8Array): Promise<void> {
+    await this.sendCommand(COMMAND_ID.WAKE_ON_LAN, operation, {
+      extraPayload: payload,
+      deferredAckTimeoutMs: WAKE_ON_LAN_ACK_TIMEOUT_MS
+    });
+  }
+
   async setNotifyControllerConnection(enabled: boolean): Promise<BridgeSnapshot> {
     this.snapshot.settings = this.settingsStore.update({ notifyControllerConnection: enabled });
     this.emitSnapshot();
@@ -3628,10 +3714,24 @@ export class BridgeService extends EventEmitter {
       }
       let ack: BridgeAckPayload;
       try {
-        const rawAckReport = await this.device.getFeatureReport(REPORT_ID.ACK, REPORT_LENGTH);
-        ack = options.allowProtocolMismatch
-          ? parseAckReport(rawAckReport, { allowProtocolMismatch: true })
-          : parseAckReport(rawAckReport);
+        const readAck = async () => {
+          const rawAckReport = await this.device!.getFeatureReport(REPORT_ID.ACK, REPORT_LENGTH);
+          return options.allowProtocolMismatch
+            ? parseAckReport(rawAckReport, { allowProtocolMismatch: true })
+            : parseAckReport(rawAckReport);
+        };
+        ack = await readAck();
+        if (options.deferredAckTimeoutMs !== undefined) {
+          const deadline = Date.now() + options.deferredAckTimeoutMs;
+          while (
+            (ack.commandId !== (commandId & 0xff) || ack.commandSequence !== sequence)
+            && Date.now() < deadline
+            && this.device
+          ) {
+            await new Promise<void>((resolve) => { setTimeout(resolve, DEFERRED_ACK_POLL_MS); });
+            ack = await readAck();
+          }
+        }
       } catch (error) {
         if (!options.allowAckTransportLoss || !isBridgeTransportError(error)) {
           throw error;
