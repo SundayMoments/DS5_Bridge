@@ -44,6 +44,8 @@ set(required_sram_symbols
         "_ZL28try_send_pending_audio_batchv"
         "_Z21bt_write_audio_streamPht"
         "_Z12audio_recentv"
+        "_Z58controller_output_policy_note_audio_haptics_producer_framem"
+        "_Z53controller_output_policy_audio_haptics_replace_activev"
         "_Z28usb_speaker_streaming_activev"
         "_ZL33output_trace_queue_details_lockedRhS_S_"
         "_ZL25handle_l2cap_can_send_nowPh"

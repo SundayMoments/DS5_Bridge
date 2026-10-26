@@ -151,7 +151,7 @@ void reset_policy_state() {
     controller_output_policy_set_classic_rumble_gain(100);
     controller_output_policy_set_classic_rumble_v1_enabled(false);
     controller_output_policy_set_audio_haptics_replace_requested(false);
-    controller_output_policy_set_audio_haptics_replace_producer_active(false);
+    controller_output_policy_reset_audio_haptics_producer();
 }
 
 void reset_output_state() {
@@ -438,38 +438,62 @@ void classic_rumble_gain_clamps_rounds_and_touches_motor_payloads() {
     reset_policy_state();
 }
 
-void audio_haptics_replace_tracks_state_without_suppressing_classic_rumble() {
+void audio_haptics_replace_suppresses_rumble_only_while_producer_is_live() {
     reset_policy_state();
     controller_output_policy_set_classic_rumble_gain(175);
     controller_output_policy_set_audio_haptics_replace_requested(true);
 
+    // Requested without a live producer: game rumble keeps flowing, scaled.
     EXPECT_FALSE(controller_output_policy_audio_haptics_replace_active());
-    EXPECT_EQ(controller_output_policy_scale_classic_rumble_byte(40), 70);
+    auto idle_payload = empty_payload();
+    idle_payload[kValidFlag0Offset] = kFlag0CompatibleVibration | kFlag0HapticsSelect;
+    idle_payload[kMotorRightOffset] = 40;
+    idle_payload[kMotorLeftOffset] = 80;
+    EXPECT_TRUE(controller_output_policy_apply_classic_rumble_gain_payload(idle_payload.data(), idle_payload.size()));
+    EXPECT_EQ(idle_payload[kMotorRightOffset], 70);
+    EXPECT_EQ(idle_payload[kMotorLeftOffset], 140);
 
-    controller_output_policy_set_audio_haptics_replace_producer_active(true);
-
+    // The first producer frame takes ownership.
+    EXPECT_TRUE(controller_output_policy_note_audio_haptics_producer_frame(1'000'000));
+    EXPECT_FALSE(controller_output_policy_note_audio_haptics_producer_frame(1'010'000));
     EXPECT_TRUE(controller_output_policy_audio_haptics_replace_active());
     EXPECT_EQ(controller_output_policy_classic_rumble_gain(), 175);
-    EXPECT_EQ(controller_output_policy_scale_classic_rumble_byte(200), 255);
 
+    // Rumble flags and motors are stripped; unrelated fields are untouched.
     auto payload = empty_payload();
     payload[kValidFlag0Offset] = kFlag0CompatibleVibration | kFlag0HapticsSelect | kFlag0RightTriggerEffect;
     payload[kValidFlag2Offset] = kFlag2EnableImprovedRumbleEmulation | kFlag2LightbarSetupControlEnable;
     payload[kMotorRightOffset] = 40;
     payload[kMotorLeftOffset] = 80;
     EXPECT_TRUE(controller_output_policy_apply_classic_rumble_gain_payload(payload.data(), payload.size()));
-    EXPECT_EQ(payload[kValidFlag0Offset], kFlag0CompatibleVibration | kFlag0HapticsSelect | kFlag0RightTriggerEffect);
-    EXPECT_EQ(payload[kValidFlag2Offset], kFlag2EnableImprovedRumbleEmulation | kFlag2LightbarSetupControlEnable);
-    EXPECT_EQ(payload[kMotorRightOffset], 70);
-    EXPECT_EQ(payload[kMotorLeftOffset], 140);
+    EXPECT_EQ(payload[kValidFlag0Offset], kFlag0RightTriggerEffect);
+    EXPECT_EQ(payload[kValidFlag2Offset], kFlag2LightbarSetupControlEnable);
+    EXPECT_EQ(payload[kMotorRightOffset], 0);
+    EXPECT_EQ(payload[kMotorLeftOffset], 0);
 
-    controller_output_policy_set_audio_haptics_replace_producer_active(false);
-    EXPECT_EQ(controller_output_policy_classic_rumble_gain(), 175);
+    // The lease holds just under the timeout and releases at it, including
+    // across 32-bit timer wrap.
+    EXPECT_FALSE(controller_output_policy_poll_audio_haptics_producer(
+        1'010'000 + kAudioHapticsProducerLeaseTimeoutUs - 1
+    ));
+    EXPECT_TRUE(controller_output_policy_audio_haptics_replace_active());
+    EXPECT_TRUE(controller_output_policy_poll_audio_haptics_producer(
+        1'010'000 + kAudioHapticsProducerLeaseTimeoutUs
+    ));
+    EXPECT_FALSE(controller_output_policy_audio_haptics_replace_active());
     EXPECT_EQ(controller_output_policy_scale_classic_rumble_byte(40), 70);
 
-    controller_output_policy_set_audio_haptics_replace_producer_active(true);
+    const uint32_t near_wrap = 0xffff'fff0u;
+    EXPECT_TRUE(controller_output_policy_note_audio_haptics_producer_frame(near_wrap));
+    EXPECT_FALSE(controller_output_policy_poll_audio_haptics_producer(near_wrap + 1'000));
     EXPECT_TRUE(controller_output_policy_audio_haptics_replace_active());
+
+    // Withdrawing the request or resetting the producer ends ownership.
     controller_output_policy_set_audio_haptics_replace_requested(false);
+    EXPECT_FALSE(controller_output_policy_audio_haptics_replace_active());
+    controller_output_policy_set_audio_haptics_replace_requested(true);
+    EXPECT_TRUE(controller_output_policy_audio_haptics_replace_active());
+    controller_output_policy_reset_audio_haptics_producer();
     EXPECT_FALSE(controller_output_policy_audio_haptics_replace_active());
     reset_policy_state();
 }
@@ -1591,7 +1615,7 @@ std::vector<TestCase> tests{
     {"usb host speaker gain does not attenuate native haptics", usb_host_speaker_gain_does_not_attenuate_native_haptics},
     {"classic rumble gain clamps rounds and touches motor payloads", classic_rumble_gain_clamps_rounds_and_touches_motor_payloads},
     {"dualsense edge profile switching payload sets owned mode byte", dualsense_edge_profile_switching_payload_sets_owned_mode_byte},
-    {"audio haptics replace tracks state without suppressing classic rumble", audio_haptics_replace_tracks_state_without_suppressing_classic_rumble},
+    {"audio haptics replace suppresses rumble only while producer is live", audio_haptics_replace_suppresses_rumble_only_while_producer_is_live},
     {"speaker sanitizer strips host amp flags and zeroes only controlled fields", speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields},
     {"mic sanitizer removes mute led and only mic power save bit", mic_sanitizer_removes_mute_led_and_only_mic_power_save_bit},
     {"lightbar override removes host led claims without mutating color bytes", lightbar_override_removes_host_led_claims_without_mutating_color_bytes},

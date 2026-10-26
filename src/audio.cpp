@@ -244,6 +244,9 @@ static uint8_t audio_reactive_haptics_response = AudioReactiveHapticsResponseBal
 static uint8_t audio_reactive_haptics_attack = AudioReactiveHapticsAttackBalanced;
 static uint8_t audio_reactive_haptics_release = AudioReactiveHapticsReleaseBalanced;
 static bool audio_reactive_haptics_suppress_classic_rumble = false;
+// Set from the SRAM audio path when Replace takes ownership; the held-rumble
+// state is cleared from audio_loop instead of inside that path.
+static volatile bool audio_haptics_replace_rumble_clear_pending = false;
 static float audio_reactive_haptics_filter_l = 0.0f;
 static float audio_reactive_haptics_filter_r = 0.0f;
 static float audio_reactive_haptics_env_l = 0.0f;
@@ -923,12 +926,24 @@ void audio_reactive_haptics_reset() {
 }
 
 static void refresh_audio_haptics_replace_policy() {
+    const bool replace_was_active = controller_output_policy_audio_haptics_replace_active();
     controller_output_policy_set_audio_haptics_replace_requested(
         audio_reactive_haptics_suppress_classic_rumble
     );
-    controller_output_policy_set_audio_haptics_replace_producer_active(
-        audio_reactive_haptics_config_enabled
-    );
+    if (!replace_was_active && controller_output_policy_audio_haptics_replace_active()) {
+        controller_output_state_clear_classic_rumble();
+    }
+}
+
+// Replace suppresses game rumble only while a producer keeps delivering
+// frames; a stalled capture must not leave the controller silent. Taking
+// ownership also drops any held game rumble so it is not replayed by carriers.
+static void __not_in_flash_func(note_audio_haptics_producer_frame)(uint32_t now) {
+    const bool replace_was_active = controller_output_policy_audio_haptics_replace_active();
+    (void)controller_output_policy_note_audio_haptics_producer_frame(now);
+    if (!replace_was_active && controller_output_policy_audio_haptics_replace_active()) {
+        audio_haptics_replace_rumble_clear_pending = true;
+    }
 }
 
 bool audio_set_reactive_haptics_config(
@@ -953,7 +968,8 @@ bool audio_set_reactive_haptics_config(
         return false;
     }
 
-    const bool changed = audio_reactive_haptics_config_enabled != enabled
+    const bool producer_path_changed = audio_reactive_haptics_config_enabled != enabled;
+    const bool changed = producer_path_changed
         || audio_haptics_session_config_active != session_active
         || audio_reactive_haptics_mode != mode
         || audio_reactive_haptics_gain_percent != gain_percent
@@ -971,6 +987,9 @@ bool audio_set_reactive_haptics_config(
     audio_reactive_haptics_attack = attack;
     audio_reactive_haptics_release = release;
     audio_reactive_haptics_suppress_classic_rumble = suppress_classic_rumble;
+    if (!session_active || producer_path_changed) {
+        controller_output_policy_reset_audio_haptics_producer();
+    }
     refresh_audio_haptics_replace_policy();
     if (changed) {
         audio_reactive_haptics_reset();
@@ -1011,6 +1030,8 @@ void audio_handle_controller_disconnect() {
     controller_output_state_reset_cached_triggers();
     controller_output_state_reset_cached_player_leds();
     controller_output_state_clear_classic_rumble();
+    controller_output_policy_reset_audio_haptics_producer();
+    audio_haptics_replace_rumble_clear_pending = false;
     plug_headset = false;
     controller_state_ready = false;
     host_route_primer_toggle_pending = false;
@@ -1198,6 +1219,9 @@ static void process_bridge_audio_frame(uint8_t const *frame) {
         return;
     }
 
+    if (audio_haptics_session_config_active) {
+        note_audio_haptics_producer_frame(time_us_32());
+    }
     int8_t haptic_buf[SAMPLE_SIZE]{};
     memcpy(haptic_buf, frame, SAMPLE_SIZE);
     if (send_audio_haptics_packet(haptic_buf, speaker_route_active, false)) {
@@ -1645,6 +1669,7 @@ void audio_set_quiet_mode(bool enabled) {
     test_haptics_preroll_packets_remaining = 0;
     test_haptics_packets_remaining = 0;
     test_haptics_neutral_packets_remaining = 0;
+    controller_output_policy_reset_audio_haptics_producer();
     drain_audio_queues();
     clear_partial_audio_state();
     bt_set_speaker_output_enabled(false);
@@ -1811,6 +1836,7 @@ void audio_test_haptics_loop() {
 
     int8_t haptic_buf[SAMPLE_SIZE]{};
     if (merge_test_haptics_overlay(haptic_buf, false)) {
+        note_audio_haptics_producer_frame(time_us_32());
         send_audio_haptics_packet(haptic_buf, speaker_route_active, false);
     }
 }
@@ -1828,6 +1854,9 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
         return false;
     }
     audio_stats_note_usb_read(now);
+    if (audio_reactive_haptics_config_enabled) {
+        note_audio_haptics_producer_frame(now);
+    }
     if (last_audio_us == 0) {
         audio_debug_packet_log_budget = 4;
         audio_debug_log(
@@ -2235,6 +2264,11 @@ void __not_in_flash_func(audio_loop)() {
     const uint32_t now = time_us_32();
     AudioLoopTelemetryScope loop_telemetry(now);
     audio_core1_stack_poll(now);
+    if (audio_haptics_replace_rumble_clear_pending) {
+        audio_haptics_replace_rumble_clear_pending = false;
+        controller_output_state_clear_classic_rumble();
+    }
+    (void)controller_output_policy_poll_audio_haptics_producer(now);
     process_mic_usb_output();
 
     if (!bt_is_controller_connected()) {

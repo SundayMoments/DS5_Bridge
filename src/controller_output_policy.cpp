@@ -2,6 +2,12 @@
 
 #include "dualsense_output.h"
 
+#if __has_include("pico.h")
+#include "pico.h"
+#else
+#define __not_in_flash_func(name) name
+#endif
+
 using namespace ds5::output;
 
 namespace {
@@ -10,6 +16,7 @@ uint16_t classic_rumble_gain_percent = 100;
 bool classic_rumble_v1_enabled = false;
 bool audio_haptics_replace_requested = false;
 bool audio_haptics_replace_producer_active = false;
+uint32_t audio_haptics_replace_producer_last_frame_us = 0;
 
 bool audio_haptics_replace_active() {
     return audio_haptics_replace_requested && audio_haptics_replace_producer_active;
@@ -37,11 +44,33 @@ void controller_output_policy_set_audio_haptics_replace_requested(bool requested
     audio_haptics_replace_requested = requested;
 }
 
-void controller_output_policy_set_audio_haptics_replace_producer_active(bool active) {
-    audio_haptics_replace_producer_active = active;
+// Called per producer frame from the SRAM USB audio path.
+bool __not_in_flash_func(controller_output_policy_note_audio_haptics_producer_frame)(uint32_t now_us) {
+    const bool activated = !audio_haptics_replace_producer_active;
+    audio_haptics_replace_producer_active = true;
+    audio_haptics_replace_producer_last_frame_us = now_us;
+    return activated;
 }
 
-bool controller_output_policy_audio_haptics_replace_active() {
+bool controller_output_policy_poll_audio_haptics_producer(uint32_t now_us) {
+    if (
+        !audio_haptics_replace_producer_active
+        || static_cast<uint32_t>(
+            now_us - audio_haptics_replace_producer_last_frame_us
+        ) < kAudioHapticsProducerLeaseTimeoutUs
+    ) {
+        return false;
+    }
+    controller_output_policy_reset_audio_haptics_producer();
+    return true;
+}
+
+void controller_output_policy_reset_audio_haptics_producer() {
+    audio_haptics_replace_producer_active = false;
+    audio_haptics_replace_producer_last_frame_us = 0;
+}
+
+bool __not_in_flash_func(controller_output_policy_audio_haptics_replace_active)() {
     return audio_haptics_replace_active();
 }
 
@@ -71,6 +100,41 @@ bool controller_output_policy_apply_classic_rumble_gain_payload(uint8_t *payload
 
     const uint8_t right = payload[kMotorRightOffset];
     const uint8_t left = payload[kMotorLeftOffset];
+    if (audio_haptics_replace_active()) {
+        // Replace makes live Audio Haptics the only actuator owner: strip the
+        // rumble mode flags and motors and leave every other field to the host.
+        bool changed = false;
+        const uint8_t next_flag0 = static_cast<uint8_t>(
+            flag0 & static_cast<uint8_t>(~(
+                kFlag0CompatibleVibration | kFlag0HapticsSelect
+            ))
+        );
+        if (payload[kValidFlag0Offset] != next_flag0) {
+            payload[kValidFlag0Offset] = next_flag0;
+            changed = true;
+        }
+        if (len > kValidFlag2Offset) {
+            const uint8_t next_flag2 = static_cast<uint8_t>(
+                flag2 & static_cast<uint8_t>(~(
+                    kFlag2EnableImprovedRumbleEmulation | kFlag2UseRumbleNotHaptics2
+                ))
+            );
+            if (payload[kValidFlag2Offset] != next_flag2) {
+                payload[kValidFlag2Offset] = next_flag2;
+                changed = true;
+            }
+        }
+        if (right != 0) {
+            payload[kMotorRightOffset] = 0;
+            changed = true;
+        }
+        if (left != 0) {
+            payload[kMotorLeftOffset] = 0;
+            changed = true;
+        }
+        return changed;
+    }
+
     payload[kMotorRightOffset] = controller_output_policy_scale_classic_rumble_byte(right);
     payload[kMotorLeftOffset] = controller_output_policy_scale_classic_rumble_byte(left);
     return payload[kMotorRightOffset] != right || payload[kMotorLeftOffset] != left;
