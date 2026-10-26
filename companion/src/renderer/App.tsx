@@ -1,73 +1,20 @@
 import '@fontsource/montserrat/latin-500.css';
 import '@fontsource/montserrat/latin-600.css';
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { InlineSelect as CustomSelect } from './components/InlineSelect';
-import { AudioHapticsConfigLabel } from './common/AudioHapticsConfigLabel';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import {
-  type TablerIcon,
   IconAdjustmentsSpark,
   IconActivity as Activity,
-  IconAdjustmentsHorizontal as Settings2,
-  IconViewfinder,
-  IconAlertHexagon,
-  IconAlertTriangle,
-  IconArrowRight as ArrowRight,
   IconBatteryEco,
   IconBell as Bell,
   IconBinary,
-  IconBolt as Zap,
-  IconBooks,
-  IconBulb,
-  IconCheck as Check,
-  IconChevronDown as ChevronDown,
-  IconCircleCheck,
-  IconCpu,
-  IconDeviceFloppy as Save,
-  IconDeviceGamepad2,
-  IconDeviceGamepad3,
-  IconExternalLink,
-  IconEyeOff,
-  IconFlame,
-  IconFlask2,
-  IconBrandDeezer,
-  IconBrandDiscord,
-  IconDeviceAudioTape,
-  IconBrandXbox,
-  IconBrandGithub,
-  IconHeart as Heart,
-  IconDeviceMobileVibration as Vibrate,
-  IconHeadphones as Headphones,
-  IconKeyboard as Keyboard,
-  IconLayoutDashboard,
-  IconLink as LinkIcon,
-  IconLinkOff as LinkOffIcon,
-  IconMicrophone as Mic,
-  IconMicrophoneOff as MicOff,
-  IconMinus as Minus,
-  IconMoon as Moon,
-  IconPalette as Palette,
-  IconPencil as Pencil,
-  IconPlayerPlay as Play,
-  IconPlus as Plus,
-  IconQuestionMark,
-  IconRadioactive,
-  IconRefresh as RefreshCcw,
-  IconReplace,
-  IconSettings as SettingsIcon,
   IconBluetooth,
-  IconSparkleHighlight,
-  IconSparkles as Sparkles,
-  IconStethoscope,
-  IconTestPipe,
-  IconTool,
-  IconTrash as Trash2,
-  IconUpload,
-  IconUsb,
-  IconVolume,
-  IconVolume as Volume2,
-  IconVolumeOff as VolumeX,
-  IconX as X
+  IconBolt as Zap,
+  IconBrandXbox,
+  IconDeviceGamepad2,
+  IconMicrophone as Mic,
+  IconMoon as Moon,
+  IconPlayerPlay as Play,
+  IconVolume as Volume2
 } from '@tabler/icons-react';
 import playStationLogoUrl from '../../../assets/brand/playstation-logo.svg';
 import controllerImage from '../../../assets/controllers/dualsense-edge-front.svg';
@@ -75,12 +22,7 @@ import dpadDownGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/s
 import dpadUpGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/D-Pad Up.svg';
 import psHomeGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Home.svg';
 import triangleGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Triangle.svg';
-import {
-  DEFAULT_UI_THEME_PRESET,
-  UI_THEME_KOFI_BADGES,
-  UI_THEME_OPTIONS,
-  UI_THEME_PREVIEW_SWATCHES
-} from './ui-themes';
+import { DEFAULT_UI_THEME_PRESET, UI_THEME_KOFI_BADGES } from './ui-themes';
 import { saveUiThemePreset, storedUiThemePreset } from './ui-theme-preferences';
 import {
   applyUiTextScalePercent,
@@ -89,7 +31,6 @@ import {
 } from './ui-text-scale-preferences';
 import { useDocumentTheme } from './common/use-document-theme';
 import { documentHidden, useDocumentVisible } from './common/use-document-visible';
-import { BridgeMark } from './features/shell/BridgeMark';
 import { MainAppShell } from './features/shell/MainAppShell';
 import { ShellSidebarHeader } from './features/shell/ShellSidebarHeader';
 // Pages that load on first visit come from composition/lazy-pages; their
@@ -104,7 +45,8 @@ import {
   LazyChordsPage,
   LazyDevicesPage,
   LazySettingsPage,
-  LazyStickDeadzonesPage
+  LazyStickDeadzonesPage,
+  LazySystemPage
 } from './composition/lazy-pages';
 import { DeferredPage } from './common/DeferredPage';
 import { ShellBridgeSelector } from './features/shell/ShellBridgeSelector';
@@ -119,22 +61,26 @@ import {
   startingDevicePresentation,
   useStartupTutorial
 } from './features/startup';
-import { useLocalization, type UiLocalePreference } from './common/localization';
+import { useLocalization } from './common/localization';
 import type { AppRuntime } from './composition/app-runtime';
-import { FeatureTipsPanel } from './common/FeatureTipsPanel';
-import { ProfileSaveStatus } from './common/ProfileSaveStatus';
 import { PERCENT_SLIDER_TICKS, sliderTickClass } from './common/slider-ticks';
+import { CONTROLLER_POWER_SAVING_CAP_PERCENT } from './common/controller-power-saving';
 import {
-  CONTROLLER_POWER_SAVING_CAP_PERCENT,
-  capControllerPowerSavingValue,
-  controllerPowerSavingActiveFromSnapshot
-} from './common/controller-power-saving';
+  batteryLabel,
+  controllerName,
+  healthLabel,
+  healthTitle,
+  isChargingPowerState,
+  isExternalPowerState
+} from './common/controller-status';
+import { HOST_PERSONA_ABBREVIATIONS, HOST_PERSONA_OPTIONS } from './common/host-persona';
 import { useStickDeadzonesController } from './features/stick-deadzones/use-stick-deadzones-controller';
 import { useDevicesController } from './features/devices/use-devices-controller';
 import { ControllerLightingPage, useControllerLightingController } from './features/controller-lighting';
+import { LIGHTBAR_BRIGHTNESS_STEP, snapLightbarBrightness } from './features/controller-lighting/model';
 import { ControllerAudioPage, useControllerAudioController } from './features/controller-audio';
+import { MIC_VOLUME_STEP, SPEAKER_VOLUME_STEP, snapMicVolume, snapSpeakerVolume } from './features/controller-audio/model';
 import { AdaptiveTriggersPage, useAdaptiveTriggersController } from './features/adaptive-triggers';
-import { TRIGGER_EFFECT_STEP, snapTriggerEffectIntensity } from './features/adaptive-triggers/model';
 import { TriggerLabProfileDialog, useTriggerLabController } from './features/trigger-lab';
 import { ButtonRemappingProfileDialog } from './features/button-remapping/ButtonRemappingProfileDialog';
 import { useButtonRemappingController } from './features/button-remapping/use-button-remapping-controller';
@@ -144,6 +90,8 @@ import { BootloaderConfirmationDialog } from './features/bootloader-confirmation
 import { ControllerFeedbackPage, useControllerFeedbackController } from './features/controller-feedback';
 import { HAPTICS_STEP, snapHapticsValue } from './features/controller-feedback/model';
 import { useAudioHapticsLabController } from './features/audio-haptics-lab';
+import { POLLING_RATE_OPTIONS } from './features/system-controls/model';
+import { useSystemController } from './features/system-controls/use-system-controller';
 import {
   KITSUNE_INPUT_PURCHASE_URL,
   KITSUNE_INPUT_URL,
@@ -152,381 +100,20 @@ import {
   KitsunePromotionBanner,
   useKitsuneLaunchOffer
 } from './features/kitsune-promotion';
-import { lightbarColorLabel, LIGHTBAR_BRIGHTNESS_STEP, snapLightbarBrightness } from './features/controller-lighting/model';
 import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
-import {
-  CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
-  CHORD_CONTROLLER_SETTING_STEP_MAX,
-  CHORD_CONTROLLER_SETTING_STEP_MIN,
-  CHORD_MUTE_STARTER_ID,
-  DEFAULT_BUTTON_REMAP_PROFILE_ID,
-  DEFAULT_CONTROLLER_PROFILE_ID,
-  MAX_CHORD_ASSIGNMENTS,
-  MAX_CHORD_FUNCTION_NAME_LENGTH,
-  MAX_KEYBOARD_FUNCTION_KEYS,
-  RADIAL_DEADZONE_MAX_PERCENT,
-  REMAP_BUTTON_IDS,
-  ackResultName,
-  normalizeChordControllerSettingStepPercent,
-  isChordBindingAllowed,
-  normalizeRadialDeadzonePercent
-} from '../shared/protocol';
-import type {
-  AudioReactiveHapticsBassFocus,
-  AudioReactiveHapticsConfig,
-  AudioReactiveHapticsMode,
-  AudioReactiveHapticsSource,
-  AudioReactiveHapticsAttack,
-  AudioReactiveHapticsRelease,
-  AudioReactiveHapticsResponse,
-  ChordAssignment,
-  ChordAssignableButtonId,
-  ChordControllerSettingAction,
-  ChordFunction,
-  ChordFunctionType,
-  ChordMediaAction,
-  ChordStarterId,
-  ControllerProfileSettings,
-  HostPersonaMode,
-  MuteButtonMode,
-  MuteKeyboardBehavior,
-  PollingRateMode,
-  BridgeStatusPayload,
-  RemapButtonId,
-  TriggerTestMode,
-  TriggerTestTarget
-} from '../shared/protocol';
-import {
-  UI_SCALE_PERCENTS,
-  UI_TEXT_SCALE_PERCENTS,
-  type AudioHapticsSession,
-  type BridgeSnapshot,
-  type UiScalePercent,
-  type UiTextScalePercent,
-  type UiThemePreset
-} from '../shared/types';
-import { ControllerType, DEFAULT_REMAP_DRAFT, DualSenseEdgeRemapButtonId, KnownControllerType, LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY, REMAP_ALL_BUTTON_IDS, REMAP_BUTTONS, REMAP_EDGE_BUTTON_IDS, REMAP_LEFT_BUTTON_IDS, REMAP_RIGHT_BUTTON_IDS, REMAP_STANDARD_BUTTON_IDS, REMAP_STANDARD_TARGET_BUTTON_IDS, RemapGlyphOption, RemapSourceGlyph, StandardRemapButtonId, remapTargetOptionsFor, storedRemapControllerType } from './features/button-remapping/remap-buttons';
-import { EdgeRemapControlLayout, REMAP_EDGE_CONTROL_POINTS, REMAP_EDGE_LAYOUT_ASSET, REMAP_EDGE_LINE_POINTS, REMAP_STANDARD_LAYOUT_ASSET, RemapCalloutLayout } from './features/button-remapping/remap-layout';
-import { CHORD_BUTTON_MENU_IDS, CHORD_CONTROLLER_SETTING_ACTION_OPTIONS, CHORD_FUNCTION_TYPE_OPTIONS, CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH, CHORD_KEYBOARD_KEY_OPTIONS, CHORD_KEYBOARD_MODIFIER_OPTIONS, CHORD_MEDIA_ACTION_OPTIONS, CHORD_STARTERS, CHORD_STARTER_OPTIONS, CHORD_UNASSIGNED_BUTTON, ChordAssignmentDraftRow, ChordAssignmentDragSession, ChordAssignmentDropHint, ChordAssignmentScrollbarState, ChordButtonSelectValue, ChordFunctionDialogMode, ChordFunctionDialogState, ChordFunctionDraft, ChordKeyboardModifier, EMPTY_CHORD_FUNCTION_DRAFT, chordAssignmentKey, chordAssignmentLabel, chordBindingKey, chordButtonLabel, chordControllerSettingActionFromSelectValue, chordControllerSettingAdjustmentText, chordControllerSettingSelectValue, chordFunctionFromDraft, chordFunctionSummary, chordFunctionToDraft, chordFunctionTypeLabel, chordNotchTargetForAction, createChordAssignmentId } from './features/chords/model';
-import { ChordButtonGlyphOption, ChordStarterGlyphOption } from './features/chords/ChordGlyphs';
-import { AUDIO_BUFFER_LENGTH_MAX, AUDIO_BUFFER_LENGTH_MIN, BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE, BRIDGE_MIC_ENDPOINT_UNAVAILABLE, MIC_VOLUME_PRESETS, MIC_VOLUME_STEP, SPEAKER_GAIN_OPTIONS, SPEAKER_VOLUME_PRESETS, SPEAKER_VOLUME_STEP, TEST_MIC_LISTEN_MS, TEST_SPEAKER_ENDPOINT_REFRESH_MS, TEST_SPEAKER_LOCK_MS, TEST_SPEAKER_VOLUME_SETTLE_MS, audioBufferDelayLabel, audioBufferPercent, audioBufferZoneLabel, audioBufferZoneTone, audioBufferZoneTooltip, clampAudioBufferLength, snapMicVolume, snapSpeakerVolume } from './features/controller-audio/model';
-import { delay, findBridgeAudioOutputId, playMicLiveListen, stopMicLiveListen } from './features/controller-audio/audio-playback';
+import type { HostPersonaMode } from '../shared/protocol';
+import type { BridgeSnapshot, UiTextScalePercent, UiThemePreset } from '../shared/types';
 
 type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
-type ControllerProfileDialogMode = 'save' | 'rename' | 'delete';
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
 
 const SLEEP_CONFIRM_MS = 2400;
-const MUTE_KEY_OPTIONS: Array<[string, number]> = [
-  ['F1', 0x3A], ['F2', 0x3B], ['F3', 0x3C], ['F4', 0x3D], ['F5', 0x3E], ['F6', 0x3F],
-  ['F7', 0x40], ['F8', 0x41], ['F9', 0x42], ['F10', 0x43], ['F11', 0x44], ['F12', 0x45],
-  ['F13', 0x68], ['F14', 0x69], ['F15', 0x6A], ['F16', 0x6B], ['F17', 0x6C], ['F18', 0x6D],
-  ['F19', 0x6E], ['F20', 0x6F], ['F21', 0x70], ['F22', 0x71], ['F23', 0x72], ['F24', 0x73],
-  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((letter, index) => [letter, 0x04 + index] as [string, number]),
-  ['1', 0x1E], ['2', 0x1F], ['3', 0x20], ['4', 0x21], ['5', 0x22],
-  ['6', 0x23], ['7', 0x24], ['8', 0x25], ['9', 0x26], ['0', 0x27],
-  ['Enter', 0x28], ['Escape', 0x29], ['Backspace', 0x2A], ['Tab', 0x2B], ['Space', 0x2C],
-  ['-', 0x2D], ['=', 0x2E], ['[', 0x2F], [']', 0x30], ['\\', 0x31],
-  [';', 0x33], ["'", 0x34], ['`', 0x35], [',', 0x36], ['.', 0x37], ['/', 0x38],
-  ['Insert', 0x49], ['Home', 0x4A], ['Page Up', 0x4B], ['Delete', 0x4C], ['End', 0x4D], ['Page Down', 0x4E],
-  ['Right Arrow', 0x4F], ['Left Arrow', 0x50], ['Down Arrow', 0x51], ['Up Arrow', 0x52]
-];
-const MUTE_MODIFIER_OPTIONS: Array<[string, number]> = [
-  ['Ctrl', 0x01],
-  ['Shift', 0x02],
-  ['Alt', 0x04],
-  ['Win', 0x08]
-];
-const MUTE_BUTTON_MODE_OPTIONS: Array<[string, MuteButtonMode]> = [
-  ['Normal', 'normal'],
-  ['Keyboard Key', 'keyboard'],
-  ['Quiet Toggle', 'quiet'],
-  ['Chord', 'chord']
-];
-const MUTE_KEYBOARD_BEHAVIOR_OPTIONS: Array<[string, MuteKeyboardBehavior]> = [
-  ['Tap Once', 'tap'],
-  ['Hold While Pressed', 'hold']
-];
-const POLLING_RATE_OPTIONS: Array<[string, PollingRateMode]> = [
-  ['1000 Hz / Real-time', '1000'],
-  ['500 Hz', '500'],
-  ['250 Hz', '250']
-];
-const HOST_PERSONA_OPTIONS: Array<[string, HostPersonaMode]> = [
-  ['DualSense', 'dualsense'],
-  ['DualSense Edge', 'dualsense-edge'],
-  ['DualShock 4', 'ds4'],
-  ['Xbox', 'xbox']
-];
-const HOST_PERSONA_SHORT_LABELS: Record<HostPersonaMode, string> = {
-  dualsense: 'DS',
-  'dualsense-edge': 'DSE',
-  ds4: 'DS4',
-  xbox: 'XBOX'
-};
-function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): ControllerProfileSettings {
-  return {
-    leftStickRadialDeadzonePercent: snapshot.settings.leftStickRadialDeadzonePercent,
-    rightStickRadialDeadzonePercent: snapshot.settings.rightStickRadialDeadzonePercent,
-    hapticsEnabled: snapshot.settings.hapticsEnabled,
-    hapticsGainPercent: snapshot.settings.hapticsGainPercent,
-    feedbackBoostEnabled: snapshot.settings.feedbackBoostEnabled,
-    classicRumbleEnabled: snapshot.settings.classicRumbleEnabled,
-    classicRumbleGainPercent: snapshot.settings.classicRumbleGainPercent,
-    classicRumbleV1Enabled: snapshot.settings.classicRumbleV1Enabled,
-    adaptiveTriggersEnabled: snapshot.settings.adaptiveTriggersEnabled,
-    triggerEffectIntensityPercent: snapshot.settings.triggerEffectIntensityPercent,
-    triggerTestMode: snapshot.settings.triggerTestMode,
-    speakerEnabled: snapshot.settings.speakerEnabled,
-    speakerVolumePercent: snapshot.settings.speakerVolumePercent,
-    micVolumePercent: snapshot.settings.micVolumePercent,
-    micMuted: snapshot.settings.micMuted,
-    lightbarEnabled: snapshot.settings.lightbarEnabled,
-    lightbarColor: snapshot.settings.lightbarColor,
-    lightbarBrightnessPercent: snapshot.settings.lightbarBrightnessPercent,
-    lightbarOverrideEnabled: snapshot.settings.lightbarOverrideEnabled,
-    muteButtonMode: snapshot.settings.muteButtonMode,
-    muteKeyboardUsage: snapshot.settings.muteKeyboardUsage,
-    muteKeyboardModifiers: snapshot.settings.muteKeyboardModifiers,
-    muteKeyboardBehavior: snapshot.settings.muteKeyboardBehavior,
-    muteKeyboardChordStarterEnabled: snapshot.settings.muteKeyboardChordStarterEnabled,
-    edgeProfileSwitchingBlocked: snapshot.settings.edgeProfileSwitchingBlocked,
-    sleepKeybindEnabled: snapshot.settings.sleepKeybindEnabled,
-    speakerVolumeShortcutEnabled: snapshot.settings.speakerVolumeShortcutEnabled,
-    pollingRateMode: snapshot.settings.pollingRateMode,
-    hostPersonaMode: snapshot.settings.hostPersonaMode,
-    duplexMicEnabled: snapshot.settings.duplexMicEnabled,
-    audioReactiveHapticsEnabled: snapshot.settings.audioReactiveHapticsEnabled,
-    audioReactiveHapticsSource: snapshot.settings.audioReactiveHapticsSource,
-    audioReactiveHapticsMode: snapshot.settings.audioReactiveHapticsMode,
-    audioReactiveHapticsGainPercent: snapshot.settings.audioReactiveHapticsGainPercent,
-    audioReactiveHapticsBassFocus: snapshot.settings.audioReactiveHapticsBassFocus,
-    audioReactiveHapticsResponse: snapshot.settings.audioReactiveHapticsResponse,
-    audioReactiveHapticsAttack: snapshot.settings.audioReactiveHapticsAttack,
-    audioReactiveHapticsRelease: snapshot.settings.audioReactiveHapticsRelease,
-    controllerPowerSavingEnabled: snapshot.settings.controllerPowerSavingEnabled
-  };
-}
-
-function optionLabel<T extends string | number>(options: Array<[string, T]>, value: T): string {
-  return options.find(([, optionValue]) => optionValue === value)?.[0] ?? String(value);
-}
-
-function enabledLabel(enabled: boolean): string {
-  return enabled ? 'On' : 'Off';
-}
-
-function percentLabel(value: number): string {
-  return `${value}%`;
-}
-
-function muteButtonSummary(settings: ControllerProfileSettings): string {
-  if (settings.muteButtonMode === 'normal') {
-    return 'Normal';
-  }
-  if (settings.muteButtonMode === 'quiet') {
-    return 'Quiet Toggle';
-  }
-  const key = optionLabel(MUTE_KEY_OPTIONS, settings.muteKeyboardUsage);
-  const modifiers = MUTE_MODIFIER_OPTIONS
-    .filter(([, bit]) => (settings.muteKeyboardModifiers & bit) !== 0)
-    .map(([label]) => label);
-  const chordStarter = settings.muteButtonMode === 'keyboard' && settings.muteKeyboardChordStarterEnabled
-    ? ['Chord Starter']
-    : [];
-  return [...modifiers, key, ...chordStarter].join(' + ');
-}
-
-function SystemProfileSummary({
-  settings,
-  powerSavingActive
-}: {
-  settings: ControllerProfileSettings;
-  powerSavingActive: boolean;
-}) {
-  const ecoValueClass = (active: boolean) => (active ? ' eco-limited' : '');
-  const effectiveEcoPercent = (value: number) => percentLabel(Math.min(value, CONTROLLER_POWER_SAVING_CAP_PERCENT));
-  const hapticsEcoLimited = powerSavingActive
-    && settings.hapticsEnabled
-    && settings.hapticsGainPercent > 0;
-  const rumbleEcoLimited = powerSavingActive
-    && settings.classicRumbleEnabled
-    && settings.classicRumbleGainPercent > 0;
-  const triggersEcoLimited = powerSavingActive
-    && settings.adaptiveTriggersEnabled
-    && settings.triggerEffectIntensityPercent > 0;
-  const lightbarEcoLimited = powerSavingActive
-    && settings.lightbarEnabled
-    && settings.lightbarBrightnessPercent > 0;
-
-  return (
-    <div className="system-profile-summary" aria-label="Current profile settings">
-      <div className="system-profile-summary-group">
-        <div className="system-profile-summary-heading">
-          <Volume2 size={15} />
-          <h3>Audio</h3>
-        </div>
-        <dl>
-          <div><dt>Speaker</dt><dd>{settings.speakerEnabled ? percentLabel(settings.speakerVolumePercent) : 'Off'}</dd></div>
-          <div><dt>Mic</dt><dd>{settings.micMuted ? 'Muted' : percentLabel(settings.micVolumePercent)}</dd></div>
-          <div><dt>Pass-through</dt><dd>{enabledLabel(settings.duplexMicEnabled)}</dd></div>
-        </dl>
-      </div>
-
-      <div className="system-profile-summary-group">
-        <div className="system-profile-summary-heading">
-          <Sparkles size={15} />
-          <h3>Feel</h3>
-        </div>
-        <dl>
-          <div><dt>Haptics</dt><dd className={ecoValueClass(hapticsEcoLimited)}>{settings.hapticsEnabled ? (hapticsEcoLimited ? effectiveEcoPercent(settings.hapticsGainPercent) : percentLabel(settings.hapticsGainPercent)) : 'Off'}</dd></div>
-          <div><dt>Rumble</dt><dd className={ecoValueClass(rumbleEcoLimited)}>{settings.classicRumbleEnabled ? (rumbleEcoLimited ? effectiveEcoPercent(settings.classicRumbleGainPercent) : percentLabel(settings.classicRumbleGainPercent)) : 'Off'}</dd></div>
-          <div><dt>Triggers</dt><dd className={ecoValueClass(triggersEcoLimited)}>{settings.adaptiveTriggersEnabled ? (triggersEcoLimited ? effectiveEcoPercent(settings.triggerEffectIntensityPercent) : percentLabel(settings.triggerEffectIntensityPercent)) : 'Off'}</dd></div>
-          <div><dt>Stick DZ</dt><dd>{`${settings.leftStickRadialDeadzonePercent}% / ${settings.rightStickRadialDeadzonePercent}%`}</dd></div>
-        </dl>
-      </div>
-
-      <div className="system-profile-summary-group">
-        <div className="system-profile-summary-heading">
-          <IconBulb size={15} />
-          <h3>Lighting</h3>
-        </div>
-        <dl>
-          <div><dt>Lightbar</dt><dd className={ecoValueClass(lightbarEcoLimited)}>{settings.lightbarEnabled ? (lightbarEcoLimited ? effectiveEcoPercent(settings.lightbarBrightnessPercent) : percentLabel(settings.lightbarBrightnessPercent)) : 'Off'}</dd></div>
-          <div><dt>Color</dt><dd>{lightbarColorLabel(settings.lightbarColor)}</dd></div>
-          <div><dt>Override</dt><dd>{enabledLabel(settings.lightbarOverrideEnabled)}</dd></div>
-        </dl>
-      </div>
-
-      <div className="system-profile-summary-group">
-        <div className="system-profile-summary-heading">
-          <Settings2 size={15} />
-          <h3>System</h3>
-        </div>
-        <dl>
-          <div><dt>Mute</dt><dd>{muteButtonSummary(settings)}</dd></div>
-          <div><dt>Polling</dt><dd>{optionLabel(POLLING_RATE_OPTIONS, settings.pollingRateMode)}</dd></div>
-          <div><dt>Edge Profiles</dt><dd>{settings.edgeProfileSwitchingBlocked ? 'Blocked' : 'Available'}</dd></div>
-          <div><dt>Power Save</dt><dd>{enabledLabel(settings.controllerPowerSavingEnabled)}</dd></div>
-        </dl>
-      </div>
-    </div>
-  );
-}
-
-
-function batteryLabel(snapshot: BridgeSnapshot | null | undefined): string {
-  const battery = snapshot?.status?.batteryPercent;
-  return battery === null || battery === undefined ? '\u2014' : `${battery}%`;
-}
-
-function isChargingPowerState(rawPowerState: number | undefined): boolean {
-  return rawPowerState === 0x01;
-}
-
-function isExternalPowerState(rawPowerState: number | undefined): boolean {
-  return rawPowerState === 0x01 || rawPowerState === 0x02;
-}
-
-function controllerName(type: string | undefined): string {
-  if (type === 'dualsense-edge') return 'DualSense Edge';
-  if (type === 'dualsense') return 'DualSense';
-  return 'Controller';
-}
-
-function healthLabel(snapshot: BridgeSnapshot | null | undefined): string {
-  if (!snapshot) return 'Unavailable';
-  if (snapshot.state !== 'connected') {
-    return /^Firmware .+ update required$/i.test(snapshot.message)
-      ? 'Update required: Bridge Settings > Firmware'
-      : snapshot.message;
-  }
-  if (snapshot.diagnostics.lastError) return snapshot.diagnostics.lastError;
-  if (snapshot.diagnostics.firmwareUpdateAvailable) {
-    return `Firmware ${snapshot.diagnostics.firmwareUpdateAvailable.availableVersion} available`;
-  }
-  if (!snapshot.status?.controllerConnected && snapshot.settings.wakeOnConnectEnabled) {
-    return 'Wake with controller enabled';
-  }
-  if (!snapshot.status?.controllerConnected) return 'Bridge online';
-  return 'All systems normal';
-}
-
-function healthTitle(snapshot: BridgeSnapshot | null | undefined): string | undefined {
-  if (
-    snapshot?.state !== 'connected'
-    || snapshot.diagnostics.lastError
-    || snapshot.diagnostics.firmwareUpdateAvailable
-    || snapshot.status?.controllerConnected
-  ) {
-    return undefined;
-  }
-  return snapshot.settings.wakeOnConnectEnabled
-    ? 'The Pico bridge is online. Controller wake is enabled, but no controller is connected.'
-    : 'The Pico bridge is online and waiting for a controller.';
-}
-
-function hexByte(value: number): string {
-  return value.toString(16).padStart(2, '0').toUpperCase();
-}
-
-function UptimeValue({
-  active,
-  lastPollAt,
-  uptimeSeconds
-}: {
-  active: boolean;
-  lastPollAt: number | null;
-  uptimeSeconds: number | null;
-}) {
-  const [displayUptime, setDisplayUptime] = useState<number | null>(uptimeSeconds);
-
-  useEffect(() => {
-    if (!active || !lastPollAt || uptimeSeconds === null) {
-      setDisplayUptime(uptimeSeconds);
-      return;
-    }
-
-    const updateUptime = () => {
-      const elapsedSeconds = Math.floor((Date.now() - lastPollAt) / 1000);
-      setDisplayUptime(uptimeSeconds + Math.max(0, elapsedSeconds));
-    };
-
-    updateUptime();
-    const handle = window.setInterval(updateUptime, 1000);
-    return () => window.clearInterval(handle);
-  }, [active, lastPollAt, uptimeSeconds]);
-
-  return <span className="uptime-value">{displayUptime ?? '--'}s</span>;
-}
-
-function HostPersonaOption({ label, value }: { label: string; value: HostPersonaMode }) {
-  const sonyPersona = value === 'dualsense' || value === 'dualsense-edge' || value === 'ds4';
-  return (
-    <span className="host-persona-option">
-      {sonyPersona ? (
-        <span
-          className="host-persona-brand-icon"
-          style={{ '--host-persona-brand-mask': `url("${playStationLogoUrl}")` } as CSSProperties}
-          aria-hidden="true"
-        />
-      ) : (
-        <IconBrandXbox size={18} aria-hidden="true" />
-      )}
-      <span className="host-persona-label">{label}</span>
-    </span>
-  );
-}
-
 export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const triggerLabOpen = activeControlTab === 'trigger-lab';
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
-  const [controllerProfileDialogMode, setControllerProfileDialogMode] = useState<ControllerProfileDialogMode | null>(null);
-  const [controllerProfileNameDraft, setControllerProfileNameDraft] = useState('');
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [settingsReturnTab, setSettingsReturnTab] = useState<ControlTab>('overview');
   const [settingsFocusTarget, setSettingsFocusTarget] = useState<SettingsFocusTarget | null>(null);
@@ -540,10 +127,7 @@ export function App() {
   // Hidden or minimized, the app stops rendering snapshots and pauses its polling.
   const windowVisible = useDocumentVisible();
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
-  const [deviceCleanupConfirmVisible, setDeviceCleanupConfirmVisible] = useState(false);
   const startupTutorial = useStartupTutorial();
-  const [deviceCleanupMessage, setDeviceCleanupMessage] = useState<string | null>(null);
-  const [deviceCleanupError, setDeviceCleanupError] = useState<string | null>(null);
   const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
   const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -615,6 +199,7 @@ export function App() {
     lightbarCommitPending: lighting.lightbarCommitPending
   });
   const audioHapticsLab = useAudioHapticsLabController(runtime, { active: audioHapticsOpen });
+  const system = useSystemController(runtime, { active: activeControlTab === 'system' && windowVisible });
   const {
     hapticsValue,
     setHapticsValue,
@@ -627,15 +212,6 @@ export function App() {
     commitHapticsValue,
     runFeedbackTest
   } = feedback;
-  const selectedControllerProfile = snapshot?.settings.controllerProfiles.find((profile) => (
-    profile.id === snapshot.settings.selectedControllerProfileId
-  ));
-  const selectedControllerProfileId = selectedControllerProfile?.id ?? DEFAULT_CONTROLLER_PROFILE_ID;
-  const controllerProfileOptions = useMemo<Array<[string, string]>>(() => (
-    snapshot?.settings.controllerProfiles.map((profile) => [profile.name, profile.id]) ?? [['Default', DEFAULT_CONTROLLER_PROFILE_ID]]
-  ), [snapshot?.settings.controllerProfiles]);
-  const selectedControllerProfileIsDefault = selectedControllerProfileId === DEFAULT_CONTROLLER_PROFILE_ID;
-  const canDeleteControllerProfile = !selectedControllerProfileIsDefault;
   function applySnapshot(next: BridgeSnapshot) {
     setSnapshot(next);
     buttonRemapping.syncSnapshot(next);
@@ -753,18 +329,9 @@ export function App() {
   const batteryPowerLabel = batteryExternalPower
     ? batteryCharging ? 'Charging' : 'Connected to power'
     : null;
-  const statusTone = personaTransitionActive
-    ? 'warn'
-    : connected
-      ? 'good'
-      : snapshot?.state === 'error' || snapshot?.state === 'incompatible'
-        ? 'bad'
-        : 'idle';
-  const lastAck = snapshot?.diagnostics.lastAck;
   const speakerVolumeSupported = Boolean(snapshot?.status?.firmwareFlags.speakerVolumeControl);
   const lightbarSupported = Boolean(snapshot?.status?.firmwareFlags.lightbarControl);
   const lightbarOverrideSupported = Boolean(snapshot?.status?.firmwareFlags.lightbarOverrideControl);
-  const muteButtonActionsSupported = Boolean(snapshot?.status?.firmwareFlags.muteButtonActions);
   const adaptiveTriggersSupported = Boolean(snapshot?.status?.firmwareFlags.adaptiveTriggersControl);
   const usbSuspendDisconnectSupported = Boolean(snapshot?.status?.firmwareFlags.usbSuspendDisconnectControl);
   const wakeOnConnectSupported = Boolean(snapshot?.status?.firmwareFlags.wakeOnConnectControl);
@@ -773,9 +340,6 @@ export function App() {
   const hostPersonaControlSupported = Boolean(snapshot?.status?.firmwareFlags.hostPersonaControl);
   const audioBufferLengthControlSupported = Boolean(snapshot?.status?.firmwareFlags.hapticsBufferLengthControl);
   const supportedHostPersonaModes: HostPersonaMode[] = snapshot?.status?.supportedHostPersonaModes ?? ['dualsense'];
-  const hostPersonaOptions = HOST_PERSONA_OPTIONS.filter(([, mode]) => (
-    supportedHostPersonaModes.includes(mode) || snapshot?.settings.hostPersonaMode === mode
-  ));
   const overviewHostPersonaMode = personaTransition?.to ?? snapshot?.settings.hostPersonaMode ?? 'dualsense';
   const adaptiveTriggersEnabled = Boolean(snapshot?.settings.adaptiveTriggersEnabled);
   const lightbarEnabled = Boolean(snapshot?.settings.lightbarEnabled);
@@ -841,15 +405,6 @@ export function App() {
       : connected
         ? 'info'
         : 'idle';
-  const systemHealthTone = personaTransitionActive
-    ? 'warn'
-    : snapshot?.diagnostics.lastError
-      ? 'bad'
-      : firmwareUpdateAvailable
-        ? 'warn'
-        : connected && !controllerConnected
-          ? 'info'
-          : 'good';
   const overviewConnectionStatus = personaTransitionActive
     ? 'Switching'
     : connected && controllerConnected
@@ -906,118 +461,6 @@ export function App() {
       ? 'Active'
       : 'Enabled'
     : 'Off';
-  const diagnosticsVisible = activeControlTab === 'system' && showDiagnostics && windowVisible;
-  const ackText = useMemo(() => {
-    if (!diagnosticsVisible) return '';
-    if (!lastAck) return 'No commands yet';
-    return `${ackResultName(lastAck.resultCode)} - seq ${lastAck.commandSequence}`;
-  }, [diagnosticsVisible, lastAck]);
-  const audioDebugText = useMemo(() => {
-    if (!diagnosticsVisible) {
-      return '';
-    }
-    if (!snapshot) {
-      return 'state=starting';
-    }
-    if (!snapshot.status) {
-      return `state=${snapshot.state}\nmessage=${snapshot.message}`;
-    }
-
-    const debug = snapshot.status.audioDebug;
-    const stats = snapshot.diagnostics.audioDebugStats;
-    const audio = snapshot.diagnostics.audioStatus;
-    const lines = [
-      `state=${snapshot.state}`,
-      `firmware=${snapshot.status.firmwareVersion}`,
-      `triggerEffectIntensity=${snapshot.settings.triggerEffectIntensityPercent}%`,
-      `classicRumble=${snapshot.settings.classicRumbleEnabled ? snapshot.settings.classicRumbleGainPercent : 0}%`,
-      `appSpeakerSlider=${snapshot.settings.speakerVolumePercent}%`,
-      `firmwareSpeakerGate=${snapshot.status.speakerVolumePercent}%`,
-      `audioRecent=${snapshot.status.audioRecent ? 'true' : 'false'}`,
-      `hostOutputRecent=${snapshot.status.hostOutputRecent ? 'true' : 'false'}`,
-      `usbHostSpeakerVolume=${debug.usbHostSpeakerVolumePercent}%`,
-      `usbHostSpeakerMute=${debug.usbHostSpeakerMute ? 'true' : 'false'}`,
-      `usbHostMicVolume=${debug.usbHostMicVolumePercent}%`,
-      `usbHostMicMute=${debug.usbHostMicMute ? 'true' : 'false'}`,
-      `audioRepairCount=${debug.lastHostOutputCount}`,
-      `lastAudioRepairReportId=0x${hexByte(debug.lastHostOutputReportId)}`,
-      `lastAudioRepairLength=${debug.lastHostOutputLength}`
-    ];
-    if (audio) {
-      lines.push(
-        'audioPath=pico-local',
-        `controllerStateReady=${audio.controllerStateReady ? 'true' : 'false'}`,
-        `headsetPlugged=${audio.headsetPlugged ? 'true' : 'false'}`,
-        `headsetAudioRoute=${audio.headsetAudioRoute ? 'true' : 'false'}`,
-        `duplexRequested=${audio.duplexRequested ? 'true' : 'false'}`,
-        `duplexActive=${audio.duplexActive ? 'true' : 'false'}`,
-        `micPacketsReceived=${audio.micPacketsReceived}`,
-        `micPacketsDropped=${audio.micPacketsDropped}`,
-        `micDecodeSuccess=${audio.micDecodeSuccess}`,
-        `micDecodeFail=${audio.micDecodeFail}`,
-        `micUsbWriteSuccess=${audio.micUsbWriteSuccess}`,
-        `micUsbWriteShort=${audio.micUsbWriteShort}`,
-        `micUsbConcealCount=${audio.micUsbConcealCount}`,
-        `micPlcCount=${audio.micPlcCount}`,
-        `micLastDecodedSamples=${audio.micLastDecodedSamples}`,
-        `micLastWrittenBytes=${audio.micLastWrittenBytes}`,
-        `micPeakPermille=${audio.micPeakPermille}`,
-        `micUsbStreaming=${audio.micUsbStreaming ? 'true' : 'false'}`
-      );
-    }
-    if (stats) {
-      lines.push(
-        `usbAudioGapMaxUs=${stats.usbAudioGapMaxUs}`,
-        `usbAudioGapOver1500Count=${stats.usbAudioGapOver1500Count}`,
-        `opusEncodeMaxUs=${stats.opusEncodeMaxUs}`,
-        `opusEncodeOverBudgetCount=${stats.opusEncodeOverBudgetCount}`,
-        `audio0x36EnqueueToSendMaxUs=${stats.audio0x36EnqueueToSendMaxUs}`,
-        `audio0x36SendGapMaxUs=${stats.audio0x36SendGapMaxUs}`,
-        `audio0x36LateCountOver12000Us=${stats.audio0x36LateCountOver12000Us}`,
-        `audio0x36DropOldestCount=${stats.audio0x36DropOldestCount}`,
-        `audioGenerationDropCount=${stats.audioGenerationDropCount}`,
-        `nonAudioReportsBetweenAudioMax=${stats.nonAudioReportsBetweenAudioMax}`,
-        `btAudioQueueDepthMax=${stats.btAudioQueueDepthMax}`,
-        `audio0x36EnqueuedCount=${stats.audio0x36EnqueuedCount}`,
-        `audio0x36SentCount=${stats.audio0x36SentCount}`,
-        `criticalStarvingAudioCount=${stats.criticalStarvingAudioCount}`
-      );
-    }
-    return lines.join('\n');
-  }, [diagnosticsVisible, snapshot]);
-  const audioEventLogText = useMemo(() => {
-    if (!diagnosticsVisible) {
-      return '';
-    }
-    const lines = snapshot?.diagnostics.audioDebugLogLines ?? [];
-    return lines.length > 0 ? lines.join('\n') : 'No audio debug events captured yet.';
-  }, [diagnosticsVisible, snapshot?.diagnostics.audioDebugLogLines]);
-  const triggerTraceText = useMemo(() => {
-    if (!diagnosticsVisible) {
-      return '';
-    }
-    const lines = snapshot?.diagnostics.triggerTraceLines ?? [];
-    return lines.length > 0 ? lines.join('\n') : 'No trigger trace events captured yet.';
-  }, [diagnosticsVisible, snapshot?.diagnostics.triggerTraceLines]);
-  const feedbackTraceText = useMemo(() => {
-    if (!diagnosticsVisible) {
-      return '';
-    }
-    const lines = snapshot?.diagnostics.feedbackTraceLines ?? [];
-    return lines.length > 0 ? lines.join('\n') : 'No non-zero feedback trace events captured yet.';
-  }, [diagnosticsVisible, snapshot?.diagnostics.feedbackTraceLines]);
-  const firmwareLogStatus = snapshot?.diagnostics.firmwareLogLastError
-    ? `Write failed: ${snapshot.diagnostics.firmwareLogLastError}`
-    : !snapshot?.diagnostics.firmwareLogDirectory
-      ? 'Choose a folder to start capture.'
-      : snapshot.diagnostics.firmwareLogEnabled === false
-        ? 'Unavailable: firmware was not compiled with UART logging.'
-        : snapshot.diagnostics.firmwareLogEnabled === null
-          ? 'Waiting for UART-enabled firmware.'
-          : snapshot.diagnostics.firmwareLogPath
-            ? 'Capturing retained firmware logs.'
-            : 'Starting capture.';
-
   async function runAction(label: string, action: () => Promise<BridgeSnapshot>) {
     if (!snapshot || pendingAction) {
       return;
@@ -1044,116 +487,6 @@ export function App() {
     } catch {
       const next = await window.bridge.getStatus();
       setSnapshot(next);
-    }
-  }
-
-  function selectControllerProfile(profileId: string) {
-    void runAction('controller-profile', () => window.bridge.selectControllerProfile(profileId));
-  }
-
-  function renameControllerProfile() {
-    if (!selectedControllerProfile || selectedControllerProfileIsDefault) {
-      return;
-    }
-    setControllerProfileNameDraft(selectedControllerProfile.name);
-    setControllerProfileDialogMode('rename');
-  }
-
-  function saveControllerProfile() {
-    setControllerProfileNameDraft(`Custom Profile ${snapshot?.settings.controllerProfiles.length ?? 1}`);
-    setControllerProfileDialogMode('save');
-  }
-
-  function deleteControllerProfile() {
-    if (!selectedControllerProfile || !canDeleteControllerProfile) {
-      return;
-    }
-    setControllerProfileDialogMode('delete');
-  }
-
-  function closeControllerProfileDialog() {
-    setControllerProfileDialogMode(null);
-    setControllerProfileNameDraft('');
-  }
-
-  function submitControllerProfileDialog() {
-    if (!selectedControllerProfile && controllerProfileDialogMode !== 'save') {
-      return;
-    }
-    if (controllerProfileDialogMode === 'save') {
-      const nextName = controllerProfileNameDraft.trim();
-      if (!nextName) {
-        return;
-      }
-      closeControllerProfileDialog();
-      void runAction('controller-save-profile', () => window.bridge.saveControllerProfile(nextName));
-      return;
-    }
-    if (controllerProfileDialogMode === 'rename' && selectedControllerProfile && !selectedControllerProfileIsDefault) {
-      const nextName = controllerProfileNameDraft.trim();
-      if (!nextName || nextName === selectedControllerProfile.name) {
-        closeControllerProfileDialog();
-        return;
-      }
-      closeControllerProfileDialog();
-      void runAction('controller-rename-profile', () => (
-        window.bridge.renameControllerProfile(selectedControllerProfile.id, nextName)
-      ));
-      return;
-    }
-    if (controllerProfileDialogMode === 'delete' && selectedControllerProfile && canDeleteControllerProfile) {
-      closeControllerProfileDialog();
-      void runAction('controller-delete-profile', () => (
-        window.bridge.deleteControllerProfile(selectedControllerProfile.id)
-      ));
-    }
-  }
-
-  function chooseFirmwareLogDirectory() {
-    void runAction('firmware-log-directory', () => window.bridge.selectFirmwareLogDirectory());
-  }
-
-  function clearFirmwareLogDirectory() {
-    void runAction('firmware-log-directory', () => window.bridge.clearFirmwareLogDirectory());
-  }
-
-  function openDeviceCleanupConfirm() {
-    setDeviceCleanupMessage(null);
-    setDeviceCleanupError(null);
-    setDeviceCleanupConfirmVisible(true);
-  }
-
-  function closeDeviceCleanupConfirm() {
-    if (pendingAction === 'device-cleanup') {
-      return;
-    }
-    setDeviceCleanupConfirmVisible(false);
-  }
-
-  async function runWindowsDeviceCleanup() {
-    if (!snapshot || pendingAction) {
-      return;
-    }
-    setDeviceCleanupMessage(null);
-    if (controllerConnected) {
-      setDeviceCleanupError('Disconnect the controller from the bridge before running emergency repair.');
-      return;
-    }
-
-    setPendingAction('device-cleanup');
-    setDeviceCleanupError(null);
-    try {
-      const result = await window.bridge.repairWindowsDeviceCache();
-      setDeviceCleanupMessage(result.message);
-    } catch (error) {
-      setDeviceCleanupError(error instanceof Error ? error.message : 'Emergency device repair could not run.');
-    } finally {
-      try {
-        applySnapshot(await window.bridge.getStatus());
-      } catch {
-        // Keep the existing snapshot if status refresh fails after the repair process.
-      }
-      setPendingAction(null);
     }
   }
 
@@ -1222,42 +555,7 @@ export function App() {
     }, 2200);
   }
 
-  function setMuteButtonAction(
-    mode: MuteButtonMode,
-    usage?: number,
-    modifiers?: number,
-    behavior?: MuteKeyboardBehavior,
-    chordStarterEnabled?: boolean
-  ) {
-    if (!snapshot) {
-      return;
-    }
-    const keyUsage = usage ?? snapshot.settings.muteKeyboardUsage;
-    const keyModifiers = modifiers ?? snapshot.settings.muteKeyboardModifiers;
-    const keyBehavior = behavior ?? snapshot.settings.muteKeyboardBehavior;
-    const keyChordStarterEnabled = chordStarterEnabled ?? snapshot.settings.muteKeyboardChordStarterEnabled;
-    void runAction('mute-button', () => (
-      window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior, keyChordStarterEnabled)
-    ));
-  }
-
-  function setMuteModifier(bit: number, enabled: boolean) {
-    if (!snapshot) {
-      return;
-    }
-    const nextModifiers = enabled
-      ? snapshot.settings.muteKeyboardModifiers | bit
-      : snapshot.settings.muteKeyboardModifiers & ~bit;
-    setMuteButtonAction(
-      snapshot.settings.muteButtonMode,
-      snapshot.settings.muteKeyboardUsage,
-      nextModifiers,
-      snapshot.settings.muteKeyboardBehavior,
-      snapshot.settings.muteKeyboardChordStarterEnabled
-    );
-  }
-
-  function clearOverviewSleepConfirmation() {
+    function clearOverviewSleepConfirmation() {
     overviewSleepConfirmArmedRef.current = false;
     setOverviewSleepConfirmVisible(false);
     if (overviewSleepConfirmTimerRef.current !== null) {
@@ -1303,14 +601,6 @@ export function App() {
     void runAction('notify-battery', () => (
       window.bridge.setNotifyLowBattery(!snapshot.settings.notifyLowBattery)
     ));
-  }
-
-  function setPollingRateMode(mode: PollingRateMode) {
-    void runAction('polling-rate', () => window.bridge.setPollingRateMode(mode));
-  }
-
-  function setHostPersonaMode(mode: HostPersonaMode) {
-    void runAction('host-persona', () => window.bridge.setHostPersonaMode(mode));
   }
 
   function testNotifications() {
@@ -1687,7 +977,7 @@ export function App() {
                         title={`Switch to ${label} mode`}
                         onClick={() => {
                           if (!active) {
-                            setHostPersonaMode(mode);
+                            system.setHostPersonaMode(mode);
                           }
                         }}
                       >
@@ -1700,7 +990,7 @@ export function App() {
                             aria-hidden="true"
                           />
                         )}
-                        <span>{HOST_PERSONA_SHORT_LABELS[mode]}</span>
+                        <span>{HOST_PERSONA_ABBREVIATIONS[mode]}</span>
                       </button>
                     );
                   })}
@@ -2050,368 +1340,16 @@ export function App() {
           </DeferredPage>
 
           <DeferredPage active={activeControlTab === 'system'}>
-          <div
-            className={`control-page system-page ${activeControlTab === 'system' ? 'active' : ''}`}
-            role="tabpanel"
-            id="control-panel-system"
-            aria-labelledby="control-tab-system"
-            aria-hidden={activeControlTab !== 'system'}
-          >
-              <div className="feature-heading system-heading">
-                <div>
-                  <h2>System</h2>
-                  <p>Configure bridge behavior and defaults.</p>
-                </div>
-                <div className="profile-controls">
-                  <button
-                    className="heading-icon-action emergency-repair-button"
-                    type="button"
-                    title="Emergency device repair"
-                    aria-label="Emergency device repair"
-                    disabled={pendingAction !== null}
-                    onClick={openDeviceCleanupConfirm}
-                  >
-                    <IconTool size={20} />
-                  </button>
-                  <CustomSelect
-                    value={selectedControllerProfileId}
-                    disabled={!connected || pendingAction !== null}
-                    options={controllerProfileOptions}
-                    ariaLabel="System profile"
-                    onChange={selectControllerProfile}
-                  />
-                  <button
-                    className="heading-action"
-                    type="button"
-                    disabled={!connected || pendingAction !== null || hapticsCommitPending || audio.speakerVolumeCommitPending || lighting.lightbarCommitPending}
-                    onClick={() => void runAction('restore', () => window.bridge.restoreDefaults())}
-                  >
-                    <RefreshCcw size={18} />
-                    Restore Defaults
-                  </button>
-                </div>
-              </div>
-
-              <div className="feature-card-grid">
-                <section className="system-card mute-card">
-                  <div className="feature-card-title system-card-heading">
-                    <span className="feature-icon system-icon icon-wide"><MicOff size={20} /></span>
-                    <div className="title-copy">
-                      <h3>Mute Button</h3>
-                      <p>Set controller mute behavior.</p>
-                    </div>
-                  </div>
-                  <div className="system-fields">
-                    <div className="select-row">
-                      <span>Behavior</span>
-                      <CustomSelect
-                        value={snapshot.settings.muteButtonMode}
-                        disabled={!connected || !muteButtonActionsSupported || pendingAction !== null}
-                        options={MUTE_BUTTON_MODE_OPTIONS}
-                        ariaLabel="Mute button behavior"
-                        onChange={(mode) => setMuteButtonAction(mode)}
-                      />
-                    </div>
-                    {snapshot.settings.muteButtonMode === 'keyboard' && (
-                      <>
-                        <div className="select-row">
-                          <span>Key</span>
-                          <CustomSelect
-                            value={snapshot.settings.muteKeyboardUsage}
-                            disabled={!connected || !muteButtonActionsSupported || pendingAction !== null}
-                            options={MUTE_KEY_OPTIONS}
-                            ariaLabel="Mute keyboard key"
-                            onChange={(usage) => setMuteButtonAction('keyboard', usage)}
-                          />
-                        </div>
-                        <div className="select-row">
-                          <span>Press Mode</span>
-                          <CustomSelect
-                            value={snapshot.settings.muteKeyboardBehavior}
-                            disabled={!connected || !muteButtonActionsSupported || pendingAction !== null}
-                            options={MUTE_KEYBOARD_BEHAVIOR_OPTIONS}
-                            ariaLabel="Mute keyboard press mode"
-                            onChange={(behavior) => setMuteButtonAction('keyboard', undefined, undefined, behavior)}
-                          />
-                        </div>
-                        <div className="modifier-block">
-                          <div className="modifier-grid" aria-label="Keyboard modifiers">
-                            {MUTE_MODIFIER_OPTIONS.map(([label, bit]) => {
-                              const enabled = (snapshot.settings.muteKeyboardModifiers & bit) !== 0;
-                              return (
-                                <button
-                                  key={bit}
-                                  type="button"
-                                  className={enabled ? 'active' : ''}
-                                  disabled={!connected || !muteButtonActionsSupported || pendingAction !== null}
-                                  onClick={() => setMuteModifier(bit, !enabled)}
-                                >
-                                  <Keyboard size={16} />
-                                  {label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div className="select-row">
-                          <span
-                            className="settings-menu-copy-tooltip chord-starter-label"
-                            tabIndex={0}
-                            aria-describedby="mute-chord-starter-tooltip"
-                          >
-                            Chord Starter
-                            <span
-                              id="mute-chord-starter-tooltip"
-                              className="settings-shortcut-tooltip chord-starter-tooltip"
-                              role="tooltip"
-                            >
-                              Lets Mute start a chord. When enabled, the keyboard key waits 250ms so a chord can be detected first.
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={snapshot.settings.muteKeyboardChordStarterEnabled}
-                            className={`switch ${snapshot.settings.muteKeyboardChordStarterEnabled ? 'on' : ''}`}
-                            disabled={!connected || !muteButtonActionsSupported || pendingAction !== null}
-                            onClick={() => setMuteButtonAction(
-                              'keyboard',
-                              undefined,
-                              undefined,
-                              undefined,
-                              !snapshot.settings.muteKeyboardChordStarterEnabled
-                            )}
-                          >
-                            <span />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                    {snapshot.settings.muteButtonMode === 'quiet' && (
-                      <div className={`quiet-state ${snapshot.status?.quietModeEnabled ? 'active' : ''}`}>
-                        <VolumeX size={18} />
-                        <span>{snapshot.status?.quietModeEnabled ? 'Controller Quiet On' : 'Controller Quiet Off'}</span>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                <section className={`system-card device-card ${showDiagnostics ? 'expanded' : ''}`}>
-                  <div className="feature-card-title system-card-heading">
-                    <span className="feature-icon system-icon icon-wide">
-                      {showDiagnostics ? <IconStethoscope size={20} /> : <Settings2 size={20} />}
-                    </span>
-                    <div className="title-copy">
-                      <h3>{showDiagnostics ? 'Diagnostics' : 'Device'}</h3>
-                        <p>
-                          {showDiagnostics
-                            ? 'Debug Data'
-                            : 'Firmware'}
-                        </p>
-                    </div>
-                    <div className="dual-selector system-mode-selector" role="tablist" aria-label="System control mode">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={!showDiagnostics}
-                        className={!showDiagnostics ? 'active' : ''}
-                        onClick={() => setShowDiagnostics(false)}
-                      >
-                        Device
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={showDiagnostics}
-                        className={showDiagnostics ? 'active' : ''}
-                        onClick={() => setShowDiagnostics(true)}
-                      >
-                        Diagnostics
-                      </button>
-                    </div>
-                  </div>
-                  {showDiagnostics ? (
-                    <div className="device-diagnostics">
-                      <dl>
-                        <div><dt>Protocol</dt><dd>{snapshot.diagnostics.protocolVersion ?? '--'}</dd></div>
-                        <div>
-                          <dt>Uptime</dt>
-                          <dd>
-                            <UptimeValue
-                              active={diagnosticsVisible}
-                              lastPollAt={snapshot.diagnostics.lastPollAt}
-                              uptimeSeconds={snapshot.diagnostics.uptimeSeconds}
-                            />
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Revision</dt>
-                          <dd><span className="diagnostic-number">{snapshot.diagnostics.settingsRevision ?? '--'}</span></dd>
-                        </div>
-                        <div><dt>Last ACK</dt><dd>{ackText}</dd></div>
-                        <div><dt>HID Path</dt><dd>{snapshot.diagnostics.hidPath ?? '--'}</dd></div>
-                        <div className="debug-entry firmware-log-entry">
-                          <dt>Firmware UART Log</dt>
-                          <dd>
-                            <div className="firmware-log-details">
-                              <span>{firmwareLogStatus}</span>
-                              <span title={snapshot.diagnostics.firmwareLogDirectory ?? undefined}>
-                                Folder: {snapshot.diagnostics.firmwareLogDirectory ?? '--'}
-                              </span>
-                              <span title={snapshot.diagnostics.firmwareLogPath ?? undefined}>
-                                File: {snapshot.diagnostics.firmwareLogPath ?? '--'}
-                              </span>
-                              <span>
-                                SRAM overwrite loss: <span className="diagnostic-number">{snapshot.diagnostics.firmwareLogDroppedBytes}</span> bytes
-                              </span>
-                            </div>
-                            <div className="firmware-log-actions">
-                              <button
-                                type="button"
-                                className="secondary-action"
-                                disabled={pendingAction !== null}
-                                onClick={chooseFirmwareLogDirectory}
-                              >
-                                Choose Folder
-                              </button>
-                              {snapshot.diagnostics.firmwareLogDirectory ? (
-                                <button
-                                  type="button"
-                                  className="secondary-action"
-                                  disabled={pendingAction !== null}
-                                  onClick={clearFirmwareLogDirectory}
-                                >
-                                  Stop Capture
-                                </button>
-                              ) : null}
-                            </div>
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Audio Log</dt>
-                          <dd title={snapshot.diagnostics.audioDebugLogPath ?? undefined}>
-                            {snapshot.diagnostics.audioDebugLogPath ?? '--'}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Dropped</dt>
-                          <dd><span className="diagnostic-number">{snapshot.diagnostics.audioDebugDroppedCount}</span></dd>
-                        </div>
-                        <div>
-                          <dt>Trigger Drop</dt>
-                          <dd><span className="diagnostic-number">{snapshot.diagnostics.triggerTraceDroppedCount}</span></dd>
-                        </div>
-                        <div>
-                          <dt>Feedback Drop</dt>
-                          <dd><span className="diagnostic-number">{snapshot.diagnostics.feedbackTraceDroppedCount}</span></dd>
-                        </div>
-                        <div className="debug-entry">
-                          <dt>Audio Debug</dt>
-                          <dd>
-                            <textarea readOnly value={audioDebugText} aria-label="Audio debug copy text" />
-                          </dd>
-                        </div>
-                        <div className="debug-entry">
-                          <dt>Audio Events</dt>
-                          <dd>
-                            <textarea readOnly value={audioEventLogText} aria-label="Audio event log text" />
-                          </dd>
-                        </div>
-                        <div className="debug-entry">
-                          <dt>Trigger Trace</dt>
-                          <dd>
-                            <textarea readOnly value={triggerTraceText} aria-label="Trigger trace text" />
-                          </dd>
-                        </div>
-                        <div className="debug-entry">
-                          <dt>Feedback Trace</dt>
-                          <dd>
-                            <textarea readOnly value={feedbackTraceText} aria-label="Feedback trace text" />
-                          </dd>
-                        </div>
-                      </dl>
-                    </div>
-                  ) : (
-                    <div className="device-list">
-                      <div className="device-row">
-                        <span>Firmware</span>
-                        <strong>{snapshot.status?.firmwareVersion ?? '--'}</strong>
-                      </div>
-                      <div className="device-row">
-                        <span>Controller</span>
-                        <strong>{controllerConnected ? controllerName(snapshot.status?.controllerType) : '--'}</strong>
-                      </div>
-                      <div className="device-row device-control-row">
-                        <span>Polling Rate</span>
-                        <CustomSelect
-                          value={snapshot.settings.pollingRateMode}
-                          disabled={!connected || !pollingRateControlSupported || pendingAction !== null}
-                          options={POLLING_RATE_OPTIONS}
-                          ariaLabel="Polling rate"
-                          onChange={setPollingRateMode}
-                        />
-                      </div>
-                      <div className="device-row device-control-row">
-                        <span>Host Controller</span>
-                        <CustomSelect
-                          value={snapshot.settings.hostPersonaMode}
-                          disabled={!connected || !hostPersonaControlSupported || pendingAction !== null || personaTransitionActive}
-                          options={hostPersonaOptions.length > 0 ? hostPersonaOptions : HOST_PERSONA_OPTIONS.slice(0, 1)}
-                          className="host-persona-selector"
-                          ariaLabel="Host controller persona"
-                          getOptionClassName={(_, mode) => (mode === 'xbox' ? 'host-persona-platform-break' : undefined)}
-                          renderValue={(label, mode) => <HostPersonaOption label={label} value={mode} />}
-                          renderOption={(label, mode) => <HostPersonaOption label={label} value={mode} />}
-                          onChange={setHostPersonaMode}
-                        />
-                      </div>
-                      <div className="device-row device-status-row">
-                        <span>Status</span>
-                        <strong className={`health-label ${systemHealthTone}`} title={healthTitle(snapshot)}>
-                          <span className={`dot ${systemHealthTone === 'good' ? statusTone : systemHealthTone}`} />
-                          {healthLabel(snapshot)}
-                        </strong>
-                      </div>
-                    </div>
-                  )}
-                </section>
-              </div>
-              <section className="feature-help-panel system-profile-panel" aria-label="System profiles and tips">
-                <div className="system-profile-strip">
-                  <ProfileSaveStatus />
-                  <div className="remapping-profile-actions">
-                    <button
-                      type="button"
-                      disabled={selectedControllerProfileIsDefault || pendingAction !== null}
-                      onClick={renameControllerProfile}
-                    >
-                      <Pencil size={15} />
-                      Rename Profile
-                    </button>
-                    <button
-                      type="button"
-                      disabled={pendingAction !== null}
-                      onClick={saveControllerProfile}
-                    >
-                      <Save size={15} />
-                      Save New Profile
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canDeleteControllerProfile || pendingAction !== null}
-                      onClick={deleteControllerProfile}
-                    >
-                      <Trash2 size={15} />
-                      Delete Profile
-                    </button>
-                  </div>
-                </div>
-                <SystemProfileSummary
-                  settings={controllerProfileSettingsFromSnapshot(snapshot)}
-                  powerSavingActive={controllerPowerSavingActive}
-                />
-              </section>
-          </div>
+            <LazySystemPage
+              active={activeControlTab === 'system'}
+              controller={system}
+              snapshot={snapshot}
+              connected={connected}
+              controllerConnected={controllerConnected}
+              pendingAction={pendingAction}
+              controllerPowerSavingActive={controllerPowerSavingActive}
+              restoreBlocked={hapticsCommitPending || audio.speakerVolumeCommitPending || lighting.lightbarCommitPending}
+            />
           </DeferredPage>
 
           <DeferredPage active={activeControlTab === 'settings'}>
@@ -2474,87 +1412,6 @@ export function App() {
         />
       )}
 
-      {deviceCleanupConfirmVisible && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={closeDeviceCleanupConfirm}
-        >
-          <form
-            className="settings-menu bridge-settings-modal device-cleanup-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Emergency device repair"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void runWindowsDeviceCleanup();
-            }}
-          >
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                <IconTool size={16} />
-                <span>Emergency Device Repair</span>
-              </div>
-              <button
-                className="modal-close-button"
-                type="button"
-                aria-label="Close emergency device repair dialog"
-                disabled={pendingAction === 'device-cleanup'}
-                onClick={closeDeviceCleanupConfirm}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="device-cleanup-copy">
-              <p>
-                Only run this if you are running into persistent odd controller, rumble, haptics, audio, or Windows device issues.
-              </p>
-              <p>
-                Disconnect the controller from the bridge before running this repair.
-              </p>
-              <ul>
-                <li>Removes stale Windows DualSense, DualSense Edge, DS5 Bridge USB/HID, audio endpoint, and Bluetooth pairing records.</li>
-                <li>Controller identity based profiles in Steam, emulators, or other tools may need to be assigned again.</li>
-                <li>DualSense controllers paired directly to Windows over Bluetooth may need to be paired again.</li>
-              </ul>
-              {controllerConnected && (
-                <div className="device-cleanup-alert bad">
-                  Controller is still connected to the bridge.
-                </div>
-              )}
-              {deviceCleanupError && (
-                <div className="device-cleanup-alert bad">
-                  {deviceCleanupError}
-                </div>
-              )}
-              {deviceCleanupMessage && (
-                <div className="device-cleanup-alert good">
-                  {deviceCleanupMessage}
-                </div>
-              )}
-            </div>
-            <div className="remap-profile-dialog-actions">
-              <button
-                type="button"
-                className="secondary-action"
-                disabled={pendingAction === 'device-cleanup'}
-                onClick={closeDeviceCleanupConfirm}
-              >
-                Close
-              </button>
-              <button
-                type="submit"
-                className="primary-action danger"
-                disabled={pendingAction !== null || controllerConnected}
-              >
-                {pendingAction === 'device-cleanup' ? 'Running...' : 'Run Repair'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       <ChordFunctionDialog controller={chords} pendingAction={pendingAction} />
 
       <TriggerLabProfileDialog lab={triggerLab} pendingAction={pendingAction} />
@@ -2566,73 +1423,6 @@ export function App() {
         onCancel={() => void runQuietAction(() => window.bridge.cancelBootloaderConfirmation())}
       />
 
-      {controllerProfileDialogMode && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={closeControllerProfileDialog}
-        >
-          <form
-            className="settings-menu bridge-settings-modal remap-profile-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="System profile"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitControllerProfileDialog();
-            }}
-          >
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                {controllerProfileDialogMode === 'delete' ? <Trash2 size={16} /> : <Save size={16} />}
-                <span>
-                  {controllerProfileDialogMode === 'save'
-                    ? 'Save New Profile'
-                    : controllerProfileDialogMode === 'rename'
-                      ? 'Rename Profile'
-                      : 'Delete Profile'}
-                </span>
-              </div>
-              <button
-                className="modal-close-button"
-                type="button"
-                aria-label="Close system profile dialog"
-                onClick={closeControllerProfileDialog}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {controllerProfileDialogMode === 'delete' ? (
-              <p className="remap-profile-dialog-copy">
-                Delete {selectedControllerProfile?.name ?? 'this profile'}?
-              </p>
-            ) : (
-              <label className="remap-profile-name-field">
-                <span>Profile Name</span>
-                <input
-                  autoFocus
-                  value={controllerProfileNameDraft}
-                  maxLength={48}
-                  onChange={(event) => setControllerProfileNameDraft(event.target.value)}
-                />
-              </label>
-            )}
-            <div className="remap-profile-dialog-actions">
-              <button type="button" className="secondary-action" onClick={closeControllerProfileDialog}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className={`primary-action ${controllerProfileDialogMode === 'delete' ? 'danger' : ''}`}
-                disabled={pendingAction !== null || (controllerProfileDialogMode !== 'delete' && controllerProfileNameDraft.trim().length === 0)}
-              >
-                {controllerProfileDialogMode === 'delete' ? 'Delete' : 'Save'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
 
         </>

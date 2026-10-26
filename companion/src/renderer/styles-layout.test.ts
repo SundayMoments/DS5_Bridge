@@ -126,13 +126,6 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.light-color-meta', 'grid-row: 3;')).toContain('grid-row: 3;');
   });
 
-  it('keeps system card subtitles short enough for shared headers', () => {
-    expect(appSource).toContain("'Firmware'");
-    expect(appSource).toContain("'Debug Data'");
-    expect(appSource).not.toContain('Firmware and polling.');
-    expect(appSource).not.toContain('Protocol and debug data.');
-  });
-
   it('keeps feature cards visually aligned with the darker tips surface', () => {
     expect(cssBlock('.feature-card', 'background: var(--surface-card);')).toContain(
       'background: var(--surface-card);'

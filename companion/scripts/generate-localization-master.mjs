@@ -34,12 +34,15 @@ const completeCatalogs = new Map([
 const allowedSourceIdenticalPhrases = [
   /^DS5 Bridge$/,
   /^Kitsune Input$/,
-  /^(?:DualSense|DualSense Edge|DualShock 4|Pico LED|Pico 2 W|Ko-fi|GitHub|Discord)$/,
+  /^(?:DualSense|DualSense Edge|DualShock 4|Xbox|Pico LED|Pico 2 W|Ko-fi|GitHub|Discord)$/,
   /^(?:Bubble Gum|Kiwi|Pomegranate)$/,
   // USB vendor and product IDs are written the same way in every language.
   /^VID \/ PID$/,
   // Keyboard keys keep the legends printed on them.
   /^(?:Caps Lock|Num Lock|Page Down|Page Up|Print Screen|Scroll Lock)$/,
+  /^F(?:[1-9]|1\d|2[0-4])$/,
+  // Polling rates are written the same way in every language.
+  /^\d+ Hz$/,
   /^\{\{0\}\}%$/
 ];
 

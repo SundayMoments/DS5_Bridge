@@ -57,28 +57,11 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('Pico Local');
   });
 
-  it('presents DualSense Edge as a PlayStation host persona', () => {
-    // The chord persona actions are covered in features/chords/model.test.ts.
-    expect(appSource).toContain("['DualSense Edge', 'dualsense-edge']");
-    const option = extractFunction('HostPersonaOption');
-    expect(option).toContain("value === 'dualsense-edge'");
-    expect(option).toContain('host-persona-brand-icon');
-  });
-
-  it('requires explicit confirmation and a disconnected controller before emergency device repair', () => {
-    const openFunction = extractFunction('openDeviceCleanupConfirm');
-    const runFunction = extractFunction('runWindowsDeviceCleanup');
-
-    expect(appSource).toContain('IconTool');
-    expect(openFunction).toContain('setDeviceCleanupConfirmVisible(true)');
-    expect(runFunction).toContain('controllerConnected');
-    expect(runFunction).toContain('repairWindowsDeviceCache');
-    expect(appSource).toContain('Emergency Device Repair');
-    expect(appSource).toContain('Only run this if you are running into persistent odd controller');
-    expect(appSource).toContain('Disconnect the controller from the bridge');
-    expect(appSource).toContain('Controller identity based profiles');
-    expect(appSource).toContain('paired directly to Windows over Bluetooth may need to be paired again');
-  });
+  // The DualSense Edge host persona, the emergency device repair dialog, the
+  // Device card health label, and Mute as a chord starter are rendered in
+  // features/system-controls/SystemPage.rendered.test.tsx; the health and power
+  // wording is covered in common/controller-status.test.ts. The chord persona
+  // actions are covered in features/chords/model.test.ts.
 
   // Haptics and rumble tests staying available while game audio plays, and their
   // Testing and Cooling Down labels, are rendered in
@@ -88,19 +71,9 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('Command Pending');
   });
 
-  it('distinguishes controller-ready, wake-enabled, and bridge-only health states', () => {
-    const start = appSource.indexOf('function healthLabel');
-    const end = appSource.indexOf('function hexByte', start);
-    const healthSource = appSource.slice(start, end);
-
-    expect(healthSource).toContain("return 'Wake with controller enabled';");
-    expect(healthSource).toContain("return 'Bridge online';");
-    expect(healthSource).toContain("return 'All systems normal';");
-    expect(healthSource).toContain('snapshot.settings.wakeOnConnectEnabled');
-    expect(healthSource).toContain('snapshot.status?.controllerConnected');
-    expect(healthSource).toContain('The Pico bridge is online and waiting for a controller.');
-    expect(appSource).toContain('title={overviewHealthTitle}');
-    expect(appSource).toContain('title={healthTitle(snapshot)}');
+  it('styles the bridge-only health state', () => {
+    // The wording is covered in common/controller-status.test.ts and the System
+    // Device card in features/system-controls/SystemPage.rendered.test.tsx.
     expect(stylesSource).toContain('.dot.info');
     expect(stylesSource).toContain('.overview-health.info');
     expect(stylesSource).toContain('.health-label.info');
@@ -166,17 +139,9 @@ describe('renderer behavior guards', () => {
     // The chord gate is rendered in features/chords/ChordsPage.rendered.test.tsx.
   });
 
-  it('distinguishes active charging from connected external power', () => {
-    expect(appSource).toContain(
-      'function isChargingPowerState(rawPowerState: number | undefined): boolean {'
-    );
-    expect(appSource).toContain('return rawPowerState === 0x01;');
-    expect(appSource).toContain(
-      'function isExternalPowerState(rawPowerState: number | undefined): boolean {'
-    );
-    expect(appSource).toContain('return rawPowerState === 0x01 || rawPowerState === 0x02;');
-    expect(appSource).toContain("batteryCharging ? 'Charging' : 'Connected to power'");
-    expect(appSource).toContain('powerLabel: batteryPowerLabel,');
+  it('styles the sidebar power indicator', () => {
+    // Charging and external power are told apart in common/controller-status.test.ts
+    // and the indicator is rendered in App.rendered.test.tsx.
     expect(shellSidebarStyles).toContain('.device-power-indicator');
   });
 
@@ -208,8 +173,8 @@ describe('renderer behavior guards', () => {
     expect(featureSource('chords/ChordGlyphs.tsx')).toContain('<Icon size={18} />');
     expect(stylesSource).toContain('.chords-assignment-row.mute-starter-inactive .remap-glyph-option img');
     expect(stylesSource).toContain('opacity: var(--disabled-opacity);');
-    expect(appSource).toContain('Chord Starter');
-    expect(appSource).toContain("window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior, keyChordStarterEnabled)");
+    // The System page's Chord Starter switch is rendered in
+    // features/system-controls/SystemPage.rendered.test.tsx.
   });
 
   it('exposes bridge selection, stable naming, and direct USB controller status', () => {
@@ -250,13 +215,8 @@ describe('renderer behavior guards', () => {
   });
 
   it('keeps all four abbreviated personas on the overview quick-actions row', () => {
+    // The buttons are rendered in App.rendered.test.tsx.
     expect(stylesSource).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
-    expect(appSource).toContain("dualsense: 'DS'");
-    expect(appSource).toContain("'dualsense-edge': 'DSE'");
-    expect(appSource).toContain("ds4: 'DS4'");
-    expect(appSource).toContain("xbox: 'XBOX'");
-    expect(appSource).toContain('<span>{HOST_PERSONA_SHORT_LABELS[mode]}</span>');
-    expect(appSource).toContain('aria-label={`Switch to ${label} mode`}');
   });
 
   it('advertises Kitsune Input with a dismissible titlebar promotion', () => {

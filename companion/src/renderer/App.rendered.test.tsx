@@ -138,6 +138,36 @@ describe('App against a fixture bridge', () => {
     );
   });
 
+  it('labels the sidebar power indicator as charging or connected to power', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot({ status: { rawPowerState: 0x01 } }));
+    const host = await renderApp();
+    const indicator = () => host.querySelector('.device-power-indicator')?.getAttribute('aria-label');
+    expect(indicator()).toBe('Charging');
+    bridge.emit(fixtureSnapshot({ status: { rawPowerState: 0x02 } }));
+    expect(indicator()).toBe('Connected to power');
+    bridge.emit(fixtureSnapshot({ status: { rawPowerState: 0x00 } }));
+    expect(indicator()).toBeUndefined();
+  });
+
+  it('keeps all four abbreviated personas on the Overview quick actions and switches through the bridge', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    const personas = [...host.querySelectorAll<HTMLButtonElement>('.overview-persona-grid .overview-persona-button')];
+    expect(personas.map((button) => button.textContent)).toEqual(['DS', 'DSE', 'DS4', 'XBOX']);
+    expect(personas.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Switch to DualSense mode',
+      'Switch to DualSense Edge mode',
+      'Switch to DualShock 4 mode',
+      'Switch to Xbox mode'
+    ]);
+    expect(personas[0].getAttribute('aria-pressed')).toBe('true');
+
+    await click(personas[0]);
+    expect(bridge.fn('setHostPersonaMode')).not.toHaveBeenCalled();
+    await click(personas[3]);
+    expect(bridge.fn('setHostPersonaMode')).toHaveBeenCalledWith('xbox');
+  });
+
   it('opens every sidebar page', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();
