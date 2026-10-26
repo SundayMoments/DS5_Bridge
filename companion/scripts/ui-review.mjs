@@ -91,6 +91,45 @@ try {
   const offerClose = page.locator('.kitsune-launch-offer-close');
   await offerClose.and(page.locator(':enabled')).waitFor({ timeout: 10000 });
   await offerClose.click();
+
+  // Settings > Wake PC with the controller off: a saved network, a new setup, and a running test.
+  await page.evaluate(() => {
+    const current = window.__uiReview.snapshot();
+    window.__uiReview.update({ status: { ...current.status, controllerConnected: false } });
+  });
+  async function openWakePc() {
+    await openControlTab(page, 'Overview');
+    await openControlTab(page, 'Settings');
+    await page.locator('.settings-section-button', { hasText: 'Wake PC' }).click();
+    await page.locator('.wake-pc-panel').waitFor();
+    await settle();
+  }
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
+    await openWakePc();
+    await page.locator('.wake-pc-summary').waitFor();
+    const file = `${theme}-100-wake-pc-saved.png`;
+    await captureWindow(app, path.join(outputDir, file));
+    shots.push(file);
+  }
+  await page.evaluate(() => window.__uiReview.setWakeOnLan({
+    configured: false, enabled: false, credentialPresent: false, ssid: '', country: '', targetMac: '', stage: 'not-configured'
+  }));
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
+    await openWakePc();
+    await page.locator('.wake-pc-form').waitFor();
+    const file = `${theme}-100-wake-pc-setup.png`;
+    await captureWindow(app, path.join(outputDir, file));
+    shots.push(file);
+  }
+  await page.getByLabel('Network name').fill('Home Network');
+  await page.getByLabel('Password', { exact: true }).fill('correct horse');
+  await page.getByRole('button', { name: 'Test and Save' }).click();
+  await page.locator('.wake-pc-progress li.current', { hasText: 'Testing Wi-Fi' }).waitFor({ timeout: 5000 });
+  await settle();
+  await captureWindow(app, path.join(outputDir, 'dark-100-wake-pc-testing.png'));
+  shots.push('dark-100-wake-pc-testing.png');
   if (failures.length) {
     throw new Error(`Renderer errors:\n${failures.join('\n')}`);
   }

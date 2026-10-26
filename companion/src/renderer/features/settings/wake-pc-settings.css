@@ -1,0 +1,398 @@
+/* Wake PC: the intro, the USB wake row, and the Wake-on-LAN panel (look ported from Kitsune Input). */
+.settings-page .wake-pc-intro {
+  margin: 0 0 12px;
+  padding: 0 2px;
+  max-width: 72ch;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.45;
+}
+
+.settings-page .wake-pc-intro + .settings-menu-row {
+  border-top-left-radius: var(--card-radius);
+  border-top-right-radius: var(--card-radius);
+}
+
+.settings-page .settings-menu-row.wake-pc-panel {
+  display: grid;
+  justify-content: stretch;
+  align-items: start;
+  gap: 12px;
+}
+
+.wake-pc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.wake-pc-header .settings-menu-copy {
+  min-width: 0;
+}
+
+.wake-pc-status {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.wake-pc-status.on {
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.wake-pc-panel p {
+  margin: 0;
+}
+
+.wake-pc-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+}
+
+.wake-pc-note.warning {
+  padding: 9px 11px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--control-radius);
+  color: var(--text-primary);
+  background: var(--warning-bg);
+}
+
+.wake-pc-note.warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.wake-pc-saved {
+  display: grid;
+  gap: 12px;
+}
+
+.wake-pc-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+}
+
+.wake-pc-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.wake-pc-summary dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+}
+
+.wake-pc-summary dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.wake-pc-saved-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.wake-pc-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.wake-pc-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wake-pc-actions :is(.heading-action, .secondary-action) {
+  width: auto;
+  min-width: 96px;
+  min-height: var(--control-height);
+  padding: 0 14px;
+}
+
+.settings-page .wake-pc-actions .heading-action.danger {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+/* Outranks the Settings page's neutral button fill. */
+.settings-page .wake-pc-form .wake-pc-actions .heading-action.primary:not(:disabled) {
+  border-color: var(--accent-border-strong);
+  color: var(--accent-text);
+  background: var(--accent-solid);
+}
+
+.settings-page .wake-pc-form .wake-pc-actions .heading-action.primary:not(:disabled):hover {
+  background: var(--accent-solid-hover);
+}
+
+.wake-pc-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--control-radius);
+  background: var(--danger-bg);
+}
+
+.wake-pc-confirm p {
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+}
+
+.wake-pc-form fieldset {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 12px 16px;
+}
+
+.wake-pc-form label,
+.wake-pc-label {
+  padding-top: 8px;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+}
+
+.wake-pc-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.wake-pc-form input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  color: var(--text-primary);
+  background: var(--surface-control-muted);
+  font: inherit;
+}
+
+.wake-pc-form input:not([type="checkbox"]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.wake-pc-form input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.wake-pc-select,
+.wake-pc-select .custom-select-button {
+  width: 100%;
+  min-width: 0;
+}
+
+.wake-pc-adapter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.settings-page .wake-pc-refresh {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+.wake-pc-refresh[aria-busy="true"] svg {
+  animation: wake-pc-spin 700ms linear infinite;
+}
+
+.wake-pc-hint {
+  color: var(--text-secondary);
+  font-size: var(--font-size-subtitle);
+  line-height: 1.4;
+}
+
+.wake-pc-hint.error {
+  color: var(--danger);
+}
+
+.wake-pc-hint.warning {
+  color: var(--warning);
+}
+
+.wake-pc-form .wake-pc-checkbox {
+  grid-column: 2;
+  padding-top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.wake-pc-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.wake-pc-form .wake-pc-actions {
+  grid-column: 1 / -1;
+}
+
+.wake-pc-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--control-radius);
+  background: var(--accent-soft);
+}
+
+.wake-pc-progress ol {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  list-style: none;
+}
+
+.wake-pc-progress li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.wake-pc-progress li.current {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-semibold);
+}
+
+.wake-pc-progress li.done {
+  color: var(--text-secondary);
+}
+
+.wake-pc-step-marker {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  font-size: var(--font-size-subtitle);
+  font-variant-numeric: tabular-nums;
+}
+
+.wake-pc-progress li.current .wake-pc-step-marker {
+  border-color: var(--accent-border-strong);
+  color: var(--accent-text);
+  background: var(--accent-solid);
+  animation: wake-pc-pulse 1.4s ease-in-out infinite;
+}
+
+.wake-pc-progress li.done .wake-pc-step-marker {
+  border-color: var(--success-border-strong);
+  color: var(--success);
+}
+
+.wake-pc-progress .secondary-action {
+  width: auto;
+  min-width: 96px;
+  min-height: var(--control-height);
+  padding: 0 14px;
+}
+
+.wake-pc-feedback {
+  display: grid;
+  gap: 10px;
+}
+
+.wake-pc-feedback:empty {
+  display: none;
+}
+
+.wake-pc-result {
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+}
+
+.wake-pc-result.good {
+  color: var(--success);
+}
+
+.wake-pc-result.bad {
+  color: var(--danger);
+}
+
+@keyframes wake-pc-pulse {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+
+@keyframes wake-pc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wake-pc-progress li.current .wake-pc-step-marker,
+  .wake-pc-refresh[aria-busy="true"] svg {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .wake-pc-form fieldset,
+  .wake-pc-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wake-pc-form .wake-pc-checkbox {
+    grid-column: 1;
+  }
+}

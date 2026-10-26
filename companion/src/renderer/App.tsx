@@ -1993,7 +1993,11 @@ export function App() {
       sleepController: sleepControllerSupported
     },
     focusTarget: settingsFocusTarget,
-    picoFirmware: { message: picoFirmwareMessage, error: picoFirmwareError }
+    picoFirmware: { message: picoFirmwareMessage, error: picoFirmwareError },
+    wakeOnLan: {
+      connectionKey: `${snapshot.state}:${snapshot.settings.selectedBridgePath ?? ''}:${snapshot.status?.protocolVersion ?? ''}:${controllerConnected}`,
+      controllerConnected
+    }
   };
   const currentSettings = snapshot.settings;
   const settingsPageActions: SettingsPageActions = {
@@ -2040,7 +2044,8 @@ export function App() {
     mountPicoBootloader,
     flashPicoFirmware,
     nukePicoFlash,
-    openExternal: (url) => void window.bridge.openExternal(url)
+    openExternal: (url) => void window.bridge.openExternal(url),
+    wakeOnLan: window.bridge
   };
 
   const shellClassName = [

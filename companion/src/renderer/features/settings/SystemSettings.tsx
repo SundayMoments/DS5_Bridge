@@ -6,33 +6,10 @@ import {
   IconUpload,
   IconUsb
 } from '@tabler/icons-react';
-import { ToggleRow } from './SettingsToggleRow';
-import {
-  SearchableSetting,
-  SettingsBridgeNotice,
-  settingsUnsupportedMessage,
-  type SettingsCategoryProps
-} from './SettingsCategoryContentSupport';
+import { SearchableSetting, type SettingsCategoryProps } from './SettingsCategoryContentSupport';
 
 export const DS5_BRIDGE_GITHUB_URL = 'https://github.com/SundayMoments';
 export const DS5_BRIDGE_DISCORD_URL = 'https://discord.gg/By5jhh73wr';
-
-export function PcWakeSettings({ model, actions, matchingSettingIds }: SettingsCategoryProps) {
-  return <>
-    <h3 className="settings-menu-section-label">PC Wake</h3>
-    <SettingsBridgeNotice model={model} ids={['remote-wake']} matchingSettingIds={matchingSettingIds} />
-    <SearchableSetting id="remote-wake" matchingSettingIds={matchingSettingIds}>
-      <ToggleRow
-        label="Wake PC on Controller"
-        description="Wake through USB when a controller reconnects. Requires Windows wake permission and DualSense, DualSense Edge, or DS4 mode."
-        checked={model.settings.wakeOnConnectEnabled}
-        disabled={!model.connected || !model.support.wakeOnConnect || model.busy}
-        unavailableReason={settingsUnsupportedMessage(model, model.support.wakeOnConnect)}
-        onToggle={actions.toggleWakeOnConnect}
-      />
-    </SearchableSetting>
-  </>;
-}
 
 export function FirmwareSettings({ model, actions, matchingSettingIds }: SettingsCategoryProps) {
   const { pendingAction } = model;
