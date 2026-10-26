@@ -1137,6 +1137,9 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         && request->bRequest == XUSB_MS_OS_VENDOR_REQUEST
         && request->wIndex == 4
     ) {
+        if (request->bmRequestType_bit.direction != TUSB_DIR_IN) {
+            return false;
+        }
         const uint16_t len = request->wLength < sizeof(desc_xusb_ms_os_compat_id)
             ? request->wLength
             : sizeof(desc_xusb_ms_os_compat_id);
@@ -1149,6 +1152,11 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     }
 
     if (request->bRequest == VENDOR_MS_OS_VENDOR_REQUEST && request->wIndex == 7) {
+        // These buffers describe the device; an OUT transfer would let the
+        // control engine write host data into constant or cached descriptors.
+        if (request->bmRequestType_bit.direction != TUSB_DIR_IN) {
+            return false;
+        }
         uint8_t const *descriptor = desc_ms_os_20;
         uint16_t descriptor_len = VENDOR_MS_OS_20_DESC_LEN;
         if (descriptor_bridge_only_active) {
@@ -1695,38 +1703,53 @@ static bool descriptor_matches_manifest(
 }
 
 bool host_persona_descriptors_verified(HostPersonaMode mode) {
+    // The verified arrays are const and never patched, so cache each verdict
+    // (0 unknown, 1 verified, 2 mismatch) instead of hashing a descriptor held
+    // in flash for every input report the persona encodes.
+    static uint8_t verdicts[HostPersonaModeDualSenseEdge + 1];
+    if ((unsigned) mode < sizeof(verdicts) && verdicts[mode] != 0) {
+        return verdicts[mode] == 1;
+    }
+
+    bool verified;
     switch (mode) {
         case HostPersonaModeDualSense:
-            return descriptor_matches_manifest(
+            verified = descriptor_matches_manifest(
                 desc_hid_report_ds,
                 sizeof(desc_hid_report_ds),
                 DUALSENSE_HID_REPORT_DESC_LEN,
                 DUALSENSE_HID_REPORT_DESC_FNV1A32
             );
+            break;
         case HostPersonaModeDualSenseEdge:
-            return descriptor_matches_manifest(
+            verified = descriptor_matches_manifest(
                 desc_hid_report_dse,
                 sizeof(desc_hid_report_dse),
                 DUALSENSE_EDGE_HID_REPORT_DESC_LEN,
                 DUALSENSE_EDGE_HID_REPORT_DESC_FNV1A32
             );
+            break;
         case HostPersonaModeXusb360:
-            return descriptor_matches_manifest(
+            verified = descriptor_matches_manifest(
                 desc_xusb360_gamepad_interface,
                 sizeof(desc_xusb360_gamepad_interface),
                 XUSB360_INTERFACE_DESC_LEN,
                 XUSB360_INTERFACE_DESC_FNV1A32
             );
+            break;
         case HostPersonaModeDs4:
-            return descriptor_matches_manifest(
+            verified = descriptor_matches_manifest(
                 desc_hid_report_ds4,
                 sizeof(desc_hid_report_ds4),
                 DS4_HID_REPORT_DESC_LEN,
                 DS4_HID_REPORT_DESC_FNV1A32
             );
+            break;
         default:
             return false;
     }
+    verdicts[mode] = verified ? 1 : 2;
+    return verified;
 }
 
 // Invoked when received GET HID REPORT DESCRIPTOR

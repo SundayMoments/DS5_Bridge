@@ -1256,6 +1256,36 @@ void xusb360_persona_maps_standard_gamepad_fields() {
     EXPECT_EQ(encoded.bytes[5], 0xcc);
 }
 
+void xusb360_persona_centers_sticks_and_reaches_both_endpoints() {
+    const auto axis = [](HostPersonaInputReport const &report, size_t offset) {
+        return static_cast<int16_t>(report.bytes[offset] | (report.bytes[offset + 1] << 8));
+    };
+    const auto encode = [](uint8_t x, uint8_t y) {
+        BridgeControllerState state{};
+        state.left_stick_x = x;
+        state.left_stick_y = y;
+        state.right_stick_x = x;
+        state.right_stick_y = y;
+        HostPersonaInputReport encoded{};
+        EXPECT_TRUE(host_persona_encode_input(HostPersonaModeXusb360, state, encoded));
+        return encoded;
+    };
+
+    const auto centered = encode(128, 128);
+    EXPECT_EQ(axis(centered, 6), 0);
+    EXPECT_EQ(axis(centered, 8), 0);
+    EXPECT_EQ(axis(centered, 10), 0);
+    EXPECT_EQ(axis(centered, 12), 0);
+
+    // Sony Y grows downward; XUSB Y grows upward.
+    const auto low = encode(0, 0);
+    EXPECT_EQ(axis(low, 6), -32768);
+    EXPECT_EQ(axis(low, 8), 32767);
+    const auto high = encode(255, 255);
+    EXPECT_EQ(axis(high, 6), 32767);
+    EXPECT_EQ(axis(high, 8), -32768);
+}
+
 void xusb360_rumble_decodes_to_ds5_classic_rumble_payload() {
     uint8_t output[kXusb360RumbleOutputSize] = {0x00, kXusb360RumbleOutputSize, 0x00, 0x90, 0x30, 0, 0, 0};
     Payload payload{};
@@ -1642,6 +1672,7 @@ std::vector<TestCase> tests{
     {"bootsel gesture policy emits click double triple and hold", bootsel_gesture_policy_emits_click_double_triple_and_hold},
     {"dualsense persona preserves native report bytes", dualsense_persona_preserves_native_report_bytes},
     {"xusb360 persona maps standard gamepad fields", xusb360_persona_maps_standard_gamepad_fields},
+    {"xusb360 persona centers sticks and reaches both endpoints", xusb360_persona_centers_sticks_and_reaches_both_endpoints},
     {"xusb360 rumble decodes to ds5 classic rumble payload", xusb360_rumble_decodes_to_ds5_classic_rumble_payload},
     {"classic rumble renderer can emit v1 classic rumble", classic_rumble_renderer_can_emit_v1_classic_rumble},
     {"classic rumble renderer restores audio haptics on stop", classic_rumble_renderer_restores_audio_haptics_on_stop},
