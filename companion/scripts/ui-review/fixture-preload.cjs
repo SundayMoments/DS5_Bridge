@@ -18,7 +18,8 @@ const settingSetters = {
   setNotifyControllerConnection: 'notifyControllerConnection',
   setNotifyLowBattery: 'notifyLowBattery',
   setLaunchAtStartupEnabled: 'launchAtStartupEnabled',
-  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon'
+  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon',
+  setKitsuneInputPromotionDismissed: 'kitsuneInputPromotionDismissed'
 };
 const handlers = {
   getStatus: async () => snapshot,
@@ -34,10 +35,12 @@ const handlers = {
 };
 
 window.__uiReview = { updateSettings, snapshot: () => snapshot };
-window.addEventListener('DOMContentLoaded', () => {
-  window.localStorage.setItem('ds5bridge.startupTutorialCompleted.v1', '1');
-});
-window.localStorage?.setItem('ds5bridge.startupTutorialCompleted.v1', '1');
+// Captures skip the first-run tutorial unless a script asks to check it.
+if (process.env.DS5_UI_REVIEW_SHOW_TUTORIAL !== '1') {
+  const skipTutorial = () => window.localStorage?.setItem('ds5bridge.startupTutorialCompleted.v1', '1');
+  skipTutorial();
+  window.addEventListener('DOMContentLoaded', skipTutorial);
+}
 window.bridge = new Proxy(handlers, {
   get(target, property) {
     if (property in target) return target[property];
