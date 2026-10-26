@@ -321,6 +321,21 @@ void assert_dualsense_edge_persona_is_edge_facing(
     }
 }
 
+void assert_host_microphone_mute_silences_capture(std::filesystem::path const &source_root) {
+    const auto audio_cpp = read_text(source_root / "src" / "audio.cpp");
+    const std::string pending_frame_writer = extract_between(
+        audio_cpp,
+        "bool __not_in_flash_func(write_mic_usb_pending_frame)(",
+        "\n}\n"
+    );
+    if (
+        pending_frame_writer.find("mic_output_muted || usb_host_mute[1] != 0 ? 0 : mic_output_volume_percent")
+            == std::string::npos
+    ) {
+        throw std::runtime_error("Windows microphone mute must silence captured PCM written to USB");
+    }
+}
+
 void assert_selected_polling_rate_is_applied_to_every_persona_descriptor(
     std::string const &source,
     std::filesystem::path const &source_root
@@ -2363,6 +2378,7 @@ int main() {
         assert_persona_support_requires_verified_descriptors(source, source_root);
         assert_dualsense_persona_identity_reports_are_isolated(source_root);
         assert_dualsense_edge_persona_is_edge_facing(source, source_root);
+        assert_host_microphone_mute_silences_capture(source_root);
         assert_selected_polling_rate_is_applied_to_every_persona_descriptor(source, source_root);
         assert_xusb_persona_strings_are_xbox_facing(source);
         assert_ds4_persona_identity_is_ds4_facing(source);

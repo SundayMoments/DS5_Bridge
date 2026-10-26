@@ -2117,7 +2117,9 @@ static __attribute__((noinline, noclone)) bool __not_in_flash_func(write_mic_usb
     const uint8_t *data = reinterpret_cast<uint8_t const *>(mic_usb_pending.data) + mic_usb_pending_offset;
     alignas(2) uint8_t scaled_data[HOST_MIC_USB_PACKET_BYTES_MAX]{};
     uint8_t const *write_data = data;
-    const uint8_t output_percent = mic_output_muted ? 0 : mic_output_volume_percent;
+    // Windows mutes the microphone through the UAC feature unit, independent
+    // of the companion mute (which also drives the controller's mute LED).
+    const uint8_t output_percent = mic_output_muted || usb_host_mute[1] != 0 ? 0 : mic_output_volume_percent;
     if (output_percent < 100) {
         const int16_t *samples = reinterpret_cast<int16_t const *>(data);
         int16_t *scaled_samples = reinterpret_cast<int16_t *>(scaled_data);
