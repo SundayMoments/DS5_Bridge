@@ -216,7 +216,7 @@ describe('renderer behavior guards', () => {
     expect(settingsActionsSource).toContain(
       'window.bridge.setEdgeProfileSwitchingBlocked(!currentSettings.edgeProfileSwitchingBlocked)'
     );
-    expect(appSource).toContain('isChordBindingAllowed(starter, id, edgeProfileSwitchingBlocked)');
+    // The chord gate is rendered in features/chords/ChordsPage.rendered.test.tsx.
   });
 
   it('distinguishes active charging from connected external power', () => {
@@ -285,24 +285,14 @@ describe('renderer behavior guards', () => {
   });
 
   it('shows mute as a chord starter when chord mode or keyboard chord starter is active', () => {
-    // The mute starter definition is covered in features/chords/model.test.ts.
+    // The starter definition is covered in features/chords/model.test.ts and the
+    // page behavior in features/chords/ChordsPage.rendered.test.tsx.
     expect(featureSource('chords/ChordGlyphs.tsx')).toContain('chords-starter-icon-glyph');
     expect(featureSource('chords/ChordGlyphs.tsx')).toContain('<Icon size={18} />');
-    expect(appSource).toContain('function chordStarterOptionsFor(currentStarter?: ChordStarterId)');
-    expect(appSource).toContain("currentStarter === CHORD_MUTE_STARTER_ID");
-    expect(appSource).toContain('mute-starter-inactive');
-    expect(appSource).toContain('muteButtonChordStarterActive');
-    expect(appSource).toContain("snapshot?.settings.muteButtonMode === 'chord'");
-    expect(appSource).toContain("snapshot?.settings.muteButtonMode === 'keyboard'");
-    expect(appSource).toContain('snapshot.settings.muteKeyboardChordStarterEnabled');
-    expect(appSource).toContain("assignment.starter === CHORD_MUTE_STARTER_ID && !muteButtonChordStarterActive");
-    expect(appSource).toContain('Duplicate, inactive, or shortcut-shadowed chord bindings');
     expect(stylesSource).toContain('.chords-assignment-row.mute-starter-inactive .remap-glyph-option img');
     expect(stylesSource).toContain('opacity: var(--disabled-opacity);');
-    expect(appSource).toContain("starter === CHORD_MUTE_STARTER_ID");
     expect(appSource).toContain('Chord Starter');
     expect(appSource).toContain("window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior, keyChordStarterEnabled)");
-    expect(appSource).toContain('Pair PS, LFN, RFN, or Mute with a button.');
   });
 
   it('exposes bridge selection, stable naming, and direct USB controller status', () => {

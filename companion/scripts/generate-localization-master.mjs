@@ -81,6 +81,8 @@ function looksLikeUiText(value) {
   if (/^(https?:|mailto:|data:|file:|\.\.?[/\\]|[/\\]|--)/i.test(text)) return false;
   if (/^#[0-9a-f]{3,8}$/i.test(text) || /^\[[^\]]+\]$/.test(text)) return false;
   if (/^[#.a-z0-9_:/@%{}[\]="'-]+$/i.test(text) && /[-_#.[\]{}]/.test(text)) return false;
+  // A single lowercase word is an identifier such as a tone, side, or mode; copy is capitalized.
+  if (/^[a-z][a-z0-9]*$/.test(text)) return false;
   return true;
 }
 
@@ -225,7 +227,15 @@ function collectSourceFile(filePath, messages) {
       && ts.isVariableDeclaration(node.parent)
       && ts.isIdentifier(node.parent.name)
       && /(_OPTIONS|_TABS|_SECTIONS|_ACTIONS|_CHOICES|_LABELS|_CATEGORIES)$/.test(node.parent.name.text)) {
-      addExpressionLiterals(messages, node);
+      if (ts.isArrayLiteralExpression(node)) {
+        // Option tuples are [label, value]; only the label is copy.
+        node.elements.forEach((element) => addExpressionLiterals(
+          messages,
+          ts.isArrayLiteralExpression(element) && element.elements.length > 0 ? element.elements[0] : element
+        ));
+      } else {
+        addExpressionLiterals(messages, node);
+      }
     }
     ts.forEachChild(node, visit);
   }
