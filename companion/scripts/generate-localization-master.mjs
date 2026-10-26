@@ -16,6 +16,8 @@ const checkOnly = process.argv.includes('--check');
  * the complete catalogs still need.
  */
 const LOCALIZED_SOURCE_ROOTS = ['components', 'common', 'composition', 'features'];
+// Individual renderer modules outside those roots whose copy is already cataloged.
+const LOCALIZED_SOURCE_FILES = ['ui-themes.ts'];
 const excludedDirectories = new Set(['common/localization']);
 
 const completeCatalogs = new Map([
@@ -54,6 +56,7 @@ const ignoredReturnValues = new Set([
 const visibleCall = /^(alert|confirm|notify|showToast|set\w*(Error|Message|Status|Text|Title))$/;
 // Messages composed at runtime that the extractor cannot see in source.
 const seededMessages = [
+  'AI-translated',
   'Use system language'
 ];
 
@@ -245,6 +248,7 @@ function masterCatalog() {
   const messages = new Set(seededMessages);
   LOCALIZED_SOURCE_ROOTS
     .flatMap((root) => sourceFiles(path.join(rendererRoot, root)))
+    .concat(LOCALIZED_SOURCE_FILES.map((file) => path.join(rendererRoot, file)))
     .sort()
     .forEach((file) => collectSourceFile(file, messages));
   const translations = Object.fromEntries(

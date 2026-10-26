@@ -1,0 +1,241 @@
+.settings-sidebar {
+  --control-radius: 6px;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  background: var(--sidebar-bg);
+  -webkit-app-region: drag;
+}
+
+.settings-sidebar button,
+.settings-sidebar input,
+.settings-section-nav {
+  -webkit-app-region: no-drag;
+}
+
+.settings-back-button,
+.settings-section-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-link);
+  font: inherit;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+/* Match the sidebar Settings button it replaces, so the label stays put when switching. */
+.settings-back-button {
+  flex: 0 0 auto;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  gap: 8px;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-regular);
+}
+
+.settings-section-button {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 24px;
+  padding-block: 2px;
+  border-radius: 12px;
+  line-height: 1.25;
+}
+
+.settings-section-button > svg,
+.settings-back-button > svg {
+  flex: 0 0 24px;
+  width: 18px;
+  height: 18px;
+  color: currentColor;
+}
+
+.settings-section-button > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-section-button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-search-clear:hover {
+  background: var(--nav-hover-bg);
+  color: var(--text-primary);
+}
+
+.settings-section-button.active {
+  color: var(--nav-active-text);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+  box-shadow: none;
+  font-weight: var(--font-weight-semibold);
+}
+
+.settings-section-button.active > svg {
+  color: var(--nav-active-icon);
+}
+
+.settings-back-button:hover,
+.settings-section-button:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--text-strong) 5%, transparent);
+  box-shadow: none;
+}
+
+.settings-section-button.active:hover {
+  background: color-mix(in srgb, var(--text-strong) 11%, transparent);
+}
+
+.settings-back-button:hover,
+.settings-section-button:not(.active):hover {
+  color: var(--sidebar-link-hover);
+}
+
+.settings-back-button:focus-visible,
+.settings-section-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.settings-search-clear:focus-visible {
+  outline: 2px solid var(--accent-border-strong);
+  outline-offset: -2px;
+}
+
+.settings-section-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.settings-nav-group {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-nav-group-label {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.settings-sidebar-header {
+  flex: 0 0 auto;
+  display: grid;
+  min-width: 0;
+  gap: 0;
+}
+
+.settings-sidebar > .settings-search {
+  flex: 0 0 auto;
+}
+
+.settings-search {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-search > svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.settings-search input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  padding: 0 32px 0 38px;
+  color: var(--text-control);
+  background: var(--surface-control-soft);
+  font: inherit;
+  font-size: var(--font-size-body);
+  outline: none;
+  text-overflow: ellipsis;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.settings-sidebar .settings-search input {
+  height: 32px;
+}
+
+.settings-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.settings-search input:hover {
+  background: var(--surface-control-hover);
+}
+
+.settings-search input:focus {
+  border-color: var(--accent-border-strong);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.settings-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.settings-search-clear {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-back-button,
+  .settings-section-button,
+  .settings-search input {
+    transition: none;
+  }
+}

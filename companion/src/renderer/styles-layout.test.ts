@@ -18,6 +18,11 @@ const tokensSource = rendererStyleModule('styles/theme-tokens.css');
 const ds5ThemeSource = rendererStyleModule('styles/theme-ds5.css');
 const shellSidebarSource = rendererStyleModule('features/shell/shell-sidebar.css');
 const bridgeMarkSource = readFileSync(new URL('./features/shell/BridgeMark.tsx', import.meta.url), 'utf8');
+const settingsPageStyles = rendererStyleModule('features/settings/settings-page.css');
+const settingsSidebarStyles = rendererStyleModule('features/settings/settings-sidebar.css');
+const appSettingsSource = readFileSync(new URL('./features/settings/AppSettings.tsx', import.meta.url), 'utf8');
+const systemSettingsSource = readFileSync(new URL('./features/settings/SystemSettings.tsx', import.meta.url), 'utf8');
+const themeOptionSource = readFileSync(new URL('./features/settings/ThemeOption.tsx', import.meta.url), 'utf8');
 const normalizedStyles = styles.replace(/\s+/g, ' ').trim();
 
 function cssBlock(selector: string, requiredText?: string): string {
@@ -165,9 +170,10 @@ describe('companion layout CSS', () => {
       'var(--palette-surface)',
       'var(--palette-accent)'
     ]);
-    expect(appSource).toContain('ariaLabel="UI theme"');
-    expect(appSource).toContain('settings-theme-select');
-    expect(appSource).toContain('<span className="theme-option" data-theme-preview={value}>');
+    expect(appSettingsSource).toContain('ariaLabel="UI theme"');
+    expect(appSettingsSource).toContain('className="settings-theme-select"');
+    expect(appSettingsSource).toContain('renderOption={renderThemeOption}');
+    expect(themeOptionSource).toContain('<span className="theme-option" data-theme-preview={value}>');
   });
 
   it('uses the cached theme and branded panel for the startup loading state', () => {
@@ -464,9 +470,14 @@ describe('companion layout CSS', () => {
     );
   });
 
-  it('keeps Pico firmware maintenance actions compact inside Bridge Settings', () => {
-    expect(appSource).toContain('className="settings-menu-row pico-firmware-row"');
-    expect(appSource).not.toContain('<strong>Pico Firmware</strong>');
+  it('keeps Pico firmware maintenance actions compact inside Settings', () => {
+    expect(systemSettingsSource).toContain('className="settings-menu-row pico-firmware-row"');
+    expect(systemSettingsSource).not.toContain('<strong>Pico Firmware</strong>');
+    // On the Settings page the header wraps its actions under the copy instead of squeezing it.
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .pico-firmware-header', 'flex-wrap: wrap;'))
+      .toContain('justify-content: space-between;');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .pico-firmware-dual-action .heading-action:first-child', 'border-radius: 6px 0 0 6px;'))
+      .toContain('border-radius: 6px 0 0 6px;');
     expect(cssBlock('.pico-firmware-row', 'grid-template-columns: minmax(0, 1fr);')).toContain('gap: 7px;');
     expect(cssBlock('.pico-firmware-header', 'grid-template-columns: minmax(0, 1fr) auto;')).toContain(
       'align-items: center;'
@@ -535,20 +546,23 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.overview-range-ticks span.endpoint', 'height: 9px;')).toContain('height: 9px;');
   });
 
-  it('keeps the Bridge Settings preferences modal typography compact', () => {
-    expect(appSource).toContain('bridge-settings-modal bridge-settings-preferences-modal');
-    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-modal-heading', 'font-size: var(--font-size-body);')).toContain(
-      'font-size: var(--font-size-body);'
-    );
-    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-row strong', 'font-size: var(--font-size-subtitle);')).toContain(
-      'font-size: var(--font-size-subtitle);'
-    );
-    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-copy > span', 'font-size: var(--font-size-subtitle);')).toContain(
-      'font-size: var(--font-size-subtitle);'
-    );
-    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-column .settings-menu-row', 'min-height: 32px;')).toContain(
-      'padding-top: 3px;'
-    );
+  it('sets the Settings page in the shared type tokens and grouped rows', () => {
+    expect(appSource).not.toContain('bridge-settings-preferences-modal');
+    expect(styles).not.toContain('.bridge-settings-preferences-modal');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page-heading h2', 'font-size: var(--font-size-title);'))
+      .toContain('font-weight: var(--font-weight-semibold);');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .settings-menu-row strong', 'font-size: var(--font-size-body);'))
+      .toContain('color: var(--text-strong);');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .settings-menu-copy > span', 'font-size: var(--font-size-body);'))
+      .toContain('color: var(--text-secondary);');
+    const row = cssBlockIn(settingsPageStyles, '.settings-page .settings-menu-row', 'min-height: 64px;');
+    expect(row).toContain('background: var(--surface-section);');
+    expect(row).toContain('border: 1px solid var(--section-border);');
+    expect(cssBlockIn(settingsPageStyles, '.settings-page .settings-category-section > :last-child', 'border-bottom-left-radius: var(--card-radius);'))
+      .toContain('border-bottom: 1px solid var(--section-border);');
+    expect(settingsPageStyles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(settingsSidebarStyles).not.toMatch(/font-size:\s*\d/);
+    expect(settingsPageStyles).not.toMatch(/font-size:\s*\d/);
   });
 
   it('animates collapsible sidebar groups without leaving collapsed controls focusable', () => {

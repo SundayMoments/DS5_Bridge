@@ -1,0 +1,409 @@
+/* Settings uses rounded, grouped rows like the shared panels. */
+.settings-page {
+  --card-radius: 12px;
+  --control-radius: 6px;
+}
+
+.control-page.settings-page {
+  width: 100%;
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.settings-page-heading {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 0;
+  padding-right: 16px;
+}
+
+.settings-page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  gap: 16px;
+}
+
+.settings-page-heading h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-semibold);
+}
+
+.settings-search-status {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.settings-page-scroll-region {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-page-surface {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+.settings-page-surface::-webkit-scrollbar {
+  width: 10px;
+}
+
+.settings-page-surface::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.settings-page-surface::-webkit-scrollbar-thumb {
+  border: 2px solid var(--scrollbar-track);
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+.settings-page-grid {
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  padding: 0 16px 30px 0;
+}
+
+.settings-category-section {
+  scroll-margin-top: 16px;
+}
+
+.settings-filter-empty {
+  min-height: 180px;
+  border: 0;
+  border-radius: var(--card-radius);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: var(--font-size-body);
+}
+
+.settings-page .settings-menu-section-label {
+  margin: 26px 0 10px;
+  padding: 0 2px;
+  border: 0;
+  color: var(--text-strong);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-transform: none;
+}
+
+.settings-page .settings-category-section > .settings-menu-section-label:first-child {
+  margin-top: 0;
+}
+
+.settings-page .settings-category-section:not([hidden]) ~ .settings-category-section:not([hidden]) > .settings-menu-section-label:first-child,
+.settings-page .settings-category-section .settings-menu-section-label:not(:first-child) {
+  margin-top: 30px;
+}
+
+/* A section whose title repeats the page title starts with its first row. */
+.settings-page .settings-category-section.standalone > .settings-menu-section-label:first-child {
+  display: none;
+}
+
+/* General's first group needs no "App" heading under the page title. */
+.settings-page.sectioned .settings-category-section[data-settings-category="app"] > .settings-menu-section-label:first-child {
+  display: none;
+}
+
+.settings-page .settings-menu-row,
+.settings-page .settings-menu-link-row {
+  min-height: 64px;
+  padding: 13px 16px;
+  border: 1px solid var(--section-border);
+  border-bottom: 0;
+  border-radius: 0;
+  gap: 18px;
+  background: var(--surface-section);
+  box-shadow: none;
+}
+
+.settings-page .settings-menu-row:not(button):hover {
+  background: var(--surface-section);
+}
+
+/* Each run of rows reads as one card: round the first and last rows of a group. */
+.settings-page .settings-menu-section-label + .settings-menu-row,
+.settings-page .settings-menu-section-label + .settings-menu-link-row,
+.settings-page .settings-category-section > .settings-menu-row:first-child,
+.settings-page .settings-category-section > .settings-menu-link-row:first-child,
+.settings-page .settings-category-section > .settings-menu-section-label:first-child + .settings-menu-row,
+.settings-page .settings-bridge-notice + .settings-menu-row {
+  border-top-left-radius: var(--card-radius);
+  border-top-right-radius: var(--card-radius);
+}
+
+.settings-page .settings-menu-row:has(+ .settings-menu-section-label),
+.settings-page .settings-menu-link-row:has(+ .settings-menu-section-label),
+.settings-page .settings-category-section > :last-child {
+  border-bottom: 1px solid var(--section-border);
+  border-bottom-right-radius: var(--card-radius);
+  border-bottom-left-radius: var(--card-radius);
+}
+
+.settings-page :is(button.settings-menu-row, .settings-menu-link-row):hover {
+  background: var(--surface-control-hover);
+}
+
+.settings-page .settings-menu-row strong,
+.settings-page .settings-menu-link-copy strong {
+  color: var(--text-strong);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.settings-page .settings-menu-copy > span,
+.settings-page .settings-menu-link-copy > span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.3;
+}
+
+.settings-page .settings-menu-row .custom-select-button {
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-page .settings-menu-link-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  color: var(--text-control);
+  font: inherit;
+  text-align: left;
+}
+
+.settings-page .settings-menu-link-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: var(--surface-control-soft);
+}
+
+.settings-page .settings-menu-link-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+}
+
+.settings-menu-link-chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* One line explains a missing bridge for the rows under it. */
+.settings-page .settings-bridge-notice {
+  margin: 0 0 12px;
+  padding: 0 2px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.3;
+}
+
+.settings-page .settings-category-section > .settings-bridge-notice + .settings-menu-section-label:not(:first-child) {
+  margin-top: 20px;
+}
+
+.settings-unavailable-reason {
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+}
+
+.settings-page :is(.heading-action, .secondary-action) {
+  border-radius: 6px;
+  font-weight: var(--font-weight-medium);
+  box-shadow: none;
+}
+
+.settings-page :is(.heading-action, .secondary-action):not(.danger):not(.active):not(:disabled) {
+  background: var(--surface-control);
+}
+
+.settings-page :is(.heading-action, .secondary-action):not(.danger):not(.active):not(:disabled):hover {
+  background: var(--surface-control-hover);
+}
+
+.settings-page .settings-row-action {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 112px;
+  min-height: var(--control-height);
+  padding: 0 14px;
+}
+
+.settings-page .pico-firmware-row {
+  min-height: 88px;
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.settings-page .pico-firmware-header {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-page .pico-firmware-copy {
+  flex: 1 1 260px;
+}
+
+.settings-page .pico-firmware-actions,
+.settings-page .pico-firmware-dual-action {
+  max-width: 100%;
+}
+
+.settings-page .pico-firmware-actions .heading-action {
+  white-space: normal;
+}
+
+.settings-page .pico-firmware-actions .heading-action.danger {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  box-shadow: none;
+}
+
+.settings-page .pico-firmware-actions .heading-action.danger:hover:not(:disabled) {
+  border-color: var(--danger-border-strong);
+  background: var(--danger-bg-hover);
+}
+
+.settings-page .pico-firmware-dual-action .heading-action {
+  border-radius: 0;
+}
+
+.settings-page .pico-firmware-dual-action .heading-action:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.settings-page .pico-firmware-dual-action .heading-action:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+/* Keep operation results distinct from ordinary descriptions. */
+.settings-page .settings-menu-copy > .pico-firmware-message.good {
+  color: var(--success);
+}
+
+.settings-page .settings-menu-copy > .pico-firmware-message.bad {
+  color: var(--danger);
+}
+
+.settings-shortcut-tooltip-copy {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.settings-language-option {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-language-option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-language-option > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+
+/* A linked control is framed briefly instead of tinting the whole row. */
+.settings-page .settings-menu-row-highlight {
+  position: relative;
+  animation: none;
+}
+
+.settings-page .settings-menu-row-highlight::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 2px;
+  border: 2px solid var(--focus-ring);
+  border-radius: 10px;
+  opacity: 0;
+  pointer-events: none;
+  animation: settings-row-focus-frame 2000ms ease-out forwards;
+}
+
+@keyframes settings-row-focus-frame {
+  0% {
+    opacity: 0;
+  }
+
+  8%,
+  72% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.scroll-context-edge {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 16px;
+  height: 36px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease;
+}
+
+.scroll-context-edge.top {
+  top: 0;
+  background: linear-gradient(180deg, var(--app-bg-flat), transparent);
+}
+
+.scroll-context-edge.bottom {
+  bottom: 0;
+  background: linear-gradient(0deg, var(--app-bg-flat), transparent);
+}
+
+.can-scroll-up > .scroll-context-edge.top,
+.can-scroll-down > .scroll-context-edge.bottom {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-page .settings-menu-row-highlight::after {
+    animation: none;
+    opacity: 1;
+  }
+
+  .scroll-context-edge {
+    transition: none;
+  }
+}

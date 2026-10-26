@@ -19,6 +19,16 @@ const controllerDevicesPageSource = readFileSync(
   'utf8'
 );
 
+function settingsSource(fileName: string): string {
+  return readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'features', 'settings', fileName), 'utf8');
+}
+
+const settingsActionsSource = (() => {
+  const start = appSource.indexOf('const settingsPageActions: SettingsPageActions = {');
+  expect(start).toBeGreaterThanOrEqual(0);
+  return appSource.slice(start, appSource.indexOf('\n  };', start));
+})();
+
 function extractFunction(name: string): string {
   const start = appSource.indexOf(`function ${name}`);
   expect(start).toBeGreaterThanOrEqual(0);
@@ -152,19 +162,19 @@ describe('renderer behavior guards', () => {
     expect(appSource).toContain('!controllerControlsAvailable || !lightbarSupported || pendingAction !== null');
   });
 
-  it('offers a persisted automatic lightbar restore toggle in bridge settings', () => {
-    expect(appSource).toContain('<strong>Automatic Restore</strong>');
-    expect(appSource).toContain('Reapply the saved color after games clear it');
-    expect(appSource).toContain('snapshot.settings.lightbarRestoreEnabled');
-    expect(appSource).toContain('window.bridge.setLightbarRestoreEnabled(');
-    expect(appSource.indexOf('>Lightbar</div>')).toBeLessThan(appSource.indexOf('>About</div>'));
+  // The Settings page itself is rendered in features/settings/SettingsPage.rendered.test.tsx;
+  // these guards pin how App.tsx wires that page to the bridge.
+  it('offers a persisted automatic lightbar restore toggle in Settings', () => {
+    expect(appSource).toContain('settings: snapshot.settings,');
+    expect(settingsActionsSource).toContain('window.bridge.setLightbarRestoreEnabled(!currentSettings.lightbarRestoreEnabled)');
+    expect(settingsSource('ControllerBridgeSettings.tsx')).toContain('label="Automatic Restore"');
+    expect(settingsSource('ControllerBridgeSettings.tsx')).toContain('Reapply the saved color after games clear it');
   });
 
   it('links the official DS5 Bridge Discord from About', () => {
-    expect(appSource).toContain('IconBrandDiscord');
-    expect(appSource).toContain("window.bridge.openExternal('https://discord.gg/By5jhh73wr')");
-    expect(appSource).toContain('<strong>Discord</strong>');
-    expect(appSource).toContain('<span>Official DS5 Bridge Discord</span>');
+    expect(settingsSource('SystemSettings.tsx')).toContain("DS5_BRIDGE_DISCORD_URL = 'https://discord.gg/By5jhh73wr'");
+    expect(settingsSource('SystemSettings.tsx')).toContain('IconBrandDiscord');
+    expect(settingsActionsSource).toContain('openExternal: (url) => void window.bridge.openExternal(url)');
   });
 
   it('uses the device container border instead of a compact status dot', () => {
@@ -198,36 +208,36 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('Math.min(255, Math.round(length))');
   });
 
-  it('exposes Pico firmware maintenance actions in Bridge Settings', () => {
+  it('exposes Pico firmware maintenance actions in Settings', () => {
     expect(appSource).toContain('function mountPicoBootloader()');
     expect(appSource).toContain('function flashPicoFirmware()');
     expect(appSource).toContain('function nukePicoFlash()');
     expect(appSource).toContain('window.bridge.mountPicoBootloader()');
     expect(appSource).toContain('window.bridge.flashPicoFirmware()');
     expect(appSource).toContain('window.bridge.nukePicoFlash()');
-    expect(appSource).toContain('<strong>Firmware</strong>');
-    expect(appSource).not.toContain('<strong>Pico Firmware</strong>');
-    expect(appSource).toContain('pico-firmware-dual-action');
-    expect(appSource).toContain('picoFirmwareMessage');
-    expect(appSource).toContain('picoFirmwareError');
+    expect(appSource).toContain('picoFirmware: { message: picoFirmwareMessage, error: picoFirmwareError }');
+    expect(settingsActionsSource).toContain('mountPicoBootloader,');
+    expect(settingsActionsSource).toContain('flashPicoFirmware,');
+    expect(settingsActionsSource).toContain('nukePicoFlash,');
+    expect(settingsSource('SystemSettings.tsx')).toContain('pico-firmware-dual-action');
   });
 
-  it('exposes the battery percentage tray icon preference in Bridge Settings', () => {
-    expect(appSource).toContain('Battery Tray Icon');
-    expect(appSource).toContain('Show controller battery percentage in the tray');
-    expect(appSource).toContain('snapshot.settings.showBatteryPercentTrayIcon');
-    expect(appSource).toContain('window.bridge.setShowBatteryPercentTrayIcon(!snapshot.settings.showBatteryPercentTrayIcon)');
-    expect(appSource).toContain('<strong>Wake PC on Controller</strong>');
+  it('exposes the battery percentage tray icon and wake preferences in Settings', () => {
+    expect(settingsActionsSource).toContain(
+      'window.bridge.setShowBatteryPercentTrayIcon(!currentSettings.showBatteryPercentTrayIcon)'
+    );
+    expect(settingsSource('AppSettings.tsx')).toContain('Show controller battery percentage in the tray');
     expect(appSource).toContain('firmwareFlags.wakeOnConnectControl');
-    expect(appSource).toContain('window.bridge.setWakeOnConnectEnabled(!snapshot.settings.wakeOnConnectEnabled)');
+    expect(appSource).toContain('wakeOnConnect: wakeOnConnectSupported,');
+    expect(settingsActionsSource).toContain('window.bridge.setWakeOnConnectEnabled(!currentSettings.wakeOnConnectEnabled)');
   });
 
   it('exposes the DualSense Edge profile blocker and uses it to gate reserved chords', () => {
-    expect(appSource).toContain('Block Edge Profile Switching');
-    expect(appSource).toContain('snapshot.settings.edgeProfileSwitchingBlocked');
-    expect(appSource).toContain('window.bridge.setEdgeProfileSwitchingBlocked');
-    expect(appSource).toContain('edgeProfileSwitchingBlocked');
-    expect(appSource).toContain('isChordBindingAllowed(');
+    expect(settingsSource('ControllerBridgeSettings.tsx')).toContain('label="Block Edge Profile Switching"');
+    expect(settingsActionsSource).toContain(
+      'window.bridge.setEdgeProfileSwitchingBlocked(!currentSettings.edgeProfileSwitchingBlocked)'
+    );
+    expect(appSource).toContain('isChordBindingAllowed(starter, id, edgeProfileSwitchingBlocked)');
   });
 
   it('distinguishes active charging from connected external power', () => {

@@ -42,66 +42,6 @@
   font-weight: 560;
 }
 
-.bridge-settings-preferences-modal .bridge-settings-modal-heading {
-  font-size: var(--font-size-body);
-}
-
-.bridge-settings-preferences-modal .settings-menu-section-label {
-  font-size: var(--font-size-subtitle);
-}
-
-.bridge-settings-preferences-modal .bridge-settings-column .settings-menu-row {
-  gap: 12px;
-  min-height: 32px;
-  padding-top: 3px;
-  padding-bottom: 3px;
-}
-
-.bridge-settings-preferences-modal .settings-menu-row strong {
-  font-size: var(--font-size-subtitle);
-  line-height: 1.15;
-}
-
-.bridge-settings-preferences-modal .settings-menu-copy > span {
-  font-size: var(--font-size-subtitle);
-  line-height: 1.16;
-}
-
-.bridge-settings-preferences-modal.settings-menu .custom-select-button,
-.bridge-settings-preferences-modal.settings-menu .custom-select-menu button,
-.bridge-settings-preferences-modal .pico-firmware-actions .heading-action {
-  font-size: var(--font-size-subtitle);
-}
-
-.bridge-settings-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-}
-
-.bridge-settings-column {
-  min-width: 0;
-  border: 1px solid var(--surface-divider);
-  border-radius: var(--control-radius);
-  background: var(--surface-column);
-  overflow: visible;
-}
-
-.bridge-settings-column .settings-menu-section-label:first-child {
-  border-top: 0;
-}
-
-.bridge-settings-column .settings-menu-row {
-  border-top: 0;
-  min-height: 36px;
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-
-.bridge-settings-column .settings-menu-section-label:not(:first-child) {
-  margin-top: 2px;
-}
-
 .settings-menu-section-label {
   padding: 10px 10px 3px;
   border-top: 1px solid var(--surface-divider);
