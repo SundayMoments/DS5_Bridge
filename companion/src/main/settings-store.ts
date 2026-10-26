@@ -41,6 +41,7 @@ import type {
   RemapButtonId
 } from '../shared/protocol';
 import { isUiScalePercent, isUiTextScalePercent } from '../shared/types';
+import { isUiThemePreset } from '../shared/ui-theme';
 import type { CompanionSettings, UiScalePercent, UiTextScalePercent, UiThemePreset } from '../shared/types';
 
 const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
@@ -361,16 +362,7 @@ export function migrateLegacyUiScalePercent(value: unknown): UiScalePercent {
 }
 
 export function normalizeUiThemePreset(value: unknown): UiThemePreset {
-  switch (value) {
-    case 'light':
-    case 'dark':
-    case 'bubble-gum':
-    case 'pomegranate':
-    case 'kiwi':
-      return value;
-    default:
-      return DEFAULT_SETTINGS.uiThemePreset;
-  }
+  return isUiThemePreset(value) ? value : DEFAULT_SETTINGS.uiThemePreset;
 }
 
 function cloneRemapMap(map: ButtonRemapMap): ButtonRemapMap {

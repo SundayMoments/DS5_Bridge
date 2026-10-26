@@ -5,7 +5,7 @@
 
 .notifications-menu .settings-menu-heading {
   padding-bottom: 10px;
-  font-size: 14px;
+  font-size: var(--font-size-body);
 }
 
 .notifications-menu .settings-menu-row {
@@ -22,13 +22,13 @@
 }
 
 .notifications-menu .settings-menu-row strong {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   line-height: 1.15;
 }
 
 .notifications-menu .settings-menu-row span {
   color: var(--settings-copy-text);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.25;
 }
 
@@ -149,8 +149,8 @@
   color: var(--text-control);
   background: var(--surface-menu);
   box-shadow: var(--shadow-menu);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   line-height: 1.25;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -229,20 +229,20 @@
 
 .shortcut-plus {
   color: var(--text-control);
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 850;
   line-height: 1;
 }
 
 .settings-menu-row strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-body);
 }
 
 .settings-menu-copy > span {
   color: var(--settings-copy-text);
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-regular);
   line-height: 1.18;
 }
 
@@ -279,7 +279,7 @@
   min-height: 30px;
   gap: 6px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   font-weight: 850;
   white-space: nowrap;
 }
@@ -356,7 +356,7 @@
   padding: 0 7px 0 9px;
   grid-template-columns: minmax(0, 1fr) 16px;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
@@ -375,7 +375,7 @@
   position: relative;
   grid-template-columns: minmax(0, 1fr);
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
@@ -388,7 +388,7 @@
   padding: 0 7px 0 9px;
   grid-template-columns: minmax(0, 1fr) 16px;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
@@ -405,7 +405,7 @@
   min-height: 26px;
   padding: 0 8px;
   grid-template-columns: minmax(0, 1fr);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
@@ -419,7 +419,7 @@
   padding: 0 8px 0 10px;
   grid-template-columns: minmax(0, 1fr) 16px;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
@@ -436,7 +436,7 @@
   min-height: 30px;
   padding: 0 8px;
   grid-template-columns: minmax(0, 1fr);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
@@ -530,12 +530,12 @@
 }
 
 .settings-menu-link-copy strong {
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 760;
 }
 
 .settings-menu-link-copy span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 560;
 }

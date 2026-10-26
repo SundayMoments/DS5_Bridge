@@ -79,12 +79,12 @@
 
 .bridge-wordmark-ds {
   margin-left: 2px;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-semibold);
 }
 
 .bridge-wordmark-name {
-  font-size: 17px;
+  font-size: var(--font-size-title);
   font-weight: 350;
 }
 
@@ -155,8 +155,8 @@
 
 .kitsune-promotion-banner-copy {
   color: var(--kitsune-banner-copy);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -173,19 +173,19 @@
 }
 
 .kitsune-promotion-wordmark-kitsune {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.04em;
 }
 
 .kitsune-promotion-wordmark-input {
   color: #ff5c00;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.26em;
 }
 
 .kitsune-promotion-banner .kitsune-promotion-wordmark {
   color: var(--kitsune-banner-wordmark);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
 }
 
 .window-bar svg {
@@ -444,7 +444,7 @@
 
 .connection-row {
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   color: var(--text-primary);
 }
 
@@ -484,7 +484,7 @@
 .bridge-state {
   gap: 8px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
 }
 
 .device-meta-row {
@@ -511,7 +511,7 @@
 
 .device-battery-percentage {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.2;
 }
 

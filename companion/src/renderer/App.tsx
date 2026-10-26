@@ -101,6 +101,13 @@ import {
   UI_THEME_OPTIONS,
   UI_THEME_PREVIEW_SWATCHES
 } from './ui-themes';
+import { saveUiThemePreset, storedUiThemePreset } from './ui-theme-preferences';
+import {
+  applyUiTextScalePercent,
+  saveUiTextScalePercent,
+  storedUiTextScalePercent
+} from './ui-text-scale-preferences';
+import { useDocumentTheme } from './common/use-document-theme';
 import {
   CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
   CHORD_CONTROLLER_SETTING_STEP_MAX,
@@ -830,26 +837,12 @@ type SinkSelectableAudio = HTMLAudioElement & {
 const LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY = 'ds5bridge.lastRemapControllerType';
 const TRIGGER_LAB_CUSTOM_PROFILES_STORAGE_KEY = 'ds5bridge.triggerLabProfiles';
 const TRIGGER_LAB_WORKSPACE_STORAGE_KEY = 'ds5bridge.triggerLabWorkspace';
-const UI_THEME_PRESET_STORAGE_KEY = 'ds5bridge.uiThemePreset';
 const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
 const STARTUP_READY_HOLD_MS = 1000;
 
 function storedRemapControllerType(): KnownControllerType {
   const saved = window.localStorage.getItem(LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY);
   return saved === 'dualsense-edge' ? 'dualsense-edge' : 'dualsense';
-}
-
-function isUiThemePreset(value: string | null): value is UiThemePreset {
-  return UI_THEME_OPTIONS.some(([, preset]) => preset === value);
-}
-
-function storedUiThemePreset(): UiThemePreset {
-  const saved = window.localStorage.getItem(UI_THEME_PRESET_STORAGE_KEY);
-  return isUiThemePreset(saved) ? saved : DEFAULT_UI_THEME_PRESET;
-}
-
-function saveUiThemePreset(preset: UiThemePreset): void {
-  window.localStorage.setItem(UI_THEME_PRESET_STORAGE_KEY, preset);
 }
 
 function storedStartupTutorialStep(): StartupTutorialStep {
@@ -2559,9 +2552,9 @@ function CustomSelect<T extends SelectValue>({
 
 function ThemeOption({ label, value }: { label: string; value: UiThemePreset }) {
   return (
-      <span className="theme-option">
-        <span className="theme-option-swatches" aria-hidden="true">
-        {UI_THEME_PREVIEW_SWATCHES[value].map((swatch) => (
+    <span className="theme-option" data-theme-preview={value}>
+      <span className="theme-option-swatches" aria-hidden="true">
+        {UI_THEME_PREVIEW_SWATCHES.map((swatch) => (
           <span key={`${value}-${swatch.role}`} title={swatch.role} style={{ background: swatch.color }} />
         ))}
       </span>
@@ -3060,6 +3053,7 @@ export function App() {
   const [windowDragging, setWindowDragging] = useState(false);
   const [testLocked, setTestLocked] = useState(false);
   const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
+  const [startupTextScale, setStartupTextScale] = useState<UiTextScalePercent>(storedUiTextScalePercent);
   const [speakerTestLocked, setSpeakerTestLocked] = useState(false);
   const [speakerOutputAvailable, setSpeakerOutputAvailable] = useState<boolean | null>(null);
   const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
@@ -3144,6 +3138,14 @@ export function App() {
     setStartupTheme(liveTheme);
     saveUiThemePreset(liveTheme);
   }, [snapshot?.settings.uiThemePreset]);
+
+  useEffect(() => {
+    const liveTextScale = snapshot?.settings.uiTextScalePercent;
+    if (!liveTextScale) return;
+    setStartupTextScale(liveTextScale);
+    applyUiTextScalePercent(liveTextScale);
+    saveUiTextScalePercent(liveTextScale);
+  }, [snapshot?.settings.uiTextScalePercent]);
 
   useEffect(() => {
     const hasSnapshot = Boolean(snapshot);
@@ -6710,7 +6712,8 @@ export function App() {
   }
 
   const activeTheme = snapshot?.settings.uiThemePreset ?? startupTheme;
-  const activeTextScale = snapshot?.settings.uiTextScalePercent ?? 100;
+  const activeTextScale = snapshot?.settings.uiTextScalePercent ?? startupTextScale;
+  useDocumentTheme(activeTheme, activeTextScale);
 
   if (!snapshot || startupVisible) {
     return (

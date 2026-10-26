@@ -73,12 +73,12 @@
 
 .chords-function-select .custom-select-button {
   min-height: 38px;
-  font-size: 13px;
+  font-size: var(--font-size-body);
 }
 
 .chords-function-select .custom-select-button > span,
 .chords-function-select .custom-select-menu button > span {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 760;
 }
 
@@ -142,7 +142,7 @@
   display: grid;
   gap: 6px;
   color: var(--text-control);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
 }
 
@@ -169,7 +169,7 @@
   align-items: center;
   padding: 0 12px;
   color: var(--text-control);
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 760;
   white-space: nowrap;
 }
@@ -205,7 +205,7 @@
 
 .chords-field small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   font-weight: 560;
 }
 
@@ -218,7 +218,7 @@
   color: var(--text-primary);
   background: var(--surface-control);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 650;
   outline: none;
 }
@@ -260,7 +260,7 @@
   padding: 0 8px 0 11px;
   background: transparent;
   box-shadow: none;
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 760;
 }
 
@@ -277,7 +277,7 @@
   min-height: 28px;
   padding: 0 7px 0 9px;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 650;
 }
 
@@ -307,7 +307,7 @@
   padding: 0 3px;
   color: var(--text-control);
   background: var(--surface-control-soft);
-  font-size: 9px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
 }
 
@@ -367,7 +367,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -391,7 +391,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-control);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -417,7 +417,7 @@
 
 .chords-function-summary .chords-function-summary-detail-row > span {
   color: var(--accent-strong);
-  font-size: 9px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -425,7 +425,7 @@
 
 .chords-function-summary-detail-row > strong {
   color: var(--text-control);
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 760;
 }
 
@@ -440,7 +440,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 560;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -486,7 +486,7 @@
   align-items: center;
   padding: 0;
   color: var(--text-control);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
   justify-content: center;
 }
@@ -500,7 +500,7 @@
   color: var(--text-control);
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 560;
   text-align: center;
   outline: none;
@@ -526,7 +526,7 @@
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
 }
 
@@ -544,7 +544,7 @@
   padding: 0 10px;
   color: var(--text-control);
   background: var(--warning-bg);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
   white-space: nowrap;
 }
@@ -958,7 +958,7 @@
 }
 
 .chords-function-option small {
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
 }
 
 .chords-empty {
@@ -982,12 +982,12 @@
 
 .chords-empty strong {
   color: var(--text-control);
-  font-size: 15px;
+  font-size: var(--font-size-body);
 }
 
 .chords-empty span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 560;
 }
 

@@ -14,7 +14,7 @@
 .feature-heading h2 {
   margin: 0;
   color: var(--page-heading-text);
-  font-size: 18px;
+  font-size: var(--font-size-title);
   line-height: 1.1;
   letter-spacing: 0;
 }
@@ -23,7 +23,7 @@
 .feature-card h3 {
   margin: 0;
   color: var(--card-heading-text);
-  font-size: 18px;
+  font-size: var(--font-size-title);
   line-height: 1.1;
   letter-spacing: 0;
 }
@@ -32,7 +32,7 @@
 .feature-heading p {
   margin: 5px 0 0;
   color: var(--page-subtitle-text);
-  font-size: 13px;
+  font-size: var(--font-size-body);
 }
 
 .feature-heading {
@@ -103,7 +103,7 @@
 }
 
 .chords-inline-field.audio-speaker-gain-field .custom-select-button > span {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 760;
 }
 
@@ -127,7 +127,7 @@
 
 .speaker-gain-option strong {
   color: var(--text-control);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
 }
 
@@ -141,7 +141,7 @@
   align-items: center;
   color: var(--text-secondary);
   background: var(--surface-control-muted);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   line-height: 1;
   white-space: nowrap;
 }

@@ -40,14 +40,14 @@
 
 .startup-brand strong {
   color: var(--text-strong);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-strong);
   line-height: 1;
 }
 
 .startup-brand span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   line-height: 1;
 }
 

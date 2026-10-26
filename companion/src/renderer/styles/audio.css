@@ -129,13 +129,13 @@
 
 .audio-haptics-source-copy strong {
   color: var(--text-control);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 750;
 }
 
 .audio-haptics-source-copy small {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-subtitle);
   font-weight: 650;
 }
 
@@ -149,7 +149,7 @@
 
 .audio-haptics-routing-stack .dual-selector button {
   min-height: 36px;
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 650;
 }
 
@@ -176,8 +176,8 @@
 .audio-haptics-config-row > span {
   min-width: 0;
   color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
 }
 
@@ -200,8 +200,8 @@
 .audio-haptics-config-pair-row span {
   min-width: 0;
   color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
 }
 
@@ -247,8 +247,8 @@
   max-width: var(--audio-haptics-config-tooltip-width);
   display: block;
   color: var(--text-control);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   line-height: 1.25;
   text-align: left;
   white-space: normal;
@@ -301,7 +301,7 @@
   justify-self: start;
   color: var(--text-primary);
   overflow: visible;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 780;
   line-height: 1.18;
   letter-spacing: 0;
@@ -346,8 +346,8 @@
   max-width: var(--audio-buffer-tooltip-width);
   display: block;
   color: var(--text-control);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   line-height: 1.25;
   text-align: left;
   white-space: normal;
@@ -366,14 +366,14 @@
 
 .audio-buffer-readout strong {
   color: var(--accent);
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 780;
   line-height: 1;
 }
 
 .audio-buffer-readout span {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 760;
   line-height: 1;
 }
@@ -415,8 +415,8 @@
   max-width: min(250px, calc(100vw - 72px));
   display: block;
   color: var(--text-control);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   line-height: 1.25;
   text-align: left;
   white-space: normal;
@@ -518,8 +518,8 @@
   padding: 0 12px;
   color: var(--text-control);
   background: transparent;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   transition:
     color 160ms ease,
     background 180ms ease,
@@ -573,7 +573,7 @@
   padding: 0 12px;
   color: var(--text-control);
   background: var(--surface-control-soft);
-  font-weight: 700;
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
 }
 

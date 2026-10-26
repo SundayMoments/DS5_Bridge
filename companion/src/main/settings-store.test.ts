@@ -741,6 +741,12 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(userDataPath).get().uiThemePreset).toBe('kiwi');
   });
 
+  it.each(['bubble-gum', 'pomegranate', 'kiwi'] as const)('accepts the %s theme preset', (preset) => {
+    const userDataPath = tempUserDataPath();
+    new SettingsStore(userDataPath).update({ uiThemePreset: preset });
+    expect(new SettingsStore(userDataPath).get().uiThemePreset).toBe(preset);
+  });
+
   it('normalizes and clones persisted bridge metadata and controller bindings', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);

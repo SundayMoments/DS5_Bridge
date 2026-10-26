@@ -37,8 +37,8 @@
   border-radius: var(--control-radius);
   color: var(--text-control);
   background: var(--surface-control-soft);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
 }
 
 .devices-actions {
@@ -59,7 +59,7 @@
   width: 100%;
   min-height: 36px;
   padding: 0 12px;
-  font-size: 13px;
+  font-size: var(--font-size-body);
   white-space: nowrap;
 }
 
@@ -87,7 +87,7 @@
   padding: 7px 10px;
   color: var(--danger);
   background: var(--danger-bg);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.35;
 }
 
@@ -186,8 +186,8 @@
   color: var(--text-control);
   background: transparent;
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
   cursor: pointer;
 }
 
@@ -227,7 +227,7 @@
 .trusted-device-empty h3 {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 18px;
+  font-size: var(--font-size-title);
   line-height: 1.1;
 }
 
@@ -235,7 +235,7 @@
   margin: 0;
   max-width: 46ch;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.35;
 }
 
@@ -250,8 +250,8 @@
 
 .trusted-device-slot {
   color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -262,7 +262,7 @@
   overflow: hidden;
   padding: 0 34px 2px 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-body);
   line-height: 1.22;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -271,7 +271,7 @@
 .trusted-device-copy p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.1;
 }
 
@@ -294,8 +294,8 @@
 
 .trusted-device-meta-row span {
   color: var(--accent);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -305,8 +305,8 @@
   overflow: hidden;
   padding-bottom: 2px;
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   line-height: 1.24;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -118,13 +118,13 @@
 
 .deadzone-preview-copy strong {
   color: var(--text-primary);
-  font-size: 28px;
+  font-size: calc(var(--font-size-title) * 1.56);
   line-height: 1;
 }
 
 .deadzone-preview-copy span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 650;
 }
 
@@ -140,7 +140,7 @@
   align-items: center;
   gap: 5px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   font-weight: 650;
 }
 

@@ -2,11 +2,20 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { rendererStyles } from './test-support/renderer-styles';
+import { UI_THEME_PRESETS } from '../shared/ui-theme';
+import { cssBlockIn, rendererStyleModule, rendererStyles } from './test-support/renderer-styles';
+import { UI_THEME_PRESET_STORAGE_KEY } from './ui-theme-preferences';
+import {
+  UI_THEME_KOFI_BADGES,
+  UI_THEME_OPTIONS,
+  UI_THEME_PREVIEW_SWATCHES
+} from './ui-themes';
 
 const styles = rendererStyles();
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
-const themeSource = readFileSync(new URL('./ui-themes.ts', import.meta.url), 'utf8');
+const palettesSource = rendererStyleModule('styles/theme-palettes.css');
+const tokensSource = rendererStyleModule('styles/theme-tokens.css');
+const ds5ThemeSource = rendererStyleModule('styles/theme-ds5.css');
 const normalizedStyles = styles.replace(/\s+/g, ' ').trim();
 
 function cssBlock(selector: string, requiredText?: string): string {
@@ -84,8 +93,8 @@ describe('companion layout CSS', () => {
     const profilePanel = cssBlock('.system-profile-panel', 'grid-template-rows: auto minmax(0, 1fr);');
     expect(profilePanel).toContain('gap: 8px;');
     expect(cssBlock('.system-profile-summary-group', 'align-content: start;')).toContain('align-content: start;');
-    expect(cssBlock('.system-profile-summary dt,', 'font-size: 10px;')).toContain('line-height: 1.15;');
-    expect(cssBlock('.system-profile-strip .system-profile-save-status,', 'font-size: 11px;')).toContain(
+    expect(cssBlock('.system-profile-summary dt,', 'font-size: var(--font-size-subtitle);')).toContain('line-height: 1.15;');
+    expect(cssBlock('.system-profile-strip .system-profile-save-status,', 'font-size: var(--font-size-subtitle);')).toContain(
       'min-height: 28px;'
     );
   });
@@ -141,29 +150,29 @@ describe('companion layout CSS', () => {
     expect(overviewStatusPanel).toContain('background: var(--surface-panel);');
   });
 
-  it('defines preset theme selectors and the Bridge Settings theme control', () => {
-    for (const theme of ['light', 'dark', 'bubble-gum', 'pomegranate', 'kiwi']) {
-      expect(styles).toContain(`.shell[data-theme="${theme}"]`);
-      expect(themeSource).toContain(`'${theme}'`);
+  it('defines every preset palette, including the swatches used by the theme control', () => {
+    for (const theme of UI_THEME_PRESETS) {
+      expect(palettesSource).toContain(`.shell[data-theme="${theme}"]`);
+      expect(palettesSource).toContain(`:root[data-theme="${theme}"]`);
+      expect(palettesSource).toContain(`.theme-option[data-theme-preview="${theme}"]`);
+      expect(UI_THEME_KOFI_BADGES[theme]).toBeTruthy();
     }
+    expect(UI_THEME_OPTIONS.map(([, preset]) => preset)).toEqual([...UI_THEME_PRESETS]);
+    expect(UI_THEME_PREVIEW_SWATCHES.map(({ color }) => color)).toEqual([
+      'var(--palette-canvas)',
+      'var(--palette-surface)',
+      'var(--palette-accent)'
+    ]);
     expect(appSource).toContain('ariaLabel="UI theme"');
     expect(appSource).toContain('settings-theme-select');
-    expect(appSource).toContain('UI_THEME_PREVIEW_SWATCHES[value].map((swatch)');
-    expect(themeSource).toContain('export type UiThemePreviewSwatch');
-    expect(themeSource).toContain("role: 'Canvas' | 'Surface' | 'Accent' | 'Signal';");
-    expect(themeSource).toContain('UI_THEME_PREVIEW_SWATCHES');
-    expect(themeSource).toContain('support_me_on_kofi_beige.png');
-    expect(themeSource).toContain('support_me_on_kofi_blue.png');
-    expect(themeSource).toContain('support_me_on_kofi_red.png');
-    expect(themeSource).toContain("'bubble-gum': kofiBadgeBlueUrl");
-    expect(themeSource).toContain('kiwi: kofiBadgeDarkUrl');
+    expect(appSource).toContain('<span className="theme-option" data-theme-preview={value}>');
   });
 
   it('uses the cached theme and branded panel for the startup loading state', () => {
-    expect(appSource).toContain("const UI_THEME_PRESET_STORAGE_KEY = 'ds5bridge.uiThemePreset';");
+    expect(UI_THEME_PRESET_STORAGE_KEY).toBe('ds5bridge.uiThemePreset');
     expect(appSource).toContain("const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';");
     expect(appSource).toContain('const STARTUP_READY_HOLD_MS = 1000;');
-    expect(appSource).toContain('function storedUiThemePreset()');
+    expect(appSource).toContain('useState<UiThemePreset>(storedUiThemePreset)');
     expect(appSource).toContain('function storedStartupTutorialStep()');
     expect(appSource).toContain('function saveStartupTutorialCompleted()');
     expect(appSource).toContain('function StartupScreen({ ready }: { ready: boolean })');
@@ -192,14 +201,10 @@ describe('companion layout CSS', () => {
   });
 
   it('keeps theme window bars and sidebars flat instead of gradient layered', () => {
-    for (const selector of [
-      ':root',
-      '.shell[data-theme="light"]',
-      '.shell[data-theme="bubble-gum"]',
-      '.shell[data-theme="pomegranate"]',
-      '.shell[data-theme="kiwi"]'
+    for (const themeBlock of [
+      cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--window-bar-bg:'),
+      cssBlockIn(tokensSource, '.shell {', '--window-bar-bg:')
     ]) {
-      const themeBlock = cssBlock(selector, '--window-bar-bg:');
       expect(themeBlock).not.toContain('var(--sidebar-width)');
       expect(themeBlock).not.toContain('--window-bar-bg: linear-gradient');
       expect(themeBlock).not.toContain('--sidebar-bg: linear-gradient');
@@ -207,47 +212,32 @@ describe('companion layout CSS', () => {
       expect(themeBlock).toContain('--window-bar-bg: var(--window-bar-bg-flat);');
       expect(themeBlock).toContain('--sidebar-overlay: transparent;');
     }
-    const bubbleGumTheme = cssBlock('.shell[data-theme="bubble-gum"]', '--window-bar-bg-flat: #d86fbd;');
-    expect(bubbleGumTheme).toContain('--window-bar-border: rgba(124, 30, 111, 0.56);');
+    expect(cssBlockIn(tokensSource, '.shell {', '--window-bar-bg-flat:')).toContain(
+      '--window-bar-bg-flat: var(--palette-sidebar);'
+    );
   });
 
-  it('uses theme-aware colors for the navbar bridge mark', () => {
-    expect(appSource).toContain('function BridgeMark()');
+  it('keeps the DS5 mark in brand blue while its primary shape follows the theme text', () => {
     expect(appSource).toContain('fill="var(--bridge-mark-primary)"');
     expect(appSource).toContain('fill="var(--bridge-mark-secondary)"');
     expect(appSource).not.toContain('bridgeMarkUrl');
-    expect(cssBlock(':root', '--bridge-mark-primary: #ffffff;')).toContain('--bridge-mark-secondary: #046fff;');
-    expect(cssBlock('.shell[data-theme="light"]', '--bridge-mark-primary: #172232;')).toContain(
-      '--bridge-mark-secondary: #046fff;'
-    );
-    expect(cssBlock('.shell[data-theme="bubble-gum"]', '--bridge-mark-primary: #140d18;')).toContain(
-      '--bridge-mark-secondary: #046fff;'
-    );
-    expect(cssBlock('.shell[data-theme="pomegranate"]', '--bridge-mark-primary: #ffffff;')).toContain(
-      '--bridge-mark-secondary: #00a3ff;'
-    );
-    expect(cssBlock('.shell[data-theme="kiwi"]', '--bridge-mark-primary: #eaffef;')).toContain(
-      '--bridge-mark-secondary: #9cff2f;'
-    );
+    const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--bridge-mark-primary:');
+    expect(ds5Theme).toContain('--bridge-mark-primary: #ffffff;');
+    expect(ds5Theme).toContain('--bridge-mark-secondary: #046fff;');
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--bridge-mark-primary:');
+    expect(sharedTokens).toContain('--ds5-blue: #046fff;');
+    expect(sharedTokens).toContain('--bridge-mark-primary: var(--text-strong);');
+    expect(sharedTokens).toContain('--bridge-mark-secondary: var(--ds5-blue);');
   });
 
   it('uses dedicated sidebar text tokens for section labels and nav links', () => {
-    const rootTokens = cssBlock(':root', '--sidebar-label: var(--text-dim);');
-    const pomegranateTheme = cssBlock('.shell[data-theme="pomegranate"]', '--sidebar-label: #ff6ead;');
-    const kiwiTheme = cssBlock('.shell[data-theme="kiwi"]', '--sidebar-label: #7bbd67;');
-    expect(rootTokens).toContain('--sidebar-link: var(--text-secondary);');
-    expect(rootTokens).toContain('--sidebar-link-hover: var(--text-strong);');
-    expect(rootTokens).toContain('--sidebar-link-disabled: var(--text-dim);');
-    expect(pomegranateTheme).toContain('--sidebar-link: #f0d4e5;');
-    expect(pomegranateTheme).toContain('--sidebar-link-hover: #fff7fc;');
-    expect(kiwiTheme).toContain('--sidebar-link: #c6e8ca;');
-    expect(kiwiTheme).toContain('--sidebar-link-hover: #f4fff5;');
-    expect(cssBlock('.shell[data-theme="light"]', '--sidebar-label: #53647a;')).toContain(
-      '--sidebar-link-disabled: #63748c;'
-    );
-    expect(cssBlock('.shell[data-theme="bubble-gum"]', '--sidebar-label: #6a2b65;')).toContain(
-      '--sidebar-link-disabled: #68456d;'
-    );
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--sidebar-label:');
+    expect(sharedTokens).toContain('--sidebar-label: var(--text-muted);');
+    expect(sharedTokens).toContain('--sidebar-link: var(--text-secondary);');
+    expect(sharedTokens).toContain('--sidebar-link-hover: var(--text-strong);');
+    expect(sharedTokens).toContain('--sidebar-link-disabled: var(--text-disabled);');
+    const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--sidebar-label:');
+    expect(ds5Theme).toContain('--sidebar-label: var(--text-dim);');
     expect(cssBlock('.sidebar-section-label', 'color: var(--sidebar-label);')).toContain(
       'color: var(--sidebar-label);'
     );
@@ -263,24 +253,17 @@ describe('companion layout CSS', () => {
   });
 
   it('splits page headings from card headings so themes can tint page chrome', () => {
-    const rootTokens = cssBlock(':root', '--page-heading-text: var(--text-primary);');
-    const pomegranateTheme = cssBlock('.shell[data-theme="pomegranate"]', '--page-heading-text: #ff5aa6;');
-    const kiwiTheme = cssBlock('.shell[data-theme="kiwi"]', '--page-heading-text: #9cff2f;');
-    expect(rootTokens).toContain('--page-subtitle-text: var(--text-secondary);');
-    expect(rootTokens).toContain('--card-heading-text: var(--text-primary);');
-    expect(rootTokens).toContain('--card-subtitle-text: var(--text-secondary);');
-    expect(rootTokens).toContain('--settings-copy-text: var(--text-muted);');
-    expect(pomegranateTheme).toContain('--page-subtitle-text: #d94f8f;');
-    expect(pomegranateTheme).toContain('--card-heading-text: var(--text-strong);');
-    expect(pomegranateTheme).toContain('--settings-copy-text: var(--text-secondary);');
-    expect(kiwiTheme).toContain('--page-subtitle-text: #a7dba7;');
-    expect(kiwiTheme).toContain('--card-heading-text: var(--text-strong);');
-    expect(cssBlock('.shell[data-theme="light"]', '--page-heading-text: #0b1320;')).toContain(
-      '--settings-copy-text: #4d6179;'
-    );
-    expect(cssBlock('.shell[data-theme="bubble-gum"]', '--page-heading-text: #140d18;')).toContain(
-      '--settings-copy-text: #5a3e60;'
-    );
+    const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--page-heading-text:');
+    expect(ds5Theme).toContain('--page-heading-text: var(--text-primary);');
+    expect(ds5Theme).toContain('--page-subtitle-text: var(--text-secondary);');
+    expect(ds5Theme).toContain('--card-heading-text: var(--text-primary);');
+    expect(ds5Theme).toContain('--card-subtitle-text: var(--text-secondary);');
+    expect(ds5Theme).toContain('--settings-copy-text: var(--text-muted);');
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--page-heading-text:');
+    expect(sharedTokens).toContain('--page-heading-text: var(--text-strong);');
+    expect(sharedTokens).toContain('--page-subtitle-text: var(--text-secondary);');
+    expect(sharedTokens).toContain('--card-heading-text: var(--text-strong);');
+    expect(sharedTokens).toContain('--settings-copy-text: var(--text-secondary);');
     expect(cssBlock('.control-heading h2,', 'color: var(--page-heading-text);')).toContain(
       'color: var(--page-heading-text);'
     );
@@ -336,8 +319,8 @@ describe('companion layout CSS', () => {
     expect(profileButtonBlock).toContain('border: 1px solid var(--surface-border-strong);');
     expect(profileButtonBlock).toContain('color: var(--text-control);');
     expect(profileButtonBlock).toContain('background: var(--surface-control-soft);');
-    expect(profileButtonBlock).toContain('font-size: 12px;');
-    expect(profileButtonBlock).toContain('font-weight: 700;');
+    expect(profileButtonBlock).toContain('font-size: var(--font-size-subtitle);');
+    expect(profileButtonBlock).toContain('font-weight: var(--font-weight-strong);');
     expect(profileButtonBlock).toContain('box-shadow: none;');
     expect(cssBlock('.system-profile-save-status', 'min-width: 0;')).not.toContain('background:');
     expect(appSource).toContain('function ProfileSaveStatus()');
@@ -400,10 +383,8 @@ describe('companion layout CSS', () => {
 
   it('uses selected tokens for active navigation and audio haptics mode chips', () => {
     const shellTokens = cssBlock('.shell', '--nav-active-bg:');
-    const lightTheme = cssBlock('.shell[data-theme="light"]', '--nav-active-base: white;');
-    const bubbleGumTheme = cssBlock('.shell[data-theme="bubble-gum"]', '--nav-active-base: white;');
-    const pomegranateTheme = cssBlock('.shell[data-theme="pomegranate"]', '--nav-active-base: #211323;');
-    const kiwiTheme = cssBlock('.shell[data-theme="kiwi"]', '--nav-active-base: #0d1f13;');
+    const sharedTokens = cssBlockIn(tokensSource, '.shell {', '--nav-active-base:');
+    const lightFamily = cssBlockIn(tokensSource, '.shell:is([data-theme="light"], [data-theme="bubble-gum"])', '--nav-active-base:');
     expect(cssBlock('.control-tabs button.active', 'background: var(--nav-active-bg);')).toContain(
       'background: var(--nav-active-bg);'
     );
@@ -429,42 +410,15 @@ describe('companion layout CSS', () => {
     expect(shellTokens).toContain(
       '--nav-active-rail: color-mix(in srgb, var(--accent-strong) var(--nav-active-rail-weight), var(--accent));'
     );
-    for (const theme of [lightTheme, bubbleGumTheme]) {
-      expect(theme).toContain('--nav-active-base: white;');
-      expect(theme).toContain('--nav-active-bg-weight: 40%;');
-      expect(theme).toContain('--nav-active-border-weight: 78%;');
-      expect(theme).toContain('--nav-active-rail-weight: 84%;');
-    }
-    expect(lightTheme).toContain('--command-chip-muted-text: #1559bd;');
-    expect(lightTheme).toContain('--command-chip-active-bg: #2f78d8;');
-    expect(lightTheme).toContain('--command-chip-active-border: #1559bd;');
-    expect(lightTheme).toContain('--command-chip-active-text: #ffffff;');
-    expect(lightTheme).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 18%, #edf3fa 82%);');
-    expect(lightTheme).toContain('--command-chip-muted-border: color-mix(in srgb, var(--accent) 66%, #edf3fa 34%);');
-    expect(lightTheme).toContain('--success: #00b866;');
-    expect(lightTheme).toContain('--success-selected: #14935a;');
-    expect(bubbleGumTheme).toContain('--command-chip-muted-text: #8f2174;');
-    expect(bubbleGumTheme).toContain('--command-chip-active-bg: #d44799;');
-    expect(bubbleGumTheme).toContain('--command-chip-active-border: #a3368e;');
-    expect(bubbleGumTheme).toContain('--command-chip-active-text: #ffffff;');
-    expect(bubbleGumTheme).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 20%, #ffd8f5 80%);');
-    expect(bubbleGumTheme).toContain('--command-chip-muted-border: color-mix(in srgb, var(--accent) 70%, #ffd8f5 30%);');
-    expect(bubbleGumTheme).toContain('--success: #00b866;');
-    expect(bubbleGumTheme).toContain('--success-selected: #14935a;');
-    expect(bubbleGumTheme).toContain('--info-selected: #d44799;');
-    expect(bubbleGumTheme).toContain('--info-border-strong: rgba(163, 54, 142, 0.66);');
-    expect(pomegranateTheme).toContain('--nav-active-base: #211323;');
-    expect(pomegranateTheme).toContain('--nav-active-bg-weight: 50%;');
-    expect(pomegranateTheme).toContain('--nav-active-border-weight: 86%;');
-    expect(pomegranateTheme).toContain('--nav-active-rail-weight: 88%;');
-    expect(kiwiTheme).toContain('--nav-active-bg-weight: 48%;');
-    expect(kiwiTheme).toContain('--accent-selected: #9cff2f;');
-    expect(kiwiTheme).toContain('--accent-text: #061006;');
-    expect(kiwiTheme).toContain('--command-chip-active-bg: #9cff2f;');
-    expect(kiwiTheme).toContain('--command-chip-active-border: #6ecf18;');
-    expect(kiwiTheme).toContain('--danger-selected: #d52d3e;');
-    expect(kiwiTheme).toContain('--danger-selected-text: #ffffff;');
-    expect(bubbleGumTheme).toContain('--warning-selected-text: #ffffff;');
+    expect(sharedTokens).toContain('--nav-active-base: var(--palette-canvas);');
+    expect(sharedTokens).toContain('--nav-active-bg-weight: 28%;');
+    expect(lightFamily).toContain('--nav-active-base: #ffffff;');
+    expect(lightFamily).toContain('--nav-active-bg-weight: 40%;');
+    expect(lightFamily).toContain('--nav-active-border-weight: 78%;');
+    // Filled actions use each preset's own ink instead of hardcoded white text.
+    expect(sharedTokens).toContain('--accent-text: var(--palette-on-accent);');
+    expect(sharedTokens).toContain('--command-chip-active-text: var(--accent-text);');
+    expect(sharedTokens).toContain('--command-chip-active-bg: var(--accent-selected);');
     expect(cssBlock('.emergency-repair-button', 'background: var(--danger-selected);')).toContain(
       'color: var(--danger-selected-text);'
     );
@@ -584,14 +538,14 @@ describe('companion layout CSS', () => {
 
   it('keeps the Bridge Settings preferences modal typography compact', () => {
     expect(appSource).toContain('bridge-settings-modal bridge-settings-preferences-modal');
-    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-modal-heading', 'font-size: 14px;')).toContain(
-      'font-size: 14px;'
+    expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-modal-heading', 'font-size: var(--font-size-body);')).toContain(
+      'font-size: var(--font-size-body);'
     );
-    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-row strong', 'font-size: 12px;')).toContain(
-      'font-size: 12px;'
+    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-row strong', 'font-size: var(--font-size-subtitle);')).toContain(
+      'font-size: var(--font-size-subtitle);'
     );
-    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-copy > span', 'font-size: 10.5px;')).toContain(
-      'font-size: 10.5px;'
+    expect(cssBlock('.bridge-settings-preferences-modal .settings-menu-copy > span', 'font-size: var(--font-size-subtitle);')).toContain(
+      'font-size: var(--font-size-subtitle);'
     );
     expect(cssBlock('.bridge-settings-preferences-modal .bridge-settings-column .settings-menu-row', 'min-height: 32px;')).toContain(
       'padding-top: 3px;'
@@ -635,7 +589,7 @@ describe('companion layout CSS', () => {
     expect(rootTheme).toContain('--kitsune-banner-wordmark: #ffffff;');
     expect(cssBlock('.kitsune-promotion-banner-copy', 'color: var(--kitsune-banner-copy);'))
       .toContain('color: var(--kitsune-banner-copy);');
-    expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: 11px;'))
+    expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: var(--font-size-subtitle);'))
       .toContain('color: var(--kitsune-banner-wordmark);');
     expect(cssBlock('.kitsune-promotion-banner:hover', 'transform: translate(-50%, -50%);'))
       .not.toContain('translateY');

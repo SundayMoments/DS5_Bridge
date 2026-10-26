@@ -44,8 +44,8 @@
   padding: 0 9px;
   color: var(--text-control);
   background: var(--surface-control-soft);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
   box-shadow: none;
 }
@@ -99,7 +99,7 @@
 .system-profile-strip .remapping-profile-actions button {
   min-height: 28px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
 }
 
 .system-profile-strip .remapping-profile-actions {
@@ -153,7 +153,7 @@
 .system-profile-summary-heading h3 {
   margin: 0;
   color: var(--text-control);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.1;
 }
 
@@ -176,7 +176,7 @@
 .system-profile-summary dd {
   min-width: 0;
   margin: 0;
-  font-size: 10px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
@@ -357,8 +357,8 @@
   justify-content: center;
   gap: 6px;
   color: var(--text-control);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
 }
 
@@ -401,7 +401,7 @@
   border-radius: 7px;
   padding: 0 4px;
   color: var(--text-control);
-  font-size: 9px;
+  font-size: var(--font-size-subtitle);
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1;

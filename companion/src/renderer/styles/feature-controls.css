@@ -107,7 +107,7 @@
 .stacked-slider > span {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-body);
 }
 
 .framed-slider {
@@ -181,7 +181,7 @@
   gap: 10px;
   color: var(--text-control);
   background: var(--surface-control-soft);
-  font-weight: 700;
+  font-weight: var(--font-weight-strong);
 }
 
 .segmented-row button {
@@ -191,7 +191,7 @@
 
 .segmented-row.compact button {
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   white-space: nowrap;
 }
 

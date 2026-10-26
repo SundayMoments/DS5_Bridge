@@ -33,7 +33,7 @@
 
 .feature-help-heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   line-height: 1;
   letter-spacing: 0;
 }
@@ -158,14 +158,14 @@
 
 .feature-help-copy strong {
   color: var(--text-control);
-  font-size: 12px;
+  font-size: var(--font-size-subtitle);
   font-weight: 760;
   line-height: 1.1;
 }
 
 .feature-help-copy span {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-subtitle);
   line-height: 1.25;
 }
 

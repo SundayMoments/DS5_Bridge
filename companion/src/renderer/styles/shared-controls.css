@@ -15,7 +15,7 @@
 .slider-row strong {
   justify-self: end;
   color: var(--text-control);
-  font-size: 15px;
+  font-size: var(--font-size-body);
   text-align: right;
 }
 
@@ -36,7 +36,7 @@
 .slider-row > span {
   color: var(--text-secondary);
   font-weight: 650;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   white-space: nowrap;
 }
 
@@ -250,12 +250,12 @@
 
 .system-page .custom-select-button,
 .system-page .custom-select-menu button {
-  font-size: 14px;
+  font-size: var(--font-size-body);
 }
 
 .remapping-heading .profile-controls .custom-select-button,
 .remapping-heading .profile-controls .custom-select-menu button {
-  font-size: 14px;
+  font-size: var(--font-size-body);
 }
 
 input[type="range"] {
@@ -447,7 +447,7 @@ select:disabled {
   flex: 0 0 auto;
   min-height: 36px;
   padding: 0 14px;
-  font-size: 13px;
+  font-size: var(--font-size-body);
 }
 
 input[type="color"]::-webkit-color-swatch-wrapper {
