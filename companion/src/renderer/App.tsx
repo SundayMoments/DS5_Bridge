@@ -141,6 +141,8 @@ import {
 } from './common/controller-power-saving';
 import { StickDeadzonesPage, useStickDeadzonesController } from './features/stick-deadzones';
 import { DevicesPage, useDevicesController } from './features/devices';
+import { ControllerLightingPage, useControllerLightingController } from './features/controller-lighting';
+import { lightbarColorLabel, LIGHTBAR_BRIGHTNESS_STEP, snapLightbarBrightness } from './features/controller-lighting/model';
 import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
   CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
@@ -313,10 +315,6 @@ type EdgeRemapControlLayout = {
   anchor: 'top' | 'bottom';
   linePoints: string;
 };
-type LightbarPaletteCell = {
-  color: string;
-  name: string;
-};
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
 
 const KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';
@@ -330,7 +328,6 @@ const AUDIO_BUFFER_LENGTH_MIN = 16;
 const AUDIO_BUFFER_LENGTH_MAX = 128;
 const AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX = 44;
 const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
-const LIGHTBAR_BRIGHTNESS_STEP = 10;
 const TRIGGER_EFFECT_STEP = 10;
 const TEST_HAPTICS_LOCK_MS = 1100;
 const TEST_SPEAKER_LOCK_MS = 900;
@@ -343,23 +340,6 @@ const TEST_SPEAKER_ENDPOINT_VERIFY_MS = 100;
 const TEST_SPEAKER_PREROLL_MS = 220;
 const TEST_TRIGGER_LOCK_MS = 2800;
 const SLEEP_CONFIRM_MS = 2400;
-const LIGHTBAR_SWATCHES = ['#ffff00', '#0000ff', '#00ff00', '#ff0000', '#8000ff', '#ffffff'];
-const LIGHTBAR_SWATCH_NAMES: Record<string, string> = {
-  '#ffff00': 'Yellow',
-  '#0000ff': 'Blue',
-  '#00ff00': 'Green',
-  '#ff0000': 'Red',
-  '#8000ff': 'Violet',
-  '#ffffff': 'White'
-};
-const LIGHTBAR_DEFAULT_CUSTOM_COLOR = '#7b61ff';
-const LIGHTBAR_CUSTOM_PALETTE = makeLightbarCustomPalette();
-const LIGHTBAR_COLOR_NAMES = makeLightbarColorNames();
-const LIGHTBAR_PRESETS: Array<[string, number]> = [
-  ['Low', 30],
-  ['Medium', 50],
-  ['High', 100]
-];
 const HAPTICS_PRESETS: Array<[string, number]> = [
   ['Low', 50],
   ['Medium', 100],
@@ -899,10 +879,6 @@ function audioBufferZoneTone(value: number): 'stutter' | 'risky' | 'safe' {
   return 'safe';
 }
 
-function snapLightbarBrightness(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value / LIGHTBAR_BRIGHTNESS_STEP) * LIGHTBAR_BRIGHTNESS_STEP));
-}
-
 function snapTriggerEffectIntensity(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value / TRIGGER_EFFECT_STEP) * TRIGGER_EFFECT_STEP));
 }
@@ -1111,10 +1087,6 @@ function displayHapticsValue(snapshot: BridgeSnapshot): number {
 
 function displayClassicRumbleValue(snapshot: BridgeSnapshot): number {
   return capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot);
-}
-
-function displayLightbarBrightnessValue(snapshot: BridgeSnapshot): number {
-  return capControllerPowerSavingValue(snapshot.settings.lightbarBrightnessPercent, snapshot);
 }
 
 function displayTriggerEffectIntensityValue(snapshot: BridgeSnapshot): number {
@@ -1444,10 +1416,6 @@ function percentLabel(value: number): string {
   return `${value}%`;
 }
 
-function lightbarColorLabel(color: string): string {
-  return LIGHTBAR_COLOR_NAMES[color.toLowerCase()] ?? color.toUpperCase();
-}
-
 function muteButtonSummary(settings: ControllerProfileSettings): string {
   if (settings.muteButtonMode === 'normal') {
     return 'Normal';
@@ -1542,116 +1510,6 @@ function SystemProfileSummary({
   );
 }
 
-function normalizeHexColor(value: string): string {
-  return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : '#ffff00';
-}
-
-function normalizeLightbarPresetColor(value: string): string {
-  return normalizeHexColor(value);
-}
-
-function isLightbarPresetColor(value: string): boolean {
-  return LIGHTBAR_SWATCHES.includes(normalizeLightbarPresetColor(value));
-}
-
-function clampByte(value: number): number {
-  return Math.max(0, Math.min(255, Math.round(value)));
-}
-
-function rgbToHex(red: number, green: number, blue: number): string {
-  return `#${[red, green, blue].map((channel) => clampByte(channel).toString(16).padStart(2, '0')).join('')}`;
-}
-
-function hslToHex(hue: number, saturation: number, lightness: number): string {
-  const normalizedHue = (((hue % 360) + 360) % 360) / 360;
-  const normalizedSaturation = Math.max(0, Math.min(100, saturation)) / 100;
-  const normalizedLightness = Math.max(0, Math.min(100, lightness)) / 100;
-
-  if (normalizedSaturation === 0) {
-    const channel = clampByte(normalizedLightness * 255);
-    return rgbToHex(channel, channel, channel);
-  }
-
-  const q = normalizedLightness < 0.5
-    ? normalizedLightness * (1 + normalizedSaturation)
-    : normalizedLightness + normalizedSaturation - normalizedLightness * normalizedSaturation;
-  const p = 2 * normalizedLightness - q;
-  const hueToRgb = (offset: number) => {
-    let t = normalizedHue + offset;
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-
-  return rgbToHex(hueToRgb(1 / 3) * 255, hueToRgb(0) * 255, hueToRgb(-1 / 3) * 255);
-}
-
-function makeLightbarCustomPalette(): LightbarPaletteCell[][] {
-  const hues = [
-    { hue: 0, name: 'Red' },
-    { hue: 30, name: 'Orange' },
-    { hue: 60, name: 'Yellow' },
-    { hue: 90, name: 'Lime' },
-    { hue: 120, name: 'Green' },
-    { hue: 150, name: 'Mint' },
-    { hue: 180, name: 'Cyan' },
-    { hue: 210, name: 'Sky' },
-    { hue: 240, name: 'Blue' },
-    { hue: 270, name: 'Violet' },
-    { hue: 300, name: 'Magenta' },
-    { hue: 330, name: 'Rose' }
-  ];
-  const rows = [
-    { saturation: 28, lightness: 88, tone: 'Pale', gray: '#ffffff', grayName: 'White' },
-    { saturation: 58, lightness: 78, tone: 'Soft', gray: '#d9d9d9', grayName: 'Light Gray' },
-    { saturation: 82, lightness: 66, tone: 'Light', gray: '#b3b3b3', grayName: 'Silver' },
-    { saturation: 100, lightness: 58, tone: 'Bright', gray: '#8a8a8a', grayName: 'Gray' },
-    { saturation: 100, lightness: 50, tone: 'Pure', gray: '#666666', grayName: 'Dim Gray' },
-    { saturation: 100, lightness: 40, tone: 'Deep', gray: '#4a4a4a', grayName: 'Charcoal' },
-    { saturation: 100, lightness: 30, tone: 'Dark', gray: '#333333', grayName: 'Dark Gray' },
-    { saturation: 100, lightness: 20, tone: 'Midnight', gray: '#1a1a1a', grayName: 'Near Black' },
-    { saturation: 100, lightness: 10, tone: 'Blackened', gray: '#000000', grayName: 'Black' }
-  ];
-  return rows.map((row) => [
-    ...hues.map((hue) => ({
-      color: hslToHex(hue.hue, row.saturation, row.lightness),
-      name: `${row.tone} ${hue.name}`
-    })),
-    {
-      color: row.gray,
-      name: row.grayName
-    }
-  ]);
-}
-
-function makeLightbarColorNames(): Record<string, string> {
-  const names = { ...LIGHTBAR_SWATCH_NAMES };
-  for (const row of LIGHTBAR_CUSTOM_PALETTE) {
-    for (const cell of row) {
-      names[cell.color] ??= cell.name;
-    }
-  }
-  names[LIGHTBAR_DEFAULT_CUSTOM_COLOR] = 'Custom';
-  return names;
-}
-
-function lightbarColorFromSnapshot(snapshot: BridgeSnapshot): string {
-  if (snapshot.status?.firmwareFlags.lightbarControl) {
-    const color = snapshot.status.lightbarColor;
-    return normalizeLightbarPresetColor(rgbToHex(color.red, color.green, color.blue));
-  }
-  return normalizeLightbarPresetColor(snapshot.settings.lightbarColor);
-}
-
-function lightbarBrightnessFromSnapshot(snapshot: BridgeSnapshot): number {
-  if (snapshot.status?.firmwareFlags.lightbarControl) {
-    return snapshot.status.lightbarColor.brightnessPercent;
-  }
-  return snapshot.settings.lightbarBrightnessPercent;
-}
 
 function batteryLabel(snapshot: BridgeSnapshot | null | undefined): string {
   const battery = snapshot?.status?.batteryPercent;
@@ -2455,17 +2313,6 @@ export function App() {
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
   const [micVolumeValue, setMicVolumeValue] = useState(100);
   const [audioBufferLengthValue, setAudioBufferLengthValue] = useState(64);
-  const [lightbarColor, setLightbarColor] = useState('#ffff00');
-  const [customLightbarColor, setCustomLightbarColor] = useState<string | null>(() => {
-    const saved = window.localStorage.getItem('ds5bridge.customLightbarColor');
-    if (!saved || !/^#[0-9a-fA-F]{6}$/.test(saved)) return null;
-    const color = normalizeLightbarPresetColor(saved);
-    return LIGHTBAR_SWATCHES.includes(color) ? null : color;
-  });
-  const [customColorDraft, setCustomColorDraft] = useState(LIGHTBAR_DEFAULT_CUSTOM_COLOR);
-  const [showCustomColorPicker, setShowCustomColorPicker] = useState(false);
-  const [customSwatchPrimed, setCustomSwatchPrimed] = useState(false);
-  const [lightbarBrightnessValue, setLightbarBrightnessValue] = useState(100);
   const [triggerEffectIntensityValue, setTriggerEffectIntensityValue] = useState(100);
   const [triggerTarget, setTriggerTarget] = useState<TriggerTestTarget>('both');
   const triggerLabInitialStateRef = useRef<TriggerLabInitialState | null>(null);
@@ -2533,7 +2380,6 @@ export function App() {
   const [micVolumeCommitPending, setMicVolumeCommitPending] = useState(false);
   const [audioBufferLengthCommitPending, setAudioBufferLengthCommitPending] = useState(false);
   const [audioReactiveHapticsCommitPending, setAudioReactiveHapticsCommitPending] = useState(false);
-  const [lightbarCommitPending, setLightbarCommitPending] = useState(false);
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
   const [deviceCleanupConfirmVisible, setDeviceCleanupConfirmVisible] = useState(false);
   const [startupTutorialStep, setStartupTutorialStep] = useState<StartupTutorialStep>(storedStartupTutorialStep);
@@ -2548,7 +2394,6 @@ export function App() {
   const speakerVolumeEditingRef = useRef(false);
   const micVolumeEditingRef = useRef(false);
   const audioBufferLengthEditingRef = useRef(false);
-  const lightbarBrightnessEditingRef = useRef(false);
   const triggerEffectEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const bridgeRenameCancelledRef = useRef(false);
@@ -2556,8 +2401,6 @@ export function App() {
   const remappingLeftSideRef = useRef<HTMLDivElement>(null);
   const remappingRightSideRef = useRef<HTMLDivElement>(null);
   const remappingArtRef = useRef<HTMLImageElement>(null);
-  const customColorPickerRef = useRef<HTMLDivElement>(null);
-  const customSwatchPrimeTimerRef = useRef<number | null>(null);
   const overviewSleepConfirmTimerRef = useRef<number | null>(null);
   const settingsFocusTimerRef = useRef<number | null>(null);
   const notificationFocusTimerRef = useRef<number | null>(null);
@@ -2675,6 +2518,7 @@ export function App() {
   };
   const stickDeadzones = useStickDeadzonesController(runtime, activeControlTab === 'deadzones');
   const devices = useDevicesController(runtime);
+  const lighting = useControllerLightingController(runtime);
   const liveControllerType = snapshot?.status?.controllerType;
   const remapControllerType = snapshot?.status?.controllerConnected && liveControllerType && liveControllerType !== 'unknown'
     ? liveControllerType
@@ -2908,16 +2752,7 @@ export function App() {
     if (!audioBufferLengthEditingRef.current) {
       setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
     }
-    const nextLightbarColor = lightbarColorFromSnapshot(next);
-    setLightbarColor(nextLightbarColor);
-    if (!isLightbarPresetColor(nextLightbarColor)) {
-      setCustomLightbarColor(nextLightbarColor);
-      setCustomColorDraft(nextLightbarColor);
-      window.localStorage.setItem('ds5bridge.customLightbarColor', nextLightbarColor);
-    }
-    if (!lightbarBrightnessEditingRef.current) {
-      setLightbarBrightnessValue(displayLightbarBrightnessValue(next));
-    }
+    lighting.syncSnapshot(next);
     if (!triggerEffectEditingRef.current) {
       setTriggerEffectIntensityValue(displayTriggerEffectIntensityValue(next));
     }
@@ -2970,9 +2805,6 @@ export function App() {
     return () => {
       cancelled = true;
       unsubscribe();
-      if (customSwatchPrimeTimerRef.current !== null) {
-        window.clearTimeout(customSwatchPrimeTimerRef.current);
-      }
       if (overviewSleepConfirmTimerRef.current !== null) {
         window.clearTimeout(overviewSleepConfirmTimerRef.current);
       }
@@ -3194,30 +3026,6 @@ export function App() {
     }
   }, [connected]);
 
-  useEffect(() => {
-    if (!showCustomColorPicker) {
-      return;
-    }
-
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!customColorPickerRef.current?.contains(event.target as Node)) {
-        setShowCustomColorPicker(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowCustomColorPicker(false);
-      }
-    };
-
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [showCustomColorPicker]);
-
   const batteryPercentLabel = batteryLabel(snapshot);
   const batteryCharging = isChargingPowerState(snapshot?.status?.rawPowerState);
   const batteryExternalPower = isExternalPowerState(snapshot?.status?.rawPowerState);
@@ -3411,7 +3219,7 @@ export function App() {
     || !hapticsEnabled
     || pendingAction !== null
     || speakerVolumeCommitPending
-    || lightbarCommitPending
+    || lighting.lightbarCommitPending
     || testLocked
     || Boolean(snapshot?.status?.testHapticsBusy)
     || Boolean(snapshot?.status?.testHapticsCooldown);
@@ -3419,7 +3227,7 @@ export function App() {
     || !classicRumbleEnabled
     || pendingAction !== null
     || speakerVolumeCommitPending
-    || lightbarCommitPending
+    || lighting.lightbarCommitPending
     || testLocked
     || Boolean(snapshot?.status?.testHapticsBusy);
   const hapticsStatusReady = connected
@@ -3459,7 +3267,7 @@ export function App() {
     || !speakerEnabled
     || pendingAction !== null
     || speakerVolumeCommitPending
-    || lightbarCommitPending
+    || lighting.lightbarCommitPending
     || speakerTestLocked
     || gameStreamActive
     || Boolean(snapshot?.status?.testHapticsBusy);
@@ -3467,7 +3275,7 @@ export function App() {
     || !duplexMicEnabled
     || pendingAction !== null
     || micVolumeCommitPending
-    || lightbarCommitPending
+    || lighting.lightbarCommitPending
     || micTestLocked
     || gameStreamActive;
   const speakerStatusReady = connected
@@ -3659,13 +3467,6 @@ export function App() {
     : connected && adaptiveTriggerOutputActive
       ? 'warn'
       : 'idle';
-  const lightbarStateActive = connected && lightbarSupported && lightbarEnabled;
-  const lightbarStateLabel = lightbarStateActive
-    ? 'Active'
-    : connected && lightbarSupported
-      ? 'Off'
-      : 'Unavailable';
-
   useEffect(() => {
     if (!connected || speakerOutputAvailable !== false || speakerTestLocked) {
       return undefined;
@@ -3695,10 +3496,6 @@ export function App() {
     }
   }, [connected, showMicrophoneControl, micTestLocked]);
 
-  const normalizedLightbarColor = normalizeHexColor(lightbarColor);
-  const customSwatchColor = customLightbarColor ?? LIGHTBAR_DEFAULT_CUSTOM_COLOR;
-  const customSwatchSelected = Boolean(customLightbarColor && normalizedLightbarColor === customLightbarColor);
-  const customColorPickerDisabled = !connected || !lightbarSupported || !lightbarEnabled;
   const diagnosticsVisible = activeControlTab === 'system' && showDiagnostics;
   const ackText = useMemo(() => {
     if (!diagnosticsVisible) return '';
@@ -3930,54 +3727,6 @@ export function App() {
     }
   }
 
-  async function commitLightbar(nextColor = lightbarColor, brightness = lightbarBrightnessValue) {
-    const color = normalizeHexColor(nextColor);
-    const snappedBrightness = snapLightbarBrightness(brightness);
-    const shouldPreserveSavedBrightness = Boolean(
-      snapshot
-      && controllerPowerSavingActive
-      && snapshot.settings.lightbarBrightnessPercent > CONTROLLER_POWER_SAVING_CAP_PERCENT
-      && snappedBrightness === CONTROLLER_POWER_SAVING_CAP_PERCENT
-    );
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !lightbarSupported
-      || !snapshot.settings.lightbarEnabled
-      || lightbarCommitPending
-      || (
-        controllerPowerSavingActive
-        && snapshot.settings.lightbarBrightnessPercent > CONTROLLER_POWER_SAVING_CAP_PERCENT
-        && snappedBrightness === CONTROLLER_POWER_SAVING_CAP_PERCENT
-        && color === normalizeHexColor(snapshot.settings.lightbarColor)
-      )
-      || (
-        color === normalizeHexColor(snapshot.settings.lightbarColor)
-        && snappedBrightness === snapshot.settings.lightbarBrightnessPercent
-      )
-    ) {
-      lightbarBrightnessEditingRef.current = false;
-      return;
-    }
-
-    setLightbarCommitPending(true);
-    try {
-      const persistedBrightness = shouldPreserveSavedBrightness
-        ? snapshot.settings.lightbarBrightnessPercent
-        : snappedBrightness;
-      const next = await window.bridge.setLightbarColor(color, persistedBrightness);
-      setSnapshot(next);
-      setLightbarBrightnessValue(displayLightbarBrightnessValue(next));
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setLightbarBrightnessValue(displayLightbarBrightnessValue(next));
-    } finally {
-      setLightbarCommitPending(false);
-      lightbarBrightnessEditingRef.current = false;
-    }
-  }
-
   async function commitTriggerEffectIntensity(value = triggerEffectIntensityValue) {
     const snappedValue = snapTriggerEffectIntensity(value);
     if (
@@ -4003,58 +3752,6 @@ export function App() {
     } finally {
       triggerEffectEditingRef.current = false;
     }
-  }
-
-  function selectLightbarColor(nextColor: string) {
-    const color = normalizeHexColor(nextColor);
-    setLightbarColor(color);
-    void commitLightbar(color, lightbarBrightnessValue);
-  }
-
-  function saveCustomLightbarColor(nextColor: string) {
-    const color = normalizeHexColor(nextColor);
-    setCustomLightbarColor(color);
-    setCustomColorDraft(color);
-    setLightbarColor(color);
-    setShowCustomColorPicker(false);
-    setCustomSwatchPrimed(false);
-    window.localStorage.setItem('ds5bridge.customLightbarColor', color);
-    void commitLightbar(color, lightbarBrightnessValue);
-  }
-
-  function previewCustomLightbarColor(nextColor: string) {
-    const color = normalizeHexColor(nextColor);
-    setCustomColorDraft(color);
-    setLightbarColor(color);
-    void commitLightbar(color, lightbarBrightnessValue);
-  }
-
-  function selectCustomLightbarColor() {
-    if (!customLightbarColor) {
-      setCustomSwatchPrimed(true);
-      if (customSwatchPrimeTimerRef.current !== null) {
-        window.clearTimeout(customSwatchPrimeTimerRef.current);
-      }
-      customSwatchPrimeTimerRef.current = window.setTimeout(() => {
-        setCustomSwatchPrimed(false);
-        customSwatchPrimeTimerRef.current = null;
-      }, 1600);
-      return;
-    }
-    selectLightbarColor(customLightbarColor);
-  }
-
-  function openCustomLightbarPicker() {
-    const color = customLightbarColor ?? LIGHTBAR_DEFAULT_CUSTOM_COLOR;
-    setCustomColorDraft(color);
-    setCustomSwatchPrimed(false);
-    setShowCustomColorPicker(true);
-  }
-
-  function setLightbarPreset(value: number) {
-    const brightness = snapLightbarBrightness(capControllerPowerSavingValue(value, snapshot));
-    setLightbarBrightnessValue(brightness);
-    void commitLightbar(lightbarColor, brightness);
   }
 
   function setHapticsPreset(value: number) {
@@ -4247,11 +3944,6 @@ export function App() {
     const snappedValue = snapTriggerEffectIntensity(capControllerPowerSavingValue(value, snapshot));
     setTriggerEffectIntensityValue(snappedValue);
     void commitTriggerEffectIntensity(snappedValue);
-  }
-
-  function lightbarColorName(color: string) {
-    const normalized = normalizeHexColor(color);
-    return LIGHTBAR_COLOR_NAMES[normalized] ?? 'Custom';
   }
 
   function isPreservingPowerSavingCap(savedValue: number, visibleValue: number): boolean {
@@ -5625,11 +5317,6 @@ export function App() {
     ));
   }
 
-  function toggleLightbarEnabled() {
-    if (!snapshot) return;
-    void runAction('lightbar-enabled', () => window.bridge.setLightbarEnabled(!snapshot.settings.lightbarEnabled));
-  }
-
   function focusBridgeSettings(target: SettingsFocusTarget) {
     setShowNotificationsMenu(false);
     selectControlTab('settings');
@@ -5759,7 +5446,7 @@ export function App() {
     if (tab === 'settings') {
       setSettingsReturnTab(activeControlTab);
     }
-    setShowCustomColorPicker(false);
+    lighting.closeCustomColorPicker();
     setShowNotificationsMenu(false);
     devices.closeMenu();
     setActiveControlTab(tab);
@@ -6397,7 +6084,7 @@ export function App() {
                     </div>
                     <strong>{micVolumeValue}%</strong>
                   </label>
-                  <label className={`overview-slider-row ${(!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled || lightbarCommitPending) ? 'disabled' : ''}`}>
+                  <label className={`overview-slider-row ${(!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled || lighting.lightbarCommitPending) ? 'disabled' : ''}`}>
                     <span>Lightbar</span>
                     <div className="overview-range-control">
                       <input
@@ -6405,25 +6092,25 @@ export function App() {
                         min="0"
                         max={percentSliderMax}
                         step={LIGHTBAR_BRIGHTNESS_STEP}
-                        value={lightbarBrightnessValue}
-                        disabled={!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled || lightbarCommitPending}
-                        style={{ '--range-fill': `${(lightbarBrightnessValue / percentSliderMax) * 100}%` } as CSSProperties}
+                        value={lighting.lightbarBrightnessValue}
+                        disabled={!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled || lighting.lightbarCommitPending}
+                        style={{ '--range-fill': `${(lighting.lightbarBrightnessValue / percentSliderMax) * 100}%` } as CSSProperties}
                         onPointerDown={() => {
-                          lightbarBrightnessEditingRef.current = true;
+                          lighting.lightbarBrightnessEditingRef.current = true;
                         }}
-                        onChange={(event) => setLightbarBrightnessValue(snapLightbarBrightness(Number(event.currentTarget.value)))}
-                        onPointerUp={() => void commitLightbar()}
+                        onChange={(event) => lighting.setLightbarBrightnessValue(snapLightbarBrightness(Number(event.currentTarget.value)))}
+                        onPointerUp={() => void lighting.commitLightbar()}
                         onKeyDown={(event) => {
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                            lightbarBrightnessEditingRef.current = true;
+                            lighting.lightbarBrightnessEditingRef.current = true;
                           }
                         }}
                         onKeyUp={(event) => {
                           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                            void commitLightbar();
+                            void lighting.commitLightbar();
                           }
                         }}
-                        onBlur={() => void commitLightbar()}
+                        onBlur={() => void lighting.commitLightbar()}
                       />
                       <div className="overview-range-ticks" aria-hidden="true">
                         {PERCENT_SLIDER_TICKS.map((value) => (
@@ -6431,7 +6118,7 @@ export function App() {
                         ))}
                       </div>
                     </div>
-                    <strong>{lightbarBrightnessValue}%</strong>
+                    <strong>{lighting.lightbarBrightnessValue}%</strong>
                   </label>
                 </div>
               </section>
@@ -7550,217 +7237,15 @@ export function App() {
               />
           </div>
 
-          <div
-            className={`control-page lighting-page ${activeControlTab === 'lighting' ? 'active' : ''}`}
-            role="tabpanel"
-            id="control-panel-lighting"
-            aria-labelledby="control-tab-lighting"
-            aria-hidden={activeControlTab !== 'lighting'}
-          >
-              <div className="feature-heading">
-                <div>
-                  <h2>Lighting</h2>
-                  <p>Customize the controller light bar and override behavior</p>
-                </div>
-                <div className="inline-switch">
-                  <span>Enabled</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={snapshot.settings.lightbarEnabled}
-                    className={`switch ${snapshot.settings.lightbarEnabled ? 'on' : ''}`}
-                    disabled={!controllerControlsAvailable || !lightbarSupported || pendingAction !== null}
-                    onClick={toggleLightbarEnabled}
-                  >
-                    <span />
-                  </button>
-                </div>
-              </div>
-              <div className="feature-card-grid lighting-grid">
-                <section className="feature-card preset-card">
-                  <div className="feature-card-title">
-                    <button
-                      type="button"
-                      className={`feature-icon lighting-enable-button icon-large ${snapshot.settings.lightbarEnabled ? 'active' : ''} ${controllerPowerSavingActive && snapshot.settings.lightbarEnabled ? 'power-saving-active' : ''}`}
-                      aria-pressed={snapshot.settings.lightbarEnabled}
-                      aria-label="Enable lighting"
-                      title="Enable lighting"
-                      disabled={!controllerControlsAvailable || !lightbarSupported || pendingAction !== null}
-                      onClick={toggleLightbarEnabled}
-                    >
-                      <IconBulb size={20} />
-                    </button>
-                    <div className="title-copy">
-                      <h3>Brightness</h3>
-                      <p>Set the controller light bar brightness</p>
-                    </div>
-                  </div>
-                  <div className="framed-slider">
-                    <label className="slider-row">
-                      <span>0%</span>
-                      <div className="range-control">
-                        <input
-                          type="range"
-                          min="0"
-                          max={percentSliderMax}
-                          step={LIGHTBAR_BRIGHTNESS_STEP}
-                          value={lightbarBrightnessValue}
-                          disabled={!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled}
-                          style={{ '--range-fill': `${(lightbarBrightnessValue / percentSliderMax) * 100}%` } as CSSProperties}
-                          onPointerDown={() => {
-                            lightbarBrightnessEditingRef.current = true;
-                          }}
-                          onChange={(event) => setLightbarBrightnessValue(snapLightbarBrightness(Number(event.currentTarget.value)))}
-                          onPointerUp={() => void commitLightbar()}
-                          onKeyDown={(event) => {
-                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                              lightbarBrightnessEditingRef.current = true;
-                            }
-                          }}
-                          onKeyUp={(event) => {
-                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                              void commitLightbar();
-                            }
-                          }}
-                          onBlur={() => void commitLightbar()}
-                        />
-                        <div className="range-ticks" aria-hidden="true">
-                          {PERCENT_SLIDER_TICKS.map((value) => (
-                            <span key={value} className={sliderTickClass(value, 100)} />
-                          ))}
-                        </div>
-                      </div>
-                      <strong>{lightbarBrightnessValue}%</strong>
-                    </label>
-                  </div>
-                  <div className="segmented-row">
-                    {LIGHTBAR_PRESETS.map(([label, value]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className={lightbarBrightnessValue === value ? 'active' : ''}
-                        disabled={!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled}
-                        onClick={() => setLightbarPreset(value)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-                <section className="feature-card behavior-card">
-                  <div className="feature-card-title">
-                    <span className="feature-icon"><Palette size={20} /></span>
-                    <div className="title-copy">
-                      <h3>Behavior</h3>
-                      <p>Set light bar behavior</p>
-                    </div>
-                  </div>
-                  <div className="behavior-toggle-row">
-                    <div>
-                      <strong>Light Bar Override</strong>
-                      <p>Use app-controlled lighting instead of the default controller behavior</p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={snapshot.settings.lightbarOverrideEnabled}
-                      className={`switch ${snapshot.settings.lightbarOverrideEnabled ? 'on' : ''}`}
-                      disabled={!connected || !lightbarOverrideSupported || !snapshot.settings.lightbarEnabled}
-                      onClick={() => void runAction('lightbar-override', () => (
-                        window.bridge.setLightbarOverrideEnabled(!snapshot.settings.lightbarOverrideEnabled)
-                      ))}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                  <div className="light-color-panel">
-                    <strong>Light Color</strong>
-                    <div className="behavior-swatches" aria-label="Light bar color">
-                      {LIGHTBAR_SWATCHES.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          title={`${lightbarColorName(color)} ${color.toUpperCase()}`}
-                          className={normalizedLightbarColor === color ? 'active' : ''}
-                          style={{ '--swatch-color': color } as CSSProperties}
-                          disabled={!connected || !lightbarSupported || !snapshot.settings.lightbarEnabled}
-                          onClick={() => selectLightbarColor(color)}
-                        />
-                      ))}
-                      <div className="custom-color-anchor" ref={customColorPickerRef}>
-                        <button
-                          type="button"
-                          className={`custom-color-swatch ${customSwatchSelected ? 'active' : ''} ${showCustomColorPicker ? 'picker-open' : ''} ${customSwatchPrimed && !customLightbarColor ? 'primed' : ''}`}
-                          title={customLightbarColor ? `Custom ${customLightbarColor.toUpperCase()}` : 'Double-click to create a custom color'}
-                          style={{ '--picker-color': customSwatchColor } as CSSProperties}
-                          disabled={customColorPickerDisabled}
-                          aria-pressed={customSwatchSelected}
-                          onClick={selectCustomLightbarColor}
-                          onDoubleClick={openCustomLightbarPicker}
-                        >
-                          <span className="custom-color-fill" aria-hidden="true" />
-                          <Palette size={15} aria-hidden="true" />
-                        </button>
-                        {showCustomColorPicker && (
-                          <div className="custom-color-popover" role="dialog" aria-label="Custom light bar color picker">
-                            <div className="custom-color-popover-head">
-                              <strong>Custom Color</strong>
-                              <span>{customColorDraft.toUpperCase()}</span>
-                            </div>
-                            <div className="custom-color-palette" role="grid" aria-label="Custom color palette">
-                              {LIGHTBAR_CUSTOM_PALETTE.map((row) => (
-                                <div className="custom-color-palette-row" role="row" key={row[0].color}>
-                                  {row.map((cell) => (
-                                    <button
-                                      key={cell.color}
-                                      type="button"
-                                      role="gridcell"
-                                      className={normalizeHexColor(customColorDraft) === cell.color ? 'selected' : ''}
-                                      style={{ '--picker-color': cell.color } as CSSProperties}
-                                      title={`${cell.name} ${cell.color.toUpperCase()}`}
-                                      aria-label={`${cell.name} ${cell.color.toUpperCase()}`}
-                                      disabled={customColorPickerDisabled}
-                                      onClick={() => previewCustomLightbarColor(cell.color)}
-                                    />
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
-                            <div className="custom-color-picker-row">
-                              <span
-                                className="custom-color-preview"
-                                style={{ '--picker-color': customColorDraft } as CSSProperties}
-                                aria-hidden="true"
-                              />
-                              <code>{customColorDraft.toUpperCase()}</code>
-                            </div>
-                            <button
-                              type="button"
-                              className="custom-color-apply"
-                              disabled={customColorPickerDisabled}
-                              onClick={() => saveCustomLightbarColor(customColorDraft)}
-                            >
-                              Use Color
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="light-color-meta">
-                      <strong>{lightbarColorName(lightbarColor)}</strong>
-                      <span>{normalizedLightbarColor.toUpperCase()}</span>
-                    </div>
-                  </div>
-                  <div className="feature-status lighting-status">
-                    <span className={`status-badge ${lightbarStateActive ? 'good' : 'idle'}`}>
-                      <span className={`dot ${lightbarStateActive ? 'good' : 'idle'}`} />
-                      <strong>{lightbarStateLabel}</strong>
-                    </span>
-                  </div>
-                </section>
-              </div>
-              <FeatureTipsPanel tab="lighting" onSettingsFocusRequest={focusBridgeSettings} />
-          </div>
+          <ControllerLightingPage
+            active={activeControlTab === 'lighting'}
+            controller={lighting}
+            snapshot={snapshot}
+            connected={connected}
+            controllerControlsAvailable={controllerControlsAvailable}
+            pendingAction={pendingAction}
+            onSettingsFocusRequest={focusBridgeSettings}
+          />
 
           <div
             className={`control-page remapping-page ${activeControlTab === 'remapping' ? 'active' : ''}`}
@@ -8459,7 +7944,7 @@ export function App() {
                   <button
                     className="heading-action"
                     type="button"
-                    disabled={!connected || pendingAction !== null || hapticsCommitPending || speakerVolumeCommitPending || lightbarCommitPending}
+                    disabled={!connected || pendingAction !== null || hapticsCommitPending || speakerVolumeCommitPending || lighting.lightbarCommitPending}
                     onClick={() => void runAction('restore', () => window.bridge.restoreDefaults())}
                   >
                     <RefreshCcw size={18} />

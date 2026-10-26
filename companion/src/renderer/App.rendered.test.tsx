@@ -31,6 +31,17 @@ describe('App against a fixture bridge', () => {
     expect(await firstRange('lighting')).toBe('47');
   });
 
+  it('dims the shell and locks each page switch while the controller is away', async () => {
+    installBridgeMock(fixtureSnapshot({ status: { controllerConnected: false } }));
+    const host = await renderApp();
+    expect(host.querySelector('.shell')?.classList.contains('controller-unavailable')).toBe(true);
+    for (const tab of ['haptics', 'audio', 'triggers', 'lighting']) {
+      const page = await openPage(host, tab);
+      const pageSwitch = page.querySelector<HTMLButtonElement>('.feature-heading .inline-switch [role="switch"]');
+      expect(pageSwitch?.disabled, tab).toBe(true);
+    }
+  });
+
   it('opens every sidebar page', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();

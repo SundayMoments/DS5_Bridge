@@ -141,15 +141,6 @@ describe('renderer behavior guards', () => {
     expect(stylesSource).toContain('.health-label.info');
   });
 
-  it('dims primary feature toggles when the controller is unavailable', () => {
-    expect(appSource).toContain('const controllerControlsAvailable = connected && controllerConnected;');
-    expect(appSource).toContain("controllerControlsAvailable ? '' : 'controller-unavailable'");
-    expect(appSource).toContain('disabled={!controllerControlsAvailable || pendingAction !== null}');
-    expect(appSource).toContain('!controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null');
-    expect(appSource).toContain('!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null');
-    expect(appSource).toContain('!controllerControlsAvailable || !lightbarSupported || pendingAction !== null');
-  });
-
   // The Settings page itself is rendered in features/settings/SettingsPage.rendered.test.tsx;
   // these guards pin how App.tsx wires that page to the bridge.
   it('offers a persisted automatic lightbar restore toggle in Settings', () => {
