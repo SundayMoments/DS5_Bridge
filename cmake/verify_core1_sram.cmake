@@ -47,6 +47,8 @@ set(required_sram_symbols
         "_Z28usb_speaker_streaming_activev"
         "_ZL33output_trace_queue_details_lockedRhS_S_"
         "_ZL25handle_l2cap_can_send_nowPh"
+        "_ZL20l2cap_packet_handlerhtPht"
+        "_ZL17pump_output_sendsv"
         "_ZL23note_output_packet_sentRK13output_packetm"
         "_ZL32select_next_output_packet_lockedR13output_packetm"
         "_Z40output_scheduler_choose_interrupt_packetRK21OutputSchedulerInputsRK21OutputSchedulerConfig"
@@ -207,6 +209,20 @@ endif()
 # RP2350 SRAM spans [0x20000000, 0x20082000).
 set(rp2350_sram_start 536870912)
 set(rp2350_sram_end 537403392)
+
+# The send dispatcher's pump must stay inlined into pump_output_sends; any
+# outlined instantiation is linked wherever its own section lands.
+string(REGEX MATCH
+        "(^|\n)_ZN3ds52bt22BtOutputSendDispatcher4pump[^ \n]* [A-Za-z] ([0-9A-Fa-f]+)"
+        outlined_pump_match
+        "${symbol_table}"
+)
+if(outlined_pump_match)
+    math(EXPR outlined_pump_address "0x${CMAKE_MATCH_2}")
+    if(outlined_pump_address LESS 536870912 OR NOT outlined_pump_address LESS 537403392)
+        message(FATAL_ERROR "verify_core1_sram: outlined Bluetooth send pump linked outside SRAM")
+    endif()
+endif()
 
 foreach(symbol_group ${required_sram_symbols})
     string(REPLACE "|" ";" candidate_symbols "${symbol_group}")

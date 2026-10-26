@@ -766,13 +766,21 @@ int main() {
 
     watchdog_enable(1000, true);
 
+    // Each pass polls Bluetooth twice and submits fresh input straight after
+    // each poll. USB is serviced between the radio and audio work, and every
+    // tud_task() is followed by the bounded Bluetooth send service, which is
+    // the only place deferred send requests are re-issued.
     while (1) {
         watchdog_update();
-        watchdog_telemetry_note_phase(WatchdogMainLoopPhase::Cyw43);
-        cyw43_arch_poll();
-        watchdog_update();
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Cyw43, {
+            cyw43_arch_poll();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::InterruptAfterCyw43, {
+            interrupt_loop();
+        });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
             tud_task();
+            bt_output_service_after_usb();
         });
         RUN_MAIN_PHASE(
             WatchdogMainLoopPhase::FirmwareLogFlush,
@@ -789,6 +797,25 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::UsbPower, {
             usb_pm_poll();
         });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Audio, {
+            audio_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
+            tud_task();
+            bt_output_service_after_usb();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Cyw43Second, {
+            cyw43_arch_poll();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::InterruptAfterCyw43, {
+            interrupt_loop();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
+            tud_task();
+            bt_output_service_after_usb();
+        });
+        // A second audio pass keeps USB audio and Bluetooth audio sends at the
+        // same cadence now that each loop polls the radio twice.
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Audio, {
             audio_loop();
         });
@@ -824,6 +851,10 @@ int main() {
                 interrupt_loop();
             }
         );
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
+            tud_task();
+            bt_output_service_after_usb();
+        });
         watchdog_telemetry_heartbeat(time_us_32());
 #if DS5_DEBUG_LOGS_ENABLED
         audio_transport_uart_log_if_due(time_us_32());

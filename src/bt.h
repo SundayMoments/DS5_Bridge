@@ -133,6 +133,9 @@ void bt_inquiry_loop();
 void bt_connection_recovery_loop();
 void bt_feature_prefetch_loop();
 void bt_output_retry_loop();
+// Call after each top-level tud_task(): refills the bounded Bluetooth send
+// allowance and issues send requests deferred by nested BTstack callbacks.
+void bt_output_service_after_usb();
 std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 void init_feature();
 void set_feature_data(uint8_t reportId, uint8_t const* data,uint16_t len);

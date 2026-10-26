@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "audio.h"
+#include "bt_output_send_dispatcher.h"
 #include "classic_rumble_delivery_policy.h"
 #include "controller_packet_compositor.h"
 #include "controller_output_policy.h"
@@ -468,6 +469,8 @@ static uint8_t consecutive_non_audio_sends = 0;
 static uint8_t consecutive_audio_sends = 0;
 static uint8_t consecutive_classic_rumble_stop_sends = 0;
 static bool interrupt_can_send_event_requested = false;
+static ds5::bt::BtOutputSendDispatcher output_send_dispatcher;
+static __attribute__((noinline, noclone, optimize("O2"))) void __not_in_flash_func(pump_output_sends)();
 static critical_section_t queue_lock;
 uint64_t inactive_time = 0; // Tracks long controller inactivity without 32-bit timer wrap.
 static uint16_t idle_disconnect_timeout_minutes = DEFAULT_IDLE_DISCONNECT_TIMEOUT_MINUTES;
@@ -523,6 +526,7 @@ static void clear_output_queues_locked() {
     consecutive_audio_sends = 0;
     consecutive_classic_rumble_stop_sends = 0;
     interrupt_can_send_event_requested = false;
+    output_send_dispatcher.reset_pending();
     non_audio_reports_since_audio = 0;
     last_bt_send_us = 0;
     last_audio_0x36_send_us = 0;
@@ -2808,6 +2812,7 @@ void bt_output_retry_loop() {
     }
 
     bool retry_ready = false;
+    bool control_ready = false;
     const uint32_t now = time_us_32();
     critical_section_enter_blocking(&queue_lock);
     const bool audio_queued = !audio_queue.empty();
@@ -2816,8 +2821,12 @@ void bt_output_retry_loop() {
     retry_ready = audio_queued
         || urgent_ready
         || (state_pending && urgent_queue.empty());
+    // Control wakeups deferred by the send dispatcher, or by an earlier audio
+    // window, are rediscovered here as well as interrupt work.
+    request_control_if_audio_window_open_locked(now, control_ready);
     critical_section_exit(&queue_lock);
     request_can_send_if_needed(retry_ready);
+    request_control_can_send_if_needed(control_ready);
 }
 
 void bt_inquiry_loop() {
@@ -3938,7 +3947,7 @@ static void finish_hid_session_if_ready() {
     bt_schedule_lightbar_restore(250);
 }
 
-static __attribute__((optimize("O2"))) void __not_in_flash_func(handle_l2cap_can_send_now)(uint8_t *packet) {
+static __attribute__((noinline, noclone, optimize("O2"))) void __not_in_flash_func(handle_l2cap_can_send_now)(uint8_t *packet) {
     if (connection_phase == BtConnectionPhase::Disconnecting) {
         return;
     }
@@ -4019,21 +4028,45 @@ static __attribute__((optimize("O2"))) void __not_in_flash_func(handle_l2cap_can
     request_control_can_send_if_needed(should_request_control);
 }
 
-static void __not_in_flash_func(l2cap_packet_handler)(
+// Keep admission outside the large handler frames: an already-armed other CID
+// can be notified during synchronous HCI buffer release. It must only record a
+// pending wakeup, without selecting a packet or allocating another send frame.
+static __attribute__((noinline, noclone, optimize("O2"))) void __not_in_flash_func(l2cap_packet_handler)(
     uint8_t packet_type,
     uint16_t channel,
     uint8_t *packet,
     uint16_t size
 ) {
-    if (
-        packet_type == HCI_EVENT_PACKET
-        && hci_event_packet_get_type(packet) == L2CAP_EVENT_CAN_SEND_NOW
-        && l2cap_event_can_send_now_get_local_cid(packet) == hid_interrupt_cid
-    ) {
-        handle_l2cap_can_send_now(packet);
+    const bool send_opportunity = packet_type == HCI_EVENT_PACKET
+        && hci_event_packet_get_type(packet) == L2CAP_EVENT_CAN_SEND_NOW;
+    if (!send_opportunity) {
+        l2cap_packet_handler_cold(packet_type, channel, packet, size);
         return;
     }
-    l2cap_packet_handler_cold(packet_type, channel, packet, size);
+    const uint16_t cid = l2cap_event_can_send_now_get_local_cid(packet);
+    if (cid != hid_interrupt_cid && cid != hid_control_cid) {
+        return;
+    }
+    const bool interrupt_lane = cid == hid_interrupt_cid;
+    if (interrupt_lane) {
+        // BTstack consumed this channel's request whether or not the
+        // notification is admitted, so a deferred wakeup must re-request.
+        interrupt_can_send_event_requested = false;
+    }
+    const auto lane = interrupt_lane
+        ? ds5::bt::BtOutputSendChannel::Interrupt
+        : ds5::bt::BtOutputSendChannel::Control;
+    if (!output_send_dispatcher.enter_callback(lane)) {
+        return;
+    }
+    if (interrupt_lane) {
+        handle_l2cap_can_send_now(packet);
+    } else {
+        l2cap_packet_handler_cold(packet_type, channel, packet, size);
+    }
+    // Re-arming here would keep this callback and the SDK notifier's frames
+    // on the stack. The outer pump or the next main-loop service owns it.
+    output_send_dispatcher.leave_callback();
 }
 
 static __attribute__((noinline)) void l2cap_packet_handler_cold(
@@ -4353,33 +4386,57 @@ static void commit_interrupt_output_packet_sent(output_packet const &packet) {
     state_report_seq = static_cast<uint8_t>((state_report_seq + 1) & 0x0f);
 }
 
+// BTstack and the send dispatcher are owned by core 0's task context. Other
+// producers only queue packets; bt_output_retry_loop rediscovers that work.
+static bool output_send_context() {
+    return get_core_num() == 0 && __get_current_exception() == 0;
+}
+
 static void request_can_send_if_needed(bool should_request_send) {
-    if (!should_request_send) {
+    if (!should_request_send || !output_send_context()) {
         return;
     }
-    if (connection_phase == BtConnectionPhase::Disconnecting) {
-        return;
-    }
-    if (hid_interrupt_cid == 0) {
-        DS5_LOG("[L2CAP output] Warning: hid_interrupt_cid 0\n");
-        return;
-    }
-    if (interrupt_can_send_event_requested) {
-        return;
-    }
-    interrupt_can_send_event_requested = true;
-    l2cap_request_can_send_now_event(hid_interrupt_cid);
+    output_send_dispatcher.request(ds5::bt::BtOutputSendChannel::Interrupt);
+    pump_output_sends();
 }
 
 static void request_control_can_send_if_needed(bool should_request_send) {
-    if (!should_request_send) {
+    if (!should_request_send || !output_send_context()) {
         return;
     }
-    if (hid_control_cid == 0) {
-        DS5_LOG("[L2CAP control] Warning: hid_control_cid 0\n");
+    output_send_dispatcher.request(ds5::bt::BtOutputSendChannel::Control);
+    pump_output_sends();
+}
+
+void bt_output_service_after_usb() {
+    if (!output_send_context()) {
         return;
     }
-    l2cap_request_can_send_now_event(hid_control_cid);
+    output_send_dispatcher.resume_after_usb_service();
+    pump_output_sends();
+}
+
+static __attribute__((noinline, noclone, optimize("O2"))) void __not_in_flash_func(pump_output_sends)() {
+    if (!output_send_context()) {
+        return;
+    }
+    output_send_dispatcher.pump([](ds5::bt::BtOutputSendChannel lane) {
+        if (connection_phase == BtConnectionPhase::Disconnecting) {
+            return;
+        }
+        if (lane == ds5::bt::BtOutputSendChannel::Interrupt) {
+            if (hid_interrupt_cid == 0 || interrupt_can_send_event_requested) {
+                return;
+            }
+            interrupt_can_send_event_requested = true;
+            l2cap_request_can_send_now_event(hid_interrupt_cid);
+        } else {
+            if (hid_control_cid == 0) {
+                return;
+            }
+            l2cap_request_can_send_now_event(hid_control_cid);
+        }
+    });
 }
 
 static bool audio_send_window_closed_locked(uint32_t now) {

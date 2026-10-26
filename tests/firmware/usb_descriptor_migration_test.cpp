@@ -1267,7 +1267,7 @@ void assert_bluetooth_pairing_and_reconnect_policy(std::filesystem::path const &
     const std::string finish_hid = extract_between(
         bt_cpp,
         "static void finish_hid_session_if_ready() {",
-        "\n}\n\nstatic __attribute__((optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
+        "\n}\n\nstatic __attribute__((noinline, noclone, optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
     );
     const auto transaction_accept =
         link_key_notification.find("mark_pairing_transaction_key_accepted(addr)");
@@ -1486,7 +1486,7 @@ void assert_bluetooth_device_management_policy(std::filesystem::path const &root
     const std::string finish_hid = extract_between(
         bt_cpp,
         "static void finish_hid_session_if_ready() {",
-        "\n}\n\nstatic __attribute__((optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
+        "\n}\n\nstatic __attribute__((noinline, noclone, optimize(\"O2\"))) void __not_in_flash_func(handle_l2cap_can_send_now)"
     );
     const auto durable_key_gate =
         finish_hid.find("pairing_link_key_required && !current_link_key_persisted");
@@ -1979,8 +1979,23 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
     const auto audio_init = main_cpp.find("if (!audio_init())");
     const auto bt_init = main_cpp.find("bt_init();", audio_init);
     const auto watchdog_start = main_cpp.find("watchdog_enable(1000, true);", bt_init);
+    // Every main-loop phase, including each Bluetooth poll, runs inside
+    // RUN_MAIN_PHASE, whose expansion feeds the watchdog after the phase.
+    const auto first_poll_phase = main_cpp.find(
+        "RUN_MAIN_PHASE(WatchdogMainLoopPhase::Cyw43, {",
+        watchdog_start
+    );
     const auto first_poll = main_cpp.find("cyw43_arch_poll();", watchdog_start);
-    const auto first_poll_feed = main_cpp.find("watchdog_update();", first_poll);
+    const std::string run_main_phase = extract_between(
+        main_cpp,
+        "#define RUN_MAIN_PHASE(phase_id, block)",
+        "} while (0)"
+    );
+    const auto first_poll_feed = run_main_phase.find("watchdog_update();") != std::string::npos
+        && first_poll_phase != std::string::npos
+        && first_poll_phase < first_poll
+        ? first_poll
+        : std::string::npos;
     const auto next_usb_phase = main_cpp.find("tud_task();", first_poll);
     const auto button_check = main_cpp.find("button_check();", first_poll_feed);
     const std::string reboot_branch = extract_between(
