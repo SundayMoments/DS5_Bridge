@@ -7,6 +7,7 @@ import { App } from '../../App';
 import { RendererLocalization } from '../../composition/RendererLocalization';
 import { buttonByText, click, fixtureSnapshot, installBridgeMock, installDomStubs } from '../../test-support/app-harness';
 import { STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY } from './startup-tutorial-storage';
+import { UI_THEME_PRESET_STORAGE_KEY } from '../../ui-theme-preferences';
 
 let root: Root | null = null;
 let host: HTMLDivElement;
@@ -49,11 +50,28 @@ describe('startup', () => {
     expect(placeholder?.getAttribute('aria-busy')).toBe('true');
     expect(placeholder?.querySelector('h2')?.textContent).toBe('Overview');
 
+    // The DS5 Bridge mark is inline SVG, so it follows the theme colors.
+    expect(host.querySelector('svg.bridge-mark')).not.toBeNull();
+
     await act(async () => resolveStatus(fixtureSnapshot()));
     expect(host.querySelector('.shell.starting')).toBeNull();
     expect(host.querySelector('.startup-placeholder-page')).toBeNull();
     expect(host.querySelector('#control-panel-overview.active h2')?.textContent).toBe('Overview');
     expect(host.querySelector('.hero-main strong')?.textContent).toBe('DualSense Edge');
+  });
+
+  it('opens in the theme and text size saved from the last run, then follows the bridge settings', async () => {
+    window.localStorage.setItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY, '1');
+    window.localStorage.setItem(UI_THEME_PRESET_STORAGE_KEY, 'light');
+    const bridge = installBridgeMock(fixtureSnapshot({ settings: { uiThemePreset: 'dark' } }));
+    let resolveStatus!: (snapshot: BridgeSnapshot) => void;
+    bridge.fn('getStatus').mockImplementation(() => new Promise<BridgeSnapshot>((resolve) => { resolveStatus = resolve; }));
+    await mount();
+    expect(host.querySelector('.shell.starting')?.getAttribute('data-theme')).toBe('light');
+
+    await act(async () => resolveStatus(fixtureSnapshot({ settings: { uiThemePreset: 'dark' } })));
+    expect(host.querySelector('.shell')?.getAttribute('data-theme')).toBe('dark');
+    expect(window.localStorage.getItem(UI_THEME_PRESET_STORAGE_KEY)).toBe('dark');
   });
 
   it('walks a first-time user through the feature tile and support steps once', async () => {

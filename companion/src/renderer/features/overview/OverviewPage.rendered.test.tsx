@@ -115,10 +115,12 @@ describe('Overview page', () => {
     }));
     const host = await renderApp();
     const summary = overviewPage(host).querySelector('.overview-status-panel')!;
-    expect(buttonByText(summary, 'Off')).toBeDefined();
+    const notificationsGroup = [...summary.querySelectorAll('.overview-status-group')]
+      .find((group) => group.querySelector('.overview-status-heading')?.textContent === 'Notifications')!;
 
-    await click(buttonByText(summary, 'Off'));
-    expect(host.querySelector('.notifications-menu')).not.toBeNull();
+    await click(buttonByText(notificationsGroup, 'Off'));
+    expect(host.querySelector('.notifications-menu')?.getAttribute('data-open')).toBe('true');
+    expect(host.querySelectorAll('.notifications-menu .settings-menu-row-highlight')).toHaveLength(2);
 
     await click(summary.querySelector('.overview-shortcut-chip'));
     await act(async () => {

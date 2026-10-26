@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { BridgeSnapshot } from '@shared/types';
 import {
   buttonByText,
+  chooseOption,
   click,
   fixtureSnapshot,
   installBridgeMock,
@@ -131,6 +133,8 @@ describe('App against a fixture bridge', () => {
     });
     const host = await renderApp();
     await openPage(host, 'settings');
+    // Settings is a page of its own, not the old preferences modal.
+    expect(document.querySelector('.bridge-settings-preferences-modal')).toBeNull();
     await click([...host.querySelectorAll('.settings-section-button')].find((button) => button.textContent === 'Bridge Firmware'));
     await click(buttonByText(host.querySelector('.pico-firmware-actions')!, 'Mount'));
     expect(host.querySelector('.pico-firmware-message.bad')?.textContent).toBe(
@@ -149,12 +153,90 @@ describe('App against a fixture bridge', () => {
     expect(indicator()).toBeUndefined();
   });
 
-  it('opens every sidebar page', async () => {
+  it('shows the controller state in the sidebar card border', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    const card = () => host.querySelector('.sidebar-device-controls .hero-main');
+    expect(card()?.classList.contains('device-status-good')).toBe(true);
+    expect(host.querySelector('.sidebar-device-controls .dot')).toBeNull();
+    bridge.emit(fixtureSnapshot({ status: { controllerConnected: false } }));
+    expect(card()?.classList.contains('device-status-warn')).toBe(true);
+  });
+
+  it('ignores a first status reply that arrives after a newer live snapshot', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot());
+    let resolveStatus!: (snapshot: BridgeSnapshot) => void;
+    bridge.fn('getStatus').mockImplementationOnce(() => new Promise<BridgeSnapshot>((resolve) => { resolveStatus = resolve; }));
+    const host = await renderApp();
+    bridge.emit(fixtureSnapshot({ status: { batteryPercent: 40 } }));
+    await act(async () => resolveStatus(fixtureSnapshot({ status: { batteryPercent: 90 } })));
+    expect(host.querySelector('.device-battery-percentage')?.textContent).toBe('40%');
+  });
+
+  it('selects, refreshes, and renames bridges from the sidebar selector', async () => {
+    const snapshot = fixtureSnapshot();
+    const bridge = installBridgeMock(fixtureSnapshot({
+      bridgeDevices: {
+        ...snapshot.bridgeDevices!,
+        bridges: [
+          ...snapshot.bridgeDevices!.bridges,
+          { path: 'second-bridge', containerId: null, selected: false, connected: false, uniqueId: 'a1b2c3d4', name: 'Desk Pico' }
+        ]
+      }
+    }));
+    const host = await renderApp();
+    const selector = host.querySelector<HTMLElement>('.sidebar-bridge-selector')!;
+    const openMenu = async () => {
+      if (!document.querySelector('button[title="Refresh bridges"]')) {
+        await click(selector.querySelector('.custom-select-button'));
+      }
+    };
+
+    await chooseOption(selector, 'Pico bridge', 'Desk Pico');
+    expect(bridge.fn('selectBridge')).toHaveBeenCalledWith('second-bridge');
+
+    await openMenu();
+    await click(document.querySelector('button[title="Refresh bridges"]'));
+    expect(bridge.fn('refreshBridgeDevices')).toHaveBeenCalledOnce();
+
+    await openMenu();
+    await click(document.querySelector('button[title="Rename bridge"]'));
+    const input = host.querySelector<HTMLInputElement>('.bridge-rename-input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Living Room');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(bridge.fn('setBridgeLabel')).toHaveBeenCalledWith('e6614c311b7d3a2f', 'Living Room');
+  });
+
+  it('closes the notifications menu on an outside click or Escape', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();
-    for (const tab of ['devices', 'audio', 'haptics', 'triggers', 'lighting', 'deadzones', 'remapping', 'chords', 'audio-haptics', 'trigger-lab', 'system']) {
+    const menuOpen = () => host.querySelector('.notifications-menu')?.getAttribute('data-open');
+    await click(host.querySelector('.notification-tool'));
+    expect(menuOpen()).toBe('true');
+    await act(async () => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    expect(menuOpen()).toBe('false');
+
+    await click(host.querySelector('.notification-tool'));
+    expect(menuOpen()).toBe('true');
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(menuOpen()).toBe('false');
+  });
+
+  it('opens every sidebar page without retired controls or generic pending copy', async () => {
+    installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    const headings: Record<string, string | null | undefined> = {};
+    for (const tab of ['devices', 'audio', 'haptics', 'triggers', 'lighting', 'deadzones', 'remapping', 'chords', 'audio-haptics', 'trigger-lab', 'system', 'overview']) {
       const panel = await openPage(host, tab);
-      expect(panel.querySelector('h2'), tab).not.toBeNull();
+      headings[tab] = panel.querySelector('h2')?.textContent;
+      expect(panel.textContent, tab).not.toMatch(/host encod/i);
+      expect(panel.textContent, tab).not.toContain('Command Pending');
     }
+    // The two labs are their own destinations, drawn by the Haptics and Adaptive Triggers pages.
+    expect(headings['audio-haptics']).toBe('Audio Haptics');
+    expect(headings['trigger-lab']).toBe('Trigger Lab');
   });
 });

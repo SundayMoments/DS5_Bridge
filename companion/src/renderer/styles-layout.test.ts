@@ -12,7 +12,6 @@ import {
 } from './ui-themes';
 
 const styles = rendererStyles();
-const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const palettesSource = rendererStyleModule('styles/theme-palettes.css');
 const tokensSource = rendererStyleModule('styles/theme-tokens.css');
 const ds5ThemeSource = rendererStyleModule('styles/theme-ds5.css');
@@ -171,11 +170,9 @@ describe('companion layout CSS', () => {
   });
 
   it('starts in the cached theme with placeholder cards instead of a splash screen', () => {
-    // Rendering before and after the first snapshot is covered in features/startup/startup.rendered.test.tsx.
+    // Rendering in the cached theme before the first snapshot, without a splash screen,
+    // is covered in features/startup/startup.rendered.test.tsx.
     expect(UI_THEME_PRESET_STORAGE_KEY).toBe('ds5bridge.uiThemePreset');
-    expect(appSource).toContain('useState<UiThemePreset>(storedUiThemePreset)');
-    expect(appSource).not.toContain('StartupScreen');
-    expect(appSource).not.toContain('STARTUP_READY_HOLD_MS');
     expect(normalizedStyles).not.toContain('startup-progress');
     expect(cssBlock('.startup-placeholder-grid span', 'background: var(--surface-card);')).toContain(
       'border: 1px solid var(--surface-border);'
@@ -202,7 +199,7 @@ describe('companion layout CSS', () => {
   it('keeps the DS5 mark in brand blue while its primary shape follows the theme text', () => {
     expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-primary)"');
     expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-secondary)"');
-    expect(appSource).not.toContain('bridgeMarkUrl');
+    // The mark renders as inline SVG in features/startup/startup.rendered.test.tsx.
     const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--bridge-mark-primary:');
     expect(ds5Theme).toContain('--bridge-mark-primary: #ffffff;');
     expect(ds5Theme).toContain('--bridge-mark-secondary: #046fff;');
@@ -514,7 +511,6 @@ describe('companion layout CSS', () => {
   });
 
   it('sets the Settings page in the shared type tokens and grouped rows', () => {
-    expect(appSource).not.toContain('bridge-settings-preferences-modal');
     expect(styles).not.toContain('.bridge-settings-preferences-modal');
     expect(cssBlockIn(settingsPageStyles, '.settings-page-heading h2', 'font-size: var(--font-size-title);'))
       .toContain('font-weight: var(--font-weight-semibold);');
