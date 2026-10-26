@@ -32,6 +32,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
+#include "pico/unique_id.h"
 #ifdef ENABLE_COMPANION
 #include "companion.h"
 #endif
@@ -714,6 +715,14 @@ int main() {
 
     board_init();
     watchdog_telemetry_boot_capture();
+    {
+        // Synthetic persona identities are per bridge, so Steam and SDL never
+        // merge two bridges into one controller. Set before USB enumerates.
+        pico_unique_board_id_t board_id{};
+        pico_get_unique_board_id(&board_id);
+        ds4_persona_set_identity_seed(board_id.id, sizeof(board_id.id));
+        dualsense_persona_set_identity_seed(board_id.id, sizeof(board_id.id));
+    }
     usb_device_stack_init_disconnected();
 #if DS5_DEBUG_LOGS_ENABLED
     // TinyUSB's board_init() configures its UART at 115200. Reinitialize stdio

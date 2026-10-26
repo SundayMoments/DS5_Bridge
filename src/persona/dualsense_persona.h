@@ -23,4 +23,8 @@ void dualsense_persona_set_feature_report(
     uint16_t bufsize
 );
 
+// Replaces the default synthetic pairing address, used when the controller's
+// own has not been read, with one derived from the bridge's unique board ID.
+void dualsense_persona_set_identity_seed(uint8_t const *seed, uint16_t seed_len);
+
 #endif // DS5_BRIDGE_DUALSENSE_PERSONA_H

@@ -5,6 +5,7 @@
 
 #include "controller_output_policy.h"
 #include "dualsense_output.h"
+#include "persona/persona_identity.h"
 
 namespace {
 
@@ -39,8 +40,10 @@ constexpr uint8_t kDs4FeatureIdentity = 0x81;
 constexpr uint8_t kDs4FeatureBoardInfo = 0xa3;
 constexpr uint8_t kDs4FeatureTelemetry = 0xa4;
 
-constexpr uint8_t kDs4SerialBytes[8] = {0x11, 0x11, 0x02, 0x0b, 0xf6, 0x19, 0xa5, 0x00};
-constexpr char kDs4SerialString[] = "1111020BF619A500";
+// Bytes 2-7 are the persona's address (02:0B:F6:19:A5:00, locally
+// administered). ds4_persona_set_identity_seed replaces it per bridge at boot.
+uint8_t ds4_serial_bytes[8] = {0x11, 0x11, 0x02, 0x0b, 0xf6, 0x19, 0xa5, 0x00};
+char ds4_serial_string[] = "1111020BF619A500";
 constexpr char kDs4BoardString[] = "JDM-055";
 constexpr char kDs4BuildDate[] = "Sep 17 2021";
 constexpr char kDs4BuildTime[] = "11:34:00";
@@ -296,21 +299,21 @@ uint16_t ds4_persona_get_feature_report(
             return copy_feature_payload(report, 4, buffer, reqlen);
 
         case 0x12: {
-            report[1] = kDs4SerialBytes[7];
-            report[2] = kDs4SerialBytes[6];
-            report[3] = kDs4SerialBytes[5];
-            report[4] = kDs4SerialBytes[4];
-            report[5] = kDs4SerialBytes[3];
-            report[6] = kDs4SerialBytes[2];
-            report[7] = kDs4SerialBytes[1];
-            std::memcpy(report + 8, kDs4SerialBytes, sizeof(kDs4SerialBytes));
+            report[1] = ds4_serial_bytes[7];
+            report[2] = ds4_serial_bytes[6];
+            report[3] = ds4_serial_bytes[5];
+            report[4] = ds4_serial_bytes[4];
+            report[5] = ds4_serial_bytes[3];
+            report[6] = ds4_serial_bytes[2];
+            report[7] = ds4_serial_bytes[1];
+            std::memcpy(report + 8, ds4_serial_bytes, sizeof(ds4_serial_bytes));
             return copy_feature_payload(report, 16, buffer, reqlen);
         }
 
         case kDs4FeatureIdentity:
-            std::memcpy(report + 1, kDs4SerialBytes, sizeof(kDs4SerialBytes));
-            std::memcpy(report + 10, kDs4SerialBytes, sizeof(kDs4SerialBytes));
-            copy_ascii(report + 18, 16, kDs4SerialString);
+            std::memcpy(report + 1, ds4_serial_bytes, sizeof(ds4_serial_bytes));
+            std::memcpy(report + 10, ds4_serial_bytes, sizeof(ds4_serial_bytes));
+            copy_ascii(report + 18, 16, ds4_serial_string);
             copy_ascii(report + 34, 12, kDs4BoardString);
             copy_ascii(report + 46, 11, kDs4BuildDate);
             copy_ascii(report + 57, 7, kDs4FirmwareVersion);
@@ -329,25 +332,25 @@ uint16_t ds4_persona_get_feature_report(
 
         case kDs4FeatureTelemetry:
             if (ds4_telemetry_subcommand == 0x02) {
-                report[1] = kDs4SerialBytes[3];
-                report[2] = kDs4SerialBytes[2];
-                report[3] = kDs4SerialBytes[1];
-                report[4] = kDs4SerialBytes[0];
-                report[5] = kDs4SerialBytes[7];
-                report[6] = kDs4SerialBytes[6];
-                report[7] = kDs4SerialBytes[5];
-                report[8] = kDs4SerialBytes[4];
+                report[1] = ds4_serial_bytes[3];
+                report[2] = ds4_serial_bytes[2];
+                report[3] = ds4_serial_bytes[1];
+                report[4] = ds4_serial_bytes[0];
+                report[5] = ds4_serial_bytes[7];
+                report[6] = ds4_serial_bytes[6];
+                report[7] = ds4_serial_bytes[5];
+                report[8] = ds4_serial_bytes[4];
                 return copy_feature_payload(report, 14, buffer, reqlen);
             }
             if (ds4_telemetry_subcommand == 0x0b) {
-                report[1] = kDs4SerialBytes[3];
-                report[2] = kDs4SerialBytes[2];
-                report[3] = kDs4SerialBytes[1];
-                report[4] = kDs4SerialBytes[0];
-                report[5] = kDs4SerialBytes[7];
-                report[6] = kDs4SerialBytes[6];
-                report[7] = kDs4SerialBytes[5];
-                report[8] = kDs4SerialBytes[4];
+                report[1] = ds4_serial_bytes[3];
+                report[2] = ds4_serial_bytes[2];
+                report[3] = ds4_serial_bytes[1];
+                report[4] = ds4_serial_bytes[0];
+                report[5] = ds4_serial_bytes[7];
+                report[6] = ds4_serial_bytes[6];
+                report[7] = ds4_serial_bytes[5];
+                report[8] = ds4_serial_bytes[4];
                 report[9] = 0xac;
                 report[10] = 0xa8;
                 report[11] = 0x1b;
@@ -391,5 +394,16 @@ void ds4_persona_set_feature_report(
     }
     if (report_id == 0xa0 && bufsize >= 1) {
         ds4_telemetry_subcommand = buffer[0];
+    }
+}
+
+void ds4_persona_set_identity_seed(uint8_t const *seed, uint16_t seed_len) {
+    uint8_t address[6]{};
+    ds5::persona_identity::derive_address(seed, seed_len, ds5::persona_identity::kSaltDs4, address);
+    std::memcpy(ds4_serial_bytes + 2, address, sizeof(address));
+    constexpr char kHexDigits[] = "0123456789ABCDEF";
+    for (std::size_t index = 0; index < sizeof(ds4_serial_bytes); ++index) {
+        ds4_serial_string[index * 2] = kHexDigits[ds4_serial_bytes[index] >> 4];
+        ds4_serial_string[index * 2 + 1] = kHexDigits[ds4_serial_bytes[index] & 0x0f];
     }
 }

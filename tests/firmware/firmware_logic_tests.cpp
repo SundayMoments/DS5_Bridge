@@ -1,5 +1,7 @@
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <deque>
 #include <exception>
 #include <iostream>
@@ -1609,6 +1611,44 @@ void ds4_feature_reports_cover_native_probe_surface() {
     EXPECT_EQ(feature[4], 0x00);
 }
 
+// Changes the personas' synthetic identity for the rest of the run, so it is
+// registered last.
+void synthetic_persona_identities_are_per_bridge_and_locally_administered() {
+    const auto ds4_address = [](uint8_t const *seed) {
+        ds4_persona_set_identity_seed(seed, 8);
+        std::array<uint8_t, 64> feature{};
+        EXPECT_EQ(ds4_persona_get_feature_report(0x12, feature.data(), 15), 15);
+        // Bytes 0-5 carry the address little-endian.
+        return std::array<uint8_t, 6>{feature[5], feature[4], feature[3], feature[2], feature[1], feature[0]};
+    };
+    const uint8_t first_board[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    const uint8_t second_board[8] = {1, 2, 3, 4, 5, 6, 7, 9};
+
+    const auto first = ds4_address(first_board);
+    const auto second = ds4_address(second_board);
+    EXPECT_EQ(first[0], 0x02);
+    EXPECT_EQ(second[0], 0x02);
+    EXPECT_TRUE(first != second);
+    EXPECT_TRUE(ds4_address(first_board) == first);
+
+    std::array<uint8_t, 64> identity{};
+    EXPECT_EQ(ds4_persona_get_feature_report(0x81, identity.data(), 63), 63);
+    char expected_serial[17]{};
+    std::snprintf(
+        expected_serial,
+        sizeof(expected_serial),
+        "1111%02X%02X%02X%02X%02X%02X",
+        first[0], first[1], first[2], first[3], first[4], first[5]
+    );
+    EXPECT_EQ(std::memcmp(identity.data() + 17, expected_serial, 16), 0);
+
+    dualsense_persona_set_identity_seed(first_board, sizeof(first_board));
+    std::array<uint8_t, 64> pairing{};
+    EXPECT_EQ(dualsense_persona_get_feature_report(HostPersonaModeDualSense, 0x09, pairing.data(), 19), 19);
+    EXPECT_EQ(pairing[5], 0x02);
+    EXPECT_TRUE(!(pairing[4] == first[1] && pairing[3] == first[2] && pairing[2] == first[3]));
+}
+
 void radial_deadzone_preserves_direction_and_rescales_remaining_travel() {
     using ds5::radial_deadzone::apply;
 
@@ -1690,6 +1730,8 @@ std::vector<TestCase> tests{
     {"dualsense persona feature reports cover identity probe surface", dualsense_persona_feature_reports_cover_identity_probe_surface},
     {"ds4 feature reports cover native probe surface", ds4_feature_reports_cover_native_probe_surface},
     {"radial deadzone preserves direction and rescales remaining travel", radial_deadzone_preserves_direction_and_rescales_remaining_travel},
+    // Must stay last: it replaces the personas' default synthetic identity.
+    {"synthetic persona identities are per bridge and locally administered", synthetic_persona_identities_are_per_bridge_and_locally_administered},
 };
 
 } // namespace
