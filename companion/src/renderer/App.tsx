@@ -130,6 +130,16 @@ import { ShellSidebarDevice } from './features/shell/ShellSidebarDevice';
 import { ShellSupportBadge } from './features/shell/ShellSupportBadge';
 import { controlPanelIdFor, type ControlTab } from './features/shell/control-tabs';
 import { useLocalization, type UiLocalePreference } from './common/localization';
+import type { AppRuntime } from './composition/app-runtime';
+import { FeatureTipsPanel } from './common/FeatureTipsPanel';
+import { ProfileSaveStatus } from './common/ProfileSaveStatus';
+import { PERCENT_SLIDER_TICKS, sliderTickClass } from './common/slider-ticks';
+import {
+  CONTROLLER_POWER_SAVING_CAP_PERCENT,
+  capControllerPowerSavingValue,
+  controllerPowerSavingActiveFromSnapshot
+} from './common/controller-power-saving';
+import { StickDeadzonesPage, useStickDeadzonesController } from './features/stick-deadzones';
 import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
   CHORD_CONTROLLER_SETTING_STEP_DEFAULT,
@@ -196,7 +206,6 @@ import {
   type ControllerDeviceForgetDialog,
   type ControllerDeviceRenameDialog
 } from './ControllerDevicesPage';
-import { radialDeadzonePreview, stickPositionPercent } from './radial-deadzone-preview';
 
 type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type ControllerType = BridgeStatusPayload['controllerType'];
@@ -321,12 +330,6 @@ type LightbarPaletteCell = {
   color: string;
   name: string;
 };
-type FeatureTipsPanelProps = {
-  tab: 'audio' | 'haptics' | 'triggers' | 'lighting' | 'deadzones';
-  onSettingsFocusRequest?: (target: SettingsFocusTarget) => void;
-  audioHapticsOpen?: boolean;
-  triggerLabOpen?: boolean;
-};
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
 
 const KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';
@@ -342,9 +345,6 @@ const AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX = 44;
 const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
 const LIGHTBAR_BRIGHTNESS_STEP = 10;
 const TRIGGER_EFFECT_STEP = 10;
-const CONTROLLER_POWER_SAVING_CAP_PERCENT = 60;
-const RADIAL_DEADZONE_PRESETS = [0, 5, 10, 20] as const;
-const RADIAL_DEADZONE_TICKS = Array.from({ length: 11 }, (_, index) => index * 5);
 const TEST_HAPTICS_LOCK_MS = 1100;
 const TEST_SPEAKER_LOCK_MS = 900;
 const TEST_MIC_LISTEN_MS = 5000;
@@ -393,7 +393,6 @@ const TRIGGER_EFFECT_PRESETS: Array<[string, number]> = [
   ['Medium', 70],
   ['High', 100]
 ];
-const PERCENT_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 10);
 const TRIGGER_LAB_SLIDER_STEP = 5;
 const TRIGGER_LAB_SLIDER_TICKS = Array.from({ length: 21 }, (_, index) => index * TRIGGER_LAB_SLIDER_STEP);
 const STANDARD_HAPTICS_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 20);
@@ -1104,15 +1103,6 @@ function saveTriggerLabWorkspaceState(state: TriggerLabWorkspaceState) {
   window.localStorage.setItem(TRIGGER_LAB_WORKSPACE_STORAGE_KEY, JSON.stringify(state));
 }
 
-function controllerPowerSavingActiveFromSnapshot(snapshot: BridgeSnapshot | null | undefined): boolean {
-  return Boolean(snapshot?.settings.controllerPowerSavingEnabled && snapshot.diagnostics.audioStatus?.headsetPlugged);
-}
-
-function capControllerPowerSavingValue(value: number, snapshot: BridgeSnapshot | null | undefined): number {
-  return controllerPowerSavingActiveFromSnapshot(snapshot)
-    ? Math.min(value, CONTROLLER_POWER_SAVING_CAP_PERCENT)
-    : value;
-}
 
 function feedbackSliderMaxFromSnapshot(snapshot: BridgeSnapshot | null | undefined): number {
   if (controllerPowerSavingActiveFromSnapshot(snapshot)) {
@@ -1144,15 +1134,6 @@ function displayTriggerEffectIntensityValue(snapshot: BridgeSnapshot): number {
   return capControllerPowerSavingValue(snapshot.settings.triggerEffectIntensityPercent, snapshot);
 }
 
-function sliderTickClass(value: number, max: number): string | undefined {
-  if (value === 0 || value === max) {
-    return 'milestone endpoint';
-  }
-  if (value === max / 2) {
-    return 'milestone';
-  }
-  return undefined;
-}
 
 type TriggerLabMeterProps = {
   label: string;
@@ -1419,181 +1400,6 @@ function StartupTutorial({
   );
 }
 
-function ProfileSaveStatus() {
-  return (
-    <div className="system-profile-save-status">
-      <span className="autosave-check-icon" aria-hidden="true">
-        <Check className="autosave-check-outline" size={16} />
-        <Check className="autosave-check-fill" size={16} />
-      </span>
-      <span>Changes Are Automatically Saved</span>
-    </div>
-  );
-}
-
-function FeatureTipsPanel({
-  tab,
-  onSettingsFocusRequest,
-  audioHapticsOpen = false,
-  triggerLabOpen = false
-}: FeatureTipsPanelProps) {
-  const [featureTileSampleActive, setFeatureTileSampleActive] = useState(false);
-  const [triggerLabLinkTipSplit, setTriggerLabLinkTipSplit] = useState(false);
-  const tips: Array<{
-    key: string;
-    icon: ReactNode;
-    title: string;
-    text: string;
-    tone?: 'success';
-  }> = tab === 'deadzones'
-    ? [
-        {
-          key: 'tune-each-stick',
-          icon: <IconViewfinder size={16} />,
-          title: 'Tune Each Stick',
-          text: 'Raise each value only until that stick rests cleanly at center.'
-        },
-        {
-          key: 'keep-it-low',
-          icon: <IconCircleCheck size={16} />,
-          title: 'Keep It Low',
-          text: 'Use the lowest stable value; larger deadzones reduce fine movement near center.'
-        }
-      ]
-    : [
-        {
-          key: 'toggle',
-          icon: <IconSparkleHighlight size={16} />,
-          title: 'Feature Tiles',
-          text: 'Click the square icon tile to enable or disable that feature.'
-        },
-        {
-          key: 'unavailable',
-          icon: <Settings2 size={16} />,
-          title: 'Unavailable',
-          text: 'Dimmed controls need the bridge, controller, or matching feature enabled.'
-        }
-      ];
-
-  if (tab !== 'deadzones') {
-    if (tab === 'triggers' && triggerLabOpen) {
-      tips.push({
-        key: 'trigger-lab-override',
-        icon: <IconFlask2 size={16} />,
-        title: 'Lab Override',
-        text: 'Active Lab effects stay applied and ignore incoming game trigger output.'
-      });
-    } else if (tab === 'haptics' && audioHapticsOpen) {
-      tips.push({
-        key: 'audio-haptics',
-        icon: <IconDeviceAudioTape size={16} />,
-        title: 'Audio Haptics',
-        text: 'Audio Haptics turns system audio into haptic feedback.'
-      });
-    } else if (tab === 'audio') {
-      tips.push({
-        key: 'headphones',
-        icon: <Headphones size={16} />,
-        title: 'Headphones',
-        text: 'Headphones use the same Pico-local audio path as the controller speaker.'
-      });
-    } else {
-      tips.push({
-        key: 'power-saving',
-        icon: <IconBatteryEco size={16} />,
-        title: 'Green Icon',
-        text: 'Power saving is temporarily capping this setting while headphones are connected.',
-        tone: 'success'
-      });
-    }
-
-    if (tab === 'triggers' && triggerLabOpen) {
-      tips.push({
-        key: 'trigger-lab-link',
-        icon: triggerLabLinkTipSplit ? <LinkOffIcon size={16} /> : <LinkIcon size={16} />,
-        title: 'Linked / Split',
-        text: 'When Linked is on, the selected effect mirrors across L2 and R2. Split keeps each trigger separate.'
-      });
-    } else if (tab === 'haptics' && audioHapticsOpen) {
-      tips.push({
-        key: 'audio-haptics-mode',
-        icon: <IconBrandDeezer size={16} />,
-        title: 'Mix / Replace',
-        text: 'Mix adds audio feedback to native haptics and rumble; Replace uses only the derived audio feel.'
-      });
-    } else if (tab === 'lighting') {
-      tips.push({
-        key: 'custom-color',
-        icon: <Palette size={16} />,
-        title: 'Custom Color',
-        text: 'Double-click the final color swatch to choose a custom lightbar color.'
-      });
-    } else {
-      tips.push({
-        key: 'tests',
-        icon: <Play size={16} />,
-        title: 'Tests',
-        text: 'Tests may pause while a game or audio stream is actively using the controller.'
-      });
-    }
-  }
-
-  return (
-    <section className="feature-help-panel" aria-label={`${tab} tips`}>
-      <div className="feature-help-heading">
-        <IconQuestionMark size={16} />
-        <h3>Tips</h3>
-      </div>
-      <div className="feature-help-grid">
-        {tips.map((tip) => (
-          <div
-            className="feature-help-item"
-            key={tip.key}
-          >
-            {tip.key === 'toggle' ? (
-              <button
-                className={`feature-help-icon feature-help-icon-button ${featureTileSampleActive ? 'active' : ''}`}
-                type="button"
-                aria-pressed={featureTileSampleActive}
-                aria-label="Toggle feature tile example"
-                onClick={() => setFeatureTileSampleActive((active) => !active)}
-              >
-                {tip.icon}
-              </button>
-            ) : tip.key === 'power-saving' ? (
-              <button
-                className={`feature-help-icon feature-help-icon-button ${tip.tone ?? ''}`}
-                type="button"
-                aria-label="Open Controller Power Saving settings"
-                onClick={() => onSettingsFocusRequest?.('controller-power-saving')}
-              >
-                {tip.icon}
-              </button>
-            ) : tip.key === 'trigger-lab-link' ? (
-              <button
-                className={`feature-help-icon feature-help-icon-button ${triggerLabLinkTipSplit ? '' : 'active'}`}
-                type="button"
-                aria-pressed={!triggerLabLinkTipSplit}
-                aria-label="Toggle Linked Split tip example"
-                onClick={() => setTriggerLabLinkTipSplit((split) => !split)}
-              >
-                {tip.icon}
-              </button>
-            ) : (
-              <span className={`feature-help-icon ${tip.tone ?? ''}`} aria-hidden="true">
-                {tip.icon}
-              </span>
-            )}
-            <span className="feature-help-copy">
-              <strong>{tip.title}</strong>
-              <span>{tip.text}</span>
-            </span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): ControllerProfileSettings {
   return {
@@ -2658,8 +2464,6 @@ export function App() {
   const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const [hapticsValue, setHapticsValue] = useState(100);
-  const [leftStickRadialDeadzoneValue, setLeftStickRadialDeadzoneValue] = useState(0);
-  const [rightStickRadialDeadzoneValue, setRightStickRadialDeadzoneValue] = useState(0);
   const [classicRumbleValue, setClassicRumbleValue] = useState(100);
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
   const [micVolumeValue, setMicVolumeValue] = useState(100);
@@ -2742,7 +2546,6 @@ export function App() {
   const [micTestError, setMicTestError] = useState<string | null>(null);
   const [triggerTestLocked, setTriggerTestLocked] = useState(false);
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
-  const [radialDeadzoneCommitPending, setRadialDeadzoneCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
   const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
   const [feedbackBoostCommitPending, setFeedbackBoostCommitPending] = useState(false);
@@ -2761,7 +2564,6 @@ export function App() {
   const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
   const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
   const hapticsEditingRef = useRef(false);
-  const radialDeadzoneEditingRef = useRef({ left: false, right: false });
   const classicRumbleEditingRef = useRef(false);
   const speakerVolumeEditingRef = useRef(false);
   const micVolumeEditingRef = useRef(false);
@@ -2879,6 +2681,18 @@ export function App() {
   const connected = snapshot?.state === 'connected';
   const controllerConnected = Boolean(snapshot?.status?.controllerConnected);
   const controllerControlsAvailable = connected && controllerConnected;
+  const runtime: AppRuntime = {
+    snapshot,
+    connected,
+    controllerConnected,
+    controllerControlsAvailable,
+    pendingAction,
+    setSnapshot,
+    setPendingAction,
+    runAction,
+    runQuietAction
+  };
+  const stickDeadzones = useStickDeadzonesController(runtime, activeControlTab === 'deadzones');
   const controllerDevicesModel = useMemo(() => buildDevicesModel({
     bridgeConnected: connected,
     status: snapshot?.status ?? null,
@@ -3159,12 +2973,7 @@ export function App() {
     if (!hapticsEditingRef.current) {
       setHapticsValue(displayHapticsValue(next));
     }
-    if (!radialDeadzoneEditingRef.current.left) {
-      setLeftStickRadialDeadzoneValue(next.settings.leftStickRadialDeadzonePercent);
-    }
-    if (!radialDeadzoneEditingRef.current.right) {
-      setRightStickRadialDeadzoneValue(next.settings.rightStickRadialDeadzonePercent);
-    }
+    stickDeadzones.syncSnapshot(next);
     if (!classicRumbleEditingRef.current) {
       setClassicRumbleValue(displayClassicRumbleValue(next));
     }
@@ -3261,21 +3070,6 @@ export function App() {
       window.removeEventListener('blur', finishWindowDrag);
     };
   }, []);
-
-  useEffect(() => {
-    if (activeControlTab !== 'deadzones') {
-      return undefined;
-    }
-
-    void window.bridge.requestStickInputPreview();
-    const heartbeat = window.setInterval(() => {
-      void window.bridge.requestStickInputPreview();
-    }, 1000);
-    return () => {
-      window.clearInterval(heartbeat);
-      void window.bridge.releaseStickInputPreview();
-    };
-  }, [activeControlTab]);
 
   useEffect(() => {
     const controllerAudioReady = connected && controllerConnected;
@@ -4121,42 +3915,6 @@ export function App() {
     } catch {
       const next = await window.bridge.getStatus();
       setSnapshot(next);
-    }
-  }
-
-  async function commitRadialDeadzone(side: 'left' | 'right', value: number) {
-    const percent = normalizeRadialDeadzonePercent(value);
-    const leftPercent = side === 'left' ? percent : leftStickRadialDeadzoneValue;
-    const rightPercent = side === 'right' ? percent : rightStickRadialDeadzoneValue;
-    radialDeadzoneEditingRef.current[side] = true;
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || radialDeadzoneCommitPending
-      || (
-        leftPercent === snapshot.settings.leftStickRadialDeadzonePercent
-        && rightPercent === snapshot.settings.rightStickRadialDeadzonePercent
-      )
-    ) {
-      radialDeadzoneEditingRef.current[side] = false;
-      return;
-    }
-
-    setRadialDeadzoneCommitPending(true);
-    try {
-      const next = await window.bridge.setRadialDeadzones(leftPercent, rightPercent);
-      setSnapshot(next);
-      setLeftStickRadialDeadzoneValue(next.settings.leftStickRadialDeadzonePercent);
-      setRightStickRadialDeadzoneValue(next.settings.rightStickRadialDeadzonePercent);
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setLeftStickRadialDeadzoneValue(next.settings.leftStickRadialDeadzonePercent);
-      setRightStickRadialDeadzoneValue(next.settings.rightStickRadialDeadzonePercent);
-    } finally {
-      setRadialDeadzoneCommitPending(false);
-      radialDeadzoneEditingRef.current.left = false;
-      radialDeadzoneEditingRef.current.right = false;
     }
   }
 
@@ -7022,139 +6780,12 @@ export function App() {
             onConfirmForget={() => void confirmControllerDeviceForget()}
           />
 
-          <div
-            className={`control-page deadzones-page ${activeControlTab === 'deadzones' ? 'active' : ''}`}
-            role="tabpanel"
-            id="control-panel-deadzones"
-            aria-labelledby="control-tab-deadzones"
-            aria-hidden={activeControlTab !== 'deadzones'}
-          >
-            <div className="feature-heading">
-              <div>
-                <h2>Stick Deadzones</h2>
-                <p>Remove center drift with independent radial deadzones for each stick.</p>
-              </div>
-            </div>
-
-            <div className="feature-card-grid deadzones-grid">
-              {(['left', 'right'] as const).map((side) => {
-                const value = side === 'left'
-                  ? leftStickRadialDeadzoneValue
-                  : rightStickRadialDeadzoneValue;
-                const setValue = side === 'left'
-                  ? setLeftStickRadialDeadzoneValue
-                  : setRightStickRadialDeadzoneValue;
-                const label = side === 'left' ? 'Left Stick' : 'Right Stick';
-                const rawAxes = snapshot?.stickInputPreview?.raw;
-                const livePreview = rawAxes
-                  ? radialDeadzonePreview(
-                      side === 'left' ? rawAxes.lx : rawAxes.rx,
-                      side === 'left' ? rawAxes.ly : rawAxes.ry,
-                      value
-                    )
-                  : null;
-                const disabled = !controllerControlsAvailable
-                  || pendingAction !== null
-                  || radialDeadzoneCommitPending;
-                return (
-                  <section className="feature-card deadzone-card" key={side}>
-                    <div className="feature-card-title">
-                      <span className="feature-icon"><IconViewfinder size={20} /></span>
-                      <div className="title-copy">
-                        <h3>{label}</h3>
-                        <p>Circular center filtering with full-range rescaling.</p>
-                      </div>
-                    </div>
-
-                    <div className="deadzone-stick-preview">
-                      <div
-                        className="deadzone-stick-field"
-                        role="img"
-                        aria-label={`${label} physical and deadzone-adjusted output position`}
-                        style={{ '--deadzone-diameter': `${Math.max(3, value)}%` } as CSSProperties}
-                      >
-                        <span className="deadzone-axis horizontal" />
-                        <span className="deadzone-axis vertical" />
-                        <span className="deadzone-radius" />
-                        {livePreview ? (
-                          <>
-                            <span
-                              className="deadzone-position-dot output"
-                              style={stickPositionPercent(livePreview.output)}
-                            />
-                            <span
-                              className="deadzone-position-dot physical"
-                              style={stickPositionPercent(livePreview.physical)}
-                            />
-                          </>
-                        ) : <span className="deadzone-center" />}
-                      </div>
-                      <div className="deadzone-preview-copy">
-                        <strong>{value}%</strong>
-                        <span>{value === 0 ? 'Native input' : 'Center radius'}</span>
-                        <div className="deadzone-position-legend" aria-label="Stick position legend">
-                          <span><i className="physical" />Physical</span>
-                          <span><i className="output" />Output</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <label className={`slider-row deadzone-slider-row ${disabled ? 'disabled' : ''}`}>
-                      <span>Radius</span>
-                      <div className="range-control">
-                        <input
-                          aria-label={`${label} radial deadzone`}
-                          type="range"
-                          min={0}
-                          max={RADIAL_DEADZONE_MAX_PERCENT}
-                          step={1}
-                          value={value}
-                          disabled={disabled}
-                          style={{ '--range-fill': `${value * 2}%` } as CSSProperties}
-                          onChange={(event) => {
-                            radialDeadzoneEditingRef.current[side] = true;
-                            setValue(normalizeRadialDeadzonePercent(Number(event.target.value)));
-                          }}
-                          onPointerUp={(event) => void commitRadialDeadzone(side, Number(event.currentTarget.value))}
-                          onKeyUp={(event) => {
-                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                              void commitRadialDeadzone(side, Number(event.currentTarget.value));
-                            }
-                          }}
-                          onBlur={(event) => void commitRadialDeadzone(side, Number(event.currentTarget.value))}
-                        />
-                        <div className="range-ticks" aria-hidden="true">
-                          {RADIAL_DEADZONE_TICKS.map((tick) => (
-                            <span key={tick} className={sliderTickClass(tick, RADIAL_DEADZONE_MAX_PERCENT)} />
-                          ))}
-                        </div>
-                      </div>
-                      <strong>{value}%</strong>
-                    </label>
-
-                    <div className="segmented-row deadzone-presets" aria-label={`${label} deadzone presets`}>
-                      {RADIAL_DEADZONE_PRESETS.map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          className={value === preset ? 'active' : ''}
-                          disabled={disabled}
-                          onClick={() => {
-                            setValue(preset);
-                            void commitRadialDeadzone(side, preset);
-                          }}
-                        >
-                          {preset === 0 ? 'Off' : `${preset}%`}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-
-            <FeatureTipsPanel tab="deadzones" />
-          </div>
+          <StickDeadzonesPage
+            active={activeControlTab === 'deadzones'}
+            controller={stickDeadzones}
+            stickInputPreview={snapshot.stickInputPreview}
+            locked={!controllerControlsAvailable || pendingAction !== null}
+          />
 
           <div
             className={`control-page haptics-page ${activeControlTab === 'haptics' || audioHapticsOpen ? 'active' : ''}`}

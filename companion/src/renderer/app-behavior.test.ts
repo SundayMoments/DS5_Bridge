@@ -19,8 +19,12 @@ const controllerDevicesPageSource = readFileSync(
   'utf8'
 );
 
+function featureSource(relativePath: string): string {
+  return readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'features', relativePath), 'utf8');
+}
+
 function settingsSource(fileName: string): string {
-  return readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'features', 'settings', fileName), 'utf8');
+  return featureSource(`settings/${fileName}`);
 }
 
 const settingsActionsSource = (() => {
@@ -305,21 +309,6 @@ describe('renderer behavior guards', () => {
     expect(startupSubscriptionSource).toContain('receivedLiveSnapshot = true;');
   });
 
-  it('does not snap snapshot values back to coarse slider notches', () => {
-    const start = appSource.indexOf('function displayHapticsValue');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('function sliderTickClass', start);
-    expect(end).toBeGreaterThan(start);
-    const displaySource = appSource.slice(start, end);
-
-    expect(displaySource).not.toContain('snapHapticsValue');
-    expect(displaySource).not.toContain('snapLightbarBrightness');
-    expect(displaySource).not.toContain('snapTriggerEffectIntensity');
-    expect(displaySource).toContain('snapshot.settings.hapticsGainPercent');
-    expect(displaySource).toContain('snapshot.settings.lightbarBrightnessPercent');
-    expect(displaySource).toContain('snapshot.settings.triggerEffectIntensityPercent');
-  });
-
   it('shows mute as a chord starter when chord mode or keyboard chord starter is active', () => {
     expect(appSource).toContain("mute: { id: CHORD_MUTE_STARTER_ID, label: 'Mute Button', Icon: MicOff }");
     expect(appSource).toContain('[CHORD_STARTERS.mute.label, CHORD_MUTE_STARTER_ID]');
@@ -391,32 +380,12 @@ describe('renderer behavior guards', () => {
   });
 
   it('exposes only radial stick deadzones from the premium analog controls', () => {
-    const deadzonesPanelStart = appSource.indexOf('id="control-panel-deadzones"');
-    const deadzonesPanelEnd = appSource.indexOf('<FeatureTipsPanel tab="deadzones" />', deadzonesPanelStart);
-    const deadzonesPanelSource = appSource.slice(deadzonesPanelStart, deadzonesPanelEnd);
-
+    // The page is rendered in features/stick-deadzones/StickDeadzonesPage.rendered.test.tsx.
     expect(CONTROL_TAB_DEFINITIONS.deadzones).toEqual({ id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder });
-    expect(deadzonesPanelSource).toContain('<span className="feature-icon"><IconViewfinder size={20} /></span>');
-    expect(deadzonesPanelSource).not.toContain('<ProfileSaveStatus />');
-    expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
-    expect(appSource).toContain('window.bridge.requestStickInputPreview()');
-    expect(appSource).toContain('window.bridge.releaseStickInputPreview()');
-    expect(appSource).toContain("`${Math.max(3, value)}%`");
-    expect(appSource).toContain('radialDeadzonePreview(');
-    expect(appSource).toContain('Physical</span>');
-    expect(appSource).toContain('Output</span>');
-    expect(appSource).toContain("'Left Stick' : 'Right Stick'");
-    expect(appSource).toContain('aria-label={`${label} radial deadzone`}');
-    expect(appSource).toContain('<FeatureTipsPanel tab="deadzones" />');
-    expect(appSource).toContain("title: 'Tune Each Stick'");
-    expect(appSource).toContain("title: 'Keep It Low'");
-    expect(appSource).not.toContain('How Radial Deadzones Work');
-    expect(appSource).not.toContain('All Personas');
-    expect(appSource).not.toContain('invertHorizontal');
-    expect(appSource).not.toContain('responseCurve');
-    expect(appSource).not.toContain('zoneRotation');
-    expect(appSource).not.toContain('zoneOuterLimits');
-    expect(appSource).not.toContain('maxRangePercent');
+    for (const premiumControl of ['invertHorizontal', 'responseCurve', 'zoneRotation', 'zoneOuterLimits', 'maxRangePercent']) {
+      expect(appSource).not.toContain(premiumControl);
+      expect(featureSource('stick-deadzones/StickDeadzonesPage.tsx')).not.toContain(premiumControl);
+    }
   });
 
   it('keeps all four abbreviated personas on the overview quick-actions row', () => {

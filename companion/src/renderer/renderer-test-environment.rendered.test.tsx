@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
-import { radialDeadzonePreview } from '@renderer/radial-deadzone-preview';
+import { radialDeadzonePreview } from '@renderer/features/stick-deadzones/radial-deadzone-preview';
 import { normalizeRadialDeadzonePercent } from '@shared/protocol';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

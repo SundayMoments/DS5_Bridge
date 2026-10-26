@@ -1,4 +1,4 @@
-import { normalizeRadialDeadzonePercent } from '../shared/protocol';
+import { normalizeRadialDeadzonePercent } from '@shared/protocol';
 
 export interface StickPreviewPosition {
   x: number;

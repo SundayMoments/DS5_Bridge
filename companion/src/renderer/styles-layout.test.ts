@@ -330,9 +330,7 @@ describe('companion layout CSS', () => {
     expect(profileButtonBlock).toContain('font-weight: var(--font-weight-strong);');
     expect(profileButtonBlock).toContain('box-shadow: none;');
     expect(cssBlock('.system-profile-save-status', 'min-width: 0;')).not.toContain('background:');
-    expect(appSource).toContain('function ProfileSaveStatus()');
-    expect(appSource).toContain('autosave-check-outline');
-    expect(appSource).toContain('autosave-check-fill');
+    // The markup is rendered in common/FeatureTipsPanel.rendered.test.tsx.
     expect(cssBlock('.autosave-check-outline', 'color: #ffffff;')).toContain('stroke-width: 5;');
     expect(cssBlock('.autosave-check-fill', 'color: var(--success);')).toContain('stroke-width: 2.5;');
   });
@@ -362,9 +360,8 @@ describe('companion layout CSS', () => {
   });
 
   it('renders the Power Saving Green Icon tip as the filled success tile with a white glyph', () => {
+    // The tip renders with the success class in common/FeatureTipsPanel.rendered.test.tsx.
     const successTip = cssBlock('.feature-help-icon.success', 'background: var(--success-selected);');
-    expect(appSource).toContain("title: 'Green Icon'");
-    expect(appSource).toContain("tone: 'success'");
     expect(successTip).toContain('color: #ffffff;');
     expect(successTip).toContain('border-color: var(--success-border-strong);');
     expect(successTip).toContain('background: var(--success-selected);');
