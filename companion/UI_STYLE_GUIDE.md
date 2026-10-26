@@ -9,7 +9,8 @@ This file is the layout contract for the Electron companion app. Treat it as par
 - `styles/theme-palettes.css` defines the `--palette-*` primitives for every theme preset, on `:root[data-theme]`, `.shell[data-theme]`, and `.theme-option[data-theme-preview]` (the swatches in the theme picker).
 - `styles/theme-tokens.css` maps palettes to semantic tokens (`--surface-*`, `--text-*`, `--accent-*`, `--success-*`, `--danger-*`, and so on) and holds the layout and type tokens below. Components use semantic tokens only.
 - `styles/theme-ds5.css` is the frozen DS5 brand reference: the default dark theme's blue tokens and command-chip recipe. Change it only for a deliberate brand change.
-- Area files (`base.css`, `app-shell.css`, `overview.css`, `audio.css`, and so on) hold page and surface rules. Components that own their markup import their own CSS from TSX (`features/shell/shell-sidebar.css`, `features/settings/settings-page.css`, `components/custom-select.css`); `main.tsx` imports `styles.css` before `App` so those files cascade after the base.
+- Area files (`base.css`, `app-shell.css`, `overview.css`, `audio.css`, and so on) hold page and surface rules. Components that own their markup import their own CSS from TSX (`features/shell/shell-sidebar.css`, `features/settings/settings-page.css`, `features/settings/wake-pc-settings.css`, `features/bootloader-confirmation/bootloader-confirmation.css`, `features/kitsune-promotion/kitsune-launch-offer.css`); `main.tsx` imports the fonts and `styles.css` before `App` so those files cascade after the base.
+- `base.css` holds `.visually-hidden` for text that only screen readers need, such as the reason behind a Failed quick action.
 - No per-theme patches in area files. If a theme reads badly, fix its palette or add a semantic token.
 
 Tests read styles through `src/renderer/test-support/renderer-styles.ts` (`rendererStyles()` follows the manifest, `rendererStyleModule(path)` reads one file, `cssBlockIn` finds a rule).
@@ -32,7 +33,7 @@ The shared grid values live in `styles/theme-tokens.css` under `:root, .shell`.
 - `--card-padding: 16px` is the standard card interior padding.
 - `--feature-left-column: minmax(0, 1fr)` and `--feature-right-column: minmax(0, 1fr)` keep the main paired cards equal width.
 - `--feature-card-min-height: 250px` keeps feature cards aligned tab to tab.
-- `--feature-card-height: 370px` sets the shared minimum for Haptics, Audio, Triggers, Lighting, and System paired cards. Cards should stay content-sized above that minimum instead of stretching to the viewport.
+- `--feature-card-height: 370px` is the generic control-page minimum. Haptics, Audio, Adaptive Triggers, Lighting, and System pin their paired-card row to 326px in `styles/page-layouts.css` (`auto minmax(0, 326px) minmax(132px, 1fr)`); System gives the rest to its profile panel (`minmax(148px, 1fr)`). `layout-check --fixture` fails when a tab's cards differ from that height.
 - `--action-height: 48px` is the standard full-width action button height.
 - `--control-height: 36px` is the standard compact control height.
 
@@ -40,24 +41,45 @@ Do not hardcode replacements for these values in a tab unless the component is a
 
 ## Shell
 
-`features/shell/MainAppShell` owns the frameless window: the window bar (Kitsune Input banner centered, notifications, window controls), the sidebar, and the workspace panel.
+`features/shell/MainAppShell` owns the frameless window: the window bar (Kitsune Input banner centered; the Ko-fi badge, notifications, and window controls on the right), the sidebar, and the workspace panel.
 
-- The sidebar shows the DS5 Bridge wordmark (Montserrat, "Bridge" in `--brand-wordmark-accent`), the device card (opens Devices), the bridge selector (rename, refresh, USB-direct rows), then Overview, the Controller, Input, and Labs groups, the System row, and a pinned footer with the Ko-fi badge and Settings.
+- The sidebar shows the DS5 Bridge wordmark (Montserrat, "Bridge" in `--brand-wordmark-accent`), the device card (opens Devices), the bridge selector (rename, refresh, USB-direct rows), then Overview and the Controller, Input, and Tools groups (Tools holds Audio Haptics, Trigger Lab, and System). Settings sits alone below the list.
+- The device card's border carries the state (green connected, amber waiting or switching, red on a bridge error); there is no status dot. `features/shell/sidebar-device.ts` builds the card and bridge selector from the snapshot.
 - Navigation entries are defined once in `features/shell/control-tabs.tsx`. Nav rows are buttons with `aria-current="page"`, not tabs.
-- Settings is a full page. While it is open, `features/settings/SettingsSidebar` replaces the navigation with search, grouped sections, and Back to app. Add a setting by giving it a search entry in `settings-navigation.ts` and a `SearchableSetting` row in the matching category component.
+- Settings is a full page. While it is open, `features/settings/SettingsSidebar` replaces the navigation with search, grouped sections, and Back to app. Add a setting by giving it a search entry in `settings-navigation.ts` and a `SearchableSetting` row in the matching category component, then wire its action in `features/settings/use-settings-page.ts`. Wake PC holds USB wake and the Wake-on-LAN setup (locked while a controller is connected); Bridge Firmware holds the Pico tools and the Last restart row.
+- There is no splash screen. Until the first snapshot arrives the shell renders with `className="shell starting"`, a placeholder device card, "Looking for bridges…", and `StartupPlaceholderPage` in the page area, in the theme and text size saved from the last run (`composition/use-app-appearance.ts`).
+
+## App Composition
+
+`App.tsx` owns the `AppRuntime` (snapshot, `pendingAction`, `runAction`, `runQuietAction`), creates each feature's controller, and composes the pages. It holds no page markup.
+
+- Each page lives in `features/<feature>/`: a `<Name>Page.tsx` that renders, a `use-<feature>-controller.ts` hook `(runtime, input)` that returns state and actions (and `syncSnapshot` when it keeps slider drafts), a pure `model.ts` for anything worked out from the snapshot, and an `index.ts`.
+- Overview, Haptics/Audio Haptics, Audio, Adaptive Triggers/Trigger Lab, and Lighting are in the main chunk. Devices, Stick Deadzones, Button Remapping, Chords, System, and Settings load on first visit through `composition/lazy-pages.tsx` (`lazyPage` with a `pageShell` placeholder that keeps the page's classes). App imports those pages' controllers and dialogs from their module files, never the feature index, so the pages stay out of the main chunk.
+- Every page sits in `common/DeferredPage`: it mounts on first visit and stops re-rendering while hidden. `composition/use-bridge-snapshots.ts` keeps only the newest snapshot while the window is dragged, hidden, or minimized, and controllers that poll take an `active` flag that includes window visibility.
+- Window-bar and sidebar state lives in hooks too: `features/shell/use-notifications-menu.ts` and `features/settings/use-settings-page.ts`.
+
+## Dialogs
+
+Modal dialogs use `modal-backdrop` with a `role="dialog"` form or panel, a labelled close button, and Escape to close unless the dialog is locked.
+
+- The controller confirmation for UF2 mode (`features/bootloader-confirmation`) sits above everything (z-index 200), on any page, and can only be cancelled.
+- The one-time Kitsune Input offer opens shortly after the first snapshot, never over the first-run tutorial, the controller confirmation, or the promotion dialog. Its close button and Escape stay locked for 5 seconds; `kitsuneInputLaunchOfferShown` records that it was shown.
+- System's emergency device repair asks first and refuses while a controller is connected; its profile dialogs save, rename, and delete.
 
 ## Shared Primitives
 
-Reuse these before writing new controls: `components/CustomSelect` (floating menu by default; legacy pages pass `floatingMenu={false}` through the `App.tsx` wrapper), `components/HelpTooltip`, `components/ActionMenu`, `components/TabStrip`, `common/LabeledSwitch`, `common/ModalDialog`, `common/DeferredPage`, `common/RendererFailureBoundary`, and `features/settings/SettingsToggleRow` (`ToggleRow`).
+Reuse these before writing new controls: `components/CustomSelect` (floating menu by default; feature cards use `components/InlineSelect`, which opens inline), `components/HelpTooltip`, `components/ActionMenu`, `components/TabStrip`, `common/LabeledSwitch`, `common/ModalDialog`, `common/DeferredPage`, `common/RendererFailureBoundary`, and `features/settings/SettingsToggleRow` (`ToggleRow`).
 
 ## Localization
 
 Copy is written in English in JSX and translated at runtime by `composition/RendererLocalization`, which rewrites text and labels in the DOM. Locales: English, Spanish (Latin America), Spanish (Spain), Portuguese (Brazil), Italian, French, Polish, Korean, and Simplified Chinese.
 
-1. Write the English string in a component under `components/`, `common/`, `composition/`, or `features/` (or `ui-themes.ts`). Strings in `App.tsx` are not cataloged until its pages move into `features/`.
+1. Write the English string in a component under `components/`, `common/`, `composition/`, or `features/` (or `ui-themes.ts`). Every page now lives there, so all visible copy is cataloged.
 2. Run `npm run localize:extract` to update `common/localization/locales/master.en.json`.
 3. Add the translation for that exact English key to every locale file in `common/localization/locales/`.
-4. `npm run localize:check` (part of `build:app`) and `catalogs.test.ts` fail when the master is stale or a locale misses a key.
+4. `npm run localize:check` (part of `build:app`) and `catalogs.test.ts` fail when the master is stale, a locale misses a key, or a multi-word phrase is left in English.
+
+The extractor reads JSX text, visible attributes (`aria-label`, `title`, and so on), and string literals in variables, properties, and functions whose names say they are shown (`label`, `status`, `message`, `title`, ...). It skips single lowercase words. Name values accordingly (`audioRouteLabel`, not `audioPathState`). Messages the renderer only receives at runtime, such as the haptics test failures main sends, go in `seededMessages`. Product names, key legends (F1–F24), and units that read the same in every language go in `allowedSourceIdenticalPhrases`.
 
 Mark brand names, device names, and user-entered text with `data-l10n="off"`. Use `useLocalization().translate` for strings set outside rendered text, such as input placeholders.
 
@@ -97,8 +119,9 @@ System may use `system-card` for semantic naming, but it still follows the same 
 - Slider labels, track, and value should stay in the same vertical position between Haptics, Audio, and Triggers.
 - Percent sliders should use the shared `slider-row`, `range-control`, and `range-ticks` geometry. If a slider is intentionally notched, its native range `step` must match visible tick positions and it must not add tab-specific grid sizing.
 - Testing buttons use `primary-action` and `secondary-action`.
-- Testing cards are slotted, not free-flowing. The primary and secondary action rows must stay in the same vertical grid rows across Haptics, Audio, and Triggers, even when the setup content above them differs.
-- Status copy at the bottom of test cards uses `feature-status`.
+- Testing cards are slotted, not free-flowing. The primary and secondary action rows must stay in the same vertical grid rows across Haptics, Audio, and Triggers, even when the setup content above them differs. The row above the actions holds test options (Triggers) or the reason a test failed (`feedback-test-error`, `role="alert"`, linked to the test button with `aria-describedby`).
+- Status copy at the bottom of test cards uses `feature-status`. A test the bridge refused reads Failed in the warn tone, keeps its button enabled for a retry, and clears on the next test or a mode switch; the Overview quick action turns into a Failed warning with the reason as its tooltip.
+- Preset rows sit at the same offset in every preset card (`layout-check` compares them). Switches under the presets, such as Boost and v1 Rumble on Haptics, follow them on the 16px rhythm in one row instead of pinning to the card's bottom edge.
 - Preset or level buttons use `segmented-row`.
 - Dropdowns must use `CustomSelect`; do not use native `select` elements in the app surface.
 - Icon buttons and navigation rows use `@tabler/icons-react` icons.
@@ -111,14 +134,21 @@ Light color selection belongs in the Lighting behavior card. Preset swatches sho
 
 Shelved research note: DualSense lightbar output is likely raw PWM rather than display-managed sRGB. A future calibrated mode could test gamma and per-channel weights against real hardware, but guessing those values in the normal UI made brightness misleading.
 
+## Tests
+
+Prefer rendered tests. `src/renderer/test-support/app-harness.tsx` mounts the whole renderer against a mocked `window.bridge`: `fixtureSnapshot(overrides)` builds a connected DualSense Edge snapshot, `installBridgeMock` returns `fn(name)` mocks and `emit(snapshot)`, and `renderApp`, `openPage`, `click`, `buttonByText`, `chooseOption`, and `setRange` drive it like a person would. Pure models get plain unit tests next to them (`model.test.ts`).
+
+Source-text tests (`app-behavior.test.ts`, `styles-layout.test.ts`) are for what rendering cannot see: stylesheet rules, entry imports, and code that must stay out of a feature. No test reads `App.tsx`.
+
 ## Visual QA
 
 Before considering a UI change finished:
 
-1. Run `npm run typecheck` and `npm run test:companion` from `companion/`.
-2. Run `npm run ui:review` and inspect `build/ui-review/` (Overview, Haptics, and Settings in dark and light at 100% and 120% text). It uses fixture data in a minimal Electron host, so it never touches a bridge or saved settings.
+1. Run `npm run typecheck`, `npm run test:companion`, and `npm run localize:check` from `companion/`.
+2. Run `npm run ui:review` and inspect `build/ui-review/`: Overview, Haptics, System, and Settings in dark and light at 100% and 120% text, the controller confirmation and Kitsune Input offer, a refused haptics test, and the Wake PC states. It uses fixture data in a minimal Electron host, so it never touches a bridge or saved settings.
 3. `node scripts/visual-smoke.mjs --fixture` and `node scripts/layout-check.mjs --fixture` walk every page with the same fixture data (run `npm run build:app` first).
-4. Only run `npm run visual:smoke` or `npm run layout:check` against the real app when the user explicitly asks for it; then inspect the screenshots in `companion/artifacts/ui/`.
-5. When manually testing the app, flip between Haptics, Audio, Triggers, Lighting, and System and check that repeated controls do not jump around without a clear reason.
+4. `npm run perf:renderer` measures renderer CPU and memory in the fixture host for visible, hidden, and minimized windows.
+5. Only run `npm run visual:smoke` or `npm run layout:check` against the real app when the user explicitly asks for it; then inspect the screenshots in `companion/artifacts/ui/`.
+6. When manually testing the app, flip between Haptics, Audio, Triggers, Lighting, and System and check that repeated controls do not jump around without a clear reason.
 
 The app should look like a tool surface: dense, calm, consistent, and readable. Avoid decorative layout changes that make one tab feel like it was designed in isolation.
