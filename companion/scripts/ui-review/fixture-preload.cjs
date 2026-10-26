@@ -48,7 +48,19 @@ const handlers = {
   markKitsuneInputLaunchOfferShown: async () => updateSettings({ kitsuneInputLaunchOfferShown: true })
 };
 
-window.__uiReview = { update, updateSettings, snapshot: () => snapshot };
+window.__uiReview = { update, updateSettings, snapshot: () => snapshot, cpuUsage: () => process.cpuUsage() };
+// A poll from the host refreshes the fields the bridge service updates on every status read.
+const pollStartedAt = Date.now();
+const baseUptimeSeconds = snapshot.status?.uptimeSeconds ?? 0;
+require('electron').ipcRenderer.on('ui-review:poll', () => {
+  update({
+    status: snapshot.status && {
+      ...snapshot.status,
+      uptimeSeconds: baseUptimeSeconds + Math.floor((Date.now() - pollStartedAt) / 1000)
+    },
+    diagnostics: { ...snapshot.diagnostics, lastPollAt: Date.now() }
+  });
+});
 // Captures skip the first-run tutorial unless a script asks to check it.
 if (process.env.DS5_UI_REVIEW_SHOW_TUTORIAL !== '1') {
   const skipTutorial = () => window.localStorage?.setItem('ds5bridge.startupTutorialCompleted.v1', '1');

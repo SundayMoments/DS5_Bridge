@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   buttonByText,
@@ -12,9 +13,61 @@ import {
 } from './test-support/app-harness';
 
 beforeAll(installDomStubs);
-afterEach(unmountApp);
+afterEach(() => {
+  setDocumentVisibility(null);
+  unmountApp();
+});
+
+/** Overrides document.visibilityState the way a hidden or minimized window reports it; null restores it. */
+function setDocumentVisibility(state: 'hidden' | 'visible' | null) {
+  if (state === null) {
+    delete (document as { visibilityState?: unknown }).visibilityState;
+    return;
+  }
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
 
 describe('App against a fixture bridge', () => {
+  it('stops rendering snapshots while the window is hidden and shows the newest one when it is back', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    const battery = () => host.querySelector('.device-battery-percentage')?.textContent;
+    expect(battery()).toBe('75%');
+
+    setDocumentVisibility('hidden');
+    bridge.emit(fixtureSnapshot({ status: { batteryPercent: 40 } }));
+    bridge.emit(fixtureSnapshot({ status: { batteryPercent: 35 } }));
+    expect(battery()).toBe('75%');
+
+    setDocumentVisibility('visible');
+    expect(battery()).toBe('35%');
+  });
+
+  it('stops the stick preview heartbeat while the window is hidden', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    await openPage(host, 'deadzones');
+    expect(bridge.fn('requestStickInputPreview')).toHaveBeenCalledOnce();
+    setDocumentVisibility('hidden');
+    expect(bridge.fn('releaseStickInputPreview')).toHaveBeenCalledOnce();
+    setDocumentVisibility('visible');
+    expect(bridge.fn('requestStickInputPreview')).toHaveBeenCalledTimes(2);
+  });
+
+  it('mounts each page on its first visit and keeps it afterwards', async () => {
+    installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    expect(host.querySelector('#control-panel-chords')).toBeNull();
+    expect(host.querySelector('#control-panel-settings')).toBeNull();
+    await openPage(host, 'chords');
+    await openPage(host, 'overview');
+    expect(host.querySelector('#control-panel-chords')?.classList.contains('active')).toBe(false);
+    expect(host.querySelector('#control-panel-overview.active')).not.toBeNull();
+  });
+
   it('replaces the startup placeholder once a snapshot arrives and opens Overview', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();

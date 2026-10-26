@@ -88,17 +88,25 @@ import {
   storedUiTextScalePercent
 } from './ui-text-scale-preferences';
 import { useDocumentTheme } from './common/use-document-theme';
+import { documentHidden, useDocumentVisible } from './common/use-document-visible';
 import { BridgeMark } from './features/shell/BridgeMark';
 import { MainAppShell } from './features/shell/MainAppShell';
 import { ShellSidebarHeader } from './features/shell/ShellSidebarHeader';
+// Pages that load on first visit come from composition/lazy-pages; their
+// controllers and dialogs are imported from their own modules so the pages stay
+// out of the main chunk.
+import { SettingsSidebar } from './features/settings/SettingsSidebar';
+import { useSettingsNavigation } from './features/settings/use-settings-navigation';
+import type { SettingsFocusTarget } from './features/settings/settings-navigation';
+import type { SettingsPageActions, SettingsPageModel } from './features/settings/types';
 import {
-  SettingsPage,
-  SettingsSidebar,
-  useSettingsNavigation,
-  type SettingsFocusTarget,
-  type SettingsPageActions,
-  type SettingsPageModel
-} from './features/settings';
+  LazyButtonRemappingPage,
+  LazyChordsPage,
+  LazyDevicesPage,
+  LazySettingsPage,
+  LazyStickDeadzonesPage
+} from './composition/lazy-pages';
+import { DeferredPage } from './common/DeferredPage';
 import { ShellBridgeSelector } from './features/shell/ShellBridgeSelector';
 import { ShellNotifications } from './features/shell/ShellNotifications';
 import { ShellSidebarDevice } from './features/shell/ShellSidebarDevice';
@@ -121,15 +129,17 @@ import {
   capControllerPowerSavingValue,
   controllerPowerSavingActiveFromSnapshot
 } from './common/controller-power-saving';
-import { StickDeadzonesPage, useStickDeadzonesController } from './features/stick-deadzones';
-import { DevicesPage, useDevicesController } from './features/devices';
+import { useStickDeadzonesController } from './features/stick-deadzones/use-stick-deadzones-controller';
+import { useDevicesController } from './features/devices/use-devices-controller';
 import { ControllerLightingPage, useControllerLightingController } from './features/controller-lighting';
 import { ControllerAudioPage, useControllerAudioController } from './features/controller-audio';
 import { AdaptiveTriggersPage, useAdaptiveTriggersController } from './features/adaptive-triggers';
 import { TRIGGER_EFFECT_STEP, snapTriggerEffectIntensity } from './features/adaptive-triggers/model';
 import { TriggerLabProfileDialog, useTriggerLabController } from './features/trigger-lab';
-import { ButtonRemappingPage, ButtonRemappingProfileDialog, useButtonRemappingController } from './features/button-remapping';
-import { ChordFunctionDialog, ChordsPage, useChordsController } from './features/chords';
+import { ButtonRemappingProfileDialog } from './features/button-remapping/ButtonRemappingProfileDialog';
+import { useButtonRemappingController } from './features/button-remapping/use-button-remapping-controller';
+import { ChordFunctionDialog } from './features/chords/ChordFunctionDialog';
+import { useChordsController } from './features/chords/use-chords-controller';
 import { BootloaderConfirmationDialog } from './features/bootloader-confirmation';
 import {
   KITSUNE_INPUT_PURCHASE_URL,
@@ -692,6 +702,8 @@ export function App() {
   const [startupTheme, setStartupTheme] = useState<UiThemePreset>(storedUiThemePreset);
   const [startupTextScale, setStartupTextScale] = useState<UiTextScalePercent>(storedUiTextScalePercent);
   const localization = useLocalization();
+  // Hidden or minimized, the app stops rendering snapshots and pauses its polling.
+  const windowVisible = useDocumentVisible();
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
   const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
@@ -761,7 +773,7 @@ export function App() {
     runAction,
     runQuietAction
   };
-  const stickDeadzones = useStickDeadzonesController(runtime, activeControlTab === 'deadzones');
+  const stickDeadzones = useStickDeadzonesController(runtime, activeControlTab === 'deadzones' && windowVisible);
   const devices = useDevicesController(runtime);
   const lighting = useControllerLightingController(runtime);
   const audio = useControllerAudioController(runtime, { lightbarCommitPending: lighting.lightbarCommitPending });
@@ -825,22 +837,38 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     let receivedLiveSnapshot = false;
-    window.bridge.getStatus().then((next) => {
-      if (!cancelled && !receivedLiveSnapshot) {
-        applySnapshot(next);
-      }
-    });
-    const unsubscribe = window.bridge.onSnapshot((next) => {
-      receivedLiveSnapshot = true;
-      if (windowDraggingRef.current) {
+    // The bridge service sends a snapshot on every status poll. While the window
+    // is being dragged, hidden, or minimized only the newest one is kept, and it
+    // is rendered once the window is back.
+    const receiveSnapshot = (next: BridgeSnapshot) => {
+      if (windowDraggingRef.current || documentHidden()) {
         deferredSnapshotRef.current = next;
         return;
       }
       applySnapshot(next);
+    };
+    const applyDeferredSnapshotWhenShown = () => {
+      if (documentHidden() || windowDraggingRef.current) return;
+      const deferredSnapshot = deferredSnapshotRef.current;
+      deferredSnapshotRef.current = null;
+      if (deferredSnapshot) {
+        applySnapshot(deferredSnapshot);
+      }
+    };
+    window.bridge.getStatus().then((next) => {
+      if (!cancelled && !receivedLiveSnapshot) {
+        receiveSnapshot(next);
+      }
     });
+    const unsubscribe = window.bridge.onSnapshot((next) => {
+      receivedLiveSnapshot = true;
+      receiveSnapshot(next);
+    });
+    document.addEventListener('visibilitychange', applyDeferredSnapshotWhenShown);
     return () => {
       cancelled = true;
       unsubscribe();
+      document.removeEventListener('visibilitychange', applyDeferredSnapshotWhenShown);
       if (overviewSleepConfirmTimerRef.current !== null) {
         window.clearTimeout(overviewSleepConfirmTimerRef.current);
       }
@@ -863,6 +891,10 @@ export function App() {
     if (!audioHapticsOpen || !controllerAudioReady) {
       setAudioHapticsSessions([]);
       setAudioHapticsSessionsLoading(false);
+      return undefined;
+    }
+    if (!windowVisible) {
+      // Keep the listed sessions; they refresh when the window is shown again.
       return undefined;
     }
 
@@ -897,7 +929,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [audioHapticsOpen, audioReactiveHapticsSourceKey, connected, controllerConnected]);
+  }, [audioHapticsOpen, audioReactiveHapticsSourceKey, connected, controllerConnected, windowVisible]);
 
   useEffect(() => {
     if (!showNotificationsMenu) {
@@ -1205,7 +1237,7 @@ export function App() {
       ? 'Active'
       : 'Enabled'
     : 'Off';
-  const diagnosticsVisible = activeControlTab === 'system' && showDiagnostics;
+  const diagnosticsVisible = activeControlTab === 'system' && showDiagnostics && windowVisible;
   const ackText = useMemo(() => {
     if (!diagnosticsVisible) return '';
     if (!lastAck) return 'No commands yet';
@@ -2063,6 +2095,8 @@ export function App() {
       sidebarDevice={sidebarDeviceNode}
       pages={(
         <>
+          {/* Each page mounts on its first visit; hidden pages skip re-rendering on new snapshots. */}
+          <DeferredPage active={activeControlTab === 'overview'}>
           <div
             className={`control-page overview-page ${activeControlTab === 'overview' ? 'active' : ''}`}
             role="tabpanel"
@@ -2499,16 +2533,22 @@ export function App() {
               </div>
             </section>
           </div>
+          </DeferredPage>
 
-          <DevicesPage active={activeControlTab === 'devices'} controller={devices} pendingAction={pendingAction} />
+          <DeferredPage active={activeControlTab === 'devices'}>
+            <LazyDevicesPage active={activeControlTab === 'devices'} controller={devices} pendingAction={pendingAction} />
+          </DeferredPage>
 
-          <StickDeadzonesPage
-            active={activeControlTab === 'deadzones'}
-            controller={stickDeadzones}
-            stickInputPreview={snapshot.stickInputPreview}
-            locked={!controllerControlsAvailable || pendingAction !== null}
-          />
+          <DeferredPage active={activeControlTab === 'deadzones'}>
+            <LazyStickDeadzonesPage
+              active={activeControlTab === 'deadzones'}
+              controller={stickDeadzones}
+              stickInputPreview={snapshot.stickInputPreview}
+              locked={!controllerControlsAvailable || pendingAction !== null}
+            />
+          </DeferredPage>
 
+          <DeferredPage active={activeControlTab === 'haptics' || audioHapticsOpen}>
           <div
             className={`control-page haptics-page ${activeControlTab === 'haptics' || audioHapticsOpen ? 'active' : ''}`}
             role="tabpanel"
@@ -2971,52 +3011,63 @@ export function App() {
               )}
               <FeatureTipsPanel tab="haptics" onSettingsFocusRequest={focusBridgeSettings} audioHapticsOpen={audioHapticsOpen} />
           </div>
+          </DeferredPage>
 
-          <ControllerAudioPage
-            active={activeControlTab === 'audio'}
-            controller={audio}
-            snapshot={snapshot}
-            connected={connected}
-            controllerControlsAvailable={controllerControlsAvailable}
-            pendingAction={pendingAction}
-          />
+          <DeferredPage active={activeControlTab === 'audio'}>
+            <ControllerAudioPage
+              active={activeControlTab === 'audio'}
+              controller={audio}
+              snapshot={snapshot}
+              connected={connected}
+              controllerControlsAvailable={controllerControlsAvailable}
+              pendingAction={pendingAction}
+            />
+          </DeferredPage>
 
+          <DeferredPage active={activeControlTab === 'triggers' || triggerLabOpen}>
+            <AdaptiveTriggersPage
+              active={activeControlTab === 'triggers' || triggerLabOpen}
+              triggerLabOpen={triggerLabOpen}
+              triggers={triggers}
+              lab={triggerLab}
+              snapshot={snapshot}
+              connected={connected}
+              controllerControlsAvailable={controllerControlsAvailable}
+              pendingAction={pendingAction}
+              onSettingsFocusRequest={focusBridgeSettings}
+            />
+          </DeferredPage>
 
-          <AdaptiveTriggersPage
-            active={activeControlTab === 'triggers' || triggerLabOpen}
-            triggerLabOpen={triggerLabOpen}
-            triggers={triggers}
-            lab={triggerLab}
-            snapshot={snapshot}
-            connected={connected}
-            controllerControlsAvailable={controllerControlsAvailable}
-            pendingAction={pendingAction}
-            onSettingsFocusRequest={focusBridgeSettings}
-          />
+          <DeferredPage active={activeControlTab === 'lighting'}>
+            <ControllerLightingPage
+              active={activeControlTab === 'lighting'}
+              controller={lighting}
+              snapshot={snapshot}
+              connected={connected}
+              controllerControlsAvailable={controllerControlsAvailable}
+              pendingAction={pendingAction}
+              onSettingsFocusRequest={focusBridgeSettings}
+            />
+          </DeferredPage>
 
-          <ControllerLightingPage
-            active={activeControlTab === 'lighting'}
-            controller={lighting}
-            snapshot={snapshot}
-            connected={connected}
-            controllerControlsAvailable={controllerControlsAvailable}
-            pendingAction={pendingAction}
-            onSettingsFocusRequest={focusBridgeSettings}
-          />
+          <DeferredPage active={activeControlTab === 'remapping'}>
+            <LazyButtonRemappingPage
+              active={activeControlTab === 'remapping'}
+              controller={buttonRemapping}
+              pendingAction={pendingAction}
+            />
+          </DeferredPage>
 
-          <ButtonRemappingPage
-            active={activeControlTab === 'remapping'}
-            controller={buttonRemapping}
-            pendingAction={pendingAction}
-          />
+          <DeferredPage active={activeControlTab === 'chords'}>
+            <LazyChordsPage
+              active={activeControlTab === 'chords'}
+              controller={chords}
+              snapshot={snapshot}
+              pendingAction={pendingAction}
+            />
+          </DeferredPage>
 
-          <ChordsPage
-            active={activeControlTab === 'chords'}
-            controller={chords}
-            snapshot={snapshot}
-            pendingAction={pendingAction}
-          />
-
+          <DeferredPage active={activeControlTab === 'system'}>
           <div
             className={`control-page system-page ${activeControlTab === 'system' ? 'active' : ''}`}
             role="tabpanel"
@@ -3379,12 +3430,16 @@ export function App() {
                 />
               </section>
           </div>
-          <SettingsPage
-            active={activeControlTab === 'settings'}
-            navigation={settingsNavigation}
-            model={settingsPageModel}
-            actions={settingsPageActions}
-          />
+          </DeferredPage>
+
+          <DeferredPage active={activeControlTab === 'settings'}>
+            <LazySettingsPage
+              active={activeControlTab === 'settings'}
+              navigation={settingsNavigation}
+              model={settingsPageModel}
+              actions={settingsPageActions}
+            />
+          </DeferredPage>
         </>
       )}
       settingsSidebar={(

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { IconHeadphones as Headphones, IconVolume as Volume2 } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
 import type { AppRuntime } from '../../composition/app-runtime';
+import { useDocumentVisible } from '../../common/use-document-visible';
 import { delay, findBridgeAudioOutputId, playMicLiveListen, stopMicLiveListen } from './audio-playback';
 import {
   BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE,
@@ -43,6 +44,7 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
   const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
   const [micTestLocked, setMicTestLocked] = useState(false);
   const [micTestError, setMicTestError] = useState<string | null>(null);
+  const windowVisible = useDocumentVisible();
 
   const [speakerVolumeCommitPending, setSpeakerVolumeCommitPending] = useState(false);
   const [micVolumeCommitPending, setMicVolumeCommitPending] = useState(false);
@@ -160,7 +162,7 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
   const activeAudioTestStatusTone = showMicrophoneControl ? micTestStatusTone : speakerStatusTone;
 
   useEffect(() => {
-    if (!connected || speakerOutputAvailable !== false || speakerTestLocked) {
+    if (!connected || speakerOutputAvailable !== false || speakerTestLocked || !windowVisible) {
       return undefined;
     }
 
@@ -176,7 +178,7 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
 
     const handle = window.setInterval(refresh, TEST_SPEAKER_ENDPOINT_REFRESH_MS);
     return () => window.clearInterval(handle);
-  }, [connected, speakerOutputAvailable, speakerTestLocked]);
+  }, [connected, speakerOutputAvailable, speakerTestLocked, windowVisible]);
 
   useEffect(() => () => {
     stopMicLiveListen();

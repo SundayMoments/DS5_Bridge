@@ -254,7 +254,12 @@ export async function openPage(host: HTMLElement, tabId: string): Promise<HTMLEl
   const button = host.querySelector<HTMLButtonElement>(`#control-tab-${tabId}`);
   if (!button) throw new Error(`No sidebar entry for ${tabId}`);
   await act(async () => button.click());
-  const panel = host.querySelector<HTMLElement>('.control-page.active');
+  // Some pages load their chunk on the first visit.
+  await act(async () => {
+    await vi.dynamicImportSettled();
+    await Promise.resolve();
+  });
+  const panel = host.querySelector<HTMLElement>('.control-page.active:not([aria-busy="true"])');
   if (!panel) throw new Error(`No active page after opening ${tabId}`);
   return panel;
 }
