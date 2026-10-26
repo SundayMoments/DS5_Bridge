@@ -128,6 +128,7 @@ const MIC_KEEPALIVE_ENABLED = CompanionDebugConfig.micKeepaliveEnabled;
 const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
 const SYSTEM_AUDIO_HAPTICS_MAX_RETRY_MS = 30000;
 const SYSTEM_AUDIO_HAPTICS_STABLE_MS = 10000;
+const SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS = 1000;
 const TEST_HAPTICS_ENDPOINT_WAIT_MS = 5000;
 const TEST_HAPTICS_ENDPOINT_RETRY_MS = 250;
 const TEST_HAPTICS_SWITCHING_MESSAGE =
@@ -1304,6 +1305,8 @@ export class BridgeService extends EventEmitter {
   private systemAudioHapticsRetryAt = 0;
   private systemAudioHapticsFailures = 0;
   private systemAudioHapticsRunningSince: number | null = null;
+  private systemAudioHapticsWaitingForApp = false;
+  private systemAudioHapticsExitedAppProcessId: number | null = null;
   private hapticsTestInFlight: Promise<BridgeSnapshot> | null = null;
   private hapticsTestActive = false;
   private systemAudioHapticsPassthroughActive = false;
@@ -3653,11 +3656,24 @@ export class BridgeService extends EventEmitter {
         await this.applyAudioReactiveHapticsSettings(settings, false);
       }
       this.systemAudioHapticsRetryAt = 0;
+      this.systemAudioHapticsWaitingForApp = false;
+      this.systemAudioHapticsExitedAppProcessId = null;
       if (!wasRunning) {
         this.systemAudioHapticsRunningSince = Date.now();
       }
     } catch (error) {
       await this.systemAudioHapticsEngine.stop();
+      if ((error as { reason?: unknown } | null)?.reason === 'app-session-unavailable') {
+        // A closed game returns under a new process. Watch the session list for
+        // it every second rather than relaunching the helper on a backoff.
+        if (!this.systemAudioHapticsWaitingForApp) {
+          this.appendAudioDebugLines(['[SystemHaptics] waiting for the selected app to play audio']);
+        }
+        this.systemAudioHapticsWaitingForApp = true;
+        this.systemAudioHapticsRunningSince = null;
+        this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS;
+        return;
+      }
       if (this.systemAudioHapticsPassthroughActive) {
         this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS;
         await this.applyAudioReactiveHapticsSettings(settings, false);
@@ -3711,6 +3727,38 @@ export class BridgeService extends EventEmitter {
     this.systemAudioHapticsRetryAt = 0;
     this.systemAudioHapticsFailures = 0;
     this.systemAudioHapticsRunningSince = null;
+    this.systemAudioHapticsWaitingForApp = false;
+    this.systemAudioHapticsExitedAppProcessId = null;
+  }
+
+  // Matches the way the helper resolves the app: a saved path is
+  // authoritative, then the executable name, then the saved process id. The
+  // process that just exited may linger in the list and never counts.
+  private async selectedAudioHapticsAppAvailable(): Promise<boolean> {
+    const source = this.settingsStore.get().audioReactiveHapticsSource;
+    if (typeof source !== 'object' || source === null || source.kind !== 'app-session') {
+      return true;
+    }
+    const normalize = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
+    const path = normalize(source.processPath);
+    const executable = normalize(source.executableName);
+    const sessions = await this.listAudioHapticsSessions();
+    return sessions.some((session) => {
+      if (
+        session.processId <= 0
+        || session.state === 'expired'
+        || session.processId === this.systemAudioHapticsExitedAppProcessId
+      ) {
+        return false;
+      }
+      if (path) {
+        return normalize(session.processPath) === path;
+      }
+      if (executable) {
+        return normalize(session.executableName) === executable;
+      }
+      return session.processId === source.processId;
+    });
   }
 
   private async handleSystemAudioHapticsStatus(line: string): Promise<void> {
@@ -3729,6 +3777,10 @@ export class BridgeService extends EventEmitter {
         && this.systemAudioHapticsDesired(settings)
       ) {
         this.resetSystemAudioHapticsRecovery();
+        const exitedApp = /reason=app-session-exited processId=(\d+)/.exec(line);
+        if (exitedApp) {
+          this.systemAudioHapticsExitedAppProcessId = Number(exitedApp[1]);
+        }
         await this.systemAudioHapticsEngine.stop();
         await this.updateSystemAudioHapticsEngine();
         return;
@@ -3802,6 +3854,10 @@ export class BridgeService extends EventEmitter {
       || !this.controllerAudioReady()
       || !this.systemAudioHapticsDesired(this.settingsStore.get())
     ) {
+      return;
+    }
+    if (this.systemAudioHapticsWaitingForApp && !await this.selectedAudioHapticsAppAvailable()) {
+      this.systemAudioHapticsRetryAt = Date.now() + SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS;
       return;
     }
     await this.updateSystemAudioHapticsEngine();

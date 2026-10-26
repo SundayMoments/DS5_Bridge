@@ -1016,6 +1016,81 @@ describe('BridgeService', () => {
     }), 'dualsense');
   });
 
+  it('resumes app audio haptics when the selected app comes back under a new process', async () => {
+    const appSource = {
+      kind: 'app-session' as const,
+      processId: 4321,
+      displayName: 'Microsoft Edge',
+      executableName: 'msedge.exe',
+      processPath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+    };
+    const service = serviceFixture({
+      audioReactiveHapticsEnabled: true,
+      audioReactiveHapticsSource: appSource
+    });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    let running = false;
+    const start = vi.fn(async () => {
+      running = true;
+    });
+    const stop = vi.fn(async () => {
+      running = false;
+    });
+    const session = (processId: number, state: string) => ({
+      processId,
+      displayName: 'Microsoft Edge',
+      executableName: 'msedge.exe',
+      processPath: appSource.processPath,
+      iconPath: null,
+      sessionIdentifier: null,
+      sessionInstanceIdentifier: null,
+      state,
+      endpointName: 'Speakers',
+      isSelected: true
+    });
+    let sessions = [session(4321, 'inactive')];
+    const listSessions = vi.fn(async () => sessions);
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: { start: typeof start; stop: typeof stop; isActive(): boolean };
+      audioHapticsSessionMonitor: { listSessions: typeof listSessions; stop(): Promise<void> };
+      audioHapticsSessionCache: unknown;
+      systemAudioHapticsRetryAt: number;
+      handleSystemAudioHapticsStatus(line: string): Promise<void>;
+    };
+    internals.systemAudioHapticsEngine = { start, stop, isActive: () => running };
+    internals.audioHapticsSessionMonitor = { listSessions, stop: async () => undefined };
+
+    await poll(service);
+    await flushReapply();
+    expect(start).toHaveBeenCalledOnce();
+
+    // The app exits; until it returns, the helper reports its session missing.
+    start.mockRejectedValueOnce(Object.assign(
+      new Error('Selected audio app is not available for haptics yet.'),
+      { reason: 'app-session-unavailable' }
+    ));
+    await internals.handleSystemAudioHapticsStatus('status: route-changed reason=app-session-exited processId=4321');
+    expect(start).toHaveBeenCalledTimes(2);
+
+    // The exited process's lingering session does not count as the app returning.
+    internals.systemAudioHapticsRetryAt = 0;
+    await poll(service);
+    expect(listSessions).toHaveBeenCalled();
+    expect(start).toHaveBeenCalledTimes(2);
+
+    sessions = [session(4321, 'expired'), session(9876, 'active')];
+    internals.audioHapticsSessionCache = null;
+    internals.systemAudioHapticsRetryAt = 0;
+    await poll(service);
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(running).toBe(true);
+  });
+
   it('ignores firmware-reported mic unmute when duplex mic is disabled', async () => {
     const service = serviceFixture({ duplexMicEnabled: false, micMuted: true });
     const device = new MockHidDevice();
