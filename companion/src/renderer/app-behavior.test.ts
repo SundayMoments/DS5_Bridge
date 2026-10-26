@@ -25,13 +25,6 @@ const settingsActionsSource = (() => {
   return appSource.slice(start, appSource.indexOf('\n  };', start));
 })();
 
-function extractFunction(name: string): string {
-  const start = appSource.indexOf(`function ${name}`);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const nextFunction = appSource.indexOf('\n  function ', start + 1);
-  return appSource.slice(start, nextFunction === -1 ? undefined : nextFunction);
-}
-
 describe('renderer behavior guards', () => {
   it('self-hosts the Inter variable font', () => {
     expect(rendererEntrySource).toContain("import '@fontsource-variable/inter/standard.css';");
@@ -54,7 +47,8 @@ describe('renderer behavior guards', () => {
     expect(appSource).not.toContain('setHost' + 'EncodedAudioEnabled');
     expect(appSource).not.toContain('Disable Host ' + 'Encoding?');
     expect(appSource).not.toContain('Enable host ' + 'encoded audio');
-    expect(appSource).toContain('Pico Local');
+    // The Overview's Audio Path card shows the Pico-local route; see features/overview/OverviewPage.rendered.test.tsx.
+    expect(featureSource('overview/model.ts')).toContain("'Pico Local'");
   });
 
   // The DualSense Edge host persona, the emergency device repair dialog, the
@@ -215,7 +209,7 @@ describe('renderer behavior guards', () => {
   });
 
   it('keeps all four abbreviated personas on the overview quick-actions row', () => {
-    // The buttons are rendered in App.rendered.test.tsx.
+    // The buttons are rendered in features/overview/OverviewPage.rendered.test.tsx.
     expect(stylesSource).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
   });
 
