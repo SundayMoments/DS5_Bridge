@@ -124,7 +124,9 @@ struct mic_decode_element {
 };
 
 static uint8_t host_mic_usb_channel_count() {
-    return host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1;
+    // Follow the attached descriptor, not a persona change still waiting for
+    // its USB reconnect (DualSense Edge exposes a stereo microphone).
+    return usb_mic_endpoint_channels;
 }
 
 static uint16_t host_mic_usb_packet_bytes() {

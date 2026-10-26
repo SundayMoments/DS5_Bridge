@@ -14,6 +14,9 @@ extern uint8_t usb_host_volume_percent[3]; // Speaker, mic, raw line capture.
 extern uint8_t usb_host_mute[3]; // Speaker, mic, raw line capture.
 extern uint32_t usb_host_volume_set_count[3];
 extern float usb_host_speaker_gain; // Host UAC speaker volume as linear gain.
+// Microphone channels of the descriptor the host enumerated. A persona change
+// selects new descriptors before the old attachment is retired.
+extern volatile uint8_t usb_mic_endpoint_channels;
 
 void usb_device_stack_init_disconnected();
 uint8_t usb_hid_polling_rate_mode();

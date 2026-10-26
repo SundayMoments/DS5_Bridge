@@ -248,6 +248,7 @@ void assert_dualsense_edge_persona_is_edge_facing(
     const auto companion_cpp = read_text(source_root / "src" / "companion.cpp");
     const auto host_persona_h = read_text(source_root / "src" / "persona" / "host_persona.h");
     const auto audio_cpp = read_text(source_root / "src" / "audio.cpp");
+    const auto usb_cpp = read_text(source_root / "src" / "usb.cpp");
     const auto tusb_config_h = read_text(source_root / "src" / "tusb_config.h");
 
     if (
@@ -312,7 +313,11 @@ void assert_dualsense_edge_persona_is_edge_facing(
         || source.find("build_dualsense_edge_configuration_descriptor") == std::string::npos
         || source.find("descriptor_configuration_dualsense_edge") == std::string::npos
         || source.find("source_interface == 2") == std::string::npos
-        || audio_cpp.find("host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1") == std::string::npos
+        || usb_cpp.find("usb_mic_endpoint_channels = host_persona_active() == HostPersonaModeDualSenseEdge ? 2 : 1;")
+            == std::string::npos
+        || extract_between(usb_cpp, "extern \"C\" void tud_mount_cb(void) {", "\n}\n")
+            .find("usb_latch_mic_endpoint_channels();") == std::string::npos
+        || audio_cpp.find("return usb_mic_endpoint_channels;") == std::string::npos
         || audio_cpp.find("host_mic_usb_channel_count()") == std::string::npos
     ) {
         throw std::runtime_error(
@@ -683,6 +688,23 @@ void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root)
         || pm_poll.find("if (usb_host_suspended)") == std::string::npos
     ) {
         throw std::runtime_error("USB PM poll must commit debounced power-off and defer reconnect work while suspended");
+    }
+
+    const auto retire_reconnect_wait = pm_poll.find(
+        "if (usb_reconnect_wait_pending && time_reached(now, usb_reconnect_at_us))"
+    );
+    const auto suspended_return = pm_poll.find("if (usb_host_suspended) {");
+    if (
+        retire_reconnect_wait == std::string::npos
+        || suspended_return == std::string::npos
+        || retire_reconnect_wait > suspended_return
+        || pm_poll.find("usb_reconnect_connect_pending && !usb_reconnect_wait_pending") == std::string::npos
+        || pm_poll.find("usb_reconnect_requested && !usb_reconnect_wait_pending") == std::string::npos
+        || pm_poll.find("usb_reconnect_target_bridge_only = !usb_controller_transport_ready;") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "USB PM poll must retire reconnect waits while suspended and keep a detach's reattach through controller loss"
+        );
     }
 
     const std::string disconnect_block = extract_between(
