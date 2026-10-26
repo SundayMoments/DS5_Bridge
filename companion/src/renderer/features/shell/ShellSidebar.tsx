@@ -4,7 +4,6 @@ import { ShellSidebarHeader } from './ShellSidebarHeader';
 import {
   CONTROL_TAB_DEFINITIONS,
   CONTROL_TAB_GROUPS,
-  CONTROL_TAB_TRAILING_ROWS,
   controlTabGroupFor,
   type ControlTab,
   type ControlTabDefinition,
@@ -16,8 +15,6 @@ export type ShellSidebarProps = Readonly<{
   activeTab: ControlTab;
   /** The device card and bridge selector. */
   device: ReactNode;
-  /** Optional content above Settings, such as the support badge. */
-  footer?: ReactNode;
   onChromeMouseDown: MouseEventHandler<HTMLElement>;
   onSelectTab: (tab: ControlTab) => void;
   panelIdForTab: (tab: ControlTab) => string;
@@ -26,7 +23,6 @@ export type ShellSidebarProps = Readonly<{
 export function ShellSidebar({
   activeTab,
   device,
-  footer,
   onChromeMouseDown,
   onSelectTab,
   panelIdForTab
@@ -116,12 +112,9 @@ export function ShellSidebar({
                 </div>
               );
             })}
-            {CONTROL_TAB_TRAILING_ROWS.map((definition) => renderTabButton(definition))}
           </div>
-          <div className="sidebar-footer">
-            {footer}
-            {renderTabButton(CONTROL_TAB_DEFINITIONS.settings, { utility: true })}
-          </div>
+          {/* Settings sits alone below the list, as in Kitsune Input. */}
+          {renderTabButton(CONTROL_TAB_DEFINITIONS.settings, { utility: true })}
         </nav>
       </div>
     </section>

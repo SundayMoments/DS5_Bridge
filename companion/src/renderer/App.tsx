@@ -2285,7 +2285,12 @@ export function App() {
         </button>
       )}
       windowBarTools={(
-        <ShellNotifications
+        <>
+          <ShellSupportBadge
+            badgeUrl={kofiBadgeUrl}
+            onOpen={() => void window.bridge.openExternal('https://ko-fi.com/sundaymoments')}
+          />
+          <ShellNotifications
           rootRef={notificationsRef}
           notifications={{
             menuOpen: showNotificationsMenu,
@@ -2298,15 +2303,10 @@ export function App() {
           onToggleController={toggleControllerNotifications}
           onToggleLowBattery={toggleLowBatteryNotifications}
           onTest={testNotifications}
-        />
+          />
+        </>
       )}
       sidebarDevice={sidebarDeviceNode}
-      sidebarFooter={(
-        <ShellSupportBadge
-          badgeUrl={kofiBadgeUrl}
-          onOpen={() => void window.bridge.openExternal('https://ko-fi.com/sundaymoments')}
-        />
-      )}
       pages={(
         <>
           <div

@@ -198,6 +198,31 @@
   background: var(--surface-divider);
 }
 
+/* The Ko-fi badge keeps its own artwork; one variant per theme keeps it legible. */
+.shell-kofi-link {
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  display: block;
+  background: transparent;
+}
+
+.shell-kofi-link:hover {
+  filter: brightness(1.08);
+}
+
+.shell-kofi-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.shell-kofi-badge {
+  display: block;
+  width: auto;
+  height: 100%;
+}
+
 .window-actions {
   height: 100%;
   padding-left: 0;

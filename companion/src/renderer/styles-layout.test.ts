@@ -582,7 +582,13 @@ describe('companion layout CSS', () => {
       .toContain('min-height: 0;');
     const list = cssBlockIn(shellSidebarSource, '.control-tab-list', 'overflow-y: auto;');
     expect(list).toContain('-webkit-app-region: no-drag;');
-    expect(cssBlockIn(shellSidebarSource, '.sidebar-footer', 'display: grid;')).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tabs > .control-tab-button.utility', '-webkit-app-region: no-drag;'))
+      .toContain('-webkit-app-region: no-drag;');
+    // The section label sits 12px under the bridge selector, as in Kitsune Input.
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-controls', 'margin-top: 12px;')).toContain('gap: 8px;');
+    expect(shellSidebarSource).not.toContain('.sidebar-footer');
+    expect(cssBlockIn(rendererStyleModule('styles/app-shell.css'), '.shell-kofi-link', 'height: 26px;'))
+      .toContain('background: transparent;');
     expect(cssBlock('.app-content', 'grid-template-columns: var(--sidebar-width) minmax(0, 1fr);'))
       .toContain('background: var(--sidebar-bg);');
     expect(cssBlock('.app-content::before', 'border-radius: var(--workspace-corner-radius) 0 0 0;'))

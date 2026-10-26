@@ -63,32 +63,42 @@ try {
     await page.waitForTimeout(150);
   }
 
-  // The navigation list scrolls on its own; the Ko-fi badge and Settings stay pinned below it.
+  // As in Kitsune Input, the navigation fits without scrolling while Controller is
+  // expanded, Settings sits alone below it, and the Ko-fi badge lives in the window bar.
   const sidebarSupportSpacing = await page.evaluate(() => {
     const sidebar = document.querySelector('.hero-card');
     const list = document.querySelector('.control-tab-list');
-    const badge = document.querySelector('.sidebar-kofi-badge');
     const settings = document.querySelector('#control-tab-settings');
-    if (!sidebar || !list || !badge || !settings) return null;
+    const badge = document.querySelector('.window-bar .shell-kofi-badge');
+    const banner = document.querySelector('.window-bar-center');
+    const bell = document.querySelector('.window-bar .notifications-button, .window-bar .topbar-tool');
+    if (!sidebar || !list || !settings || !badge) return null;
 
     const listRect = list.getBoundingClientRect();
-    const badgeRect = badge.getBoundingClientRect();
     const settingsRect = settings.getBoundingClientRect();
+    const badgeRect = badge.getBoundingClientRect();
     return {
-      above: badgeRect.top - listRect.bottom,
-      below: settingsRect.top - badgeRect.bottom,
+      listOverflow: Math.max(0, list.scrollHeight - list.clientHeight),
+      settingsGap: settingsRect.top - listRect.bottom,
+      badgeClearance: Math.min(
+        banner ? badgeRect.left - banner.getBoundingClientRect().right : Infinity,
+        bell ? bell.getBoundingClientRect().left - badgeRect.right : Infinity
+      ),
       overflow: Math.max(0, sidebar.scrollHeight - sidebar.clientHeight)
     };
   });
 
   if (!sidebarSupportSpacing) {
-    failures.push('Sidebar: navigation, Ko-fi badge, or Settings was not found');
+    failures.push('Sidebar: navigation, Settings, or the window-bar Ko-fi badge was not found');
   } else {
-    if (sidebarSupportSpacing.above < -tolerancePx) {
-      failures.push(`Sidebar: Ko-fi badge overlaps the navigation list by ${(-sidebarSupportSpacing.above).toFixed(2)}px`);
+    if (sidebarSupportSpacing.listOverflow > tolerancePx) {
+      failures.push(`Sidebar: navigation list scrolls by ${sidebarSupportSpacing.listOverflow.toFixed(2)}px with Controller expanded`);
     }
-    if (sidebarSupportSpacing.below < -tolerancePx) {
-      failures.push(`Sidebar: Ko-fi badge overlaps Settings by ${(-sidebarSupportSpacing.below).toFixed(2)}px`);
+    if (sidebarSupportSpacing.settingsGap < 16 - tolerancePx) {
+      failures.push(`Sidebar: Settings is ${sidebarSupportSpacing.settingsGap.toFixed(2)}px under the list, expected 16px`);
+    }
+    if (sidebarSupportSpacing.badgeClearance < 8 - tolerancePx) {
+      failures.push(`Window bar: Ko-fi badge has only ${sidebarSupportSpacing.badgeClearance.toFixed(2)}px of clearance`);
     }
     if (sidebarSupportSpacing.overflow > tolerancePx) {
       failures.push(`Sidebar: content overflowed by ${sidebarSupportSpacing.overflow.toFixed(2)}px`);
@@ -624,9 +634,10 @@ try {
   console.table(systemTypographyRows);
   console.table(overviewControlAlignmentRows);
   console.table(sidebarSupportSpacing ? [{
-    region: 'Ko-fi badge',
-    above: Number(sidebarSupportSpacing.above.toFixed(2)),
-    below: Number(sidebarSupportSpacing.below.toFixed(2)),
+    region: 'Sidebar',
+    listOverflow: Number(sidebarSupportSpacing.listOverflow.toFixed(2)),
+    settingsGap: Number(sidebarSupportSpacing.settingsGap.toFixed(2)),
+    badgeClearance: Number(sidebarSupportSpacing.badgeClearance.toFixed(2)),
     overflow: Number(sidebarSupportSpacing.overflow.toFixed(2))
   }] : []);
 

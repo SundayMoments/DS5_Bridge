@@ -236,7 +236,7 @@
   position: relative;
   z-index: 1;
   min-height: 0;
-  margin-top: 20px;
+  margin-top: 12px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
@@ -442,45 +442,9 @@
   outline-offset: -2px;
 }
 
-.sidebar-footer {
-  min-width: 0;
-  display: grid;
-  gap: 8px;
+/* Settings sits alone below the list, as in Kitsune Input. */
+.control-tabs > .control-tab-button.utility {
   -webkit-app-region: no-drag;
-}
-
-/* The Ko-fi badge keeps its own artwork; one variant per theme keeps it legible. */
-.sidebar-support {
-  min-width: 0;
-  display: grid;
-  justify-items: start;
-  padding-inline: 10px;
-}
-
-.sidebar-kofi-link {
-  width: min(100%, 132px);
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  display: block;
-  background: transparent;
-}
-
-.sidebar-kofi-link:hover {
-  filter: brightness(1.08);
-}
-
-.sidebar-kofi-link:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
-
-.sidebar-kofi-badge {
-  display: block;
-  width: 100%;
-  max-height: 30px;
-  object-fit: contain;
-  object-position: left center;
 }
 
 @media (prefers-reduced-motion: reduce) {

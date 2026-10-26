@@ -11,6 +11,7 @@ import {
   IconReplace,
   IconSettings,
   IconSparkles,
+  IconTool,
   IconViewfinder,
   IconVolume
 } from '@tabler/icons-react';
@@ -36,7 +37,7 @@ export type ControlTabDefinition = Readonly<{
   Icon: TablerIcon;
 }>;
 
-export type ControlTabGroupId = 'controller' | 'input' | 'labs';
+export type ControlTabGroupId = 'controller' | 'input' | 'tools';
 
 export type ControlTabGroupDefinition = Readonly<{
   id: ControlTabGroupId;
@@ -85,23 +86,21 @@ export const CONTROL_TAB_GROUPS: readonly ControlTabGroupDefinition[] = [
     ]
   },
   {
-    id: 'labs',
-    label: 'Labs',
-    Icon: IconFlask2,
+    // Like Kitsune Input's Tools group: the labs and the bridge's System page.
+    id: 'tools',
+    label: 'Tools',
+    Icon: IconTool,
     tabs: [
       CONTROL_TAB_DEFINITIONS['audio-haptics'],
-      CONTROL_TAB_DEFINITIONS['trigger-lab']
+      CONTROL_TAB_DEFINITIONS['trigger-lab'],
+      CONTROL_TAB_DEFINITIONS.system
     ]
   }
 ];
 
-/** Top-level rows below the groups; Settings stays pinned at the bottom. */
-export const CONTROL_TAB_TRAILING_ROWS: readonly ControlTabDefinition[] = [CONTROL_TAB_DEFINITIONS.system];
-
 export const CONTROL_TABS: readonly ControlTabDefinition[] = [
   CONTROL_TAB_DEFINITIONS.overview,
   ...CONTROL_TAB_GROUPS.flatMap(({ tabs }) => tabs),
-  ...CONTROL_TAB_TRAILING_ROWS,
   CONTROL_TAB_DEFINITIONS.settings
 ];
 

@@ -47,9 +47,8 @@ function ShellHarness({ onSelect = vi.fn(), initialTab = 'overview' as ControlTa
       textScale={100}
       activeTab={activeTab}
       sidebarDevice={<ShellSidebarDevice device={device} onOpenDevices={() => setActiveTab('devices')} />}
-      sidebarFooter={<ShellSupportBadge badgeUrl="kofi.png" onOpen={vi.fn()} />}
       windowBarCenter={<button type="button" className="kitsune-promotion-banner">Explore</button>}
-      windowBarTools={<span className="tool-probe" />}
+      windowBarTools={<><ShellSupportBadge badgeUrl="kofi.png" onOpen={vi.fn()} /><span className="tool-probe" /></>}
       pages={<div className="control-page active" id={controlPanelIdFor(activeTab)}>{activeTab}</div>}
       overlays={<div className="overlay-probe" />}
       onSelectTab={(tab) => {
@@ -87,16 +86,17 @@ describe('MainAppShell', () => {
     expect(shell.querySelector(':scope > .overlay-probe')).not.toBeNull();
   });
 
-  it('groups navigation, keeps System as a row, and pins Settings below the support badge', () => {
+  it('groups navigation like Kitsune Input and pins Settings alone below the list', () => {
     const host = render(<ShellHarness />);
     const nav = host.querySelector('nav.control-tabs[aria-label="Controls"]')!;
     const groups = [...nav.querySelectorAll('.control-tab-group-trigger')].map((button) => button.textContent);
-    expect(groups).toEqual(['Controller', 'Input', 'Labs']);
+    expect(groups).toEqual(['Controller', 'Input', 'Tools']);
     const topLevel = [...nav.querySelectorAll('.control-tab-list > .control-tab-button')].map((button) => button.textContent);
-    expect(topLevel).toEqual(['Overview', 'System']);
-    const footer = nav.querySelector('.sidebar-footer')!;
-    expect(footer.querySelector('.sidebar-kofi-link')?.getAttribute('aria-label')).toBe('Support SundayMoments on Ko-fi');
-    expect(footer.lastElementChild?.id).toBe('control-tab-settings');
+    expect(topLevel).toEqual(['Overview']);
+    expect(nav.lastElementChild?.id).toBe('control-tab-settings');
+    expect(nav.querySelector('.shell-kofi-link')).toBeNull();
+    const kofi = host.querySelector('.window-bar .bridge-tools .shell-kofi-link');
+    expect(kofi?.getAttribute('aria-label')).toBe('Support SundayMoments on Ko-fi');
     expect(host.querySelector('#control-tab-overview')?.getAttribute('aria-current')).toBe('page');
   });
 
@@ -108,8 +108,8 @@ describe('MainAppShell', () => {
     expect(trigger('Controller').getAttribute('aria-expanded')).toBe('true');
     expect(host.querySelector<HTMLButtonElement>('#control-tab-trigger-lab')?.tabIndex).toBe(-1);
 
-    act(() => trigger('Labs').click());
-    expect(trigger('Labs').getAttribute('aria-expanded')).toBe('true');
+    act(() => trigger('Tools').click());
+    expect(trigger('Tools').getAttribute('aria-expanded')).toBe('true');
     expect(trigger('Controller').getAttribute('aria-expanded')).toBe('false');
     const triggerLab = host.querySelector<HTMLButtonElement>('#control-tab-trigger-lab')!;
     expect(triggerLab.tabIndex).toBe(0);
@@ -118,7 +118,7 @@ describe('MainAppShell', () => {
     act(() => triggerLab.click());
     expect(onSelect).toHaveBeenLastCalledWith('trigger-lab');
     expect(triggerLab.getAttribute('aria-current')).toBe('page');
-    expect(host.querySelector('.control-tab-group.contains-active .control-tab-group-trigger')?.textContent).toBe('Labs');
+    expect(host.querySelector('.control-tab-group.contains-active .control-tab-group-trigger')?.textContent).toBe('Tools');
   });
 
   it('opens Devices from the device card', () => {

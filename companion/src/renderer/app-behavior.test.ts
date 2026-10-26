@@ -3,11 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { IconBluetooth, IconViewfinder } from '@tabler/icons-react';
-import {
-  CONTROL_TAB_DEFINITIONS,
-  CONTROL_TAB_GROUPS,
-  CONTROL_TAB_TRAILING_ROWS
-} from './features/shell/control-tabs';
+import { CONTROL_TAB_DEFINITIONS, CONTROL_TAB_GROUPS } from './features/shell/control-tabs';
 import { rendererStyleModule, rendererStyles } from './test-support/renderer-styles';
 
 const appSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
@@ -289,17 +285,16 @@ describe('renderer behavior guards', () => {
     expect(stylesSource).toContain('.bridge-direct-controller');
   });
 
-  it('groups sidebar controls and promotes the two labs to navigation destinations', () => {
+  it('groups sidebar controls like Kitsune Input and promotes the two labs to navigation destinations', () => {
     expect(CONTROL_TAB_GROUPS.map(({ id, label }) => [id, label])).toEqual([
       ['controller', 'Controller'],
       ['input', 'Input'],
-      ['labs', 'Labs']
+      ['tools', 'Tools']
     ]);
     expect(CONTROL_TAB_DEFINITIONS['audio-haptics'].label).toBe('Audio Haptics');
     expect(CONTROL_TAB_DEFINITIONS['trigger-lab'].label).toBe('Trigger Lab');
-    expect(CONTROL_TAB_GROUPS.find(({ id }) => id === 'labs')?.tabs.map(({ id }) => id))
-      .toEqual(['audio-haptics', 'trigger-lab']);
-    expect(CONTROL_TAB_TRAILING_ROWS.map(({ id }) => id)).toEqual(['system']);
+    expect(CONTROL_TAB_GROUPS.find(({ id }) => id === 'tools')?.tabs.map(({ id }) => id))
+      .toEqual(['audio-haptics', 'trigger-lab', 'system']);
     expect(appSource).toContain("const triggerLabOpen = activeControlTab === 'trigger-lab'");
     expect(appSource).toContain("const audioHapticsOpen = activeControlTab === 'audio-haptics'");
     expect(appSource).not.toContain('setTriggerLabOpen');
