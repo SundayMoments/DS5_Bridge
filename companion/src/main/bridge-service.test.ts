@@ -922,8 +922,13 @@ describe('BridgeService', () => {
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
-    const start = vi.fn(async () => undefined);
-    const stop = vi.fn(async () => undefined);
+    let running = false;
+    const start = vi.fn(async () => {
+      running = true;
+    });
+    const stop = vi.fn(async () => {
+      running = false;
+    });
     const internals = service as unknown as {
       systemAudioHapticsEngine: {
         start: typeof start;
@@ -934,7 +939,7 @@ describe('BridgeService', () => {
     internals.systemAudioHapticsEngine = {
       start,
       stop,
-      isActive: () => false
+      isActive: () => running
     };
 
     await poll(service);
@@ -1571,12 +1576,16 @@ describe('BridgeService', () => {
       systemAudioHapticsRetryAt: number;
       handleSystemAudioHapticsStatus(line: string): Promise<void>;
       updateSystemAudioHapticsEngine(): Promise<void>;
+      resetSystemAudioHapticsRecovery(): void;
     };
     internals.systemAudioHapticsEngine = {
       start,
       stop,
       isActive: () => running
     };
+    await flushReapply();
+    running = false;
+    internals.resetSystemAudioHapticsRecovery();
 
     let now = 1_000_000;
     const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);

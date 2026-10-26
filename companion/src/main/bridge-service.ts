@@ -3605,7 +3605,11 @@ export class BridgeService extends EventEmitter {
   private noteSystemAudioHapticsHelperExited(): void {
     const runningSince = this.systemAudioHapticsRunningSince;
     this.systemAudioHapticsRunningSince = null;
-    if (runningSince !== null && Date.now() - runningSince >= SYSTEM_AUDIO_HAPTICS_STABLE_MS) {
+    if (runningSince === null) {
+      // The helper never finished starting; the failed start already backed off.
+      return;
+    }
+    if (Date.now() - runningSince >= SYSTEM_AUDIO_HAPTICS_STABLE_MS) {
       this.systemAudioHapticsFailures = 0;
       return;
     }
@@ -3696,17 +3700,23 @@ export class BridgeService extends EventEmitter {
     }
   }
 
-  private async pulseSystemAudioHaptics(): Promise<void> {
-    const settings = this.settingsStore.get();
-    if (!this.systemAudioHapticsDesired(settings)) {
-      await this.updateSystemAudioHapticsEngine();
+  // Relaunches a helper that exited or failed to start once its backoff has
+  // elapsed. Settings reapply starts it for a new connection, and a persona
+  // switch in progress restarts it when the switch completes.
+  private async recoverSystemAudioHapticsIfDue(): Promise<void> {
+    if (
+      this.systemAudioHapticsEngine.isActive()
+      || this.reapplyActive
+      || this.reappliedSessionKey === null
+      || this.reappliedSessionKey !== this.sessionKey
+      || Date.now() < this.systemAudioHapticsRetryAt
+      || (this.hostPersonaTransition !== null && this.hostPersonaTransition.completedAt === null)
+      || !this.device
+      || !this.controllerAudioReady()
+      || !this.systemAudioHapticsDesired(this.settingsStore.get())
+    ) {
       return;
     }
-    if (!this.controllerAudioReady() || this.reapplyActive) {
-      await this.updateSystemAudioHapticsEngine();
-      return;
-    }
-    await this.ensureCompanionDevice();
     await this.updateSystemAudioHapticsEngine();
   }
 
@@ -3841,6 +3851,8 @@ export class BridgeService extends EventEmitter {
     await this.restoreHostPersonaDefaultRenderIfReady(status);
     if (completedHostPersonaMode) {
       await this.restartSystemAudioHapticsAfterPersonaTransition(completedHostPersonaMode);
+    } else {
+      await this.recoverSystemAudioHapticsIfDue();
     }
     await this.updateMicKeepaliveEngine(status.controllerConnected);
     await this.syncControllerPowerSavingState(settings);
