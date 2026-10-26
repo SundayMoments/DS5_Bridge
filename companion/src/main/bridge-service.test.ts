@@ -723,6 +723,29 @@ describe('BridgeService', () => {
     expect(service.getSnapshot().settings.micMuted).toBe(false);
   });
 
+  it('leaves the 20 Hz shortcut timer idle while no controller is connected', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    const runShortcutPoll = () => (service as unknown as { runShortcutPoll(): void }).runShortcutPoll();
+
+    await poll(service);
+    const reads = () => device.featureReportIds.filter((id) => id === REPORT_ID.INPUT).length;
+    const afterStatusPoll = reads();
+    runShortcutPoll();
+    await flushImmediate();
+    expect(reads()).toBe(afterStatusPoll);
+
+    device.status = statusReport({ controllerConnected: true });
+    await poll(service);
+    const afterConnect = reads();
+    runShortcutPoll();
+    await flushImmediate();
+    expect(reads()).toBe(afterConnect + 1);
+  });
+
   it('does not start the companion interrupt input read loop', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();

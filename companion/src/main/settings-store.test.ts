@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,6 +43,22 @@ describe('SettingsStore', () => {
         rmSync(tempDir, { recursive: true, force: true });
       }
     }
+  });
+
+  it('writes settings atomically and skips rewriting unchanged settings', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    const filePath = path.join(userDataPath, 'settings.json');
+    store.update({ hapticsGainPercent: 80 });
+    expect(persistedSettings(userDataPath).hapticsGainPercent).toBe(80);
+    expect(existsSync(`${filePath}.tmp`)).toBe(false);
+
+    // A marker survives an update that changes nothing.
+    writeFileSync(filePath, readFileSync(filePath, 'utf8').replace('"hapticsGainPercent": 80', '"hapticsGainPercent": 79'));
+    store.update({ hapticsGainPercent: 80 });
+    expect(persistedSettings(userDataPath).hapticsGainPercent).toBe(79);
+    store.update({ hapticsGainPercent: 70 });
+    expect(persistedSettings(userDataPath).hapticsGainPercent).toBe(70);
   });
 
   it('starts with the protected default controller profile and base settings', () => {

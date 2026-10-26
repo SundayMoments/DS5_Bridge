@@ -1108,6 +1108,7 @@ export class SettingsStore {
   private readonly filePath: string;
   private settings: CompanionSettings;
   private customSettings: CompanionSettings;
+  private lastWrittenText: string | null = null;
 
   constructor(public readonly userDataPath: string) {
     this.filePath = path.join(userDataPath, 'settings.json');
@@ -1395,12 +1396,28 @@ export class SettingsStore {
   }
 
   private write(): void {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(this.filePath, `${JSON.stringify({
+    const text = `${JSON.stringify({
       settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
       ...this.settings,
       customProfile: this.customSettings
-    }, null, 2)}\n`, 'utf8');
+    }, null, 2)}\n`;
+    // Many updates change nothing; skip rewriting an identical file.
+    if (text === this.lastWrittenText) {
+      return;
+    }
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+    // Write a sibling and rename it over the file, so a crash or power loss
+    // mid-write cannot leave a truncated settings.json that loads as defaults.
+    const temporaryPath = `${this.filePath}.tmp`;
+    try {
+      fs.writeFileSync(temporaryPath, text, 'utf8');
+      fs.renameSync(temporaryPath, this.filePath);
+    } catch {
+      // A scanner or sync client can hold the file; fall back to a direct write.
+      fs.writeFileSync(this.filePath, text, 'utf8');
+      try { fs.rmSync(temporaryPath, { force: true }); } catch { /* best effort */ }
+    }
+    this.lastWrittenText = text;
   }
 }
 

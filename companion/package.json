@@ -6,7 +6,7 @@
   "author": "SundayMoments",
   "productName": "DS5 Bridge",
   "license": "AGPL-3.0-only",
-  "main": "dist/main/main/main.js",
+  "main": "dist/main/main/bootstrap.js",
   "scripts": {
     "dev": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",

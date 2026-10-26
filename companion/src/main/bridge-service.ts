@@ -1444,7 +1444,6 @@ export class BridgeService extends EventEmitter {
     if (!device || now < this.shortcutFeaturePollRetryAt) {
       return;
     }
-
     try {
       const input = parseCompanionInputReport(
         await device.getFeatureReport(REPORT_ID.INPUT, REPORT_LENGTH)
@@ -1686,6 +1685,12 @@ export class BridgeService extends EventEmitter {
 
   private runShortcutPoll(): void {
     if (this.shortcutPollInFlight) {
+      return;
+    }
+    // Shortcut events and the stick preview come from the controller. With
+    // none connected, every 500 ms status poll already reads the report, so
+    // the 20 Hz timer would only repeat it.
+    if (this.snapshot.status && !this.snapshot.status.controllerConnected) {
       return;
     }
     this.shortcutPollInFlight = true;
@@ -4884,7 +4889,11 @@ export class BridgeService extends EventEmitter {
       personaTransition,
       bridgeDevices: this.bridgeDevicesSnapshot()
     };
-    const publicSnapshot = this.getSnapshot();
+    // Most calls change nothing the renderer shows. Compare first and deep-clone
+    // only the snapshot that is actually delivered.
+    const stickInputPreview = this.stickInputPreviewLeaseUntil > Date.now()
+      ? this.stickInputPreview
+      : null;
     const signature = JSON.stringify({
       state: this.snapshot.state,
       message: this.snapshot.message,
@@ -4897,8 +4906,8 @@ export class BridgeService extends EventEmitter {
       settings: this.snapshot.settings,
       personaTransition: this.snapshot.personaTransition,
       bridgeDevices: this.snapshot.bridgeDevices,
-      stickInputPreview: publicSnapshot.stickInputPreview,
-      bootloaderConfirmation: publicSnapshot.bootloaderConfirmation,
+      stickInputPreview,
+      bootloaderConfirmation: this.bootloaderConfirmation,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,
@@ -4929,6 +4938,6 @@ export class BridgeService extends EventEmitter {
       return;
     }
     this.lastEmittedSnapshotSignature = signature;
-    this.emit('snapshot', publicSnapshot);
+    this.emit('snapshot', this.getSnapshot());
   }
 }
