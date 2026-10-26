@@ -81,6 +81,7 @@ import type {
   HostPersonaTransition,
   HidDeviceSummary,
   UiScalePercent,
+  UiTextScalePercent,
   UiThemePreset,
   WindowsDeviceCleanupResult,
   BridgeDeviceCensus
@@ -101,7 +102,12 @@ import {
 } from './audio-helper';
 import { CompanionDebugConfig } from './debug-config';
 import { HidDiscoveryClient } from './hid-discovery-client';
-import { SettingsStore, normalizeUiScalePercent, normalizeUiThemePreset } from './settings-store';
+import {
+  SettingsStore,
+  normalizeUiScalePercent,
+  normalizeUiTextScalePercent,
+  normalizeUiThemePreset
+} from './settings-store';
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
 
 const POLL_INTERVAL_MS = 500;
@@ -3033,6 +3039,14 @@ export class BridgeService extends EventEmitter {
   setUiScalePercent(value: UiScalePercent): BridgeSnapshot {
     this.snapshot.settings = this.settingsStore.update({
       uiScalePercent: normalizeUiScalePercent(value)
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  setUiTextScalePercent(value: UiTextScalePercent): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      uiTextScalePercent: normalizeUiTextScalePercent(value)
     });
     this.emitSnapshot();
     return this.getSnapshot();

@@ -24,12 +24,32 @@ import type {
   TriggerTestMode
 } from './protocol';
 
-export type UiScalePercent = 75 | 100 | 125 | 150;
+/** Window scale. 100% renders the 1120x630 CSS layout at the 1.25 base zoom. */
+export type UiScalePercent = 60 | 80 | 100 | 120;
+/** Text-only accessibility scale; geometry stays on the window scale. */
+export type UiTextScalePercent = 80 | 90 | 100 | 110 | 120;
 export type UiThemePreset = 'light' | 'dark' | 'bubble-gum' | 'pomegranate' | 'kiwi';
+
+export const UI_SCALE_PERCENTS: readonly UiScalePercent[] = [60, 80, 100, 120];
+export const UI_TEXT_SCALE_PERCENTS: readonly UiTextScalePercent[] = [80, 90, 100, 110, 120];
+export const UI_SCALE_BASE_ZOOM_FACTOR = 1.25;
+
+export function uiScalePercentToZoomFactor(value: UiScalePercent): number {
+  return (value / 100) * UI_SCALE_BASE_ZOOM_FACTOR;
+}
+
+export function isUiScalePercent(value: unknown): value is UiScalePercent {
+  return UI_SCALE_PERCENTS.some((candidate) => candidate === value);
+}
+
+export function isUiTextScalePercent(value: unknown): value is UiTextScalePercent {
+  return UI_TEXT_SCALE_PERCENTS.some((candidate) => candidate === value);
+}
 
 export interface CompanionSettings {
   selectedPresetId: BridgePresetId;
   uiScalePercent: UiScalePercent;
+  uiTextScalePercent: UiTextScalePercent;
   uiThemePreset: UiThemePreset;
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;

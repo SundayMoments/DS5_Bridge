@@ -9,7 +9,13 @@ import {
   MAX_CHORD_FUNCTION_NAME_LENGTH
 } from '../shared/protocol';
 import type { ChordAssignment } from '../shared/protocol';
-import { DEFAULT_SETTINGS, SettingsStore } from './settings-store';
+import {
+  CURRENT_SETTINGS_SCHEMA_VERSION,
+  DEFAULT_SETTINGS,
+  SettingsStore,
+  normalizeUiScalePercent,
+  normalizeUiTextScalePercent
+} from './settings-store';
 
 describe('SettingsStore', () => {
   const tempDirs: string[] = [];
@@ -648,7 +654,9 @@ describe('SettingsStore', () => {
 
     const settings = new SettingsStore(userDataPath).get();
 
-    expect(settings.uiScalePercent).toBe(100);
+    // Unrecognized legacy scales keep the legacy default window size.
+    expect(settings.uiScalePercent).toBe(80);
+    expect(settings.uiTextScalePercent).toBe(DEFAULT_SETTINGS.uiTextScalePercent);
     expect(settings.uiThemePreset).toBe(DEFAULT_SETTINGS.uiThemePreset);
     expect(settings.lightbarColor).toBe(DEFAULT_SETTINGS.lightbarColor);
     expect(settings.speakerVolumePercent).toBe(100);
@@ -658,6 +666,68 @@ describe('SettingsStore', () => {
     expect(settings.controllerProfiles[0]?.settings.speakerVolumePercent).toBe(100);
     expect(settings.controllerProfiles[1]?.settings.pollingRateMode).toBe(DEFAULT_SETTINGS.pollingRateMode);
     expect(settings.controllerProfiles[1]?.settings.lightbarColor).toBe('#123456');
+  });
+
+  it.each([
+    [75, 60],
+    [100, 80],
+    [125, 100],
+    [150, 120]
+  ])('migrates the legacy %i%% UI scale to %i%% so the window keeps its size', (legacy, migrated) => {
+    const userDataPath = tempUserDataPath();
+    writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({
+      settingsSchemaVersion: 4,
+      uiScalePercent: legacy,
+      customProfile: { uiScalePercent: legacy }
+    }), 'utf8');
+
+    const store = new SettingsStore(userDataPath);
+
+    expect(store.get().uiScalePercent).toBe(migrated);
+    store.update({ uiThemePreset: 'light' });
+    expect(persistedSettings(userDataPath)).toMatchObject({
+      settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
+      uiScalePercent: migrated
+    });
+    expect(new SettingsStore(userDataPath).get().uiScalePercent).toBe(migrated);
+  });
+
+  it('keeps the legacy default size when an old settings file has no UI scale', () => {
+    const userDataPath = tempUserDataPath();
+    writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({ uiThemePreset: 'kiwi' }), 'utf8');
+
+    expect(new SettingsStore(userDataPath).get().uiScalePercent).toBe(80);
+  });
+
+  it('does not migrate UI scales saved by the current schema', () => {
+    const userDataPath = tempUserDataPath();
+    writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({
+      settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
+      uiScalePercent: 100
+    }), 'utf8');
+
+    expect(new SettingsStore(userDataPath).get().uiScalePercent).toBe(100);
+  });
+
+  it('defaults new installs to the 100% scale and text size', () => {
+    const settings = new SettingsStore(tempUserDataPath()).get();
+
+    expect(settings.uiScalePercent).toBe(100);
+    expect(settings.uiTextScalePercent).toBe(100);
+  });
+
+  it('normalizes and persists the text size', () => {
+    expect(normalizeUiTextScalePercent(110)).toBe(110);
+    expect(normalizeUiTextScalePercent(95)).toBe(100);
+    expect(normalizeUiTextScalePercent('120')).toBe(100);
+    expect(normalizeUiScalePercent(75)).toBe(DEFAULT_SETTINGS.uiScalePercent);
+    expect(normalizeUiScalePercent(60)).toBe(60);
+
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    store.update({ uiTextScalePercent: 120 });
+    expect(persistedSettings(userDataPath).uiTextScalePercent).toBe(120);
+    expect(new SettingsStore(userDataPath).get().uiTextScalePercent).toBe(120);
   });
 
   it('persists the selected UI theme preset', () => {

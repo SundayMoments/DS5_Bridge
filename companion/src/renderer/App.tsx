@@ -143,7 +143,15 @@ import type {
   TriggerTestMode,
   TriggerTestTarget
 } from '../shared/protocol';
-import type { AudioHapticsSession, BridgeSnapshot, UiScalePercent, UiThemePreset } from '../shared/types';
+import {
+  UI_SCALE_PERCENTS,
+  UI_TEXT_SCALE_PERCENTS,
+  type AudioHapticsSession,
+  type BridgeSnapshot,
+  type UiScalePercent,
+  type UiTextScalePercent,
+  type UiThemePreset
+} from '../shared/types';
 import {
   buildDevicesModel,
   controllerDeviceCachesEqual,
@@ -491,12 +499,8 @@ const IDLE_DISCONNECT_TIMEOUT_OPTIONS: Array<[string, number]> = [
   ['15 min', 15],
   ['30 min', 30]
 ];
-const UI_SCALE_OPTIONS: Array<[string, UiScalePercent]> = [
-  ['75%', 75],
-  ['100%', 100],
-  ['125%', 125],
-  ['150%', 150]
-];
+const UI_SCALE_OPTIONS: Array<[string, UiScalePercent]> = UI_SCALE_PERCENTS.map((value) => [`${value}%`, value]);
+const UI_TEXT_SCALE_OPTIONS: Array<[string, UiTextScalePercent]> = UI_TEXT_SCALE_PERCENTS.map((value) => [`${value}%`, value]);
 const REMAP_BUTTONS: Record<RemapButtonId, RemapButtonDefinition> = {
   l2: { id: 'l2', label: 'L2', glyphUrl: l2GlyphUrl },
   l1: { id: 'l1', label: 'L1', glyphUrl: l1GlyphUrl },
@@ -6706,10 +6710,11 @@ export function App() {
   }
 
   const activeTheme = snapshot?.settings.uiThemePreset ?? startupTheme;
+  const activeTextScale = snapshot?.settings.uiTextScalePercent ?? 100;
 
   if (!snapshot || startupVisible) {
     return (
-      <div className="shell loading" data-theme={activeTheme}>
+      <div className="shell loading" data-theme={activeTheme} data-text-scale={activeTextScale}>
         <StartupScreen ready={Boolean(snapshot)} />
       </div>
     );
@@ -6725,6 +6730,7 @@ export function App() {
         controllerControlsAvailable ? '' : 'controller-unavailable'
       ].filter(Boolean).join(' ')}
       data-theme={activeTheme}
+      data-text-scale={activeTextScale}
     >
       <div
         className="window-bar"
@@ -10364,6 +10370,22 @@ export function App() {
                     disabled={pendingAction !== null}
                     onChange={(value) => {
                       void runAction('ui-scale', () => window.bridge.setUiScalePercent(value));
+                    }}
+                  />
+                </div>
+                <div className="settings-menu-row">
+                  <div className="settings-menu-copy">
+                    <strong>Text Size</strong>
+                  </div>
+                  <CustomSelect
+                    value={snapshot.settings.uiTextScalePercent}
+                    options={UI_TEXT_SCALE_OPTIONS}
+                    className="settings-scale-select"
+                    showSelectedCheck={false}
+                    ariaLabel="Text size"
+                    disabled={pendingAction !== null}
+                    onChange={(value) => {
+                      void runAction('ui-text-scale', () => window.bridge.setUiTextScalePercent(value));
                     }}
                   />
                 </div>

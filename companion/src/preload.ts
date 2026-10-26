@@ -18,6 +18,8 @@ import type {
   BridgeDiagnostics,
   BridgeSnapshot,
   PicoFirmwareActionResult,
+  UiScalePercent,
+  UiTextScalePercent,
   UiThemePreset,
   WindowsDeviceCleanupResult
 } from './shared/types';
@@ -158,7 +160,10 @@ const api = {
   setKitsuneInputPromotionDismissed: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setKitsuneInputPromotionDismissed', value)
   ),
-  setUiScalePercent: (value: number): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiScalePercent', value),
+  setUiScalePercent: (value: UiScalePercent): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiScalePercent', value),
+  setUiTextScalePercent: (value: UiTextScalePercent): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setUiTextScalePercent', value)
+  ),
   setUiThemePreset: (value: UiThemePreset): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setUiThemePreset', value)
   ),

@@ -11,7 +11,8 @@ import {
   mountPicoBootloaderDrive,
   nukePicoFlash as copyPicoFlashNuke
 } from './pico-firmware-updater';
-import { SettingsStore } from './settings-store';
+import { DEFAULT_SETTINGS, SettingsStore } from './settings-store';
+import { fitMainWindowToWorkArea, type MainWindowPresentation } from './main-window-sizing';
 import type {
   AdaptiveTriggerPreviewEffect,
   AudioReactiveHapticsConfig,
@@ -33,6 +34,7 @@ import type {
   PicoFirmwareAction,
   PicoFirmwareActionResult,
   UiScalePercent,
+  UiTextScalePercent,
   UiThemePreset
 } from '../shared/types';
 
@@ -45,8 +47,6 @@ const APP_TRAY_ICON_PNG = path.join('assets', 'controllers', 'ds5-bridge_mark.pn
 const APP_ICON_ICO = path.join('assets', 'controllers', 'ds5-bridge_app-icon-tile.ico');
 const PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH = path.join('firmware', PICO_UNIVERSAL_FLASH_NUKE_FILE);
 const PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH = path.join('firmware', PICO_UNIVERSAL_FLASH_NUKE_SHA256_FILE);
-const BASE_WINDOW_WIDTH = 1120;
-const BASE_WINDOW_HEIGHT = 630;
 const START_IN_TRAY_ARG = '--start-in-tray';
 const ALLOW_PARALLEL_AUTOMATION_INSTANCE = process.env.DS5_BRIDGE_ALLOW_PARALLEL_AUTOMATION_INSTANCE === '1';
 let mainWindow: BrowserWindow | null = null;
@@ -111,19 +111,18 @@ async function createTrayIcon(): Promise<Electron.NativeImage> {
   return pngIcon.isEmpty() ? nativeImage.createEmpty() : pngIcon;
 }
 
-function scaledWindowSize(uiScalePercent: UiScalePercent): { width: number; height: number } {
-  const scale = uiScalePercent / 100;
-  return {
-    width: Math.round(BASE_WINDOW_WIDTH * scale),
-    height: Math.round(BASE_WINDOW_HEIGHT * scale)
-  };
+function scaledWindowPresentation(
+  uiScalePercent: UiScalePercent,
+  workArea: Electron.Rectangle | null
+): MainWindowPresentation {
+  return fitMainWindowToWorkArea(uiScalePercent, workArea);
 }
 
 function applyWindowScale(window: BrowserWindow, uiScalePercent: UiScalePercent, recenter: boolean): void {
-  const { width, height } = scaledWindowSize(uiScalePercent);
   const currentBounds = window.getBounds();
   const display = screen.getDisplayMatching(currentBounds);
   const workArea = display.workArea;
+  const { width, height, zoomFactor } = scaledWindowPresentation(uiScalePercent, workArea);
   const centerX = currentBounds.x + (currentBounds.width / 2);
   const centerY = currentBounds.y + (currentBounds.height / 2);
   const x = recenter
@@ -133,7 +132,7 @@ function applyWindowScale(window: BrowserWindow, uiScalePercent: UiScalePercent,
     ? Math.round(Math.max(workArea.y, Math.min(centerY - (height / 2), workArea.y + workArea.height - height)))
     : currentBounds.y;
 
-  window.webContents.setZoomFactor(uiScalePercent / 100);
+  window.webContents.setZoomFactor(zoomFactor);
   window.setMinimumSize(width, height);
   window.setMaximumSize(width, height);
   window.setBounds({ x, y, width, height }, false);
@@ -149,7 +148,7 @@ function applySnapshotWindowScale(snapshot: { settings: { uiScalePercent: UiScal
 }
 
 function currentUiScalePercent(): UiScalePercent {
-  return bridgeService?.getSnapshot().settings.uiScalePercent ?? 100;
+  return bridgeService?.getSnapshot().settings.uiScalePercent ?? DEFAULT_SETTINGS.uiScalePercent;
 }
 
 function trayControllerName(type: NonNullable<BridgeSnapshot['status']>['controllerType'] | undefined): string {
@@ -424,7 +423,10 @@ function isAllowedExternalUrl(url: string): boolean {
 }
 
 function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
-  const { width, height } = scaledWindowSize(uiScalePercent);
+  const { width, height, zoomFactor } = scaledWindowPresentation(
+    uiScalePercent,
+    screen.getPrimaryDisplay().workArea
+  );
   const rendererIndexPath = path.join(__dirname, '..', '..', 'renderer', 'index.html');
   const window = new BrowserWindow({
     width,
@@ -445,6 +447,7 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
     icon: createRuntimeIcon(),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
+      zoomFactor,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
@@ -1152,6 +1155,9 @@ function registerIpc(service: BridgeService): void {
     applySnapshotWindowScale(snapshot);
     return snapshot;
   });
+  ipcMain.handle('bridge:setUiTextScalePercent', (_event, value: UiTextScalePercent) => (
+    service.setUiTextScalePercent(value)
+  ));
   ipcMain.handle('bridge:setUiThemePreset', (_event, value: UiThemePreset) => (
     service.setUiThemePreset(value)
   ));
