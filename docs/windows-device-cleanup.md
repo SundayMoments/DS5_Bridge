@@ -39,7 +39,10 @@ The current firmware intentionally exposes no USB serial number:
   keyboard HID interface after the game-facing HID interface.
 - With no controller, companion firmware remains visible as the serialized
   management bridge `0x1209:0xDB08` with product `DS5 Bridge Receiver` and USB
-  revision `0x0105`; it hands off to the selected DS/DSE identity when ready.
+  revision `0x0106`; it hands off to the selected DS/DSE identity when ready.
+  The management bridge never advertises Xbox OS descriptors, even while the
+  Xbox persona stays selected across controller sleep. Revision `0x0106`
+  replaced `0x0105` so Windows re-queries its cached OS descriptor discovery.
 - Xbox compatibility mode uses the composite-safe `0x1209:0xDB05` test
   identity, bumps the USB device revision for Windows cache separation, and
   advertises the game-facing interface as XUSB-compatible.
@@ -105,7 +108,7 @@ By default, the script lists or removes non-present instances matching:
 - The DS4 persona cache key `054C09CC0100`.
 - The temporary Xbox persona test cache keys `045E028E0114`, `045E028E0154`,
   `1209DB050155`, and `1209DB050156`.
-- The management bridge cache key `1209DB080105`.
+- The management bridge cache keys `1209DB080105` and `1209DB080106`.
 
 It does not remove currently present `Status = OK` entries unless
 `-IncludePresent` is supplied.

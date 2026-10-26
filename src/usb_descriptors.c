@@ -48,7 +48,9 @@ extern void host_bridge_set_report(uint8_t const *report, uint16_t len);
 #define VENDOR_BRIDGE_CONTROL_SET_REPORT 0x32
 #define BRIDGE_ONLY_VENDOR_ID 0x1209
 #define BRIDGE_ONLY_PRODUCT_ID 0xDB08
-#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0105
+// Windows caches OS descriptor discovery per VID/PID/revision. 0x0106 makes it
+// re-query after the idle bridge stopped advertising the Xbox OS 1.0 string.
+#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0106
 #define BRIDGE_ONLY_PLACEHOLDER_INTERFACE_NUMBER 0x00
 #define BRIDGE_ONLY_VENDOR_BRIDGE_INTERFACE_NUMBER HOST_BRIDGE_BRIDGE_ONLY_INTERFACE_NUMBER
 #define BRIDGE_ONLY_WAKE_KEYBOARD_INTERFACE_NUMBER 0x02
@@ -1829,7 +1831,9 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             break;
 
         case 0xEE:
-            if (host_persona_active() != HostPersonaModeXusb360) {
+            // The Xbox persona survives controller sleep, but the idle bridge
+            // has no XUSB function and rejects the compat-ID request below.
+            if (descriptor_bridge_only_active || host_persona_active() != HostPersonaModeXusb360) {
                 return NULL;
             }
             _desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | 0x12);

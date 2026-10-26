@@ -795,7 +795,10 @@ void assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(std::filesy
     if (
         descriptors.find("#define BRIDGE_ONLY_VENDOR_ID 0x1209") == std::string::npos
         || descriptors.find("#define BRIDGE_ONLY_PRODUCT_ID 0xDB08") == std::string::npos
-        || descriptors.find("#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0105") == std::string::npos
+        || descriptors.find("#define BRIDGE_ONLY_USB_BCD_DEVICE 0x0106") == std::string::npos
+        || descriptors.find(
+            "if (descriptor_bridge_only_active || host_persona_active() != HostPersonaModeXusb360) {\n                return NULL;"
+        ) == std::string::npos
         || descriptors.find("#define BRIDGE_ONLY_CONFIG_INTERFACE_COUNT 0x03") == std::string::npos
         || descriptors.find("descriptor_configuration_bridge_only[]") == std::string::npos
         || descriptors.find("BRIDGE_ONLY_VENDOR_BRIDGE_INTERFACE_NUMBER") == std::string::npos
