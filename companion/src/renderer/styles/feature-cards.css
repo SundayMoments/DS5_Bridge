@@ -1,0 +1,190 @@
+.feature-card-grid {
+  display: grid;
+  grid-template-columns: var(--feature-left-column) var(--feature-right-column);
+  gap: var(--card-gap);
+  min-height: 0;
+  height: auto;
+  align-items: stretch;
+}
+
+.feature-help-panel {
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--card-radius);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 11px;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.feature-help-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.feature-help-heading svg {
+  color: var(--accent);
+}
+
+.feature-help-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.feature-help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px 24px;
+  align-content: start;
+}
+
+.feature-help-item {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.feature-help-item-attention {
+  margin: -5px -7px;
+  padding: 5px 7px;
+  border-radius: var(--control-radius);
+  overflow: hidden;
+}
+
+.feature-help-item-attention::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from var(--attention-angle, 0deg),
+      transparent 0deg,
+      transparent 208deg,
+      rgba(241, 245, 255, 0.2) 238deg,
+      rgba(241, 245, 255, 0.95) 284deg,
+      rgba(241, 245, 255, 0.2) 330deg,
+      transparent 360deg
+    );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: feature-help-attention-spin 5200ms linear infinite;
+}
+
+@property --attention-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes feature-help-attention-spin {
+  to {
+    --attention-angle: 360deg;
+  }
+}
+
+.feature-help-icon {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--control-radius);
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--surface-control);
+}
+
+.feature-help-icon-button {
+  padding: 0;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.feature-help-icon-button:hover,
+.feature-help-icon-button:focus-visible {
+  border-color: var(--accent-border-strong);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.feature-help-icon-button.success:hover,
+.feature-help-icon-button.success:focus-visible {
+  border-color: var(--success-border-strong);
+  color: #ffffff;
+  background: var(--success-selected);
+}
+
+.feature-help-icon-button.active {
+  border-color: var(--accent-border-strong);
+  color: var(--accent-text);
+  background: var(--accent-selected);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -2px 0 var(--accent-border-strong);
+}
+
+.feature-help-icon.success {
+  color: #ffffff;
+  border-color: var(--success-border-strong);
+  background: var(--success-selected);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -2px 0 var(--success-border-strong);
+}
+
+.feature-help-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.feature-help-copy strong {
+  color: var(--text-control);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.1;
+}
+
+.feature-help-copy span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.feature-card {
+  --feature-status-grid-rows: var(--feature-card-header-height) 76px var(--action-height) var(--action-height) minmax(40px, 1fr);
+  min-width: 0;
+  min-height: var(--feature-card-min-height);
+  padding: var(--card-padding);
+  border-color: var(--surface-border);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-panel);
+}
+
+.haptics-page .feature-card,
+.audio-page .feature-card,
+.triggers-page .feature-card,
+.lighting-page .feature-card,
+.deadzones-page .feature-card,
+.system-page .system-card {
+  min-height: 0;
+  height: auto;
+}

@@ -1,0 +1,471 @@
+.remapping-card {
+  --remapping-art-height: clamp(370px, calc(100vh - var(--window-bar-height) - 240px), 500px);
+  --remapping-profile-strip-height: var(--feature-card-header-height);
+  min-height: 0;
+  height: 100%;
+  padding: 0 14px 14px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+  overflow: visible;
+  background: var(--remapping-card-bg);
+}
+
+.remapping-profile-strip {
+  min-height: var(--remapping-profile-strip-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 -14px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--surface-divider);
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
+  background: var(--remapping-strip-bg);
+}
+
+.remapping-profile-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.remapping-profile-actions button,
+.system-profile-save-status {
+  min-height: 30px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  color: var(--text-control);
+  background: var(--surface-control-soft);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.remapping-profile-actions button:hover {
+  border-color: var(--surface-border-strong);
+  background: var(--surface-control-hover);
+}
+
+.remapping-profile-actions button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-color: var(--surface-border-strong);
+  background: var(--surface-control-hover);
+}
+
+.remapping-profile-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+  border-color: var(--surface-divider);
+  background: var(--surface-control-muted);
+}
+
+.system-profile-panel {
+  align-content: start;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.system-profile-strip {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: -10px -14px 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--surface-divider);
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
+  background: var(--surface-card-header);
+}
+
+.system-profile-save-status {
+  min-width: 0;
+  letter-spacing: 0;
+}
+
+.system-profile-strip .system-profile-save-status,
+.system-profile-strip .remapping-profile-actions button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.system-profile-strip .remapping-profile-actions {
+  gap: 5px;
+}
+
+.autosave-check-icon {
+  position: relative;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.autosave-check-icon svg {
+  grid-area: 1 / 1;
+  flex: 0 0 auto;
+}
+
+.autosave-check-outline {
+  color: #ffffff;
+  stroke-width: 5;
+}
+
+.autosave-check-fill {
+  color: var(--success);
+  stroke-width: 2.5;
+}
+
+.system-profile-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.system-profile-summary-group {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.system-profile-summary-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent);
+}
+
+.system-profile-summary-heading h3 {
+  margin: 0;
+  color: var(--text-control);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.system-profile-summary dl {
+  min-width: 0;
+  margin: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.system-profile-summary dl > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-profile-summary dt,
+.system-profile-summary dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.system-profile-summary dt {
+  color: var(--text-muted);
+}
+
+.system-profile-summary dd {
+  max-width: 108px;
+  color: var(--text-control);
+  font-weight: 750;
+  text-align: right;
+}
+
+.system-profile-summary dd.eco-limited {
+  color: var(--success);
+}
+
+.remapping-layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(128px, 0.25fr) minmax(420px, 2.3fr) minmax(128px, 0.25fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: calc(var(--feature-card-height) - 28px);
+}
+
+.remapping-callout-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.remapping-callout-layer polyline {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 140ms ease, stroke-width 140ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.remapping-callout-underlay {
+  stroke: var(--remapping-callout-underlay);
+  stroke-width: 2.1;
+  stroke-linejoin: round;
+}
+
+.remapping-callout-line {
+  stroke: var(--remapping-callout-line);
+  stroke-width: 1.1;
+}
+
+.remapping-callout-layer g.active .remapping-callout-underlay {
+  stroke: var(--remapping-callout-underlay-active);
+  stroke-width: 2.8;
+}
+
+.remapping-callout-layer g.active .remapping-callout-line {
+  stroke: var(--accent-strong);
+  stroke-width: 1.8;
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(40, 124, 255, 0.62));
+}
+
+.remapping-side {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  height: var(--remapping-art-height);
+}
+
+.remapping-pill {
+  position: absolute;
+  z-index: 2;
+  top: var(--remapping-callout-top);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(100%, 128px);
+  min-width: 0;
+  min-height: 36px;
+  padding: 3px;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  display: grid;
+  grid-template-columns: 36px 22px minmax(46px, 1fr);
+  align-items: stretch;
+  gap: 0;
+  background: var(--remapping-pill-bg);
+  overflow: visible;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.remapping-pill:hover,
+.remapping-pill:focus-within,
+.remapping-pill.changed {
+  z-index: 5;
+  border-color: var(--accent-border-strong);
+  background: var(--remapping-pill-hover-bg);
+  box-shadow:
+    0 0 0 1px rgba(40, 124, 255, 0.12),
+    0 0 22px rgba(40, 124, 255, 0.12);
+}
+
+.remapping-pill:has(.custom-select.open) {
+  z-index: 40;
+}
+
+.remapping-pill:has(.custom-select.open) .custom-select-menu {
+  z-index: 120;
+}
+
+.remapping-edge-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.remapping-edge-control {
+  position: absolute;
+  left: 50%;
+  pointer-events: auto;
+}
+
+.remapping-edge-control-top {
+  transform: translate(-50%, 0);
+}
+
+.remapping-edge-control-bottom {
+  transform: translate(-50%, -100%);
+}
+
+.remapping-pill-edge-compact {
+  width: 72px;
+  min-height: 32px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.remapping-pill-edge-compact .remapping-select .custom-select-button {
+  border-left-color: transparent;
+  border-radius: 999px;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  padding: 0 6px 0 7px;
+}
+
+.remapping-pill-edge-compact .remap-glyph-option {
+  justify-content: center;
+  gap: 4px;
+}
+
+.remapping-pill-edge-compact .remap-text-glyph {
+  width: 28px;
+  min-width: 28px;
+  height: 20px;
+  border-radius: 5px;
+  padding: 0;
+}
+
+.remapping-pill-edge-compact .custom-select-button span,
+.remapping-pill-edge-compact .custom-select-menu button span {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.remapping-source,
+.remap-glyph-option {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-control);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.remapping-source {
+  height: 100%;
+  min-height: 100%;
+  padding-left: 0;
+  border-radius: 999px 0 0 999px;
+  background: var(--accent-muted);
+}
+
+.remapping-arrow {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  color: var(--accent-strong);
+  background: var(--surface-control-soft);
+}
+
+.remapping-arrow svg {
+  stroke-width: 2.4;
+}
+
+.remapping-source img,
+.remap-glyph-option img {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  object-fit: contain;
+  display: block;
+  filter: var(--remapping-glyph-filter);
+}
+
+.remap-text-glyph {
+  min-width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  padding: 0 4px;
+  color: var(--text-control);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.remap-text-glyph-source {
+  min-width: 26px;
+}
+
+.remapping-select .custom-select-button {
+  height: 100%;
+  padding: 0 6px 0 6px;
+  border-width: 0 0 0 1px;
+  border-color: var(--surface-divider);
+  border-radius: 0 999px 999px 0;
+  grid-template-columns: minmax(0, 1fr) 12px;
+  gap: 2px;
+  background: var(--surface-control);
+}
+
+.remapping-select .custom-select-button > span,
+.remapping-select .custom-select-menu button > span {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remapping-select .custom-select-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.remapping-select .custom-select-menu {
+  min-width: 54px;
+}
+
+.remapping-select .custom-select-menu button {
+  min-height: 30px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0 8px;
+}
+
+.remapping-controller-stage {
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+  height: var(--remapping-art-height);
+  display: grid;
+  place-items: center;
+  overflow: visible;
+}
+
+.remapping-controller-stage::before {
+  content: none;
+}
+
+.remapping-controller-art {
+  position: relative;
+  width: min(100%, calc(var(--remapping-art-height) * var(--remapping-art-aspect, 1.391)));
+  height: var(--remapping-art-height);
+  object-fit: contain;
+  filter:
+    brightness(0.9)
+    contrast(1.04)
+    saturate(1.05);
+}

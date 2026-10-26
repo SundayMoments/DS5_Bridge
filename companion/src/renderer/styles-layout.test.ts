@@ -2,8 +2,9 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { rendererStyles } from './test-support/renderer-styles';
 
-const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
+const styles = rendererStyles();
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const themeSource = readFileSync(new URL('./ui-themes.ts', import.meta.url), 'utf8');
 const normalizedStyles = styles.replace(/\s+/g, ' ').trim();

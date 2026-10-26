@@ -1,0 +1,55 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 100vw;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(27, 85, 180, 0.26), transparent 34%),
+    radial-gradient(circle at 92% 16%, rgba(14, 187, 221, 0.12), transparent 30%),
+    linear-gradient(145deg, #050814 0%, #07111c 46%, #080b11 100%);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  -webkit-app-region: no-drag;
+}
+
+button {
+  cursor: pointer;
+}
+
+.shell {
+  --nav-active-bg: color-mix(in srgb, var(--accent) var(--nav-active-bg-weight), var(--nav-active-base));
+  --nav-active-border: color-mix(in srgb, var(--accent) var(--nav-active-border-weight), var(--nav-active-base));
+  --nav-active-rail: color-mix(in srgb, var(--accent-strong) var(--nav-active-rail-weight), var(--accent));
+  --command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base) 82%);
+  --command-chip-border: color-mix(in srgb, var(--accent) 58%, var(--command-chip-base) 42%);
+  --command-chip-hover-bg: color-mix(in srgb, var(--accent) 28%, var(--command-chip-base) 72%);
+  --command-chip-hover-border: color-mix(in srgb, var(--accent) 82%, var(--command-chip-base) 18%);
+  --command-chip-active-bg: color-mix(in srgb, var(--accent) 44%, var(--command-chip-base) 56%);
+  --command-chip-active-border: color-mix(in srgb, var(--accent) 86%, var(--command-chip-base) 14%);
+  --command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);
+  --command-chip-muted-border: color-mix(in srgb, var(--accent) 38%, var(--command-chip-base) 62%);
+  --command-chip-success-hover-bg: color-mix(in srgb, var(--success-selected) 86%, var(--command-chip-base) 14%);
+  color-scheme: var(--theme-color-scheme);
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: var(--window-bar-height) minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--app-bg);
+}
+
+.loading {
+  grid-template-rows: minmax(0, 1fr);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}

@@ -1,0 +1,61 @@
+.control-panel {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-height: 0;
+  align-self: stretch;
+  padding: 36px 30px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+.control-panel.flat-control-panel {
+  height: 100%;
+  align-self: stretch;
+  padding: 26px 22px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.control-pages {
+  display: grid;
+  min-height: 0;
+  height: 100%;
+  justify-items: start;
+}
+
+.control-page {
+  grid-area: 1 / 1;
+  width: min(100%, 800px);
+  display: grid;
+  grid-template-rows: auto minmax(var(--feature-card-height), auto);
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+  height: auto;
+  overflow-y: visible;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.control-page.active {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.overview-page {
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}

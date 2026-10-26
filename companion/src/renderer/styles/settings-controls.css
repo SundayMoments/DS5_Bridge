@@ -1,0 +1,541 @@
+.notifications-menu {
+  right: 0;
+  width: 300px;
+}
+
+.notifications-menu .settings-menu-heading {
+  padding-bottom: 10px;
+  font-size: 14px;
+}
+
+.notifications-menu .settings-menu-row {
+  min-height: 58px;
+  padding: 9px 10px;
+  gap: 12px;
+}
+
+.notifications-menu .settings-menu-row > div {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+}
+
+.notifications-menu .settings-menu-row strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.notifications-menu .settings-menu-row span {
+  color: var(--settings-copy-text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.notifications-menu .settings-menu-row .switch {
+  flex: 0 0 48px;
+}
+
+.notifications-menu .settings-menu-action {
+  padding-top: 10px;
+}
+
+.settings-menu-heading,
+.settings-menu-row {
+  display: flex;
+  align-items: center;
+}
+
+.settings-menu-heading {
+  gap: 8px;
+  padding: 8px 10px 12px;
+  color: var(--text-control);
+  font-weight: 750;
+}
+
+.settings-menu-row {
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--surface-divider);
+}
+
+.settings-menu-row-highlight {
+  border-radius: var(--control-radius);
+  animation: settings-row-highlight 2200ms ease-out;
+}
+
+.feature-focus-highlight {
+  border-radius: var(--control-radius);
+}
+
+.feature-focus-highlight-0 {
+  animation: feature-control-highlight-a 2200ms ease-out;
+}
+
+.feature-focus-highlight-1 {
+  animation: feature-control-highlight-b 2200ms ease-out;
+}
+
+@keyframes settings-row-highlight {
+  0%,
+  72% {
+    background: var(--success-bg-hover);
+    box-shadow:
+      inset 0 0 0 1px var(--success-border-strong),
+      0 0 0 1px var(--success-glow);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+
+@keyframes feature-control-highlight-a {
+  0%,
+  72% {
+    background: var(--success-bg-hover);
+    box-shadow:
+      inset 0 0 0 1px var(--success-border),
+      0 0 0 1px var(--success-glow);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+
+@keyframes feature-control-highlight-b {
+  0%,
+  72% {
+    background: var(--success-bg-hover);
+    box-shadow:
+      inset 0 0 0 1px var(--success-border),
+      0 0 0 1px var(--success-glow);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+
+.settings-menu-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+}
+
+.settings-menu-copy-tooltip {
+  position: relative;
+  flex: 0 1 auto;
+  width: max-content;
+}
+
+.settings-shortcut-tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  z-index: 5;
+  width: 220px;
+  max-width: min(220px, calc(100vw - 64px));
+  padding: 8px 10px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  color: var(--text-control);
+  background: var(--surface-menu);
+  box-shadow: var(--shadow-menu);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.settings-menu-copy-tooltip:hover .settings-shortcut-tooltip,
+.settings-menu-copy-tooltip:focus-within .settings-shortcut-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.chord-starter-label {
+  cursor: help;
+}
+
+.chord-starter-label .chord-starter-tooltip {
+  left: 0;
+  width: 260px;
+  max-width: min(260px, calc(100vw - 64px));
+  transform: translateY(-4px);
+}
+
+.chord-starter-label:hover .chord-starter-tooltip,
+.chord-starter-label:focus-within .chord-starter-tooltip {
+  transform: translateY(0);
+}
+
+.shortcut-glyph-tooltip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  min-width: 112px;
+  max-width: min(380px, calc(100vw - 64px));
+  padding: 8px 10px;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.shortcut-glyph-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.shortcut-glyph-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: 1px solid var(--glyph-border);
+  border-radius: 5px;
+  background: var(--glyph-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.shortcut-glyph-key img {
+  display: block;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  filter: var(--glyph-filter);
+}
+
+.shortcut-glyph-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcut-plus {
+  color: var(--text-control);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.settings-menu-row strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.settings-menu-copy > span {
+  color: var(--settings-copy-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.18;
+}
+
+.pico-firmware-row {
+  display: grid;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+.pico-firmware-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.pico-firmware-header strong {
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.pico-firmware-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pico-firmware-actions .heading-action {
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.pico-firmware-actions .heading-action svg {
+  flex: 0 0 auto;
+}
+
+.pico-firmware-actions .heading-action.danger {
+  color: var(--danger-selected-text);
+  border-color: var(--danger-border-strong);
+  background: var(--danger-selected);
+  box-shadow: inset 0 -2px 0 var(--danger-border-strong);
+}
+
+.pico-firmware-actions .heading-action.danger:hover {
+  color: var(--danger-selected-text);
+  border-color: var(--danger-border-strong);
+  background: var(--danger-selected);
+}
+
+.pico-firmware-dual-action {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.pico-firmware-dual-action .heading-action {
+  border-radius: 0;
+}
+
+.pico-firmware-dual-action .heading-action:first-child {
+  border-top-left-radius: var(--control-radius);
+  border-bottom-left-radius: var(--control-radius);
+}
+
+.pico-firmware-dual-action .heading-action:last-child {
+  margin-left: -1px;
+  border-top-right-radius: var(--control-radius);
+  border-bottom-right-radius: var(--control-radius);
+}
+
+.pico-firmware-copy {
+  width: 100%;
+}
+
+.pico-firmware-copy > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.pico-firmware-message.good {
+  color: var(--success);
+}
+
+.pico-firmware-message.bad {
+  color: var(--danger);
+}
+
+.settings-menu-row .switch {
+  flex: 0 0 48px;
+}
+
+.settings-menu-controls {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 86px 48px;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-timeout-select .custom-select-button {
+  height: 26px;
+  padding: 0 7px 0 9px;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-timeout-select .custom-select-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settings-timeout-select .custom-select-menu {
+  min-width: 86px;
+}
+
+.settings-timeout-select .custom-select-menu button {
+  min-height: 26px;
+  padding: 0 8px;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-scale-select {
+  flex: 0 0 86px;
+}
+
+.settings-scale-select .custom-select-button {
+  height: 26px;
+  padding: 0 7px 0 9px;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-scale-select .custom-select-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settings-scale-select .custom-select-menu {
+  min-width: 86px;
+}
+
+.settings-scale-select .custom-select-menu button {
+  min-height: 26px;
+  padding: 0 8px;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-theme-select {
+  flex: 0 0 auto;
+  width: max-content;
+}
+
+.settings-theme-select .custom-select-button {
+  height: 28px;
+  padding: 0 8px 0 10px;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-theme-select .custom-select-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settings-theme-select .custom-select-menu {
+  min-width: max-content;
+}
+
+.settings-theme-select .custom-select-menu button {
+  min-height: 30px;
+  padding: 0 8px;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.theme-option {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  overflow: visible;
+}
+
+.theme-option-swatches {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px;
+  overflow: visible;
+}
+
+.theme-option-swatches span {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--surface-border);
+  overflow: visible;
+}
+
+.settings-theme-select .theme-option,
+.settings-theme-select .theme-option-swatches,
+.settings-theme-select .theme-option-swatches span {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.theme-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.settings-menu-action {
+  padding: 12px 10px 4px;
+  border-top: 1px solid var(--surface-divider);
+}
+
+.settings-menu-action .secondary-action {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.settings-menu-link-row {
+  width: 100%;
+  min-height: 38px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  color: var(--text-control);
+  background: transparent;
+  text-align: left;
+}
+
+.settings-menu-link-row:hover {
+  background: var(--accent-muted);
+}
+
+.settings-menu-link-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.settings-menu-link-icon {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.settings-menu-link-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.settings-menu-link-copy strong {
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.settings-menu-link-copy span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 560;
+}
