@@ -49,6 +49,11 @@ function setWakeOnLan(fields) {
   wakeOnLan = { ...wakeOnLan, ...fields };
   return wakeOnLan;
 }
+// A capture can make the next haptics test fail the way main rejects it over IPC.
+let hapticsTestFailure = null;
+function failNextHapticsTest(message) {
+  hapticsTestFailure = message;
+}
 const handlers = {
   getStatus: () => new Promise((resolve) => setTimeout(() => resolve(snapshot), statusDelayMs)),
   getDiagnostics: async () => snapshot.diagnostics,
@@ -73,11 +78,17 @@ const handlers = {
     setWakeOnLan({ busy: true, stage: 'validating' });
     return new Promise(() => undefined);
   },
-  cancelWakeOnLan: async () => undefined
+  cancelWakeOnLan: async () => undefined,
+  testHaptics: async () => {
+    const failure = hapticsTestFailure;
+    hapticsTestFailure = null;
+    if (failure) throw new Error(`Error invoking remote method 'bridge:testHaptics': Error: ${failure}`);
+    return snapshot;
+  }
 };
 
 window.__uiReview = {
-  update, updateSettings, setWakeOnLan, snapshot: () => snapshot, cpuUsage: () => process.cpuUsage()
+  update, updateSettings, setWakeOnLan, failNextHapticsTest, snapshot: () => snapshot, cpuUsage: () => process.cpuUsage()
 };
 // A poll from the host refreshes the fields the bridge service updates on every status read.
 const pollStartedAt = Date.now();

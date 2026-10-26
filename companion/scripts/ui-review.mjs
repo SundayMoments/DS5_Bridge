@@ -37,7 +37,7 @@ try {
         window.__uiReview.updateSettings({ uiThemePreset: theme, uiTextScalePercent: textScale });
       }, { theme, textScale });
       await settle();
-      for (const [label, name] of [['overview', 'Overview'], ['haptics', 'Haptics'], ['settings', 'Settings']]) {
+      for (const [label, name] of [['overview', 'Overview'], ['haptics', 'Haptics'], ['system', 'System'], ['settings', 'Settings']]) {
         await openControlTab(page, name);
         await settle();
         const file = `${theme}-${textScale}-${label}.png`;
@@ -91,6 +91,25 @@ try {
   const offerClose = page.locator('.kitsune-launch-offer-close');
   await offerClose.and(page.locator(':enabled')).waitFor({ timeout: 10000 });
   await offerClose.click();
+
+  // A haptics test the bridge refused: the Haptics Testing card, then the Overview quick action.
+  const refusal = 'The controller audio endpoint is unavailable. Close any games using the controller and try again.';
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
+    await openControlTab(page, 'Haptics');
+    await page.evaluate((message) => window.__uiReview.failNextHapticsTest(message), refusal);
+    await page.locator('.control-page.active .test-card .primary-action').click();
+    await page.locator('.control-page.active .feedback-test-error').waitFor();
+    await settle();
+    const file = `${theme}-100-haptics-test-failed.png`;
+    await captureWindow(app, path.join(outputDir, file));
+    shots.push(file);
+  }
+  await openControlTab(page, 'Overview');
+  await page.locator('.overview-action-grid button.failed').waitFor();
+  await settle();
+  await captureWindow(app, path.join(outputDir, 'light-100-overview-test-failed.png'));
+  shots.push('light-100-overview-test-failed.png');
 
   // Settings > Wake PC with the controller off: a saved network, a new setup, and a running test.
   await page.evaluate(() => {
