@@ -2,6 +2,10 @@
 const fs = require('node:fs');
 
 let snapshot = JSON.parse(fs.readFileSync(process.env.DS5_UI_REVIEW_FIXTURE, 'utf8'));
+// Captures skip the one-time Kitsune Input offer unless a script asks for it.
+if (process.env.DS5_UI_REVIEW_SHOW_LAUNCH_OFFER !== '1') {
+  snapshot = { ...snapshot, settings: { ...snapshot.settings, kitsuneInputLaunchOfferShown: true } };
+}
 const listeners = new Set();
 const emit = () => listeners.forEach((listener) => listener(snapshot));
 function updateSettings(settings) {
@@ -40,7 +44,8 @@ const handlers = {
     return () => listeners.delete(listener);
   },
   onWindowMaximizedChange: () => () => undefined,
-  cancelBootloaderConfirmation: async () => update({ bootloaderConfirmation: null })
+  cancelBootloaderConfirmation: async () => update({ bootloaderConfirmation: null }),
+  markKitsuneInputLaunchOfferShown: async () => updateSettings({ kitsuneInputLaunchOfferShown: true })
 };
 
 window.__uiReview = { update, updateSettings, snapshot: () => snapshot };

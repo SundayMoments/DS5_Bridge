@@ -77,6 +77,20 @@ try {
     shots.push(incorrectFile);
     await page.evaluate(() => window.__uiReview.update({ bootloaderConfirmation: null }));
   }
+
+  // The one-time Kitsune Input offer opens shortly after its setting reads as not shown.
+  await page.evaluate(() => window.__uiReview.updateSettings({ kitsuneInputLaunchOfferShown: false }));
+  await page.locator('.kitsune-launch-offer-modal').waitFor({ timeout: 10000 });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
+    await settle();
+    const file = `${theme}-100-kitsune-launch-offer.png`;
+    await captureWindow(app, path.join(outputDir, file));
+    shots.push(file);
+  }
+  const offerClose = page.locator('.kitsune-launch-offer-close');
+  await offerClose.and(page.locator(':enabled')).waitFor({ timeout: 10000 });
+  await offerClose.click();
   if (failures.length) {
     throw new Error(`Renderer errors:\n${failures.join('\n')}`);
   }

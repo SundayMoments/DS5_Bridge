@@ -75,7 +75,6 @@ import dpadDownGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/s
 import dpadUpGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/D-Pad Up.svg';
 import psHomeGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Home.svg';
 import triangleGlyphUrl from '../../../assets/glyphs/ps5-buttons-outline-white/svg/Triangle.svg';
-import kitsuneInputLogoUrl from './assets/kitsune-input-logo.svg';
 import {
   DEFAULT_UI_THEME_PRESET,
   UI_THEME_KOFI_BADGES,
@@ -132,6 +131,14 @@ import { TriggerLabProfileDialog, useTriggerLabController } from './features/tri
 import { ButtonRemappingPage, ButtonRemappingProfileDialog, useButtonRemappingController } from './features/button-remapping';
 import { ChordFunctionDialog, ChordsPage, useChordsController } from './features/chords';
 import { BootloaderConfirmationDialog } from './features/bootloader-confirmation';
+import {
+  KITSUNE_INPUT_PURCHASE_URL,
+  KITSUNE_INPUT_URL,
+  KitsuneInputLaunchOffer,
+  KitsuneInputPromotionDialog,
+  KitsunePromotionBanner,
+  useKitsuneLaunchOffer
+} from './features/kitsune-promotion';
 import { lightbarColorLabel, LIGHTBAR_BRIGHTNESS_STEP, snapLightbarBrightness } from './features/controller-lighting/model';
 import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
@@ -196,8 +203,6 @@ type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
 type ControllerProfileDialogMode = 'save' | 'rename' | 'delete';
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
 
-const KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';
-const KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';
 const HAPTICS_STEP = 20;
 const STANDARD_FEEDBACK_GAIN_PERCENT = 200;
 const BOOSTED_FEEDBACK_GAIN_PERCENT = 500;
@@ -365,109 +370,6 @@ function displayClassicRumbleValue(snapshot: BridgeSnapshot): number {
   return capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot);
 }
 
-
-function KitsuneInputWordmark() {
-  return (
-    <span className="kitsune-promotion-wordmark" aria-label="Kitsune Input">
-      <span className="kitsune-promotion-wordmark-kitsune">Kitsune</span>
-      <span className="kitsune-promotion-wordmark-input">Input</span>
-    </span>
-  );
-}
-
-function KitsuneInputPromotionDialog({
-  dismissing,
-  onClose,
-  onDismissForever,
-  onLearnMore,
-  onPurchase
-}: {
-  dismissing: boolean;
-  onClose(): void;
-  onDismissForever(): void;
-  onLearnMore(): void;
-  onPurchase(): void;
-}) {
-  return (
-    <div className="modal-backdrop kitsune-promotion-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        className="settings-menu kitsune-promotion-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="kitsune-promotion-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <button
-          className="modal-close-button kitsune-promotion-close"
-          type="button"
-          aria-label="Close Kitsune Input promotion"
-          onClick={onClose}
-        >
-          <X size={18} />
-        </button>
-
-        <header className="kitsune-promotion-hero">
-          <img className="kitsune-promotion-hero-logo" src={kitsuneInputLogoUrl} alt="" />
-          <div className="kitsune-promotion-hero-copy">
-            <KitsuneInputWordmark />
-            <h2 id="kitsune-promotion-title">Take controller customization further</h2>
-            <p>Deeper tuning, smarter profiles, and controller-first tools.</p>
-          </div>
-        </header>
-
-        <div className="kitsune-promotion-feature-grid">
-          <article className="kitsune-promotion-feature-card">
-            <div className="kitsune-promotion-feature-kicker">
-              <strong>Tuning &amp; Compatibility</strong>
-            </div>
-            <ul>
-              <li>Advanced Stick Tuning</li>
-              <li>Advanced Trigger Tuning</li>
-              <li>More Personas: XSX + Impulse Triggers</li>
-              <li>NS Pro Support · DS4 in v1.1.1</li>
-              <li>Gyro Aim</li>
-              <li>Touchpad Gestures</li>
-            </ul>
-          </article>
-
-          <article className="kitsune-promotion-feature-card">
-            <div className="kitsune-promotion-feature-kicker">
-              <strong>Profiles &amp; Tools</strong>
-            </div>
-            <ul>
-              <li>Per-game Profiles</li>
-              <li>Multi-Actions</li>
-              <li>Automatic Game Library</li>
-              <li>Kitsune Game Bar</li>
-              <li>Kitsune Cursor &amp; Keyboard</li>
-              <li>Mod API</li>
-            </ul>
-          </article>
-        </div>
-
-        <footer className="kitsune-promotion-actions">
-          <button type="button" className="primary-action" onClick={onPurchase}>
-            <IconExternalLink size={16} />
-            Purchase
-          </button>
-          <button type="button" className="secondary-action kitsune-promotion-learn" onClick={onLearnMore}>
-            Learn More
-            <ArrowRight size={16} />
-          </button>
-          <button
-            type="button"
-            className="secondary-action kitsune-promotion-dismiss"
-            disabled={dismissing}
-            onClick={onDismissForever}
-          >
-            <IconEyeOff size={16} />
-            {dismissing ? 'Dismissing…' : "Don't show Kitsune Input promotions again"}
-          </button>
-        </footer>
-      </section>
-    </div>
-  );
-}
 
 function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): ControllerProfileSettings {
   return {
@@ -813,18 +715,13 @@ export function App() {
   const windowDragReleaseTimerRef = useRef<number | null>(null);
   const deferredSnapshotRef = useRef<BridgeSnapshot | null>(null);
   const overviewSleepConfirmArmedRef = useRef(false);
-  useEffect(() => {
-    if (!showKitsuneInputPromotion) {
-      return undefined;
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowKitsuneInputPromotion(false);
-      }
-    };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [showKitsuneInputPromotion]);
+  const kitsuneLaunchOffer = useKitsuneLaunchOffer({
+    eligible: Boolean(snapshot) && !snapshot?.settings.kitsuneInputLaunchOfferShown,
+    blocked: startupTutorial.step !== 'done'
+      || Boolean(snapshot?.bootloaderConfirmation)
+      || showKitsuneInputPromotion,
+    markShown: () => void runQuietAction(() => window.bridge.markKitsuneInputLaunchOfferShown())
+  });
 
   useEffect(() => {
     const liveTheme = snapshot?.settings.uiThemePreset;
@@ -2133,21 +2030,13 @@ export function App() {
       onMinimize={() => void window.bridge.minimizeWindow()}
       onHide={() => void window.bridge.hideWindow()}
       windowBarCenter={snapshot.settings.kitsuneInputPromotionDismissed ? null : (
-        <button
-          className="kitsune-promotion-banner"
-          type="button"
-          aria-label="Explore Kitsune Input"
-          aria-haspopup="dialog"
-          aria-expanded={showKitsuneInputPromotion}
-          onClick={() => {
+        <KitsunePromotionBanner
+          expanded={showKitsuneInputPromotion}
+          onOpen={() => {
             setShowNotificationsMenu(false);
             setShowKitsuneInputPromotion(true);
           }}
-        >
-          <img src={kitsuneInputLogoUrl} alt="" />
-          <span className="kitsune-promotion-banner-copy">Explore</span>
-          <KitsuneInputWordmark />
-        </button>
+        />
       )}
       windowBarTools={(
         <>
@@ -3521,6 +3410,17 @@ export function App() {
               () => window.bridge.setKitsuneInputPromotionDismissed(true)
             );
           }}
+        />
+      )}
+
+      {kitsuneLaunchOffer.visible && (
+        <KitsuneInputLaunchOffer
+          onGet={() => {
+            void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL);
+            kitsuneLaunchOffer.close();
+          }}
+          onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
+          onClose={kitsuneLaunchOffer.close}
         />
       )}
 

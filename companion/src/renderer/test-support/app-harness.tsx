@@ -87,7 +87,9 @@ export function fixtureSnapshot(overrides: DeepPartialSnapshot = {}): BridgeSnap
     settings: {
       ...DEFAULT_SETTINGS,
       selectedBridgePath: FIXTURE_BRIDGE_PATH,
-      notifyControllerConnection: true
+      notifyControllerConnection: true,
+      // Tests that need the one-time Kitsune Input offer turn this off.
+      kitsuneInputLaunchOfferShown: true
     },
     status,
     diagnostics: {
