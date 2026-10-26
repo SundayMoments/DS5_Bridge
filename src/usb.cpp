@@ -395,11 +395,22 @@ extern "C" void tud_resume_cb(void) {
 // IRQ. A bus reset ends suspend (TinyUSB clears its own flag too); leaving
 // ours set let the suspend debounce power the controller off while the host
 // was already sending start-of-frames before SET_CONFIGURATION.
+// A bus reset also ends the configured session without tud_umount_cb, so
+// clear the mount and wake state until tud_mount_cb starts the next one. If
+// the host never configures the bridge again (the PC shut down), the same
+// debounce as an unmount powers the controller off.
 extern "C" void __not_in_flash_func(tud_event_hook_cb)(uint8_t rhport, uint32_t eventid, bool in_isr) {
     (void)rhport;
     (void)in_isr;
     if (eventid == DCD_EVENT_BUS_RESET) {
         usb_host_suspended = false;
+        const bool was_mounted = usb_mounted;
+        usb_mounted = false;
+        usb_remote_wakeup_armed = false;
+        usb_remote_wakeup_pending = false;
+        if (was_mounted) {
+            arm_suspend_disconnect(time_us_32());
+        }
     }
 }
 

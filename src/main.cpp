@@ -326,7 +326,9 @@ static bool host_input_quiet_active(uint32_t now) {
     if (!host_input_waiting_for_mount) {
         return false;
     }
-    if (host_input_fallback_until_us != 0 && time_reached_u32(now, host_input_fallback_until_us)) {
+    // The waiting flag owns the deadline; zero is a valid deadline when the
+    // 32-bit microsecond clock wraps during the fallback interval.
+    if (time_reached_u32(now, host_input_fallback_until_us)) {
         host_input_waiting_for_mount = false;
         host_input_fallback_until_us = 0;
         return false;
