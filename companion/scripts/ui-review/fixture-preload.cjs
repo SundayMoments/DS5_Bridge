@@ -1,0 +1,49 @@
+// Replaces the companion preload with fixture data for UI review captures.
+const fs = require('node:fs');
+
+let snapshot = JSON.parse(fs.readFileSync(process.env.DS5_UI_REVIEW_FIXTURE, 'utf8'));
+const listeners = new Set();
+const emit = () => listeners.forEach((listener) => listener(snapshot));
+function updateSettings(settings) {
+  snapshot = { ...snapshot, settings: { ...snapshot.settings, ...settings } };
+  emit();
+  return snapshot;
+}
+
+const settingSetters = {
+  setUiThemePreset: 'uiThemePreset',
+  setUiTextScalePercent: 'uiTextScalePercent',
+  setUiScalePercent: 'uiScalePercent',
+  setUiLocale: 'uiLocale',
+  setNotifyControllerConnection: 'notifyControllerConnection',
+  setNotifyLowBattery: 'notifyLowBattery',
+  setLaunchAtStartupEnabled: 'launchAtStartupEnabled',
+  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon'
+};
+const handlers = {
+  getStatus: async () => snapshot,
+  getDiagnostics: async () => snapshot.diagnostics,
+  listAudioHapticsSessions: async () => [],
+  listDevices: async () => [],
+  isWindowMaximized: async () => false,
+  onSnapshot: (listener) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  },
+  onWindowMaximizedChange: () => () => undefined
+};
+
+window.__uiReview = { updateSettings, snapshot: () => snapshot };
+window.addEventListener('DOMContentLoaded', () => {
+  window.localStorage.setItem('ds5bridge.startupTutorialCompleted.v1', '1');
+});
+window.localStorage?.setItem('ds5bridge.startupTutorialCompleted.v1', '1');
+window.bridge = new Proxy(handlers, {
+  get(target, property) {
+    if (property in target) return target[property];
+    if (typeof property === 'string' && property in settingSetters) {
+      return async (value) => updateSettings({ [settingSetters[property]]: value });
+    }
+    return async () => snapshot;
+  }
+});
