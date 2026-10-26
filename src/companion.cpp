@@ -12,6 +12,7 @@
 #include "dualsense_battery_status.h"
 #include "firmware_log.h"
 #include "host_input.h"
+#include "keyboard_tap_sequencer.h"
 #include "persona/host_persona.h"
 #include "radial_deadzone.h"
 #include "trigger_motor_power.h"
@@ -82,7 +83,6 @@ constexpr uint8_t kDefaultMuteKeyboardUsage = 0x68; // F13
 constexpr uint8_t kMuteKeyboardModifierMask = 0x0F;
 constexpr uint8_t kMuteKeyboardChordStarterFlag = 0x10;
 constexpr uint8_t kMuteKeyboardHoldFlag = 0x80;
-constexpr uint32_t kKeyboardPressDurationUs = 40000;
 constexpr uint32_t kMuteKeyboardChordWindowUs = 250000;
 constexpr uint32_t kMuteLedFlashDurationUs = 120000;
 constexpr uint32_t kClassicRumbleTestDurationUs = 650000;
@@ -356,9 +356,9 @@ uint8_t shortcut_event_queue[kShortcutEventQueueDepth]{};
 uint8_t shortcut_event_head = 0;
 uint8_t shortcut_event_tail = 0;
 uint8_t shortcut_event_count = 0;
-bool mute_keyboard_pending = false;
-bool mute_keyboard_pressed = false;
-uint32_t mute_keyboard_release_at_us = 0;
+// Types the mute-button shortcut the way a person does, one stage per USB
+// report: modifiers, then the key, then modifiers, then nothing.
+ds5::KeyboardTapSequencer mute_keyboard_taps;
 bool mute_keyboard_chord_pending = false;
 uint32_t mute_keyboard_chord_until_us = 0;
 bool mute_led_flash_pending = false;
@@ -868,8 +868,7 @@ void restore_defaults() {
     clear_dynamic_chord_bindings();
     bt_set_edge_profile_switching_blocked(false);
     clear_shortcut_events();
-    mute_keyboard_pending = false;
-    mute_keyboard_pressed = false;
+    mute_keyboard_taps.cancel();
     mute_keyboard_chord_pending = false;
     mute_led_flash_pending = false;
     audio_set_quiet_mode(false);
@@ -990,8 +989,8 @@ void set_mute_button_action(uint8_t mode, uint8_t usage, uint8_t modifiers) {
     mute_keyboard_usage = usage == 0 ? kDefaultMuteKeyboardUsage : usage;
     mute_keyboard_modifiers = modifiers;
     mute_button_last_pressed = false;
-    mute_keyboard_pending = false;
-    mute_keyboard_pressed = false;
+    // A changed shortcut must not keep a key of the old one held.
+    mute_keyboard_taps.cancel();
     mute_keyboard_chord_pending = false;
     mute_led_flash_pending = false;
 
@@ -1020,7 +1019,10 @@ void cancel_mute_keyboard_chord_window() {
 }
 
 void queue_mute_keyboard_press(bool hold) {
-    mute_keyboard_pending = true;
+    ds5::BootKeyboardOutputReport report{};
+    report.bytes[0] = mute_keyboard_modifiers & kMuteKeyboardModifierMask;
+    report.bytes[ds5::kBootKeyboardUsageOffset] = mute_keyboard_usage;
+    mute_keyboard_taps.enqueue(report, hold);
     if (!hold) {
         mute_led_flash_pending = true;
         mute_led_flash_until_us = time_us_32() + kMuteLedFlashDurationUs;
@@ -1029,12 +1031,11 @@ void queue_mute_keyboard_press(bool hold) {
 }
 
 void queue_mute_keyboard_release() {
-    if (!mute_keyboard_pending && !mute_keyboard_pressed) {
+    if (mute_keyboard_taps.idle()) {
         return;
     }
-    mute_keyboard_pending = false;
-    mute_keyboard_pressed = true;
-    mute_keyboard_release_at_us = time_us_32();
+    // A Hold press released before the PC saw it still arrives as a full tap.
+    mute_keyboard_taps.release();
     mute_led_flash_pending = false;
     refresh_mute_led_policy();
 }
@@ -1633,32 +1634,27 @@ void mute_keyboard_loop() {
         refresh_mute_led_policy();
     }
 
+    if (mute_keyboard_taps.idle()) {
+        return;
+    }
+    // The mute button lives on the controller; losing it must not leave a
+    // Hold key down on the PC.
+    if (!bt_is_controller_connected()) {
+        mute_keyboard_taps.cancel();
+    }
+
+    // The keyboard endpoint is ready again once the host has taken the last
+    // report, which is when the sequencer times each stage from. The bridge-only
+    // topology has no keyboard instance (0xff), and tud_hid_n_ready does not
+    // bounds-check its index.
     const uint8_t keyboard_hid_instance = host_persona_keyboard_hid_instance();
-    if (!tud_hid_n_ready(keyboard_hid_instance)) {
+    const bool ready = keyboard_hid_instance < CFG_TUD_HID && tud_hid_n_ready(keyboard_hid_instance);
+    ds5::BootKeyboardOutputReport report{};
+    if (!mute_keyboard_taps.next_report(now, ready, report) || !ready) {
         return;
     }
-
-    if (mute_keyboard_pending) {
-        uint8_t keyboard_report[8]{};
-        keyboard_report[0] = mute_keyboard_modifiers & kMuteKeyboardModifierMask;
-        keyboard_report[2] = mute_keyboard_usage;
-        if (tud_hid_n_report(keyboard_hid_instance, 0, keyboard_report, sizeof(keyboard_report))) {
-            mute_keyboard_pending = false;
-            mute_keyboard_pressed = true;
-            mute_keyboard_release_at_us = mute_keyboard_hold_enabled() ? 0 : now + kKeyboardPressDurationUs;
-        }
-        return;
-    }
-
-    if (
-        mute_keyboard_pressed
-        && mute_keyboard_release_at_us != 0
-        && static_cast<int32_t>(now - mute_keyboard_release_at_us) >= 0
-    ) {
-        uint8_t keyboard_report[8]{};
-        if (tud_hid_n_report(keyboard_hid_instance, 0, keyboard_report, sizeof(keyboard_report))) {
-            mute_keyboard_pressed = false;
-        }
+    if (tud_hid_n_report(keyboard_hid_instance, 0, report.bytes.data(), report.bytes.size())) {
+        mute_keyboard_taps.accept_report(now);
     }
 }
 

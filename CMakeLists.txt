@@ -531,6 +531,7 @@ option(ENABLE_COMPANION "Enable the optional companion HID interface" OFF)
 if(ENABLE_COMPANION)
     target_sources(ds5-bridge PRIVATE
             src/companion.cpp
+            src/keyboard_tap_sequencer.cpp
             src/host_bridge.cpp
             src/usb_app_drivers.cpp
     )
