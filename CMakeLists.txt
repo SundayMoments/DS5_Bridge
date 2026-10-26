@@ -101,6 +101,17 @@ ds5_replace_sdk_interface_source(cyw43_driver
 ds5_replace_sdk_interface_source(cyw43_driver_picow
         "${DS5_SDK_CYW43_DIR}/cyw43_bus_pio_spi.c"
         "${DS5_CYW43_GENERATED_DIR}/cyw43_bus_pio_spi.c")
+# Wake-on-LAN station control (companion builds only; see src/wake_on_lan.cpp).
+set(DS5_CYW43_CTRL_OBJECT lib/cyw43-driver/src/cyw43_ctrl.c.o)
+if(ENABLE_COMPANION)
+    ds5_generate_cyw43_wol_ctrl(
+            "${PICO_CYW43_DRIVER_PATH}/src/cyw43_ctrl.c"
+            "${DS5_CYW43_GENERATED_DIR}/cyw43_ctrl.c")
+    ds5_replace_sdk_interface_source(cyw43_driver
+            "${PICO_CYW43_DRIVER_PATH}/src/cyw43_ctrl.c"
+            "${DS5_CYW43_GENERATED_DIR}/cyw43_ctrl.c")
+    set(DS5_CYW43_CTRL_OBJECT generated/ds5-cyw43/cyw43_ctrl.c.o)
+endif()
 
 # Add executable. Default name is the project name, version 0.1
 
@@ -128,6 +139,7 @@ add_executable(ds5-bridge
         src/firmware_log.cpp
         src/runtime_fail_fast.cpp
         src/watchdog_telemetry.cpp
+        src/wake_on_lan.cpp
 )
 
 # Third-party archives follow the firmware's exception/RTTI policy instead of
@@ -269,7 +281,7 @@ relocate_to_ram(
         "Relocating CYW43 SDPCM pump to SRAM"
 )
 relocate_to_ram(
-        lib/cyw43-driver/src/cyw43_ctrl.c.o
+        ${DS5_CYW43_CTRL_OBJECT}
         ".text.cyw43_ensure_up=.time_critical.cyw43_ensure_up@.text.cyw43_cb_ensure_awake=.time_critical.cyw43_cb_ensure_awake@.text.cyw43_poll_func=.time_critical.cyw43_poll_func@.text.cyw43_bluetooth_hci_read=.time_critical.cyw43_bluetooth_hci_read@.text.cyw43_bluetooth_hci_write=.time_critical.cyw43_bluetooth_hci_write"
         "Relocating CYW43 poll and Bluetooth HCI bus to SRAM"
 )
@@ -536,6 +548,9 @@ if(ENABLE_COMPANION)
             src/keyboard_tap_sequencer.cpp
             src/host_bridge.cpp
             src/usb_app_drivers.cpp
+            src/wake_on_lan_domain.cpp
+            src/wake_on_lan_engine.cpp
+            src/wake_on_lan_store.cpp
     )
     target_compile_definitions(ds5-bridge PRIVATE
             ENABLE_COMPANION

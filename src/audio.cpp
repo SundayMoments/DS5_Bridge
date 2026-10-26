@@ -19,6 +19,7 @@
 #include "resample.h"
 #include "tusb.h"
 #include "usb.h"
+#include "wake_on_lan.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -2285,6 +2286,10 @@ void audio_mic_add_packet(uint8_t const *data, uint16_t len) {
 }
 
 void __not_in_flash_func(audio_loop)() {
+    // Wi-Fi owns the shared CYW43 bus while Wake-on-LAN runs.
+    if (wake_on_lan_quiet_gate()) {
+        return;
+    }
     const uint32_t now = time_us_32();
     AudioLoopTelemetryScope loop_telemetry(now);
     audio_core1_stack_poll(now);

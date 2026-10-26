@@ -848,10 +848,11 @@ void assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(std::filesy
         || host_bridge_cpp.find("host_bridge_runtime_interface_number()") == std::string::npos
         || host_bridge_cpp.find("usb_descriptor_bridge_only_active()") == std::string::npos
         || host_persona_cpp.find("if (usb_descriptor_bridge_only_active())") == std::string::npos
-        || link_connected.find("if (!usb_wake_on_connect)") == std::string::npos
+        || link_connected.find("if (!usb_wake_on_connect || !wake_on_lan_allow_usb_wake())") == std::string::npos
         || link_connected.find("usb_remote_wakeup_pending = true;") == std::string::npos
         || link_connected.find("tud_remote_wakeup") != std::string::npos
-        || pm_poll.find("if (usb_remote_wakeup_pending)") == std::string::npos
+        || pm_poll.find("if (usb_remote_wakeup_pending || qualified_wake)") == std::string::npos
+        || pm_poll.find("(qualified_wake || wake_on_lan_allow_usb_wake())") == std::string::npos
         || pm_poll.find("usb_wake_on_connect") == std::string::npos
         || pm_poll.find("usb_remote_wakeup_armed") == std::string::npos
         || pm_poll.find("usb_bus_suspended()") == std::string::npos

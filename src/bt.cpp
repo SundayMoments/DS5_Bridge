@@ -35,6 +35,7 @@
 #include "pico/stdio.h"
 #include "usb.h"
 #include "utils.h"
+#include "wake_on_lan.h"
 #include "bsp/board_api.h"
 #include "hardware/watchdog.h"
 #include "pico/sync.h"
@@ -447,6 +448,15 @@ static bool pairing_authorized_session = false;
 static bool pairing_link_key_required = false;
 static bool current_link_key_persisted = false;
 static bool pairing_transaction_recovery_failed = false;
+// Wake-on-LAN: the last incoming page, and the scan suspension that must be
+// read back from the controller before Wi-Fi may start.
+static uint64_t wake_last_connection_request_ms = 0;
+static bool wake_radio_quiet_requested = false;
+static bool wake_radio_scan_confirmed = false;
+static bool wake_radio_scan_read_pending = false;
+static bool wake_radio_scan_read_stale = false;
+// HCI Read Scan Enable (Core specification, OGF 0x03 / OCF 0x0019).
+static const hci_cmd_t wake_read_scan_enable = {0x0c19, ""};
 static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
 static uint16_t hid_control_cid;
 static uint16_t hid_interrupt_cid;
@@ -1448,7 +1458,8 @@ static void restore_passive_reconnect_scan() {
         && !pairing_window_active
         && !inquiry_active
         && !acl_connection_pending
-        && acl_handle == HCI_CON_HANDLE_INVALID;
+        && acl_handle == HCI_CON_HANDLE_INVALID
+        && !wake_radio_quiet_requested;
     gap_connectable_control(reconnect_allowed ? 1 : 0);
     gap_discoverable_control(0);
     gap_set_bondable_mode(
@@ -1497,6 +1508,7 @@ static void start_inquiry_if_needed() {
         || device_found
         || acl_connection_pending
         || acl_handle != HCI_CON_HANDLE_INVALID
+        || wake_radio_quiet_requested
     ) {
         return;
     }
@@ -1587,6 +1599,12 @@ static bool classic_acl_connection_allowed(bd_addr_t addr, bool log_reject) {
 }
 
 static int classic_connection_filter(bd_addr_t addr, hci_link_type_t link_type) {
+    wake_last_connection_request_ms = to_us_since_boot(get_absolute_time()) / 1000;
+    // A controller still retrying after sleep cannot establish the quiet
+    // interval Wake-on-LAN needs to arm. It must stop paging first.
+    if (wake_on_lan_preparing()) {
+        return 0;
+    }
     return link_type == HCI_LINK_TYPE_ACL && classic_acl_connection_allowed(addr, true);
 }
 
@@ -2453,6 +2471,9 @@ bool bt_power_off_controller() {
 }
 
 bool bt_request_scan() {
+    if (wake_radio_quiet_requested || wake_on_lan_quiet_gate()) {
+        return false;
+    }
     if (pairing_transaction_recovery_failed) {
         if (!recover_pairing_transaction_on_boot()) {
             DS5_LOG("[HCI] Pairing transaction recovery still incomplete; scan denied\n");
@@ -2887,8 +2908,66 @@ void bt_output_retry_loop() {
     request_control_can_send_if_needed(control_ready);
 }
 
+bool bt_wake_controllers_quiet() {
+    return acl_handle == HCI_CON_HANDLE_INVALID
+        && !acl_connection_pending
+        && !device_found
+        && !pairing_window_active
+        && !inquiry_active
+        && !hid_control_ready
+        && !hid_interrupt_ready
+        && (wake_last_connection_request_ms == 0
+            || to_us_since_boot(get_absolute_time()) / 1000 - wake_last_connection_request_ms >= 5000);
+}
+
+void bt_set_wake_radio_quiet(bool quiet) {
+    if (wake_radio_quiet_requested == quiet) {
+        return;
+    }
+    wake_radio_quiet_requested = quiet;
+    wake_radio_scan_confirmed = false;
+    if (wake_radio_scan_read_pending) {
+        wake_radio_scan_read_stale = true;
+    }
+    if (quiet) {
+        // The passive reconnect scan has a 100% duty cycle. Suspend scanning
+        // during WLAN work without disconnecting a connected controller.
+        gap_connectable_control(0);
+        gap_discoverable_control(0);
+        if (inquiry_active) {
+            gap_inquiry_stop();
+        }
+    } else {
+        restore_passive_reconnect_scan();
+    }
+}
+
+bool bt_wake_radio_ready() {
+    return wake_radio_quiet_requested && wake_radio_scan_confirmed && !inquiry_active;
+}
+
+void bt_quiesce_gameplay_output() {
+    critical_section_enter_blocking(&queue_lock);
+    reset_controller_output_session_locked();
+    critical_section_exit(&queue_lock);
+}
+
 void bt_inquiry_loop() {
     service_acl_connection_cancel();
+    if (
+        wake_radio_quiet_requested
+        && !wake_radio_scan_confirmed
+        && !wake_radio_scan_read_pending
+        && hci_can_send_command_packet_now()
+    ) {
+        // Read back the controller's actual scan state after the queued GAP
+        // writes. A request to stop scanning is not evidence enough for WLAN.
+        wake_radio_scan_read_pending = true;
+        wake_radio_scan_read_stale = false;
+        if (hci_send_cmd(&wake_read_scan_enable) != ERROR_CODE_SUCCESS) {
+            wake_radio_scan_read_pending = false;
+        }
+    }
 
     const uint32_t now = time_us_32();
     if (
@@ -3272,6 +3351,15 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
         case HCI_EVENT_COMMAND_COMPLETE: {
             const uint8_t status = hci_event_command_complete_get_return_parameters(packet)[0];
             const uint16_t opcode = hci_event_command_complete_get_command_opcode(packet);
+            if (opcode == wake_read_scan_enable.opcode && wake_radio_scan_read_pending) {
+                wake_radio_scan_read_pending = false;
+                // Return parameters: status, then Scan_Enable (0 = no scans).
+                wake_radio_scan_confirmed = wake_radio_quiet_requested
+                    && !wake_radio_scan_read_stale
+                    && size >= 7
+                    && status == ERROR_CODE_SUCCESS
+                    && hci_event_command_complete_get_return_parameters(packet)[1] == 0;
+            }
             DS5_LOG("[HCI] CmdComplete %s(0x%04X) status=0x%02X\n", opcode_to_str(opcode), opcode, status);
             break;
         }
@@ -3564,7 +3652,9 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             hci_event_connection_request_get_bd_addr(packet, addr);
             const uint32_t cod = hci_event_connection_request_get_class_of_device(packet);
             DS5_LOG("[HCI] Incoming ACL request from %s cod=0x%06x\n", bd_addr_to_str(addr), (unsigned int) cod);
-            if (classic_acl_connection_allowed(addr, false)) {
+            // Mirrors classic_connection_filter: pages it declined while
+            // Wake-on-LAN prepares must not start a connection session.
+            if (!wake_on_lan_preparing() && classic_acl_connection_allowed(addr, false)) {
                 if (!begin_connection_attempt()) {
                     break;
                 }
@@ -3613,6 +3703,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                         disconnected_handle);
                 break;
             }
+            wake_on_lan_controller_disconnected(connection_generation);
             const BtControllerDisconnectIntent disconnect_intent =
                 controller_disconnect_intent;
             const bool expected_disconnect =
@@ -3986,6 +4077,15 @@ static void finish_hid_session_if_ready() {
     critical_section_enter_blocking(&queue_lock);
     reset_controller_output_session_locked();
     critical_section_exit(&queue_lock);
+    // Only a reconnect of an already bonded controller, encrypted with its
+    // stored key, may wake the PC; a new pairing never qualifies.
+    wake_on_lan_controller_connected(
+        connection_generation,
+        !pairing_authorized_session
+            && current_link_key_persisted
+            && gap_security_level(acl_handle) >= LEVEL_2,
+        !pairing_authorized_session
+    );
 
     if (!mute[0]) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
@@ -4477,7 +4577,8 @@ static void request_control_can_send_if_needed(bool should_request_send) {
 }
 
 void bt_output_service_after_usb() {
-    if (!output_send_context()) {
+    // Wi-Fi owns the shared CYW43 bus while Wake-on-LAN runs.
+    if (wake_on_lan_quiet_gate() || !output_send_context()) {
         return;
     }
     output_send_dispatcher.resume_after_usb_service();
@@ -5355,6 +5456,9 @@ void bt_write(uint8_t *data, uint16_t len) {
 }
 
 bool bt_write_classified_output(uint8_t *data, uint16_t len) {
+    if (wake_on_lan_quiet_gate()) {
+        return false;
+    }
     output_counters.normal_0x31_rx_count++;
     uint8_t *payload = nullptr;
     uint16_t payload_len = 0;

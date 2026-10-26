@@ -18,6 +18,7 @@
 #define COMPANION_REPORT_DEVICE_IDENTITY 0x0D
 #define COMPANION_REPORT_FIRMWARE_LOG 0x0E
 #define COMPANION_REPORT_BOOTLOADER_AUTHORIZATION 0x12
+#define COMPANION_REPORT_WAKE_ON_LAN 0x1D
 #define COMPANION_PAYLOAD_SIZE 63
 
 enum CompanionTriggerTraceStage : uint8_t {
@@ -41,6 +42,8 @@ enum CompanionFeedbackTraceStage : uint8_t {
 
 void companion_init();
 void companion_loop();
+// Runs a queued Wake-on-LAN command from the top-level main loop.
+void companion_wake_command_poll();
 void companion_process_controller_report(uint8_t *report, uint16_t len);
 void companion_update_controller_report(uint8_t const *report, uint16_t len);
 void companion_note_host_output_report(uint8_t const *report, uint16_t len);
