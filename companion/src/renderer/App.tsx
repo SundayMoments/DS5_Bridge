@@ -2,11 +2,7 @@ import '@fontsource/montserrat/latin-500.css';
 import '@fontsource/montserrat/latin-600.css';
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  CustomSelect as SharedCustomSelect,
-  type CustomSelectProps
-} from './components/CustomSelect';
-import type { SelectValue } from './components/custom-select-types';
+import { InlineSelect as CustomSelect } from './components/InlineSelect';
 import {
   type TablerIcon,
   IconAdjustmentsSpark,
@@ -142,6 +138,9 @@ import {
 import { StickDeadzonesPage, useStickDeadzonesController } from './features/stick-deadzones';
 import { DevicesPage, useDevicesController } from './features/devices';
 import { ControllerLightingPage, useControllerLightingController } from './features/controller-lighting';
+import { AdaptiveTriggersPage, useAdaptiveTriggersController } from './features/adaptive-triggers';
+import { TRIGGER_EFFECT_STEP, snapTriggerEffectIntensity } from './features/adaptive-triggers/model';
+import { TriggerLabProfileDialog, useTriggerLabController } from './features/trigger-lab';
 import { lightbarColorLabel, LIGHTBAR_BRIGHTNESS_STEP, snapLightbarBrightness } from './features/controller-lighting/model';
 import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
@@ -266,45 +265,6 @@ type ChordAssignmentScrollbarState = {
   top: number;
   height: number;
 };
-type TriggerLabProfileDialogMode = 'save' | 'rename' | 'delete';
-type TriggerLabBuiltinProfileId = 'default';
-type TriggerLabCustomProfileId = 'custom' | `custom-${string}`;
-type TriggerLabProfileId = TriggerLabBuiltinProfileId | TriggerLabCustomProfileId;
-type TriggerLabSide = Extract<TriggerTestTarget, 'l2' | 'r2'>;
-type TriggerLabDraft = {
-  profileId: TriggerLabProfileId;
-  mode: TriggerTestMode;
-  startPercent: number;
-  wallPercent: number;
-  forcePercent: number;
-};
-type TriggerLabCustomProfile = {
-  id: TriggerLabCustomProfileId;
-  name: string;
-  mode: TriggerTestMode;
-  startPercent: number;
-  wallPercent: number;
-  forcePercent: number;
-  active: boolean;
-};
-type TriggerLabProfileDialogState = {
-  mode: TriggerLabProfileDialogMode;
-  side: TriggerLabSide;
-};
-type TriggerLabSplitState = {
-  drafts: Record<TriggerLabSide, TriggerLabDraft>;
-  active: Record<TriggerLabSide, boolean>;
-};
-type TriggerLabWorkspaceState = {
-  enabled: boolean;
-  linked: boolean;
-  drafts: Record<TriggerLabSide, TriggerLabDraft>;
-  active: Record<TriggerLabSide, boolean>;
-  splitState: TriggerLabSplitState | null;
-};
-type TriggerLabInitialState = TriggerLabWorkspaceState & {
-  profiles: TriggerLabCustomProfile[];
-};
 type RemapCalloutLayout = {
   top: number;
   points: string;
@@ -328,7 +288,6 @@ const AUDIO_BUFFER_LENGTH_MIN = 16;
 const AUDIO_BUFFER_LENGTH_MAX = 128;
 const AUDIO_BUFFER_LENGTH_HIGH_STUTTER_MAX = 44;
 const AUDIO_BUFFER_LENGTH_RISKY_MAX = 63;
-const TRIGGER_EFFECT_STEP = 10;
 const TEST_HAPTICS_LOCK_MS = 1100;
 const TEST_SPEAKER_LOCK_MS = 900;
 const TEST_MIC_LISTEN_MS = 5000;
@@ -338,7 +297,6 @@ const TEST_SPEAKER_ENDPOINT_RETRY_MS = 150;
 const TEST_SPEAKER_ENDPOINT_REFRESH_MS = 1500;
 const TEST_SPEAKER_ENDPOINT_VERIFY_MS = 100;
 const TEST_SPEAKER_PREROLL_MS = 220;
-const TEST_TRIGGER_LOCK_MS = 2800;
 const SLEEP_CONFIRM_MS = 2400;
 const HAPTICS_PRESETS: Array<[string, number]> = [
   ['Low', 50],
@@ -355,13 +313,6 @@ const MIC_VOLUME_PRESETS: Array<[string, number]> = [
   ['Medium', 70],
   ['High', 100]
 ];
-const TRIGGER_EFFECT_PRESETS: Array<[string, number]> = [
-  ['Low', 30],
-  ['Medium', 70],
-  ['High', 100]
-];
-const TRIGGER_LAB_SLIDER_STEP = 5;
-const TRIGGER_LAB_SLIDER_TICKS = Array.from({ length: 21 }, (_, index) => index * TRIGGER_LAB_SLIDER_STEP);
 const STANDARD_HAPTICS_SLIDER_TICKS = Array.from({ length: 11 }, (_, index) => index * 20);
 const BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE = 'Controller audio endpoint unavailable';
 const BRIDGE_MIC_ENDPOINT_UNAVAILABLE = 'Controller microphone unavailable';
@@ -385,26 +336,6 @@ const MUTE_MODIFIER_OPTIONS: Array<[string, number]> = [
   ['Alt', 0x04],
   ['Win', 0x08]
 ];
-const TRIGGER_TEST_MODE_OPTIONS: Array<[string, TriggerTestMode]> = [
-  ['Feedback', 'feedback'],
-  ['Weapon', 'weapon'],
-  ['Vibration', 'vibration']
-];
-const TRIGGER_LAB_BUILTIN_PROFILE_OPTIONS: Array<[string, TriggerLabBuiltinProfileId]> = [
-  ['Default', 'default']
-];
-const TRIGGER_LAB_PROFILE_PRESETS: Record<TriggerLabBuiltinProfileId, TriggerLabDraft> = {
-  default: {
-    profileId: 'default',
-    mode: 'weapon',
-    startPercent: 20,
-    wallPercent: 60,
-    forcePercent: 85
-  }
-};
-const TRIGGER_LAB_DEFAULT_DRAFT = TRIGGER_LAB_PROFILE_PRESETS.default;
-const TRIGGER_LAB_AUTO_CUSTOM_PROFILE_ID: TriggerLabCustomProfileId = 'custom';
-const TRIGGER_LAB_AUTO_CUSTOM_PROFILE_NAME = 'Custom';
 const MUTE_BUTTON_MODE_OPTIONS: Array<[string, MuteButtonMode]> = [
   ['Normal', 'normal'],
   ['Keyboard Key', 'keyboard'],
@@ -474,11 +405,6 @@ const AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS = {
   attack: 'Controls how quickly the haptics ramp when a sound rises or spikes.',
   release: 'Controls how quickly the haptics fade when a sound drops.'
 } as const;
-const TRIGGER_TARGET_OPTIONS: Array<[string, TriggerTestTarget]> = [
-  ['L2', 'l2'],
-  ['R2', 'r2'],
-  ['Both Triggers', 'both']
-];
 const REMAP_BUTTONS: Record<RemapButtonId, RemapButtonDefinition> = {
   l2: { id: 'l2', label: 'L2', glyphUrl: l2GlyphUrl },
   l1: { id: 'l1', label: 'L1', glyphUrl: l1GlyphUrl },
@@ -747,8 +673,6 @@ type SinkSelectableAudio = HTMLAudioElement & {
   sinkId?: string;
 };
 const LAST_REMAP_CONTROLLER_TYPE_STORAGE_KEY = 'ds5bridge.lastRemapControllerType';
-const TRIGGER_LAB_CUSTOM_PROFILES_STORAGE_KEY = 'ds5bridge.triggerLabProfiles';
-const TRIGGER_LAB_WORKSPACE_STORAGE_KEY = 'ds5bridge.triggerLabWorkspace';
 const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
 const STARTUP_READY_HOLD_MS = 1000;
 
@@ -879,194 +803,6 @@ function audioBufferZoneTone(value: number): 'stutter' | 'risky' | 'safe' {
   return 'safe';
 }
 
-function snapTriggerEffectIntensity(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value / TRIGGER_EFFECT_STEP) * TRIGGER_EFFECT_STEP));
-}
-
-function snapTriggerLabPercent(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value / TRIGGER_LAB_SLIDER_STEP) * TRIGGER_LAB_SLIDER_STEP));
-}
-
-function isTriggerLabBuiltinProfileId(value: string): value is TriggerLabBuiltinProfileId {
-  return value === 'default';
-}
-
-function isTriggerTestModeValue(value: unknown): value is TriggerTestMode {
-  return value === 'feedback' || value === 'weapon' || value === 'vibration';
-}
-
-function loadTriggerLabCustomProfiles(): TriggerLabCustomProfile[] {
-  try {
-    const rawProfiles = JSON.parse(window.localStorage.getItem(TRIGGER_LAB_CUSTOM_PROFILES_STORAGE_KEY) ?? '[]') as unknown;
-    if (!Array.isArray(rawProfiles)) {
-      return [];
-    }
-    return rawProfiles.flatMap((profile): TriggerLabCustomProfile[] => {
-      if (!profile || typeof profile !== 'object') {
-        return [];
-      }
-      const candidate = profile as Partial<TriggerLabCustomProfile>;
-      if (
-        typeof candidate.id !== 'string'
-        || (candidate.id !== TRIGGER_LAB_AUTO_CUSTOM_PROFILE_ID && !candidate.id.startsWith('custom-'))
-        || typeof candidate.name !== 'string'
-        || candidate.name.trim().length === 0
-        || !isTriggerTestModeValue(candidate.mode)
-      ) {
-        return [];
-      }
-      return [{
-        id: candidate.id as TriggerLabCustomProfileId,
-        name: candidate.name.trim().slice(0, 48),
-        mode: candidate.mode,
-        startPercent: snapTriggerLabPercent(Number(candidate.startPercent ?? 0)),
-        wallPercent: snapTriggerLabPercent(Number(candidate.wallPercent ?? 0)),
-        forcePercent: snapTriggerLabPercent(Number(candidate.forcePercent ?? 0)),
-        active: candidate.active === true
-      }];
-    });
-  } catch {
-    return [];
-  }
-}
-
-function saveTriggerLabCustomProfiles(profiles: TriggerLabCustomProfile[]) {
-  window.localStorage.setItem(TRIGGER_LAB_CUSTOM_PROFILES_STORAGE_KEY, JSON.stringify(profiles));
-}
-
-function createTriggerLabProfileId(): TriggerLabCustomProfileId {
-  return `custom-${window.crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}`;
-}
-
-function defaultTriggerLabWorkspaceState(): TriggerLabWorkspaceState {
-  return {
-    enabled: false,
-    linked: true,
-    drafts: {
-      l2: { ...TRIGGER_LAB_DEFAULT_DRAFT },
-      r2: { ...TRIGGER_LAB_DEFAULT_DRAFT }
-    },
-    active: {
-      l2: false,
-      r2: false
-    },
-    splitState: null
-  };
-}
-
-function triggerLabProfileDraftFromProfile(profile: TriggerLabCustomProfile): TriggerLabDraft {
-  return {
-    profileId: profile.id,
-    mode: profile.mode,
-    startPercent: profile.startPercent,
-    wallPercent: profile.wallPercent,
-    forcePercent: profile.forcePercent
-  };
-}
-
-function normalizeTriggerLabWorkspaceDraft(
-  value: unknown,
-  profiles: TriggerLabCustomProfile[]
-): TriggerLabDraft {
-  if (!value || typeof value !== 'object') {
-    return { ...TRIGGER_LAB_DEFAULT_DRAFT };
-  }
-
-  const candidate = value as Partial<TriggerLabDraft>;
-  if (candidate.profileId === 'default') {
-    return { ...TRIGGER_LAB_DEFAULT_DRAFT };
-  }
-
-  if (typeof candidate.profileId === 'string') {
-    const customProfile = profiles.find((profile) => profile.id === candidate.profileId);
-    if (customProfile) {
-      return triggerLabProfileDraftFromProfile(customProfile);
-    }
-  }
-
-  return { ...TRIGGER_LAB_DEFAULT_DRAFT };
-}
-
-function triggerLabWorkspaceDraftActive(
-  draft: TriggerLabDraft,
-  storedActive: unknown,
-  profiles: TriggerLabCustomProfile[]
-): boolean {
-  if (draft.profileId === 'default') {
-    return false;
-  }
-  const profileActive = profiles.find((profile) => profile.id === draft.profileId)?.active ?? false;
-  const active = typeof storedActive === 'boolean' ? storedActive : profileActive;
-  return active && draft.forcePercent > 0;
-}
-
-function loadTriggerLabWorkspaceState(profiles: TriggerLabCustomProfile[]): TriggerLabWorkspaceState {
-  const fallback = defaultTriggerLabWorkspaceState();
-  try {
-    const value = JSON.parse(window.localStorage.getItem(TRIGGER_LAB_WORKSPACE_STORAGE_KEY) ?? 'null') as unknown;
-    if (!value || typeof value !== 'object') {
-      return fallback;
-    }
-
-    const candidate = value as Partial<TriggerLabWorkspaceState>;
-    const l2Draft = normalizeTriggerLabWorkspaceDraft(candidate.drafts?.l2, profiles);
-    const r2Draft = normalizeTriggerLabWorkspaceDraft(candidate.drafts?.r2, profiles);
-    const active = {
-      l2: triggerLabWorkspaceDraftActive(l2Draft, candidate.active?.l2, profiles),
-      r2: triggerLabWorkspaceDraftActive(r2Draft, candidate.active?.r2, profiles)
-    };
-
-    let splitState: TriggerLabSplitState | null = null;
-    if (candidate.splitState && typeof candidate.splitState === 'object') {
-      const splitL2Draft = normalizeTriggerLabWorkspaceDraft(candidate.splitState.drafts?.l2, profiles);
-      const splitR2Draft = normalizeTriggerLabWorkspaceDraft(candidate.splitState.drafts?.r2, profiles);
-      splitState = {
-        drafts: {
-          l2: splitL2Draft,
-          r2: splitR2Draft
-        },
-        active: {
-          l2: triggerLabWorkspaceDraftActive(splitL2Draft, candidate.splitState.active?.l2, profiles),
-          r2: triggerLabWorkspaceDraftActive(splitR2Draft, candidate.splitState.active?.r2, profiles)
-        }
-      };
-    }
-
-    const linked = candidate.linked !== false;
-    const workspaceActive = linked
-      ? { l2: active.l2 || active.r2, r2: active.l2 || active.r2 }
-      : active;
-
-    return {
-      enabled: typeof candidate.enabled === 'boolean'
-        ? candidate.enabled
-        : workspaceActive.l2 || workspaceActive.r2,
-      linked,
-      drafts: {
-        l2: l2Draft,
-        r2: r2Draft
-      },
-      active: workspaceActive,
-      splitState
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function loadTriggerLabInitialState(): TriggerLabInitialState {
-  const profiles = loadTriggerLabCustomProfiles();
-  return {
-    ...loadTriggerLabWorkspaceState(profiles),
-    profiles
-  };
-}
-
-function saveTriggerLabWorkspaceState(state: TriggerLabWorkspaceState) {
-  window.localStorage.setItem(TRIGGER_LAB_WORKSPACE_STORAGE_KEY, JSON.stringify(state));
-}
-
-
 function feedbackSliderMaxFromSnapshot(snapshot: BridgeSnapshot | null | undefined): number {
   if (controllerPowerSavingActiveFromSnapshot(snapshot)) {
     return CONTROLLER_POWER_SAVING_CAP_PERCENT;
@@ -1089,49 +825,6 @@ function displayClassicRumbleValue(snapshot: BridgeSnapshot): number {
   return capControllerPowerSavingValue(snapshot.settings.classicRumbleGainPercent, snapshot);
 }
 
-function displayTriggerEffectIntensityValue(snapshot: BridgeSnapshot): number {
-  return capControllerPowerSavingValue(snapshot.settings.triggerEffectIntensityPercent, snapshot);
-}
-
-
-type TriggerLabMeterProps = {
-  label: string;
-  value: number;
-  disabled?: boolean;
-  onChange: (value: number) => void;
-  onCommit: (value: number) => void;
-};
-
-function TriggerLabMeter({ label, value, disabled = false, onChange, onCommit }: TriggerLabMeterProps) {
-  function commitValue(element: HTMLInputElement) {
-    onCommit(snapTriggerLabPercent(Number(element.value)));
-  }
-
-  return (
-    <div className="range-control trigger-lab-meter">
-      <input
-        type="range"
-        min="0"
-        max="100"
-        step={TRIGGER_LAB_SLIDER_STEP}
-        value={value}
-        disabled={disabled}
-        aria-label={label}
-        style={{ '--range-fill': `${value}%` } as CSSProperties}
-        onChange={(event) => onChange(snapTriggerLabPercent(Number(event.currentTarget.value)))}
-        onBlur={(event) => commitValue(event.currentTarget)}
-        onKeyUp={(event) => commitValue(event.currentTarget)}
-        onPointerCancel={(event) => commitValue(event.currentTarget)}
-        onPointerUp={(event) => commitValue(event.currentTarget)}
-      />
-      <div className="range-ticks" aria-hidden="true">
-        {TRIGGER_LAB_SLIDER_TICKS.map((tick) => (
-          <span key={tick} className={sliderTickClass(tick, 100)} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function KitsuneInputWordmark() {
   return (
@@ -1890,11 +1583,6 @@ async function playMicLiveListen(durationMs: number): Promise<void> {
   });
 }
 
-// The 1.x pages style their menus in place; keep them inline until the page split.
-function CustomSelect<T extends SelectValue>(props: CustomSelectProps<T>) {
-  return <SharedCustomSelect floatingMenu={false} {...props} />;
-}
-
 function AudioHapticsConfigLabel({
   id,
   label,
@@ -2313,25 +2001,10 @@ export function App() {
   const [speakerVolumeValue, setSpeakerVolumeValue] = useState(100);
   const [micVolumeValue, setMicVolumeValue] = useState(100);
   const [audioBufferLengthValue, setAudioBufferLengthValue] = useState(64);
-  const [triggerEffectIntensityValue, setTriggerEffectIntensityValue] = useState(100);
-  const [triggerTarget, setTriggerTarget] = useState<TriggerTestTarget>('both');
-  const triggerLabInitialStateRef = useRef<TriggerLabInitialState | null>(null);
-  if (triggerLabInitialStateRef.current === null) {
-    triggerLabInitialStateRef.current = loadTriggerLabInitialState();
-  }
-  const triggerLabInitialState = triggerLabInitialStateRef.current;
   const triggerLabOpen = activeControlTab === 'trigger-lab';
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
   const [audioHapticsSessions, setAudioHapticsSessions] = useState<AudioHapticsSession[]>([]);
   const [audioHapticsSessionsLoading, setAudioHapticsSessionsLoading] = useState(false);
-  const [triggerLabEnabled, setTriggerLabEnabled] = useState(triggerLabInitialState.enabled);
-  const [triggerLabLinked, setTriggerLabLinked] = useState(triggerLabInitialState.linked);
-  const [triggerLabDrafts, setTriggerLabDrafts] = useState<Record<TriggerLabSide, TriggerLabDraft>>(triggerLabInitialState.drafts);
-  const [triggerLabActive, setTriggerLabActive] = useState<Record<TriggerLabSide, boolean>>(triggerLabInitialState.active);
-  const [triggerLabSplitState, setTriggerLabSplitState] = useState<TriggerLabSplitState | null>(triggerLabInitialState.splitState);
-  const [triggerLabCustomProfiles, setTriggerLabCustomProfiles] = useState<TriggerLabCustomProfile[]>(triggerLabInitialState.profiles);
-  const [triggerLabProfileDialog, setTriggerLabProfileDialog] = useState<TriggerLabProfileDialogState | null>(null);
-  const [triggerLabProfileNameDraft, setTriggerLabProfileNameDraft] = useState('');
   const [remapDraft, setRemapDraft] = useState<Record<RemapButtonId, RemapButtonId>>(DEFAULT_REMAP_DRAFT);
   const [remapProfileDialogMode, setRemapProfileDialogMode] = useState<RemapProfileDialogMode | null>(null);
   const [remapProfileNameDraft, setRemapProfileNameDraft] = useState('');
@@ -2371,7 +2044,6 @@ export function App() {
   const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
   const [micTestLocked, setMicTestLocked] = useState(false);
   const [micTestError, setMicTestError] = useState<string | null>(null);
-  const [triggerTestLocked, setTriggerTestLocked] = useState(false);
   const [hapticsCommitPending, setHapticsCommitPending] = useState(false);
   const [classicRumbleCommitPending, setClassicRumbleCommitPending] = useState(false);
   const [classicRumbleV1CommitPending, setClassicRumbleV1CommitPending] = useState(false);
@@ -2394,7 +2066,6 @@ export function App() {
   const speakerVolumeEditingRef = useRef(false);
   const micVolumeEditingRef = useRef(false);
   const audioBufferLengthEditingRef = useRef(false);
-  const triggerEffectEditingRef = useRef(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const bridgeRenameCancelledRef = useRef(false);
   const remappingLayoutRef = useRef<HTMLDivElement>(null);
@@ -2410,7 +2081,6 @@ export function App() {
   const windowDragReleaseTimerRef = useRef<number | null>(null);
   const startupReadyTimerRef = useRef<number | null>(null);
   const startupReadyArmedRef = useRef(false);
-  const triggerLabRestoreAppliedRef = useRef(false);
   const deferredSnapshotRef = useRef<BridgeSnapshot | null>(null);
   const overviewSleepConfirmArmedRef = useRef(false);
   useEffect(() => () => {
@@ -2420,10 +2090,6 @@ export function App() {
     document.body.classList.remove('chords-assignment-pointer-dragging');
     chordAssignmentDragRef.current = null;
   }, []);
-
-  useEffect(() => {
-    saveTriggerLabCustomProfiles(triggerLabCustomProfiles);
-  }, [triggerLabCustomProfiles]);
 
   useEffect(() => {
     if (!showKitsuneInputPromotion) {
@@ -2489,16 +2155,6 @@ export function App() {
     };
   }, [startupTutorialStep]);
 
-  useEffect(() => {
-    saveTriggerLabWorkspaceState({
-      enabled: triggerLabEnabled,
-      linked: triggerLabLinked,
-      drafts: triggerLabDrafts,
-      active: triggerLabActive,
-      splitState: triggerLabSplitState
-    });
-  }, [triggerLabActive, triggerLabDrafts, triggerLabEnabled, triggerLabLinked, triggerLabSplitState]);
-
   const personaTransition = snapshot?.personaTransition ?? null;
   const personaTransitionActive = Boolean(personaTransition);
   const connected = snapshot?.state === 'connected';
@@ -2519,6 +2175,8 @@ export function App() {
   const stickDeadzones = useStickDeadzonesController(runtime, activeControlTab === 'deadzones');
   const devices = useDevicesController(runtime);
   const lighting = useControllerLightingController(runtime);
+  const triggers = useAdaptiveTriggersController(runtime);
+  const triggerLab = useTriggerLabController(runtime, triggers);
   const liveControllerType = snapshot?.status?.controllerType;
   const remapControllerType = snapshot?.status?.controllerConnected && liveControllerType && liveControllerType !== 'unknown'
     ? liveControllerType
@@ -2527,11 +2185,6 @@ export function App() {
   const remapModifiedCount = useMemo(() => (
     REMAP_ALL_BUTTON_IDS.filter((buttonId) => remapDraft[buttonId] !== buttonId).length
   ), [remapDraft]);
-  const triggerLabProfileOptions = useMemo<Array<[string, TriggerLabProfileId]>>(() => ([
-    ...TRIGGER_LAB_BUILTIN_PROFILE_OPTIONS,
-    ...triggerLabCustomProfiles.map((profile): [string, TriggerLabProfileId] => [profile.name, profile.id])
-  ]), [triggerLabCustomProfiles]);
-  const triggerLabAnyActive = triggerLabActive.l2 || triggerLabActive.r2;
   const selectedControllerProfile = snapshot?.settings.controllerProfiles.find((profile) => (
     profile.id === snapshot.settings.selectedControllerProfileId
   ));
@@ -2753,9 +2406,7 @@ export function App() {
       setAudioBufferLengthValue(clampAudioBufferLength(next.settings.hapticsBufferLength));
     }
     lighting.syncSnapshot(next);
-    if (!triggerEffectEditingRef.current) {
-      setTriggerEffectIntensityValue(displayTriggerEffectIntensityValue(next));
-    }
+    triggers.syncSnapshot(next);
   }
 
   function finishWindowDrag() {
@@ -3094,7 +2745,6 @@ export function App() {
     snapshot?.settings.speakerGainLevel ?? snapshot?.status?.speakerGainLevel ?? 4
   )));
   const adaptiveTriggersEnabled = Boolean(snapshot?.settings.adaptiveTriggersEnabled);
-  const triggerPageEnabled = triggerLabOpen ? triggerLabEnabled : adaptiveTriggersEnabled;
   const lightbarEnabled = Boolean(snapshot?.settings.lightbarEnabled);
   const sleepKeybindEnabled = Boolean(snapshot?.settings.sleepKeybindEnabled);
   const controllerToastEnabled = Boolean(snapshot?.settings.notifyControllerConnection);
@@ -3111,47 +2761,6 @@ export function App() {
   const percentSliderMax = controllerPowerSavingActive ? CONTROLLER_POWER_SAVING_CAP_PERCENT : 100;
   const OutputIcon = headsetOutputDetected ? Headphones : Volume2;
 
-  useEffect(() => {
-    triggerLabRestoreAppliedRef.current = false;
-  }, [adaptiveTriggersEnabled, connected, triggerLabEnabled]);
-
-  useEffect(() => {
-    if (
-      triggerLabRestoreAppliedRef.current
-      || !connected
-      || !adaptiveTriggersSupported
-      || !triggerLabEnabled
-      || pendingAction !== null
-    ) {
-      return;
-    }
-
-    triggerLabRestoreAppliedRef.current = true;
-    if (!triggerLabAnyActive) {
-      return;
-    }
-
-    if (triggerLabLinked) {
-      const active = triggerLabActive.l2 && triggerLabActive.r2 && triggerLabDrafts.l2.forcePercent > 0;
-      persistTriggerLab('l2', triggerLabDrafts.l2, active, 'trigger-lab-restore', 'both');
-      return;
-    }
-
-    persistTriggerLabSplitState({
-      drafts: triggerLabDrafts,
-      active: triggerLabActive
-    }, 'trigger-lab-restore');
-  }, [
-    adaptiveTriggersEnabled,
-    adaptiveTriggersSupported,
-    connected,
-    pendingAction,
-    triggerLabActive,
-    triggerLabAnyActive,
-    triggerLabDrafts,
-    triggerLabEnabled,
-    triggerLabLinked
-  ]);
   const outputControlLabel = headsetOutputDetected ? 'Headphones' : 'Speaker';
   const outputControlLower = headsetOutputDetected ? 'headphones' : 'speaker';
   const outputPresetLower = headsetOutputDetected ? 'headphones' : 'speaker';
@@ -3442,31 +3051,6 @@ export function App() {
       ? 'Active'
       : 'Enabled'
     : 'Off';
-  const testTriggersUnavailable = !connected
-    || !adaptiveTriggersSupported
-    || !adaptiveTriggersEnabled
-    || pendingAction !== null
-    || triggerTestLocked
-    || adaptiveTriggerOutputActive
-    || Boolean(snapshot?.status?.testAdaptiveTriggersBusy);
-  const triggerStatusReady = connected
-    && adaptiveTriggersSupported
-    && adaptiveTriggersEnabled
-    && !triggerTestLocked
-    && !adaptiveTriggerOutputActive
-    && !snapshot?.status?.testAdaptiveTriggersBusy;
-  const triggerStatusLabel = triggerTestLocked || snapshot?.status?.testAdaptiveTriggersBusy
-    ? 'Testing'
-    : triggerStatusReady
-      ? 'Ready'
-      : connected && adaptiveTriggerOutputActive
-        ? 'Game Triggers Active'
-        : 'Unavailable';
-  const triggerStatusTone = triggerTestLocked || snapshot?.status?.testAdaptiveTriggersBusy || triggerStatusReady
-    ? 'good'
-    : connected && adaptiveTriggerOutputActive
-      ? 'warn'
-      : 'idle';
   useEffect(() => {
     if (!connected || speakerOutputAvailable !== false || speakerTestLocked) {
       return undefined;
@@ -3727,33 +3311,6 @@ export function App() {
     }
   }
 
-  async function commitTriggerEffectIntensity(value = triggerEffectIntensityValue) {
-    const snappedValue = snapTriggerEffectIntensity(value);
-    if (
-      !snapshot
-      || snapshot.state !== 'connected'
-      || !adaptiveTriggersSupported
-      || !snapshot.settings.adaptiveTriggersEnabled
-      || (controllerPowerSavingActive && snapshot.settings.triggerEffectIntensityPercent > CONTROLLER_POWER_SAVING_CAP_PERCENT && snappedValue === CONTROLLER_POWER_SAVING_CAP_PERCENT)
-      || snappedValue === snapshot.settings.triggerEffectIntensityPercent
-    ) {
-      triggerEffectEditingRef.current = false;
-      return;
-    }
-
-    try {
-      const next = await window.bridge.setTriggerEffectIntensity(snappedValue);
-      setSnapshot(next);
-      setTriggerEffectIntensityValue(displayTriggerEffectIntensityValue(next));
-    } catch {
-      const next = await window.bridge.getStatus();
-      setSnapshot(next);
-      setTriggerEffectIntensityValue(displayTriggerEffectIntensityValue(next));
-    } finally {
-      triggerEffectEditingRef.current = false;
-    }
-  }
-
   function setHapticsPreset(value: number) {
     const snappedValue = snapHapticsValue(capControllerPowerSavingValue(value, snapshot), hapticsSliderMax);
     hapticsEditingRef.current = true;
@@ -3940,12 +3497,6 @@ export function App() {
     void commitAudioReactiveHapticsConfig({ release });
   }
 
-  function setTriggerIntensityPreset(value: number) {
-    const snappedValue = snapTriggerEffectIntensity(capControllerPowerSavingValue(value, snapshot));
-    setTriggerEffectIntensityValue(snappedValue);
-    void commitTriggerEffectIntensity(snappedValue);
-  }
-
   function isPreservingPowerSavingCap(savedValue: number, visibleValue: number): boolean {
     return controllerPowerSavingActive
       && savedValue > CONTROLLER_POWER_SAVING_CAP_PERCENT
@@ -4041,404 +3592,6 @@ export function App() {
         setMicTestLocked(false);
       }
     })();
-  }
-
-  function runTestAdaptiveTriggers() {
-    setTriggerTestLocked(true);
-    void runAction('triggers', async () => {
-      if (
-        snapshot
-        && triggerEffectIntensityValue !== snapshot.settings.triggerEffectIntensityPercent
-        && !isPreservingPowerSavingCap(snapshot.settings.triggerEffectIntensityPercent, triggerEffectIntensityValue)
-      ) {
-        await window.bridge.setTriggerEffectIntensity(triggerEffectIntensityValue);
-      }
-      return window.bridge.testAdaptiveTriggers(snapshot?.settings.triggerTestMode ?? 'feedback', triggerTarget);
-    }).finally(() => {
-      window.setTimeout(() => setTriggerTestLocked(false), TEST_TRIGGER_LOCK_MS);
-    });
-  }
-
-  function updateTriggerLabSide(side: TriggerLabSide, update: (current: TriggerLabDraft) => TriggerLabDraft) {
-    setTriggerLabDrafts((current) => {
-      const nextSide = update(current[side]);
-      if (triggerLabLinked) {
-        return { l2: nextSide, r2: nextSide };
-      }
-      return { ...current, [side]: nextSide };
-    });
-  }
-
-  function triggerLabActiveForSide(side: TriggerLabSide) {
-    return triggerLabLinked ? triggerLabActive.l2 && triggerLabActive.r2 : triggerLabActive[side];
-  }
-
-  function setTriggerLabActiveForTarget(side: TriggerLabSide, active: boolean) {
-    setTriggerLabActive((current) => (
-      triggerLabLinked ? { l2: active, r2: active } : { ...current, [side]: active }
-    ));
-  }
-
-  function triggerLabProfileDraft(profileId: TriggerLabProfileId): TriggerLabDraft | null {
-    if (isTriggerLabBuiltinProfileId(profileId)) {
-      return { ...TRIGGER_LAB_PROFILE_PRESETS[profileId] };
-    }
-    const profile = triggerLabCustomProfiles.find((candidate) => candidate.id === profileId);
-    if (!profile) {
-      return null;
-    }
-    return {
-      profileId: profile.id,
-      mode: profile.mode,
-      startPercent: profile.startPercent,
-      wallPercent: profile.wallPercent,
-      forcePercent: profile.forcePercent
-    };
-  }
-
-  function triggerLabProfileName(profileId: TriggerLabProfileId): string {
-    const builtin = TRIGGER_LAB_BUILTIN_PROFILE_OPTIONS.find(([, value]) => value === profileId);
-    if (builtin) {
-      return builtin[0];
-    }
-    return triggerLabCustomProfiles.find((profile) => profile.id === profileId)?.name
-      ?? (profileId === TRIGGER_LAB_AUTO_CUSTOM_PROFILE_ID ? TRIGGER_LAB_AUTO_CUSTOM_PROFILE_NAME : 'Profile');
-  }
-
-  function triggerLabProfileIsCustom(profileId: TriggerLabProfileId): boolean {
-    return triggerLabCustomProfiles.some((profile) => profile.id === profileId);
-  }
-
-  function triggerLabProfileActive(profileId: TriggerLabProfileId): boolean {
-    if (isTriggerLabBuiltinProfileId(profileId)) {
-      return false;
-    }
-    return triggerLabCustomProfiles.find((profile) => profile.id === profileId)?.active ?? false;
-  }
-
-  function triggerLabCustomProfileFromDraft(
-    id: TriggerLabCustomProfileId,
-    name: string,
-    draft: TriggerLabDraft,
-    active: boolean
-  ): TriggerLabCustomProfile {
-    return {
-      id,
-      name: name.trim().slice(0, 48) || TRIGGER_LAB_AUTO_CUSTOM_PROFILE_NAME,
-      mode: draft.mode,
-      startPercent: draft.startPercent,
-      wallPercent: draft.wallPercent,
-      forcePercent: draft.forcePercent,
-      active: active && draft.forcePercent > 0
-    };
-  }
-
-  function upsertTriggerLabCustomProfile(profile: TriggerLabCustomProfile) {
-    setTriggerLabCustomProfiles((current) => {
-      const existingProfile = current.find((candidate) => candidate.id === profile.id);
-      if (!existingProfile) {
-        return [...current, profile];
-      }
-      return current.map((candidate) => (
-        candidate.id === profile.id ? profile : candidate
-      ));
-    });
-  }
-
-  function saveTriggerLabDraftToProfile(draft: TriggerLabDraft, active: boolean) {
-    if (isTriggerLabBuiltinProfileId(draft.profileId)) {
-      return;
-    }
-    upsertTriggerLabCustomProfile(triggerLabCustomProfileFromDraft(
-      draft.profileId,
-      triggerLabProfileName(draft.profileId),
-      draft,
-      active
-    ));
-  }
-
-  function editableTriggerLabDraft(draft: TriggerLabDraft, active: boolean): TriggerLabDraft {
-    if (isTriggerLabBuiltinProfileId(draft.profileId)) {
-      const nextDraft = {
-        ...draft,
-        profileId: TRIGGER_LAB_AUTO_CUSTOM_PROFILE_ID
-      };
-      upsertTriggerLabCustomProfile(triggerLabCustomProfileFromDraft(
-        TRIGGER_LAB_AUTO_CUSTOM_PROFILE_ID,
-        TRIGGER_LAB_AUTO_CUSTOM_PROFILE_NAME,
-        nextDraft,
-        active
-      ));
-      return nextDraft;
-    }
-
-    upsertTriggerLabCustomProfile(triggerLabCustomProfileFromDraft(
-      draft.profileId,
-      triggerLabProfileName(draft.profileId),
-      draft,
-      active
-    ));
-    return draft;
-  }
-
-  function updateEditableTriggerLabSide(
-    side: TriggerLabSide,
-    update: (current: TriggerLabDraft) => TriggerLabDraft
-  ): TriggerLabDraft {
-    const nextDraft = editableTriggerLabDraft(update(triggerLabDrafts[side]), triggerLabActiveForSide(side));
-    updateTriggerLabSide(side, () => nextDraft);
-    return nextDraft;
-  }
-
-  function persistTriggerLab(
-    side: TriggerLabSide,
-    draft: TriggerLabDraft,
-    active: boolean,
-    label: string,
-    target: TriggerTestTarget = triggerLabLinked ? 'both' : side
-  ) {
-    void runAction(label, () => (
-      window.bridge.applyAdaptiveTriggerEffect({
-        mode: draft.mode,
-        target,
-        startPercent: draft.startPercent,
-        wallPercent: draft.wallPercent,
-        forcePercent: active ? draft.forcePercent : 0
-      })
-    ));
-  }
-
-  function persistTriggerLabSplitState(nextState: TriggerLabSplitState, label: string) {
-    void runAction(label, async () => {
-      await window.bridge.applyAdaptiveTriggerEffect({
-        mode: nextState.drafts.l2.mode,
-        target: 'l2',
-        startPercent: nextState.drafts.l2.startPercent,
-        wallPercent: nextState.drafts.l2.wallPercent,
-        forcePercent: nextState.active.l2 ? nextState.drafts.l2.forcePercent : 0
-      });
-      return window.bridge.applyAdaptiveTriggerEffect({
-        mode: nextState.drafts.r2.mode,
-        target: 'r2',
-        startPercent: nextState.drafts.r2.startPercent,
-        wallPercent: nextState.drafts.r2.wallPercent,
-        forcePercent: nextState.active.r2 ? nextState.drafts.r2.forcePercent : 0
-      });
-    });
-  }
-
-  function setTriggerLabProfile(side: TriggerLabSide, profileId: TriggerLabProfileId) {
-    const profileDraft = triggerLabProfileDraft(profileId);
-    if (!profileDraft) {
-      return;
-    }
-    const previousActive = triggerLabActiveForSide(side);
-    const nextActive = triggerLabProfileActive(profileId) && profileDraft.forcePercent > 0;
-    const nextDraft = { ...profileDraft, profileId };
-    updateTriggerLabSide(side, () => nextDraft);
-    setTriggerLabActiveForTarget(side, nextActive);
-    if (previousActive || nextActive) {
-      persistTriggerLab(side, nextDraft, nextActive, `trigger-lab-update-${side}`);
-    }
-  }
-
-  function openTriggerLabProfileDialog(mode: TriggerLabProfileDialogMode, side: TriggerLabSide) {
-    const profileId = triggerLabDrafts[side].profileId;
-    if ((mode === 'rename' || mode === 'delete') && !triggerLabProfileIsCustom(profileId)) {
-      return;
-    }
-    setTriggerLabProfileNameDraft(
-      mode === 'save'
-        ? `Custom Trigger ${triggerLabCustomProfiles.length + 1}`
-        : triggerLabProfileName(profileId)
-    );
-    setTriggerLabProfileDialog({ mode, side });
-  }
-
-  function closeTriggerLabProfileDialog() {
-    setTriggerLabProfileDialog(null);
-    setTriggerLabProfileNameDraft('');
-  }
-
-  function submitTriggerLabProfileDialog() {
-    if (!triggerLabProfileDialog) {
-      return;
-    }
-
-    const side = triggerLabProfileDialog.side;
-    const draft = triggerLabDrafts[side];
-    const nextName = triggerLabProfileNameDraft.trim();
-
-    if (triggerLabProfileDialog.mode === 'save') {
-      if (!nextName) {
-        return;
-      }
-      const id = createTriggerLabProfileId();
-      const nextProfile: TriggerLabCustomProfile = {
-        id,
-        name: nextName,
-        mode: draft.mode,
-        startPercent: draft.startPercent,
-        wallPercent: draft.wallPercent,
-        forcePercent: draft.forcePercent,
-        active: triggerLabActiveForSide(side) && draft.forcePercent > 0
-      };
-      setTriggerLabCustomProfiles((current) => [...current, nextProfile]);
-      updateTriggerLabSide(side, (current) => ({ ...current, profileId: id }));
-      closeTriggerLabProfileDialog();
-      return;
-    }
-
-    if (!triggerLabProfileIsCustom(draft.profileId)) {
-      closeTriggerLabProfileDialog();
-      return;
-    }
-
-    if (triggerLabProfileDialog.mode === 'rename') {
-      if (!nextName || nextName === triggerLabProfileName(draft.profileId)) {
-        closeTriggerLabProfileDialog();
-        return;
-      }
-      setTriggerLabCustomProfiles((current) => current.map((profile) => (
-        profile.id === draft.profileId ? { ...profile, name: nextName } : profile
-      )));
-      closeTriggerLabProfileDialog();
-      return;
-    }
-
-    if (triggerLabProfileDialog.mode === 'delete') {
-      const profileId = draft.profileId;
-      const nextDrafts = {
-        l2: triggerLabDrafts.l2.profileId === profileId ? { ...TRIGGER_LAB_DEFAULT_DRAFT } : triggerLabDrafts.l2,
-        r2: triggerLabDrafts.r2.profileId === profileId ? { ...TRIGGER_LAB_DEFAULT_DRAFT } : triggerLabDrafts.r2
-      };
-      const nextActive = {
-        l2: triggerLabDrafts.l2.profileId === profileId ? false : triggerLabActive.l2,
-        r2: triggerLabDrafts.r2.profileId === profileId ? false : triggerLabActive.r2
-      };
-      setTriggerLabCustomProfiles((current) => current.filter((profile) => profile.id !== profileId));
-      setTriggerLabDrafts(nextDrafts);
-      setTriggerLabActive(nextActive);
-      setTriggerLabSplitState((current) => current
-        ? {
-            drafts: {
-              l2: current.drafts.l2.profileId === profileId ? { ...TRIGGER_LAB_DEFAULT_DRAFT } : current.drafts.l2,
-              r2: current.drafts.r2.profileId === profileId ? { ...TRIGGER_LAB_DEFAULT_DRAFT } : current.drafts.r2
-            },
-            active: {
-              l2: current.drafts.l2.profileId === profileId ? false : current.active.l2,
-              r2: current.drafts.r2.profileId === profileId ? false : current.active.r2
-            }
-          }
-        : null);
-      if (triggerLabActive.l2 || triggerLabActive.r2) {
-        if (triggerLabLinked) {
-          persistTriggerLab('l2', nextDrafts.l2, false, 'trigger-lab-delete-profile', 'both');
-        } else {
-          persistTriggerLabSplitState({ drafts: nextDrafts, active: nextActive }, 'trigger-lab-delete-profile');
-        }
-      }
-      closeTriggerLabProfileDialog();
-    }
-  }
-
-  function setTriggerLabMode(side: TriggerLabSide, mode: TriggerTestMode) {
-    const nextDraft = updateEditableTriggerLabSide(side, (current) => ({ ...current, mode }));
-    if (triggerLabActiveForSide(side)) {
-      persistTriggerLab(side, nextDraft, nextDraft.forcePercent > 0, `trigger-lab-update-${side}`);
-      setTriggerLabActiveForTarget(side, nextDraft.forcePercent > 0);
-    }
-  }
-
-  function setTriggerLabPercent(side: TriggerLabSide, key: 'startPercent' | 'wallPercent' | 'forcePercent', value: number) {
-    updateEditableTriggerLabSide(side, (current) => ({
-      ...current,
-      [key]: snapTriggerLabPercent(value),
-    }));
-  }
-
-  function commitTriggerLabPercent(side: TriggerLabSide, key: 'startPercent' | 'wallPercent' | 'forcePercent', value: number) {
-    const nextDraft = updateEditableTriggerLabSide(side, (current) => ({
-      ...current,
-      [key]: snapTriggerLabPercent(value),
-    }));
-    if (triggerLabActiveForSide(side)) {
-      const nextActive = nextDraft.forcePercent > 0;
-      saveTriggerLabDraftToProfile(nextDraft, nextActive);
-      persistTriggerLab(side, nextDraft, nextActive, `trigger-lab-update-${side}`);
-      setTriggerLabActiveForTarget(side, nextActive);
-    }
-  }
-
-  function toggleTriggerLabLinked(sourceSide: TriggerLabSide) {
-    if (triggerLabLinked) {
-      if (triggerLabSplitState) {
-        setTriggerLabDrafts({
-          l2: { ...triggerLabSplitState.drafts.l2 },
-          r2: { ...triggerLabSplitState.drafts.r2 }
-        });
-        setTriggerLabActive({ ...triggerLabSplitState.active });
-        persistTriggerLabSplitState(triggerLabSplitState, `trigger-lab-unlink-${sourceSide}`);
-      }
-      setTriggerLabLinked(false);
-      return;
-    }
-
-    const sourceDraft = { ...triggerLabDrafts[sourceSide] };
-    const sourceActive = triggerLabActive[sourceSide];
-    setTriggerLabSplitState({
-      drafts: {
-        l2: { ...triggerLabDrafts.l2 },
-        r2: { ...triggerLabDrafts.r2 }
-      },
-      active: { ...triggerLabActive }
-    });
-    setTriggerLabDrafts({ l2: sourceDraft, r2: { ...sourceDraft } });
-    setTriggerLabActive({ l2: sourceActive, r2: sourceActive });
-    setTriggerLabLinked(true);
-    if (sourceActive || triggerLabActive.l2 || triggerLabActive.r2) {
-      persistTriggerLab(sourceSide, sourceDraft, sourceActive, `trigger-lab-link-${sourceSide}`, 'both');
-    }
-  }
-
-  function previewTriggerLab(side: TriggerLabSide) {
-    const draft = triggerLabDrafts[side];
-    setTriggerTestLocked(true);
-    void runAction(`trigger-lab-${side}`, () => (
-      window.bridge.previewAdaptiveTriggerEffect({
-        mode: draft.mode,
-        target: triggerLabLinked ? 'both' : side,
-        startPercent: draft.startPercent,
-        wallPercent: draft.wallPercent,
-        forcePercent: draft.forcePercent
-      })
-    )).finally(() => {
-      window.setTimeout(() => setTriggerTestLocked(false), TEST_TRIGGER_LOCK_MS);
-    });
-  }
-
-  function toggleTriggerLabActive(side: TriggerLabSide, active: boolean) {
-    const draft = active
-      ? editableTriggerLabDraft(triggerLabDrafts[side], active)
-      : editableTriggerLabDraft(triggerLabDrafts[side], false);
-    updateTriggerLabSide(side, () => draft);
-    setTriggerLabActiveForTarget(side, active);
-    persistTriggerLab(side, draft, active, `trigger-lab-active-${side}`);
-  }
-
-  function setTriggerTestMode(mode: TriggerTestMode) {
-    void runAction('trigger-mode', () => window.bridge.setTriggerTestMode(mode));
-  }
-
-  function resetAdaptiveTriggers() {
-    saveTriggerLabDraftToProfile(triggerLabDrafts.l2, false);
-    saveTriggerLabDraftToProfile(triggerLabDrafts.r2, false);
-    setTriggerLabActive({ l2: false, r2: false });
-    void runAction('triggers-reset', () => window.bridge.resetAdaptiveTriggers());
-  }
-
-  function resetTriggerLab() {
-    resetAdaptiveTriggers();
   }
 
   function selectControllerProfile(profileId: string) {
@@ -5135,13 +4288,6 @@ export function App() {
     window.addEventListener('keydown', keyDown);
   }
 
-  function toggleTriggerLabEnabled() {
-    const enabled = !triggerLabEnabled;
-    setTriggerLabEnabled(enabled);
-    if (!enabled) {
-      void runAction('trigger-lab-enabled', () => window.bridge.resetAdaptiveTriggers());
-    }
-  }
   function chooseFirmwareLogDirectory() {
     void runAction('firmware-log-directory', () => window.bridge.selectFirmwareLogDirectory());
   }
@@ -5310,13 +4456,6 @@ export function App() {
     void runAction('mic-mute', () => window.bridge.setMicMute(!snapshot.settings.micMuted));
   }
 
-  function toggleAdaptiveTriggersEnabled() {
-    if (!snapshot) return;
-    void runAction('triggers-enabled', () => (
-      window.bridge.setAdaptiveTriggersEnabled(!snapshot.settings.adaptiveTriggersEnabled)
-    ));
-  }
-
   function focusBridgeSettings(target: SettingsFocusTarget) {
     setShowNotificationsMenu(false);
     selectControlTab('settings');
@@ -5450,176 +4589,6 @@ export function App() {
     setShowNotificationsMenu(false);
     devices.closeMenu();
     setActiveControlTab(tab);
-  }
-
-  function renderTriggerLabCard(side: TriggerLabSide) {
-    const draft = triggerLabDrafts[side];
-    const label = side === 'l2' ? 'Left Trigger' : 'Right Trigger';
-    const glyphUrl = side === 'l2' ? l2GlyphUrl : r2GlyphUrl;
-    const targetLabel = side.toUpperCase();
-    const active = triggerLabActiveForSide(side);
-    const labActionDisabled = !connected
-      || !adaptiveTriggersSupported
-      || !triggerLabEnabled
-      || pendingAction !== null;
-    const activeDisabled = labActionDisabled || (!active && draft.forcePercent <= 0);
-    const previewDisabled = labActionDisabled
-      || triggerTestLocked
-      || adaptiveTriggerOutputActive
-      || Boolean(snapshot.status?.testAdaptiveTriggersBusy);
-
-    return (
-      <section className="feature-card trigger-lab-card trigger-lab-trigger-card" key={side}>
-        <div className="feature-card-title">
-          <button
-            type="button"
-            className={`feature-icon triggers-enable-button trigger-lab-trigger-badge ${active ? 'active' : ''}`}
-            aria-pressed={active}
-            aria-label={`${label} persistent lab effect`}
-            disabled={activeDisabled}
-            onClick={() => toggleTriggerLabActive(side, !active)}
-          >
-            <span
-              className="trigger-lab-trigger-glyph"
-              style={{
-                WebkitMaskImage: `url("${glyphUrl}")`,
-                maskImage: `url("${glyphUrl}")`
-              } as CSSProperties}
-            />
-          </button>
-          <div className="title-copy">
-            <h3>{label}</h3>
-            <p>Shape the {targetLabel} trigger feel</p>
-          </div>
-          <div className="inline-switch trigger-lab-card-active">
-            <span>Active</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={active}
-              aria-label={`${label} persistent lab effect`}
-              className={`switch trigger-lab-active-switch ${active ? 'on' : ''}`}
-              disabled={activeDisabled}
-              onClick={() => toggleTriggerLabActive(side, !active)}
-            >
-              <span />
-            </button>
-          </div>
-        </div>
-        <div className="trigger-lab-editor">
-          <div className="trigger-lab-profile-row">
-            <CustomSelect
-              value={draft.profileId}
-              options={triggerLabProfileOptions}
-              ariaLabel={`${label} lab profile`}
-              className="trigger-lab-profile-select"
-              closeOnSelect={false}
-              floatingMenu
-              suspendOutsideClose={triggerLabProfileDialog?.side === side}
-              onChange={(profileId) => setTriggerLabProfile(side, profileId)}
-              renderMenuFooter={() => {
-                const customProfile = triggerLabProfileIsCustom(draft.profileId);
-                return (
-                  <div className="trigger-lab-profile-actions">
-                    <button
-                      type="button"
-                      aria-label="Save new trigger profile"
-                      title="Save New"
-                      onClick={() => {
-                        openTriggerLabProfileDialog('save', side);
-                      }}
-                    >
-                      <Save size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Rename trigger profile"
-                      title="Rename"
-                      disabled={!customProfile}
-                      onClick={() => {
-                        openTriggerLabProfileDialog('rename', side);
-                      }}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Delete trigger profile"
-                      title="Delete"
-                      disabled={!customProfile}
-                      onClick={() => {
-                        openTriggerLabProfileDialog('delete', side);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                );
-              }}
-            />
-            <button
-              type="button"
-              className={`trigger-lab-chip compact ${triggerLabLinked ? 'active' : ''}`}
-              aria-pressed={triggerLabLinked}
-              onClick={() => toggleTriggerLabLinked(side)}
-            >
-              {triggerLabLinked ? <LinkIcon size={13} /> : <LinkOffIcon size={13} />}
-              <span className="trigger-lab-chip-label">{triggerLabLinked ? 'Linked' : 'Split'}</span>
-            </button>
-          </div>
-          <div className="trigger-lab-mode-grid">
-            {TRIGGER_TEST_MODE_OPTIONS.map(([modeLabel, mode]) => (
-              <button
-                key={mode}
-                type="button"
-                className={`trigger-lab-mode-button ${draft.mode === mode ? 'active' : ''}`}
-                onClick={() => setTriggerLabMode(side, mode)}
-              >
-                {modeLabel}
-              </button>
-            ))}
-          </div>
-          <div className="trigger-lab-meter-row">
-            <span>Start</span>
-            <TriggerLabMeter
-              label={`${label} start`}
-              value={draft.startPercent}
-              onChange={(value) => setTriggerLabPercent(side, 'startPercent', value)}
-              onCommit={(value) => commitTriggerLabPercent(side, 'startPercent', value)}
-            />
-            <strong>{draft.startPercent}%</strong>
-          </div>
-          <div className="trigger-lab-meter-row">
-            <span>Wall</span>
-            <TriggerLabMeter
-              label={`${label} wall`}
-              value={draft.wallPercent}
-              onChange={(value) => setTriggerLabPercent(side, 'wallPercent', value)}
-              onCommit={(value) => commitTriggerLabPercent(side, 'wallPercent', value)}
-            />
-            <strong>{draft.wallPercent}%</strong>
-          </div>
-          <div className="trigger-lab-meter-row">
-            <span>Force</span>
-            <TriggerLabMeter
-              label={`${label} force`}
-              value={draft.forcePercent}
-              onChange={(value) => setTriggerLabPercent(side, 'forcePercent', value)}
-              onCommit={(value) => commitTriggerLabPercent(side, 'forcePercent', value)}
-            />
-            <strong>{draft.forcePercent}%</strong>
-          </div>
-          <div className="trigger-lab-button-row two-up">
-            <button type="button" disabled={previewDisabled} onClick={() => previewTriggerLab(side)}>
-              <Play size={14} /> Preview
-            </button>
-            <button type="button" disabled={labActionDisabled} onClick={resetTriggerLab}>
-              <RefreshCcw size={14} /> Reset
-            </button>
-          </div>
-        </div>
-      </section>
-    );
   }
 
   const activeTheme = snapshot?.settings.uiThemePreset ?? startupTheme;
@@ -7045,197 +6014,17 @@ export function App() {
               <FeatureTipsPanel tab="audio" />
           </div>
 
-          <div
-            className={`control-page triggers-page ${activeControlTab === 'triggers' || triggerLabOpen ? 'active' : ''}`}
-            role="tabpanel"
-            id="control-panel-triggers"
-            aria-labelledby={triggerLabOpen ? 'control-tab-trigger-lab' : 'control-tab-triggers'}
-            aria-hidden={activeControlTab !== 'triggers' && !triggerLabOpen}
-          >
-              <div className="feature-heading">
-                <div>
-                  <h2>{triggerLabOpen ? 'Trigger Lab' : 'Adaptive Triggers'}</h2>
-                  <p>{triggerLabOpen ? 'Experimental adaptive trigger profile editor' : 'Set trigger effect intensity and test mode'}</p>
-                </div>
-                <div className="triggers-heading-controls">
-                  {triggerLabEnabled && triggerLabAnyActive ? (
-                    <div className="inline-switch trigger-lab-state-indicator">
-                      <span className="inline-state-badge warn trigger-lab-state">Lab Override</span>
-                      <span className="settings-shortcut-tooltip shortcut-glyph-tooltip trigger-lab-override-tooltip">
-                        Trigger Lab is overriding game adaptive trigger output.
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="inline-switch">
-                    <span>Enabled</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={triggerPageEnabled}
-                      aria-label={triggerLabOpen ? 'Enable Trigger Lab' : 'Enable adaptive triggers'}
-                      title={triggerLabOpen ? 'Enable Trigger Lab' : 'Enable adaptive triggers'}
-                      className={`switch ${triggerPageEnabled ? 'on' : ''}`}
-                      disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
-                      onClick={triggerLabOpen ? toggleTriggerLabEnabled : toggleAdaptiveTriggersEnabled}
-                    >
-                      <span />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {triggerLabOpen ? (
-                <div className="feature-card-grid trigger-lab-grid">
-                  {renderTriggerLabCard('l2')}
-                  {renderTriggerLabCard('r2')}
-                </div>
-              ) : (
-              <div className="feature-card-grid">
-                <section className="feature-card preset-card">
-                  <div className="feature-card-title">
-                    <button
-                      type="button"
-                      className={`feature-icon triggers-enable-button icon-compact ${snapshot.settings.adaptiveTriggersEnabled ? 'active' : ''} ${controllerPowerSavingActive && snapshot.settings.adaptiveTriggersEnabled ? 'power-saving-active' : ''}`}
-                      aria-pressed={snapshot.settings.adaptiveTriggersEnabled}
-                      aria-label="Enable adaptive triggers"
-                      title="Enable adaptive triggers"
-                      disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
-                      onClick={toggleAdaptiveTriggersEnabled}
-                    >
-                      <IconDeviceGamepad2 size={20} />
-                    </button>
-                    <div className="title-copy">
-                      <h3>Intensity</h3>
-                      <p>Set the overall strength of adaptive trigger effects</p>
-                    </div>
-                  </div>
-                  <div className="framed-slider">
-                    <label className="slider-row">
-                      <span>0%</span>
-                      <div className="range-control">
-                        <input
-                          type="range"
-                          min="0"
-                          max={percentSliderMax}
-                          step={TRIGGER_EFFECT_STEP}
-                          value={triggerEffectIntensityValue}
-                          disabled={!connected || !adaptiveTriggersSupported || !snapshot.settings.adaptiveTriggersEnabled}
-                          style={{ '--range-fill': `${(triggerEffectIntensityValue / percentSliderMax) * 100}%` } as CSSProperties}
-                          onPointerDown={() => {
-                            triggerEffectEditingRef.current = true;
-                          }}
-                          onChange={(event) => (
-                            setTriggerEffectIntensityValue(snapTriggerEffectIntensity(Number(event.currentTarget.value)))
-                          )}
-                          onPointerUp={() => void commitTriggerEffectIntensity()}
-                          onKeyDown={(event) => {
-                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                              triggerEffectEditingRef.current = true;
-                            }
-                          }}
-                          onKeyUp={(event) => {
-                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                              void commitTriggerEffectIntensity();
-                            }
-                          }}
-                          onBlur={() => void commitTriggerEffectIntensity()}
-                        />
-                        <div className="range-ticks" aria-hidden="true">
-                          {PERCENT_SLIDER_TICKS.map((value) => (
-                            <span key={value} className={sliderTickClass(value, 100)} />
-                          ))}
-                        </div>
-                      </div>
-                      <strong>{triggerEffectIntensityValue}%</strong>
-                    </label>
-                  </div>
-                  <div className="segmented-row">
-                    {TRIGGER_EFFECT_PRESETS.map(([label, value]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className={triggerEffectIntensityValue === value ? 'active' : ''}
-                        disabled={!connected || !adaptiveTriggersSupported || !snapshot.settings.adaptiveTriggersEnabled || pendingAction !== null}
-                        onClick={() => setTriggerIntensityPreset(Number(value))}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-                <section className="feature-card test-card">
-                  <div className="feature-card-title">
-                    <span className="feature-icon"><IconTestPipe size={20} /></span>
-                    <div className="title-copy">
-                      <h3>Testing</h3>
-                      <p>Choose a trigger effect and run a short test</p>
-                    </div>
-                  </div>
-                  <div className="test-options">
-                    <div className="select-row wide-select trigger-test-mode-control">
-                      <CustomSelect
-                        value={snapshot.settings.triggerTestMode}
-                        disabled={
-                          !connected
-                          || !adaptiveTriggersSupported
-                          || !snapshot.settings.adaptiveTriggersEnabled
-                          || adaptiveTriggerOutputActive
-                          || pendingAction !== null
-                        }
-                        options={TRIGGER_TEST_MODE_OPTIONS}
-                        ariaLabel="Trigger test type"
-                        onChange={setTriggerTestMode}
-                      />
-                    </div>
-                    <div className="target-row">
-                      <div className="segmented-row compact">
-                        {TRIGGER_TARGET_OPTIONS.map(([label, value]) => (
-                          <button
-                            key={value}
-                            type="button"
-                            className={triggerTarget === value ? 'active' : ''}
-                            disabled={!connected || !adaptiveTriggersSupported || adaptiveTriggerOutputActive}
-                            onClick={() => setTriggerTarget(value)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="trigger-action-row">
-                    <button className="primary-action" type="button" disabled={testTriggersUnavailable} onClick={runTestAdaptiveTriggers}>
-                      <Play size={15} />
-                      {connected && adaptiveTriggerOutputActive
-                        ? 'Game Triggers Active'
-                        : connected && (triggerTestLocked || snapshot.status?.testAdaptiveTriggersBusy)
-                          ? 'Testing'
-                          : 'Test Triggers'}
-                    </button>
-                    <button
-                      className="secondary-action"
-                      type="button"
-                      disabled={!connected || !adaptiveTriggersSupported || adaptiveTriggerOutputActive || pendingAction !== null}
-                      onClick={resetAdaptiveTriggers}
-                    >
-                      <RefreshCcw size={14} />
-                      Reset Triggers
-                    </button>
-                  </div>
-                  <div className={`feature-status test-status ${triggerStatusTone}`}>
-                    <span className="status-badge">
-                      <span className={`dot ${triggerStatusTone}`} />
-                      <strong>{triggerStatusLabel}</strong>
-                    </span>
-                  </div>
-                </section>
-              </div>
-              )}
-              <FeatureTipsPanel
-                tab="triggers"
-                triggerLabOpen={triggerLabOpen}
-                onSettingsFocusRequest={focusBridgeSettings}
-              />
-          </div>
+          <AdaptiveTriggersPage
+            active={activeControlTab === 'triggers' || triggerLabOpen}
+            triggerLabOpen={triggerLabOpen}
+            triggers={triggers}
+            lab={triggerLab}
+            snapshot={snapshot}
+            connected={connected}
+            controllerControlsAvailable={controllerControlsAvailable}
+            pendingAction={pendingAction}
+            onSettingsFocusRequest={focusBridgeSettings}
+          />
 
           <ControllerLightingPage
             active={activeControlTab === 'lighting'}
@@ -8468,73 +7257,7 @@ export function App() {
         </div>
       )}
 
-      {triggerLabProfileDialog && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={closeTriggerLabProfileDialog}
-        >
-          <form
-            className="settings-menu bridge-settings-modal remap-profile-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Trigger Lab profile"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitTriggerLabProfileDialog();
-            }}
-          >
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                {triggerLabProfileDialog.mode === 'delete' ? <Trash2 size={16} /> : <Save size={16} />}
-                <span>
-                  {triggerLabProfileDialog.mode === 'save'
-                    ? 'Save Trigger Profile'
-                    : triggerLabProfileDialog.mode === 'rename'
-                      ? 'Rename Trigger Profile'
-                      : 'Delete Trigger Profile'}
-                </span>
-              </div>
-              <button
-                className="modal-close-button"
-                type="button"
-                aria-label="Close Trigger Lab profile dialog"
-                onClick={closeTriggerLabProfileDialog}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {triggerLabProfileDialog.mode === 'delete' ? (
-              <p className="remap-profile-dialog-copy">
-                Delete {triggerLabProfileName(triggerLabDrafts[triggerLabProfileDialog.side].profileId)}?
-              </p>
-            ) : (
-              <label className="remap-profile-name-field">
-                <span>Profile Name</span>
-                <input
-                  autoFocus
-                  value={triggerLabProfileNameDraft}
-                  maxLength={48}
-                  onChange={(event) => setTriggerLabProfileNameDraft(event.target.value)}
-                />
-              </label>
-            )}
-            <div className="remap-profile-dialog-actions">
-              <button type="button" className="secondary-action" onClick={closeTriggerLabProfileDialog}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className={`primary-action ${triggerLabProfileDialog.mode === 'delete' ? 'danger' : ''}`}
-                disabled={pendingAction !== null || (triggerLabProfileDialog.mode !== 'delete' && triggerLabProfileNameDraft.trim().length === 0)}
-              >
-                {triggerLabProfileDialog.mode === 'delete' ? 'Delete' : 'Save'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <TriggerLabProfileDialog lab={triggerLab} pendingAction={pendingAction} />
 
       {remapProfileDialogMode && (
         <div

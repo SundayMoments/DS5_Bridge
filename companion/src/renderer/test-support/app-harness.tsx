@@ -268,6 +268,18 @@ export function buttonByText(root: ParentNode, text: string | RegExp): HTMLButto
   ));
 }
 
+/** Opens a CustomSelect by its accessible name and picks an option by label. */
+export async function chooseOption(root: ParentNode, selectLabel: string, optionLabel: string): Promise<void> {
+  const button = root.querySelector<HTMLButtonElement>(`button.custom-select-button[aria-label="${selectLabel}"]`);
+  if (!button) throw new Error(`No select named ${selectLabel}`);
+  await click(button);
+  const option = document.querySelector<HTMLButtonElement>(
+    `[role="listbox"][aria-label="${selectLabel}"] button[role="option"][aria-label="${optionLabel}"]`
+  );
+  if (!option) throw new Error(`No option ${optionLabel} in ${selectLabel}`);
+  await click(option);
+}
+
 export async function setRange(input: HTMLInputElement, value: number, commit = true): Promise<void> {
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, String(value));
