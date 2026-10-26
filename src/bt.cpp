@@ -2412,12 +2412,17 @@ bool bt_power_off_controller() {
         return false;
     }
 
+    // The controller ends the link itself. Once the request is sent or
+    // queued, record the drop as an expected sleep, as the ACL path does.
     const uint8_t status = l2cap_send(hid_control_cid, set_feature, sizeof(set_feature));
     if (status != 0) {
         DS5_LOG("[L2CAP] Power-off feature send failed status=0x%02X\n", status);
-        enqueue_control_packet(set_feature, sizeof(set_feature), false);
+        if (enqueue_control_packet(set_feature, sizeof(set_feature), false)) {
+            controller_disconnect_intent = BtControllerDisconnectIntentSleep;
+        }
         return false;
     }
+    controller_disconnect_intent = BtControllerDisconnectIntentSleep;
     return true;
 }
 
