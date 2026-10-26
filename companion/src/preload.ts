@@ -161,6 +161,9 @@ const api = {
   setKitsuneInputPromotionDismissed: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setKitsuneInputPromotionDismissed', value)
   ),
+  markKitsuneInputLaunchOfferShown: (): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:markKitsuneInputLaunchOfferShown')
+  ),
   setUiScalePercent: (value: UiScalePercent): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:setUiScalePercent', value),
   setUiTextScalePercent: (value: UiTextScalePercent): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setUiTextScalePercent', value)

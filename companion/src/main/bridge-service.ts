@@ -3116,6 +3116,15 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  /** Records that the one-time Kitsune Input offer was shown; there is no way to clear it. */
+  markKitsuneInputLaunchOfferShown(): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      kitsuneInputLaunchOfferShown: true
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   async setPollingRateMode(mode: PollingRateMode): Promise<BridgeSnapshot> {
     const normalizedMode = normalizePollingRateMode(mode);
     await this.sendSettingCommand(

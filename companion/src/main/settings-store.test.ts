@@ -83,6 +83,32 @@ describe('SettingsStore', () => {
     expect(store.restoreDefaults().kitsuneInputPromotionDismissed).toBe(true);
   });
 
+  it('shows the one-time Kitsune Input offer to existing users, including those who hid the promotion', () => {
+    const userDataPath = tempUserDataPath();
+    writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({
+      settingsSchemaVersion: 5,
+      kitsuneInputPromotionDismissed: true
+    }), 'utf8');
+
+    const store = new SettingsStore(userDataPath);
+    expect(store.get().kitsuneInputPromotionDismissed).toBe(true);
+    expect(store.get().kitsuneInputLaunchOfferShown).toBe(false);
+    expect(new SettingsStore(tempUserDataPath()).get().kitsuneInputLaunchOfferShown).toBe(false);
+  });
+
+  it('keeps the one-time Kitsune Input offer shown through restarts, resets, and presets', () => {
+    const userDataPath = tempUserDataPath();
+    const store = new SettingsStore(userDataPath);
+    store.applyPreset('custom');
+
+    expect(store.update({ kitsuneInputLaunchOfferShown: true }).kitsuneInputLaunchOfferShown).toBe(true);
+    expect(persistedSettings(userDataPath).kitsuneInputLaunchOfferShown).toBe(true);
+    expect(new SettingsStore(userDataPath).get().kitsuneInputLaunchOfferShown).toBe(true);
+    expect(store.restoreDefaults().kitsuneInputLaunchOfferShown).toBe(true);
+    expect(store.applyPreset('balanced').kitsuneInputLaunchOfferShown).toBe(true);
+    expect(store.applyPreset('custom').kitsuneInputLaunchOfferShown).toBe(true);
+  });
+
   it('persists the wake-on-connect preference', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);
