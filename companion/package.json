@@ -119,6 +119,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "electron": "^39.8.10",
     "electron-builder": "^26.8.1",
+    "jsdom": "^29.1.1",
     "lucide-react": "^0.561.0",
     "playwright": "^1.59.1",
     "rcedit": "^5.0.2",
