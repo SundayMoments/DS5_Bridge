@@ -2591,18 +2591,17 @@ export class BridgeService extends EventEmitter {
 
   async setDuplexMicEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     const nextEnabled = enabled;
-    if (!nextEnabled) {
-      await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 1, {
-        expectSettingsRevisionChange: true
-      });
-    }
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, nextEnabled ? 1 : 0, {
-      expectSettingsRevisionChange: true
-    });
+    // The controller lights its mute LED while the mic is enabled and muted.
+    // Unmute before enabling and disable before muting so a toggle never
+    // passes through that state and flashes the LED.
+    const options = { expectSettingsRevisionChange: true };
+    const sendMute = () => this.sendCommand(COMMAND_ID.SET_MIC_MUTE, nextEnabled ? 0 : 1, options);
     if (nextEnabled) {
-      await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, 0, {
-        expectSettingsRevisionChange: true
-      });
+      await sendMute();
+    }
+    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, nextEnabled ? 1 : 0, options);
+    if (!nextEnabled) {
+      await sendMute();
     }
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({
       duplexMicEnabled: nextEnabled,
@@ -4351,15 +4350,23 @@ export class BridgeService extends EventEmitter {
   }
 
   private async applyMicSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
-    await this.sendCommand(COMMAND_ID.SET_DUPLEX_ENABLED, settings.duplexMicEnabled ? 1 : 0, {
-      expectSettingsRevisionChange
-    });
-    await this.sendCommand(COMMAND_ID.SET_MIC_VOLUME, settings.micVolumePercent, {
-      expectSettingsRevisionChange
-    });
-    await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, settings.micMuted ? 1 : 0, {
-      expectSettingsRevisionChange
-    });
+    const options = { expectSettingsRevisionChange };
+    const sendEnabled = () => this.sendCommand(
+      COMMAND_ID.SET_DUPLEX_ENABLED,
+      settings.duplexMicEnabled ? 1 : 0,
+      options
+    );
+    // An enabled, muted mic lights the controller's mute LED. Disable before
+    // muting and set the mute state before enabling so a reapply that changes
+    // Mic Enabled does not flash the LED.
+    if (!settings.duplexMicEnabled) {
+      await sendEnabled();
+    }
+    await this.sendCommand(COMMAND_ID.SET_MIC_VOLUME, settings.micVolumePercent, options);
+    await this.sendCommand(COMMAND_ID.SET_MIC_MUTE, settings.micMuted ? 1 : 0, options);
+    if (settings.duplexMicEnabled) {
+      await sendEnabled();
+    }
   }
 
   private async setFirmwareSpeakerVolume(percent: number, expectSettingsRevisionChange: boolean): Promise<void> {

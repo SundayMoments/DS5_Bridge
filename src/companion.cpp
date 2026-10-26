@@ -2615,6 +2615,9 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 return;
             }
             companion_mic_enabled = value == 1;
+            // Release LED passthrough before the forced mute below so
+            // disabling an unmuted mic never reports a lit mute LED.
+            audio_set_mic_mute_led_passthrough(mic_mute_led_passthrough_enabled());
             audio_set_duplex_requested(companion_mic_enabled);
             if (!companion_mic_enabled) {
                 set_companion_mic_muted(true);

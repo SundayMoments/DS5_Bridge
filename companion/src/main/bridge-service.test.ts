@@ -134,9 +134,10 @@ const FULL_REAPPLY_COMMANDS = [
   COMMAND_ID.SET_TRIGGER_EFFECT_INTENSITY,
   COMMAND_ID.SET_SPEAKER_GAIN,
   COMMAND_ID.SET_SPEAKER_VOLUME,
-  COMMAND_ID.SET_DUPLEX_ENABLED,
+  // The mic is enabled by default, so its mute state is set before enabling.
   COMMAND_ID.SET_MIC_VOLUME,
   COMMAND_ID.SET_MIC_MUTE,
+  COMMAND_ID.SET_DUPLEX_ENABLED,
   COMMAND_ID.SET_LED_ENABLED,
   COMMAND_ID.SET_PLAYER_LED_ENABLED,
   COMMAND_ID.SET_IDLE_DISCONNECT_ENABLED,
@@ -1119,6 +1120,35 @@ describe('BridgeService', () => {
     await poll(service);
 
     expect(service.getSnapshot().settings.micMuted).toBe(true);
+  });
+
+  it('toggles Mic Enabled without passing through an enabled, muted mic', async () => {
+    const service = serviceFixture({ duplexMicEnabled: true, micMuted: false });
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    const micCommands = (from: number) => device.sentReports.slice(from)
+      .filter((report) => report[7] === COMMAND_ID.SET_DUPLEX_ENABLED || report[7] === COMMAND_ID.SET_MIC_MUTE)
+      .map((report) => [report[7], report[9]]);
+
+    let mark = device.sentReports.length;
+    await service.setDuplexMicEnabled(false);
+    expect(micCommands(mark)).toEqual([
+      [COMMAND_ID.SET_DUPLEX_ENABLED, 0],
+      [COMMAND_ID.SET_MIC_MUTE, 1]
+    ]);
+
+    mark = device.sentReports.length;
+    await service.setDuplexMicEnabled(true);
+    expect(micCommands(mark)).toEqual([
+      [COMMAND_ID.SET_MIC_MUTE, 0],
+      [COMMAND_ID.SET_DUPLEX_ENABLED, 1]
+    ]);
   });
 
   it('syncs firmware-reported mic mute after startup settings reapply when duplex mic is enabled', async () => {
