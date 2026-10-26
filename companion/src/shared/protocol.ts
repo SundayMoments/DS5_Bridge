@@ -24,6 +24,7 @@ export const REPORT_ID = {
   DEVICE_IDENTITY: 0x0d,
   FIRMWARE_LOG: 0x0e,
   BOOTLOADER_AUTHORIZATION: 0x12,
+  RESET_EVIDENCE: 0x13,
   WAKE_ON_LAN: 0x1d
 } as const;
 
@@ -779,6 +780,57 @@ export function parseBootloaderAuthorizationReport(
     confirmationMistakes: report[46],
     confirmationRemainingMs: readU32(report, 49),
     protocolVersion: `${report[5]}.${report[6]}`
+  };
+}
+
+// Names match watchdog_telemetry_phase_name/_reason_name in
+// src/watchdog_telemetry.cpp, indexed by the firmware enums.
+export const RESET_EVIDENCE_PHASES = [
+  'boot', 'cyw43', 'tinyusb', 'interrupt-before-audio', 'usb-power', 'audio', 'button',
+  'lightbar', 'rssi', 'inquiry', 'connection-recovery', 'feature-prefetch', 'output-retry',
+  'companion', 'interrupt-after-companion', 'firmware-log-flush', 'cyw43-second',
+  'interrupt-after-cyw43', 'wake-on-lan'
+] as const;
+export const RESET_EVIDENCE_REASONS = [
+  'watchdog-timeout', 'panic', 'out-of-memory', 'codec-fatal', 'audio-stack-overflow',
+  'container-contract', 'cyw43-rx-overflow'
+] as const;
+
+/** Why the bridge last reset, as the firmware captured it at boot. */
+export interface ResetEvidencePayload {
+  /** The current boot followed a watchdog reset: a crash, a hang or a deliberate recovery. */
+  watchdogReset: boolean;
+  /** The breadcrumb survived the reset, so phase, reason and uptime are meaningful. */
+  evidenceValid: boolean;
+  phase: string;
+  reason: string;
+  /** Consecutive abnormal resets since the last clean boot (saturates at 255). */
+  consecutiveAbnormalResets: number;
+  /** Uptime at the last heartbeat before the reset, 1 s resolution. */
+  uptimeBeforeResetMs: number;
+  /** Reason-specific evidence, such as the CYW43 receive counts. */
+  detail: number;
+  /** The bridge's uptime when this report was read. */
+  uptimeMs: number;
+}
+
+export function parseResetEvidenceReport(report: ArrayLike<number>): ResetEvidencePayload {
+  assertReport(report, REPORT_ID.RESET_EVIDENCE);
+  assertCurrentOrOlderVersion(report);
+  if (report[7] !== 1) {
+    throw new ProtocolError(`Unsupported reset evidence schema ${report[7]}.`, 'bad-reset-evidence');
+  }
+  const flags = report[8];
+  const evidenceValid = (flags & 0x02) !== 0;
+  return {
+    watchdogReset: (flags & 0x01) !== 0,
+    evidenceValid,
+    phase: evidenceValid ? RESET_EVIDENCE_PHASES[report[9]] ?? 'unknown' : 'unknown',
+    reason: evidenceValid ? RESET_EVIDENCE_REASONS[report[10]] ?? 'unknown' : 'unknown',
+    consecutiveAbnormalResets: report[11],
+    uptimeBeforeResetMs: evidenceValid ? readU32(report, 12) : 0,
+    detail: evidenceValid ? readU32(report, 16) : 0,
+    uptimeMs: readU32(report, 20)
   };
 }
 

@@ -33,6 +33,7 @@ import {
   parseFeedbackTraceReport,
   parseFirmwareLogReport,
   parseCompanionInputReport,
+  parseResetEvidenceReport,
   parseStatusReport,
   readReportProtocolVersion,
   SHORTCUT_EVENT,
@@ -68,6 +69,7 @@ import type {
   MuteKeyboardBehavior,
   PollingRateMode,
   ReportProtocolVersion,
+  ResetEvidencePayload,
   ShortcutEvent,
   StickInputPreviewPayload,
   TriggerTestMode,
@@ -1349,6 +1351,7 @@ export class BridgeService extends EventEmitter {
   private previousControllerConnected: boolean | null = null;
   private lowBatteryToastActive = false;
   private shortcutFeaturePollRetryAt = 0;
+  private resetEvidence: ResetEvidencePayload | null = null;
   private shortcutActionQueue: Promise<void> = Promise.resolve();
   private readonly shortcutActionHandlers: Record<ShortcutEvent, () => Promise<void>> = {
     [SHORTCUT_EVENT.CONTROLLER_VOLUME_DOWN]: () => this.applyControllerVolumeShortcut(-10),
@@ -1472,6 +1475,20 @@ export class BridgeService extends EventEmitter {
       // transfer failure does not leave controller shortcuts on the slow
       // status-poll path.
       this.shortcutFeaturePollRetryAt = Date.now() + SHORTCUT_POLL_ERROR_RETRY_MS;
+    }
+  }
+
+  private async readResetEvidence(): Promise<ResetEvidencePayload | null> {
+    if (!this.device) {
+      return null;
+    }
+    try {
+      return parseResetEvidenceReport(
+        await this.device.getFeatureReport(REPORT_ID.RESET_EVIDENCE, REPORT_LENGTH)
+      );
+    } catch {
+      // Supplementary, and absent from firmware before 2.0.
+      return null;
     }
   }
 
@@ -4110,6 +4127,8 @@ export class BridgeService extends EventEmitter {
       this.sessionKey = `${this.devicePath ?? 'unknown'}:${Date.now()}`;
       this.sessionPath = this.devicePath;
       this.resetStartupReapplyState();
+      // Captured once per bridge boot, so read it once per session.
+      this.resetEvidence = await this.readResetEvidence();
     }
     this.lastUptimeSeconds = status.uptimeSeconds;
 
@@ -4141,7 +4160,8 @@ export class BridgeService extends EventEmitter {
         firmwareUpdateAvailable: firmwareUpdateAvailable(status.firmwareVersion),
         lastPollAt: Date.now(),
         rawDevices,
-        deviceIdentity
+        deviceIdentity,
+        resetEvidence: this.resetEvidence
       }),
       personaTransition: transition
     };
@@ -4836,6 +4856,7 @@ export class BridgeService extends EventEmitter {
   private closeDevice(): void {
     const device = this.device;
     this.device = null;
+    this.resetEvidence = null;
     this.connectedBridgeUniqueId = null;
     this.connectedControllerMac = null;
     this.bindingAppliedForMac = null;
@@ -4920,6 +4941,7 @@ export class BridgeService extends EventEmitter {
         lastError: this.snapshot.diagnostics.lastError,
         firmwareUpdateAvailable: this.snapshot.diagnostics.firmwareUpdateAvailable,
         deviceIdentity: this.snapshot.diagnostics.deviceIdentity,
+        resetEvidence: this.snapshot.diagnostics.resetEvidence ?? null,
         firmwareLogDirectory: this.snapshot.diagnostics.firmwareLogDirectory,
         firmwareLogPath: this.snapshot.diagnostics.firmwareLogPath,
         firmwareLogEnabled: this.snapshot.diagnostics.firmwareLogEnabled,

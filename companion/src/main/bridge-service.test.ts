@@ -161,6 +161,8 @@ class MockHidDevice extends EventEmitter {
   audioStatusReports: number[][] = [];
   firmwareLogReports: number[][] = [];
   deviceIdentity = deviceIdentityReport();
+  /** Firmware before 2.0 has no reset evidence report. */
+  resetEvidence: number[] | null = null;
   shortcutEvents: number[] = [];
   inputReports: number[][] = [];
   shortcutReadError: Error | null = null;
@@ -223,6 +225,12 @@ class MockHidDevice extends EventEmitter {
     }
     if (reportId === REPORT_ID.DEVICE_IDENTITY) {
       return [...this.deviceIdentity];
+    }
+    if (reportId === REPORT_ID.RESET_EVIDENCE) {
+      if (!this.resetEvidence) {
+        throw new Error('Unexpected report ID: 19');
+      }
+      return [...this.resetEvidence];
     }
     if (reportId === REPORT_ID.FIRMWARE_LOG) {
       return [...(this.firmwareLogReports.shift() ?? firmwareLogReport([], { enabled: false }))];
@@ -1485,6 +1493,39 @@ describe('BridgeService', () => {
       resultCode: ACK_RESULT.OK
     });
     expect(snapshot.diagnostics.lastError).toContain('expected command 0x01 sequence');
+  });
+
+  it('reads why the bridge last reset once per bridge session', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, uptimeSeconds: 10 });
+    const evidence = new Array<number>(REPORT_LENGTH).fill(0);
+    evidence[0] = REPORT_ID.RESET_EVIDENCE;
+    writeMagic(evidence);
+    writeVersion(evidence);
+    evidence[7] = 1;
+    evidence[8] = 0x03;
+    evidence[9] = 5;
+    evidence[11] = 1;
+    writeU32(evidence, 12, 60_000);
+    device.resetEvidence = evidence;
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await poll(service);
+
+    expect(service.getSnapshot().diagnostics.resetEvidence).toMatchObject({
+      watchdogReset: true, phase: 'audio', reason: 'watchdog-timeout', uptimeBeforeResetMs: 60_000
+    });
+    expect(device.featureReportIds.filter((id) => id === REPORT_ID.RESET_EVIDENCE)).toHaveLength(1);
+
+    // A lower uptime means the bridge rebooted: its new evidence is read again.
+    device.status = statusReport({ controllerConnected: false, uptimeSeconds: 2 });
+    evidence[8] = 0;
+    await poll(service);
+    expect(service.getSnapshot().diagnostics.resetEvidence).toMatchObject({ watchdogReset: false });
+    expect(device.featureReportIds.filter((id) => id === REPORT_ID.RESET_EVIDENCE)).toHaveLength(2);
   });
 
   it('waits for the deferred Wake-on-LAN ACK instead of rejecting the previous one', async () => {

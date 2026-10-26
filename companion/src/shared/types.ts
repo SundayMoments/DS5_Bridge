@@ -20,6 +20,7 @@ import type {
   MuteButtonMode,
   MuteKeyboardBehavior,
   PollingRateMode,
+  ResetEvidencePayload,
   StickInputPreviewPayload,
   TriggerTestMode
 } from './protocol';
@@ -168,6 +169,8 @@ export interface BridgeDiagnostics {
   lastPollAt: number | null;
   rawDevices: HidDeviceSummary[];
   deviceIdentity: CompanionDeviceIdentityPayload | null;
+  /** Why the bridge last reset; null for firmware without the report. */
+  resetEvidence?: ResetEvidencePayload | null;
   firmwareLogDirectory: string | null;
   firmwareLogPath: string | null;
   firmwareLogEnabled: boolean | null;

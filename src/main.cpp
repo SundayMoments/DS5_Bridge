@@ -865,7 +865,9 @@ int main() {
             tud_task();
             bt_output_service_after_usb();
         });
-        service_wake_on_lan();
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::WakeOnLan, {
+            service_wake_on_lan();
+        });
         RUN_MAIN_PHASE(
             WatchdogMainLoopPhase::FirmwareLogFlush,
             {

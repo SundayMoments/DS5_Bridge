@@ -22,6 +22,7 @@ enum class WatchdogMainLoopPhase : uint8_t {
     FirmwareLogFlush = 15,
     Cyw43Second = 16,
     InterruptAfterCyw43 = 17,
+    WakeOnLan = 18,
 };
 
 // Why the firmware reset itself. A watchdog timeout with no recorded reason

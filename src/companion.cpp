@@ -21,6 +21,7 @@
 #include "trigger_motor_power.h"
 #include "wake_on_lan.h"
 #include "wake_on_lan_domain.h"
+#include "watchdog_telemetry.h"
 #include "pico/critical_section.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
@@ -1828,6 +1829,30 @@ uint16_t build_device_identity(uint8_t *buffer, uint16_t reqlen) {
     pico_get_unique_board_id(&board_id);
     static_assert(PICO_UNIQUE_BOARD_ID_SIZE_BYTES == 8);
     memcpy(buffer + 55, board_id.id, PICO_UNIQUE_BOARD_ID_SIZE_BYTES);
+    return COMPANION_PAYLOAD_SIZE;
+}
+
+// Why the bridge last reset, captured at boot from the watchdog scratch
+// registers (watchdog_telemetry.h), so crashes can be read without a UART.
+uint16_t build_reset_evidence(uint8_t *buffer, uint16_t reqlen) {
+    if (reqlen < COMPANION_PAYLOAD_SIZE) {
+        return 0;
+    }
+
+    memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
+    write_magic_and_version(buffer);
+    buffer[6] = 1; // Reset evidence schema version.
+    WatchdogTelemetrySnapshot snapshot{};
+    watchdog_telemetry_snapshot(&snapshot);
+    buffer[7] =
+        (snapshot.prior_watchdog_timeout ? 0x01 : 0x00)
+        | (snapshot.prior_snapshot_valid ? 0x02 : 0x00);
+    buffer[8] = snapshot.prior_phase;
+    buffer[9] = static_cast<uint8_t>(snapshot.prior_reason);
+    buffer[10] = snapshot.prior_abnormal_reset_count;
+    write_u32(buffer + 11, snapshot.prior_uptime_ms);
+    write_u32(buffer + 15, snapshot.prior_detail);
+    write_u32(buffer + 19, to_ms_since_boot(get_absolute_time()));
     return COMPANION_PAYLOAD_SIZE;
 }
 
@@ -3755,6 +3780,8 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
             return build_firmware_log(buffer, reqlen);
         case COMPANION_REPORT_BOOTLOADER_AUTHORIZATION:
             return build_bootloader_authorization(buffer, reqlen);
+        case COMPANION_REPORT_RESET_EVIDENCE:
+            return build_reset_evidence(buffer, reqlen);
 #if DS5_TRIGGER_TRACE_ENABLED
         case COMPANION_REPORT_TRIGGER_TRACE:
             return build_trigger_trace(buffer, reqlen);
