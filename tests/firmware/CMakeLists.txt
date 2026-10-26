@@ -55,6 +55,16 @@ target_compile_definitions(ds5_ram_mem PRIVATE
 add_executable(ram_mem_test ram_mem_test.cpp)
 target_link_libraries(ram_mem_test PRIVATE ds5_ram_mem)
 
+# The exact CYW43 transport fragments compiled into the generated SDK copies,
+# exercised against modeled ring, window and receive-loop behavior.
+add_executable(cyw43_rx_packet_read_test cyw43_rx_packet_read_test.c)
+target_include_directories(cyw43_rx_packet_read_test PRIVATE stubs/cyw43)
+add_executable(cyw43_tx_window_write_test cyw43_tx_window_write_test.c)
+add_executable(cyw43_hci_receive_continuation_test cyw43_hci_receive_continuation_test.c)
+target_compile_definitions(cyw43_hci_receive_continuation_test PRIVATE
+    PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=2)
+add_executable(cyw43_hci_receive_unlimited_test cyw43_hci_receive_continuation_test.c)
+
 if(MSVC)
     target_compile_options(firmware_logic_tests PRIVATE /W4)
 else()
@@ -66,6 +76,10 @@ add_test(NAME firmware_logic_tests COMMAND firmware_logic_tests)
 add_test(NAME usb_descriptor_migration_test COMMAND usb_descriptor_migration_test)
 add_test(NAME diagnostics_config_test COMMAND diagnostics_config_test)
 add_test(NAME ram_mem_test COMMAND ram_mem_test)
+add_test(NAME cyw43_rx_packet_read_test COMMAND cyw43_rx_packet_read_test)
+add_test(NAME cyw43_tx_window_write_test COMMAND cyw43_tx_window_write_test)
+add_test(NAME cyw43_hci_receive_continuation_test COMMAND cyw43_hci_receive_continuation_test)
+add_test(NAME cyw43_hci_receive_unlimited_test COMMAND cyw43_hci_receive_unlimited_test)
 add_test(NAME opus_section_placement_test COMMAND ${CMAKE_COMMAND}
     -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/opus-section-placement-test
     -P ${CMAKE_CURRENT_LIST_DIR}/opus_section_placement_test.cmake)

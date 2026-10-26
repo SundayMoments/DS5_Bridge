@@ -12,7 +12,8 @@ namespace {
 // 20 bits, the current main-loop phase in five bits, and a seven-bit checksum
 // over scratch 1-3. Scratch 1 holds the reset reason and the consecutive
 // abnormal-reset count, scratch 2 the uptime at the last heartbeat, and
-// scratch 3 is reserved. Scratch 4-7 belong to the SDK's watchdog reboot mode.
+// scratch 3 reason-specific detail. Scratch 4-7 belong to the SDK's watchdog
+// reboot mode.
 constexpr uint32_t kScratchSignature = 0x44542000u;
 constexpr uint32_t kScratchSignatureMask = 0xfffff000u;
 constexpr uint8_t kScratchPhaseShift = 7u;
@@ -24,6 +25,7 @@ struct RetainedRecord {
     WatchdogResetReason reason;
     uint8_t abnormal_reset_count;
     uint32_t uptime_ms;
+    uint32_t detail;
 };
 
 WatchdogTelemetrySnapshot prior{};
@@ -63,7 +65,7 @@ void commit_record() {
     const uint32_t word1 = static_cast<uint32_t>(record.reason)
         | (static_cast<uint32_t>(record.abnormal_reset_count) << 8u);
     const uint32_t word2 = record.uptime_ms;
-    const uint32_t word3 = 0;
+    const uint32_t word3 = record.detail;
     current_crc = scratch_crc(word1, word2, word3);
 
     // Publish the marker last. A reset during this update is reported as an
@@ -96,6 +98,7 @@ void watchdog_telemetry_boot_capture() {
         prior.prior_phase = static_cast<uint8_t>((word0 >> kScratchPhaseShift) & kScratchPhaseMask);
         prior.prior_reason = static_cast<WatchdogResetReason>(word1 & 0xffu);
         prior.prior_uptime_ms = word2;
+        prior.prior_detail = word3;
         const uint8_t previous_count = static_cast<uint8_t>(word1 >> 8u);
         abnormal_reset_count = previous_count == UINT8_MAX
             ? previous_count
@@ -110,6 +113,7 @@ void watchdog_telemetry_boot_capture() {
         .reason = WatchdogResetReason::None,
         .abnormal_reset_count = abnormal_reset_count,
         .uptime_ms = 0,
+        .detail = 0,
     };
     current_phase = static_cast<uint8_t>(WatchdogMainLoopPhase::Boot);
     commit_record();
@@ -129,10 +133,30 @@ void watchdog_telemetry_heartbeat(uint32_t now_us) {
     commit_record();
 }
 
-void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason) {
+void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason, uint32_t detail) {
+    if (record.reason != WatchdogResetReason::None) {
+        return;
+    }
     record.reason = reason;
+    record.detail = detail;
     record.uptime_ms = static_cast<uint32_t>(time_us_64() / 1000u);
     commit_record();
+}
+
+extern "C" void ds5_record_cyw43_rx_overflow(
+    uint32_t previous_available,
+    uint32_t published_count,
+    uint32_t producer_index,
+    uint32_t consumer_index
+) {
+    // The ring is 4 KiB, so 16 bits keep each count exact. The SDK's panic
+    // follows immediately; its generic reason does not replace this one.
+    (void)producer_index;
+    (void)consumer_index;
+    watchdog_telemetry_record_reset_reason(
+        WatchdogResetReason::Cyw43RxOverflow,
+        (previous_available & 0xffffu) | ((published_count & 0xffffu) << 16u)
+    );
 }
 
 void watchdog_telemetry_snapshot(WatchdogTelemetrySnapshot *snapshot) {
@@ -194,6 +218,8 @@ const char *watchdog_telemetry_reason_name(uint8_t reason) {
             return "audio-stack-overflow";
         case WatchdogResetReason::ContainerContract:
             return "container-contract";
+        case WatchdogResetReason::Cyw43RxOverflow:
+            return "cyw43-rx-overflow";
         default:
             return "unknown";
     }

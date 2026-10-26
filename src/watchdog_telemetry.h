@@ -31,6 +31,9 @@ enum class WatchdogResetReason : uint8_t {
     CodecFatal = 3,
     AudioStackOverflow = 4,
     ContainerContract = 5,
+    // The CYW43 Bluetooth receive ring reported fewer unread bytes than the
+    // host had already accounted for; detail holds the two counts.
+    Cyw43RxOverflow = 6,
 };
 
 struct WatchdogTelemetrySnapshot {
@@ -42,6 +45,8 @@ struct WatchdogTelemetrySnapshot {
     uint8_t prior_abnormal_reset_count;
     // Uptime recorded by the last heartbeat before the reset (1 s resolution).
     uint32_t prior_uptime_ms;
+    // Reason-specific evidence; zero when the reason carries none.
+    uint32_t prior_detail;
 };
 
 // Capture must happen before watchdog_enable() overwrites the SDK reset marker.
@@ -50,8 +55,17 @@ void watchdog_telemetry_boot_capture();
 void watchdog_telemetry_note_phase(WatchdogMainLoopPhase phase);
 // Refreshes the retained uptime at most once per second.
 void watchdog_telemetry_heartbeat(uint32_t now_us);
-// Called only from the fail-fast path, immediately before the reset.
-void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason);
+// Called only from fail-fast paths, immediately before the reset. The first
+// recorded reason wins, so a specific cause is not replaced by the generic
+// panic that follows it.
+void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason, uint32_t detail = 0);
+// Fatal CYW43 receive guard only (generated SDK transport, C linkage).
+extern "C" void ds5_record_cyw43_rx_overflow(
+    uint32_t previous_available,
+    uint32_t published_count,
+    uint32_t producer_index,
+    uint32_t consumer_index
+);
 void watchdog_telemetry_snapshot(WatchdogTelemetrySnapshot *snapshot);
 const char *watchdog_telemetry_phase_name(uint8_t phase);
 const char *watchdog_telemetry_reason_name(uint8_t reason);

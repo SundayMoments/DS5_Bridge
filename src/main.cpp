@@ -741,14 +741,15 @@ int main() {
         watchdog_telemetry_snapshot(&watchdog_snapshot);
         DS5_LOG(
             "[Watchdog] retained valid=%u reason=%s(%u) phase=%s(%u) "
-            "uptimeMs=%lu consecutive=%u\n",
+            "uptimeMs=%lu consecutive=%u detail=0x%08lx\n",
             watchdog_snapshot.prior_snapshot_valid ? 1u : 0u,
             watchdog_telemetry_reason_name(static_cast<uint8_t>(watchdog_snapshot.prior_reason)),
             static_cast<unsigned int>(watchdog_snapshot.prior_reason),
             watchdog_telemetry_phase_name(watchdog_snapshot.prior_phase),
             static_cast<unsigned int>(watchdog_snapshot.prior_phase),
             static_cast<unsigned long>(watchdog_snapshot.prior_uptime_ms),
-            static_cast<unsigned int>(watchdog_snapshot.prior_abnormal_reset_count)
+            static_cast<unsigned int>(watchdog_snapshot.prior_abnormal_reset_count),
+            static_cast<unsigned long>(watchdog_snapshot.prior_detail)
         );
     } else {
         DS5_LOG("Clean boot\n");

@@ -66,6 +66,42 @@ set(TINYUSB_OPT_OS OPT_OS_NONE CACHE STRING "TinyUSB OS abstraction for DS5 Brid
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+# Patched copies of the CYW43 Bluetooth transport (see cmake/patch-cyw43.cmake):
+# bounded receive continuation, the single-pass packet reader with retained
+# overflow evidence, bounded backplane-window reuse and the F2 readiness fix.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch-cyw43.cmake")
+set(DS5_CYW43_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated/ds5-cyw43")
+set(DS5_SDK_CYW43_DIR "${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_driver")
+ds5_generate_cyw43_hci_transport(
+        "${DS5_SDK_CYW43_DIR}/btstack_hci_transport_cyw43.c"
+        "${DS5_CYW43_GENERATED_DIR}/btstack_hci_transport_cyw43.c"
+)
+ds5_generate_cyw43_shared_bus(
+        "${DS5_SDK_CYW43_DIR}/cybt_shared_bus/cybt_shared_bus.c"
+        "${DS5_CYW43_GENERATED_DIR}/cybt_shared_bus.c"
+)
+ds5_generate_cyw43_payload(
+        "${PICO_CYW43_DRIVER_PATH}/src/cyw43_ll.c"
+        "${DS5_SDK_CYW43_DIR}/cyw43_bus_pio_spi.c"
+        "${DS5_SDK_CYW43_DIR}/cybt_shared_bus/cybt_shared_bus_driver.c"
+        "${DS5_CYW43_GENERATED_DIR}"
+)
+ds5_replace_sdk_interface_source(pico_btstack_hci_transport_cyw43
+        "${DS5_SDK_CYW43_DIR}/btstack_hci_transport_cyw43.c"
+        "${DS5_CYW43_GENERATED_DIR}/btstack_hci_transport_cyw43.c")
+ds5_replace_sdk_interface_source(cybt_shared_bus
+        "${DS5_SDK_CYW43_DIR}/cybt_shared_bus/cybt_shared_bus.c"
+        "${DS5_CYW43_GENERATED_DIR}/cybt_shared_bus.c")
+ds5_replace_sdk_interface_source(cybt_shared_bus
+        "${DS5_SDK_CYW43_DIR}/cybt_shared_bus/cybt_shared_bus_driver.c"
+        "${DS5_CYW43_GENERATED_DIR}/cybt_shared_bus_driver.c")
+ds5_replace_sdk_interface_source(cyw43_driver
+        "${PICO_CYW43_DRIVER_PATH}/src/cyw43_ll.c"
+        "${DS5_CYW43_GENERATED_DIR}/cyw43_ll.c")
+ds5_replace_sdk_interface_source(cyw43_driver_picow
+        "${DS5_SDK_CYW43_DIR}/cyw43_bus_pio_spi.c"
+        "${DS5_CYW43_GENERATED_DIR}/cyw43_bus_pio_spi.c")
+
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(ds5-bridge
@@ -223,12 +259,12 @@ relocate_to_ram(
         "Relocating TinyUSB FIFO data path to SRAM"
 )
 relocate_to_ram(
-        src/rp2_common/pico_cyw43_driver/cyw43_bus_pio_spi.c.o
+        generated/ds5-cyw43/cyw43_bus_pio_spi.c.o
         ".text.cyw43_spi_transfer=.time_critical.cyw43_spi_transfer@.text.cyw43_read_bytes=.time_critical.cyw43_read_bytes@.text.cyw43_write_bytes=.time_critical.cyw43_write_bytes@.text.cyw43_read_reg_u32=.time_critical.cyw43_read_reg_u32@.text.cyw43_read_reg_u16=.time_critical.cyw43_read_reg_u16@.text.cyw43_read_reg_u8=.time_critical.cyw43_read_reg_u8@.text.cyw43_write_reg_u32=.time_critical.cyw43_write_reg_u32@.text.cyw43_write_reg_u16=.time_critical.cyw43_write_reg_u16@.text.cyw43_write_reg_u8=.time_critical.cyw43_write_reg_u8@.text.read_reg_u32_swap=.time_critical.read_reg_u32_swap@.text.write_reg_u32_swap=.time_critical.write_reg_u32_swap@.text.ns_delay.constprop.0=.time_critical.cyw43_ns_delay"
         "Relocating CYW43 PIO-SPI transport to SRAM"
 )
 relocate_to_ram(
-        lib/cyw43-driver/src/cyw43_ll.c.o
+        generated/ds5-cyw43/cyw43_ll.c.o
         ".text.cyw43_ll_bus_sleep=.time_critical.cyw43_ll_bus_sleep@.text.cyw43_ll_sdpcm_poll_device=.time_critical.cyw43_ll_sdpcm_poll_device@.text.cyw43_ll_process_packets=.time_critical.cyw43_ll_process_packets@.text.cyw43_sdpcm_send_common=.time_critical.cyw43_sdpcm_send_common@.text.cyw43_do_ioctl.part.0=.time_critical.cyw43_do_ioctl@.text.cyw43_ll_bt_has_work=.time_critical.cyw43_ll_bt_has_work@.text.cyw43_ll_parse_async_event=.time_critical.cyw43_ll_parse_async_event"
         "Relocating CYW43 SDPCM pump to SRAM"
 )
@@ -238,19 +274,19 @@ relocate_to_ram(
         "Relocating CYW43 poll and Bluetooth HCI bus to SRAM"
 )
 relocate_to_ram(
-        src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cybt_shared_bus.c.o
+        generated/ds5-cyw43/cybt_shared_bus.c.o
         ".text.cyw43_btbus_write=.time_critical.cyw43_btbus_write@.text.cyw43_btbus_read=.time_critical.cyw43_btbus_read@.text.cybt_hci_read=.time_critical.cybt_hci_read"
         "Relocating CYW43 shared-bus read and write to SRAM"
 )
 relocate_to_ram(
-        src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cybt_shared_bus_driver.c.o
+        generated/ds5-cyw43/cybt_shared_bus_driver.c.o
         ".text.cybt_awake=.time_critical.cybt_awake@.text.cybt_set_bt_awake=.time_critical.cybt_set_bt_awake@.text.cybt_get_bt_buf_index=.time_critical.cybt_get_bt_buf_index@.text.cybt_toggle_bt_intr=.time_critical.cybt_toggle_bt_intr@.text.cybt_reg_write_idx=.time_critical.cybt_reg_write_idx@.text.cybt_mem_write_idx=.time_critical.cybt_mem_write_idx@.text.cybt_mem_read_idx=.time_critical.cybt_mem_read_idx"
         "Relocating CYW43 shared-bus packet helpers to SRAM"
 )
 # Every received Bluetooth packet is read by the transport's data-source
 # callback through cyw43_btbus_read, cybt_hci_read and cybt_mem_read_idx.
 relocate_to_ram(
-        src/rp2_common/pico_cyw43_driver/btstack_hci_transport_cyw43.c.o
+        generated/ds5-cyw43/btstack_hci_transport_cyw43.c.o
         ".text.hci_transport_data_source_process=.time_critical.hci_transport_data_source_process@.text.cyw43_bluetooth_hci_process=.time_critical.cyw43_bluetooth_hci_process"
         "Relocating the CYW43 HCI receive callback to SRAM"
 )
@@ -312,14 +348,21 @@ relocate_to_ram(
         "Relocating BTstack async-context clock to SRAM"
 )
 relocate_to_ram(
-        src/rp2_common/pico_cyw43_driver/btstack_hci_transport_cyw43.c.o
+        generated/ds5-cyw43/btstack_hci_transport_cyw43.c.o
         ".text.hci_transport_cyw43_send_packet=.time_critical.hci_transport_cyw43_send_packet"
         "Relocating CYW43 HCI packet send entry to SRAM"
 )
 relocate_to_ram(
-        lib/cyw43-driver/src/cyw43_ll.c.o
+        generated/ds5-cyw43/cyw43_ll.c.o
         ".text.cyw43_ll_write_backplane_mem=.time_critical.cyw43_ll_write_backplane_mem@.text.cyw43_ll_read_backplane_mem=.time_critical.cyw43_ll_read_backplane_mem@.text.cyw43_write_backplane=.time_critical.cyw43_write_backplane@.text.cyw43_read_backplane.constprop.0=.time_critical.cyw43_read_backplane"
         "Relocating CYW43 backplane accessors to SRAM"
+)
+# Every HCI payload is copied through the bounded window-reuse writer/reader,
+# which select and restore the backplane window around each ring segment.
+relocate_to_ram(
+        generated/ds5-cyw43/cyw43_ll.c.o
+        ".text.ds5_cyw43_write_backplane_mem_batched=.time_critical.ds5_cyw43_write_backplane_mem_batched@.text.ds5_cyw43_read_backplane_mem_batched=.time_critical.ds5_cyw43_read_backplane_mem_batched@.text.cyw43_set_backplane_window=.time_critical.cyw43_set_backplane_window@.text.cyw43_set_backplane_window.constprop.0=.time_critical.cyw43_set_backplane_window_default@.text.cyw43_read_backplane=.time_critical.cyw43_read_backplane_generic@.text.cyw43_ll_read_backplane_reg=.time_critical.cyw43_ll_read_backplane_reg@.text.cyw43_ll_write_backplane_reg=.time_critical.cyw43_ll_write_backplane_reg"
+        "Relocating bounded HCI window-reuse and register helpers to SRAM"
 )
 # tud_task locks its event queue through usbd_int_set -> dcd_int_enable/disable
 # -> irq_set_enabled on every call, several times per main-loop pass. Each
