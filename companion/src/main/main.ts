@@ -50,6 +50,11 @@ const PICO_UNIVERSAL_FLASH_NUKE_RELATIVE_PATH = path.join('firmware', PICO_UNIVE
 const PICO_UNIVERSAL_FLASH_NUKE_SHA256_RELATIVE_PATH = path.join('firmware', PICO_UNIVERSAL_FLASH_NUKE_SHA256_FILE);
 const START_IN_TRAY_ARG = '--start-in-tray';
 const ALLOW_PARALLEL_AUTOMATION_INSTANCE = process.env.DS5_BRIDGE_ALLOW_PARALLEL_AUTOMATION_INSTANCE === '1';
+// Automation instances (Playwright, smoke checks) share the installed app's
+// settings, Run value and Start Menu shortcut. Registering from one would
+// delete the real login item or point login and toasts at a development
+// electron.exe, so they leave Windows integration alone.
+const WINDOWS_REGISTRATION_ENABLED = !ALLOW_PARALLEL_AUTOMATION_INSTANCE;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let trayDefaultIcon: Electron.NativeImage | null = null;
@@ -387,7 +392,7 @@ function loginItemArgs(): string[] {
 }
 
 function applyLaunchAtStartup(enabled: boolean): void {
-  if (process.platform !== 'win32') {
+  if (process.platform !== 'win32' || !WINDOWS_REGISTRATION_ENABLED) {
     return;
   }
 
@@ -718,7 +723,7 @@ New-ItemProperty -Path $registryPath -Name 'IconUri' -Value ${powerShellString(i
 }
 
 function ensureWindowsNotificationShortcut(): void {
-  if (process.platform !== 'win32') {
+  if (process.platform !== 'win32' || !WINDOWS_REGISTRATION_ENABLED) {
     return;
   }
 
