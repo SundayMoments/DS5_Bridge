@@ -10,12 +10,11 @@ export interface MainAppShellProps {
   readonly activeTab: ControlTab;
   /** The device card and bridge selector shown under the brand. */
   readonly sidebarDevice: ReactNode;
-  readonly sidebarFooter?: ReactNode;
   /** Replaces the navigation sidebar while Settings is open. */
   readonly settingsSidebar?: ReactNode;
   /** Centered in the window bar, such as the Kitsune Input promotion. */
   readonly windowBarCenter?: ReactNode;
-  /** Tools beside the window buttons, such as notifications. */
+  /** Tools beside the window buttons, such as the Ko-fi badge and notifications. */
   readonly windowBarTools?: ReactNode;
   readonly pages: ReactNode;
   readonly overlays?: ReactNode;
@@ -33,7 +32,6 @@ const INTERACTIVE_CHROME = [
   '.window-actions',
   '.window-bar-center',
   '.control-tab-list',
-  '.sidebar-footer',
   'button, input, select, textarea, a, [role="button"], [role="tab"], .custom-select, .settings-menu'
 ].join(', ');
 
@@ -43,7 +41,6 @@ export function MainAppShell({
   textScale,
   activeTab,
   sidebarDevice,
-  sidebarFooter,
   settingsSidebar,
   windowBarCenter,
   windowBarTools,
@@ -88,7 +85,6 @@ export function MainAppShell({
           <ShellSidebar
             activeTab={activeTab}
             device={sidebarDevice}
-            footer={sidebarFooter}
             onChromeMouseDown={handleWindowChromeMouseDown}
             onSelectTab={onSelectTab}
             panelIdForTab={panelIdForTab}

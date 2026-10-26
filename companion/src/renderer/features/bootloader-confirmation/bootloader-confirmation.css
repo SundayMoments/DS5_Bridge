@@ -1,0 +1,259 @@
+/* The confirmation sits above every other dialog, including the startup tutorial. */
+.bootloader-confirmation-backdrop {
+  z-index: 200;
+}
+
+.bootloader-confirmation-modal {
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 12px 14px 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  outline: none;
+}
+
+.bootloader-confirmation-modal .modal-heading-copy {
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bootloader-confirmation-modal .modal-heading-copy svg {
+  color: var(--accent);
+}
+
+.bootloader-confirmation-copy {
+  display: grid;
+  gap: 6px;
+  padding: 6px 4px 0;
+}
+
+.bootloader-confirmation-copy h2 {
+  margin: 0 0 2px;
+  color: var(--text-strong);
+  font-size: calc(var(--font-size-title) * 1.33);
+  line-height: 1.12;
+}
+
+.bootloader-confirmation-copy p {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.45;
+}
+
+.bootloader-confirmation-sequence {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 4px 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.bootloader-confirmation-step {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1 / 1.12;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--control-radius);
+  background: var(--surface-column);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.bootloader-confirmation-step-number {
+  position: absolute;
+  top: 4px;
+  left: 7px;
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.bootloader-confirmation-step .face-button-glyph {
+  width: min(42px, 70%);
+  height: auto;
+  margin-top: 8px;
+}
+
+.bootloader-confirmation-step.complete {
+  border-color: var(--success-border-strong);
+  background: var(--success-bg);
+}
+
+.bootloader-confirmation-step.complete .bootloader-confirmation-step-number {
+  color: var(--success);
+  font-weight: var(--font-weight-strong);
+}
+
+.bootloader-confirmation-step.current {
+  border-color: var(--accent-border-strong);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  transform: translateY(-2px);
+  animation: bootloader-confirmation-current 1.4s ease-in-out infinite;
+}
+
+.bootloader-confirmation-step.current .bootloader-confirmation-step-number {
+  color: var(--accent-strong);
+  font-weight: var(--font-weight-strong);
+}
+
+.bootloader-confirmation-modal.incorrect .bootloader-confirmation-sequence {
+  animation: bootloader-confirmation-incorrect 360ms ease-in-out;
+}
+
+.bootloader-confirmation-modal.incorrect .bootloader-confirmation-step {
+  border-color: var(--danger-border-strong);
+  background: var(--danger-bg);
+  box-shadow: none;
+  transform: none;
+  animation: none;
+}
+
+.face-button-key {
+  fill: #11151d;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 10;
+}
+
+.face-button-symbol {
+  fill: none;
+  stroke: var(--face-button-color);
+  stroke-width: 30;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.face-button-triangle {
+  --face-button-color: #3ad3a4;
+}
+
+.face-button-circle {
+  --face-button-color: #ff5a62;
+}
+
+.face-button-cross {
+  --face-button-color: #6aa8ff;
+}
+
+.face-button-square {
+  --face-button-color: #f47fd8;
+}
+
+.bootloader-confirmation-time {
+  height: 4px;
+  margin: 0 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-divider);
+}
+
+.bootloader-confirmation-time span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 250ms linear;
+}
+
+.bootloader-confirmation-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 4px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.bootloader-confirmation-progress {
+  font-weight: var(--font-weight-semibold);
+}
+
+.bootloader-confirmation-modal.incorrect .bootloader-confirmation-progress {
+  color: var(--danger);
+}
+
+.bootloader-confirmation-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bootloader-confirmation-countdown.urgent {
+  color: var(--warning);
+}
+
+.bootloader-confirmation-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--surface-divider);
+}
+
+.bootloader-confirmation-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  line-height: 1.4;
+}
+
+.bootloader-confirmation-footer .secondary-action {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 112px;
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+@keyframes bootloader-confirmation-current {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+}
+
+@keyframes bootloader-confirmation-incorrect {
+  20%,
+  60% {
+    transform: translateX(-5px);
+  }
+  40%,
+  80% {
+    transform: translateX(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bootloader-confirmation-step.current,
+  .bootloader-confirmation-modal.incorrect .bootloader-confirmation-sequence {
+    animation: none;
+  }
+
+  .bootloader-confirmation-time span {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .bootloader-confirmation-sequence {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

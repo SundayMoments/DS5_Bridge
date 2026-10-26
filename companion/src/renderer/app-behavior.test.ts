@@ -3,61 +3,36 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { IconBluetooth, IconViewfinder } from '@tabler/icons-react';
-import {
-  CONTROL_TAB_DEFINITIONS,
-  CONTROL_TAB_GROUPS,
-  CONTROL_TAB_TRAILING_ROWS
-} from './features/shell/control-tabs';
+import { CONTROL_TAB_DEFINITIONS, CONTROL_TAB_GROUPS } from './features/shell/control-tabs';
 import { rendererStyleModule, rendererStyles } from './test-support/renderer-styles';
 
-const appSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf8');
+// App behavior is rendered in App.rendered.test.tsx and each feature's rendered
+// tests. These guards cover what rendering cannot see: stylesheet rules, entry
+// imports, and code that must stay out of a feature.
 const stylesSource = rendererStyles();
 const shellSidebarStyles = rendererStyleModule('features/shell/shell-sidebar.css');
 const rendererEntrySource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.tsx'), 'utf8');
-const controllerDevicesPageSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), 'ControllerDevicesPage.tsx'),
-  'utf8'
-);
 
-function settingsSource(fileName: string): string {
-  return readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'features', 'settings', fileName), 'utf8');
+function featureSource(relativePath: string): string {
+  return readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'features', relativePath), 'utf8');
 }
 
-const settingsActionsSource = (() => {
-  const start = appSource.indexOf('const settingsPageActions: SettingsPageActions = {');
-  expect(start).toBeGreaterThanOrEqual(0);
-  return appSource.slice(start, appSource.indexOf('\n  };', start));
-})();
-
-function extractFunction(name: string): string {
-  const start = appSource.indexOf(`function ${name}`);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const nextFunction = appSource.indexOf('\n  function ', start + 1);
-  return appSource.slice(start, nextFunction === -1 ? undefined : nextFunction);
+function settingsSource(fileName: string): string {
+  return featureSource(`settings/${fileName}`);
 }
 
 describe('renderer behavior guards', () => {
-  it('self-hosts the Inter variable font', () => {
+  it('self-hosts the Inter variable font and the Montserrat wordmark weights', () => {
     expect(rendererEntrySource).toContain("import '@fontsource-variable/inter/standard.css';");
+    expect(rendererEntrySource).toContain("import '@fontsource/montserrat/latin-500.css';");
+    expect(rendererEntrySource).toContain("import '@fontsource/montserrat/latin-600.css';");
     expect(stylesSource).toContain('font-family: "Inter Variable", Inter, ui-sans-serif');
   });
 
   it('ports Devices as a firmware-backed controller management tab', () => {
+    // Pairing, forgetting, and renaming are rendered in features/devices/DevicesPage.rendered.test.tsx.
     expect(CONTROL_TAB_DEFINITIONS.devices).toEqual({ id: 'devices', label: 'Devices', Icon: IconBluetooth });
-    expect(appSource).toContain('<ControllerDevicesPage');
-    expect(appSource).toContain('window.bridge.requestControllerScan()');
-    expect(appSource).toContain('window.bridge.forgetControllerPairings()');
-    expect(appSource).toContain('window.bridge.forgetControllerPairing(request.bluetoothAddress)');
-    expect(appSource).toContain('observeControllerDevice(');
-    expect(appSource).toContain('saveControllerDeviceCache(window.localStorage');
-    expect(controllerDevicesPageSource).toContain('id="control-panel-devices"');
-    expect(controllerDevicesPageSource).toContain('Current and last controllers.');
-    expect(controllerDevicesPageSource).toContain('className="devices-heading-copy"');
-    expect(controllerDevicesPageSource).toContain('<IconScan size={16} />');
-    expect(controllerDevicesPageSource).toContain('Forget Controllers');
-    expect(controllerDevicesPageSource).toContain('className="trusted-device-menu"');
-    expect(controllerDevicesPageSource).toContain('controller-forget-modal');
-    expect(controllerDevicesPageSource).not.toContain('ControllerProfile');
+    expect(featureSource('devices/ControllerDevicesPage.tsx')).not.toContain('ControllerProfile');
     expect(stylesSource).toContain('.devices-page');
     expect(stylesSource).toContain('.feature-heading.devices-heading');
     expect(stylesSource).toContain('.devices-heading-copy');
@@ -65,108 +40,30 @@ describe('renderer behavior guards', () => {
     expect(stylesSource).toContain('.controller-forget-modal');
   });
 
-  it('does not expose retired host encoder controls', () => {
-    expect(appSource).not.toContain('toggleHost' + 'EncodedAudioEnabled');
-    expect(appSource).not.toContain('setHost' + 'EncodedAudioEnabled');
-    expect(appSource).not.toContain('Disable Host ' + 'Encoding?');
-    expect(appSource).not.toContain('Enable host ' + 'encoded audio');
-    expect(appSource).toContain('Pico Local');
-  });
+  // Retired host encoder controls and generic "Command Pending" copy are checked
+  // on every rendered page in App.rendered.test.tsx; the Overview's Pico Local
+  // audio route is rendered in features/overview/OverviewPage.rendered.test.tsx.
 
-  it('presents DualSense Edge as a PlayStation host persona', () => {
-    expect(appSource).toContain("['DualSense Edge', 'dualsense-edge']");
-    expect(appSource).toContain("['DualSense Edge', 'persona-dualsense-edge']");
-    const option = extractFunction('HostPersonaOption');
-    expect(option).toContain("value === 'dualsense-edge'");
-    expect(option).toContain('host-persona-brand-icon');
-  });
+  // The DualSense Edge host persona, the emergency device repair dialog, the
+  // Device card health label, and Mute as a chord starter are rendered in
+  // features/system-controls/SystemPage.rendered.test.tsx; the health and power
+  // wording is covered in common/controller-status.test.ts. The chord persona
+  // actions are covered in features/chords/model.test.ts.
 
-  it('requires explicit confirmation and a disconnected controller before emergency device repair', () => {
-    const openFunction = extractFunction('openDeviceCleanupConfirm');
-    const runFunction = extractFunction('runWindowsDeviceCleanup');
+  // Haptics and rumble tests staying available while game audio plays, and their
+  // Testing, Cooling Down, and Failed labels, are rendered in
+  // features/controller-feedback/ControllerFeedbackPage.rendered.test.tsx.
 
-    expect(appSource).toContain('IconTool');
-    expect(openFunction).toContain('setDeviceCleanupConfirmVisible(true)');
-    expect(runFunction).toContain('controllerConnected');
-    expect(runFunction).toContain('repairWindowsDeviceCache');
-    expect(appSource).toContain('Emergency Device Repair');
-    expect(appSource).toContain('Only run this if you are running into persistent odd controller');
-    expect(appSource).toContain('Disconnect the controller from the bridge');
-    expect(appSource).toContain('Controller identity based profiles');
-    expect(appSource).toContain('paired directly to Windows over Bluetooth may need to be paired again');
-  });
-
-  it('does not block haptic testing just because audio is active', () => {
-    const start = appSource.indexOf('const testHapticsUnavailable =');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('const hapticsStatusReady =', start);
-    const unavailableSource = appSource.slice(start, end);
-
-    expect(unavailableSource).not.toContain('gameStreamActive');
-    expect(unavailableSource).not.toContain('audioRecent');
-    expect(unavailableSource).not.toContain('host' + 'AudioActive');
-    expect(unavailableSource).not.toContain('streamActive');
-  });
-
-  it('does not block rumble testing while game output is active', () => {
-    const start = appSource.indexOf('const testRumbleUnavailable =');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('const hapticsStatusReady =', start);
-    const unavailableSource = appSource.slice(start, end);
-
-    expect(unavailableSource).not.toContain('gameStreamActive');
-    expect(unavailableSource).not.toContain('audioRecent');
-    expect(unavailableSource).not.toContain('host' + 'AudioActive');
-    expect(unavailableSource).not.toContain('streamActive');
-  });
-
-  it('keeps haptic test and cooldown labels as real test state', () => {
-    const start = appSource.indexOf('<button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable}');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</button>', start);
-    const buttonSource = appSource.slice(start, end);
-
-    expect(buttonSource).not.toContain('Audio Active');
-    expect(buttonSource).toContain('testLocked');
-    expect(buttonSource).toContain('snapshot.status?.testHapticsCooldown');
-  });
-
-  it('does not show generic command-pending copy in renderer status badges', () => {
-    expect(appSource).not.toContain('Command Pending');
-  });
-
-  it('distinguishes controller-ready, wake-enabled, and bridge-only health states', () => {
-    const start = appSource.indexOf('function healthLabel');
-    const end = appSource.indexOf('function hexByte', start);
-    const healthSource = appSource.slice(start, end);
-
-    expect(healthSource).toContain("return 'Wake with controller enabled';");
-    expect(healthSource).toContain("return 'Bridge online';");
-    expect(healthSource).toContain("return 'All systems normal';");
-    expect(healthSource).toContain('snapshot.settings.wakeOnConnectEnabled');
-    expect(healthSource).toContain('snapshot.status?.controllerConnected');
-    expect(healthSource).toContain('The Pico bridge is online and waiting for a controller.');
-    expect(appSource).toContain('title={overviewHealthTitle}');
-    expect(appSource).toContain('title={healthTitle(snapshot)}');
+  it('styles the bridge-only health state', () => {
     expect(stylesSource).toContain('.dot.info');
     expect(stylesSource).toContain('.overview-health.info');
     expect(stylesSource).toContain('.health-label.info');
   });
 
-  it('dims primary feature toggles when the controller is unavailable', () => {
-    expect(appSource).toContain('const controllerControlsAvailable = connected && controllerConnected;');
-    expect(appSource).toContain("controllerControlsAvailable ? '' : 'controller-unavailable'");
-    expect(appSource).toContain('disabled={!controllerControlsAvailable || pendingAction !== null}');
-    expect(appSource).toContain('!controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null');
-    expect(appSource).toContain('!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null');
-    expect(appSource).toContain('!controllerControlsAvailable || !lightbarSupported || pendingAction !== null');
-  });
-
-  // The Settings page itself is rendered in features/settings/SettingsPage.rendered.test.tsx;
-  // these guards pin how App.tsx wires that page to the bridge.
+  // The Settings page is rendered in features/settings/SettingsPage.rendered.test.tsx,
+  // and every Settings action reaching the bridge in
+  // features/settings/use-settings-page.rendered.test.tsx.
   it('offers a persisted automatic lightbar restore toggle in Settings', () => {
-    expect(appSource).toContain('settings: snapshot.settings,');
-    expect(settingsActionsSource).toContain('window.bridge.setLightbarRestoreEnabled(!currentSettings.lightbarRestoreEnabled)');
     expect(settingsSource('ControllerBridgeSettings.tsx')).toContain('label="Automatic Restore"');
     expect(settingsSource('ControllerBridgeSettings.tsx')).toContain('Reapply the saved color after games clear it');
   });
@@ -174,317 +71,92 @@ describe('renderer behavior guards', () => {
   it('links the official DS5 Bridge Discord from About', () => {
     expect(settingsSource('SystemSettings.tsx')).toContain("DS5_BRIDGE_DISCORD_URL = 'https://discord.gg/By5jhh73wr'");
     expect(settingsSource('SystemSettings.tsx')).toContain('IconBrandDiscord');
-    expect(settingsActionsSource).toContain('openExternal: (url) => void window.bridge.openExternal(url)');
-  });
-
-  it('uses the device container border instead of a compact status dot', () => {
-    // The rendered card is covered in features/shell/MainAppShell.rendered.test.tsx.
-    expect(appSource).toContain('const sidebarDeviceTone =');
-    expect(appSource).toContain('tone: sidebarDeviceTone,');
   });
 
   it('exposes the firmware-gated audio buffer length control', () => {
-    expect(appSource).toContain('const AUDIO_BUFFER_LENGTH_MIN = 16;');
-    expect(appSource).toContain('const AUDIO_BUFFER_LENGTH_MAX = 128;');
-    expect(appSource).toContain('audioBufferLengthControlSupported');
-    expect(appSource).toContain('firmwareFlags.hapticsBufferLengthControl');
-    expect(appSource).toContain('window.bridge.setHapticsBufferLength(snappedValue)');
-    expect(appSource).toContain('Audio Buffer Length');
-    expect(appSource).toContain('audio-buffer-readout');
-    expect(appSource).toContain("className={`audio-buffer-control framed-slider ${audioBufferLengthControlDisabled ? 'disabled' : ''}`}");
-    expect(appSource).toContain('className="audio-buffer-title"');
-    expect(appSource).toContain('aria-valuetext={`${audioBufferLengthValue}, ${audioBufferDelayLabel(audioBufferLengthValue)}, ${audioBufferZoneLabel(audioBufferLengthValue)}`}');
-    const micPresetIndex = appSource.indexOf('{MIC_VOLUME_PRESETS.map(([label, value]) => (');
-    const speakerPresetIndex = appSource.indexOf('{SPEAKER_VOLUME_PRESETS.map(([label, value]) => (');
-    const bufferControlIndex = appSource.indexOf('className={`audio-buffer-control framed-slider');
-    const testCardIndex = appSource.indexOf('<section className="feature-card test-card">', speakerPresetIndex);
-    const bufferControlSource = appSource.slice(bufferControlIndex, testCardIndex);
-    expect(micPresetIndex).toBeGreaterThanOrEqual(0);
-    expect(speakerPresetIndex).toBeGreaterThan(micPresetIndex);
-    expect(bufferControlIndex).toBeGreaterThan(speakerPresetIndex);
-    expect(bufferControlIndex).toBeLessThan(testCardIndex);
-    expect(bufferControlSource).not.toContain('showQuestionMark={true}');
-    expect(appSource.slice(micPresetIndex, speakerPresetIndex)).not.toContain('audio-buffer-control');
-    expect(appSource).not.toContain('Math.min(255, Math.round(length))');
+    // The control is rendered in features/controller-audio/ControllerAudioPage.rendered.test.tsx.
+    expect(featureSource('controller-audio/model.ts')).toContain('export const AUDIO_BUFFER_LENGTH_MIN = 16;');
+    expect(featureSource('controller-audio/model.ts')).toContain('export const AUDIO_BUFFER_LENGTH_MAX = 128;');
+    expect(featureSource('controller-audio/use-controller-audio-controller.ts')).not.toContain('Math.min(255, Math.round(length))');
   });
 
-  it('exposes Pico firmware maintenance actions in Settings', () => {
-    expect(appSource).toContain('function mountPicoBootloader()');
-    expect(appSource).toContain('function flashPicoFirmware()');
-    expect(appSource).toContain('function nukePicoFlash()');
-    expect(appSource).toContain('window.bridge.mountPicoBootloader()');
-    expect(appSource).toContain('window.bridge.flashPicoFirmware()');
-    expect(appSource).toContain('window.bridge.nukePicoFlash()');
-    expect(appSource).toContain('picoFirmware: { message: picoFirmwareMessage, error: picoFirmwareError }');
-    expect(settingsActionsSource).toContain('mountPicoBootloader,');
-    expect(settingsActionsSource).toContain('flashPicoFirmware,');
-    expect(settingsActionsSource).toContain('nukePicoFlash,');
+  it('keeps the Pico firmware tools side by side in Settings', () => {
     expect(settingsSource('SystemSettings.tsx')).toContain('pico-firmware-dual-action');
   });
 
-  it('exposes the battery percentage tray icon and wake preferences in Settings', () => {
-    expect(settingsActionsSource).toContain(
-      'window.bridge.setShowBatteryPercentTrayIcon(!currentSettings.showBatteryPercentTrayIcon)'
-    );
+  it('describes the battery percentage tray icon in Settings', () => {
     expect(settingsSource('AppSettings.tsx')).toContain('Show controller battery percentage in the tray');
-    expect(appSource).toContain('firmwareFlags.wakeOnConnectControl');
-    expect(appSource).toContain('wakeOnConnect: wakeOnConnectSupported,');
-    expect(settingsActionsSource).toContain('window.bridge.setWakeOnConnectEnabled(!currentSettings.wakeOnConnectEnabled)');
   });
 
-  it('exposes the DualSense Edge profile blocker and uses it to gate reserved chords', () => {
+  it('exposes the DualSense Edge profile blocker', () => {
     expect(settingsSource('ControllerBridgeSettings.tsx')).toContain('label="Block Edge Profile Switching"');
-    expect(settingsActionsSource).toContain(
-      'window.bridge.setEdgeProfileSwitchingBlocked(!currentSettings.edgeProfileSwitchingBlocked)'
-    );
-    expect(appSource).toContain('isChordBindingAllowed(starter, id, edgeProfileSwitchingBlocked)');
+    // The chord gate is rendered in features/chords/ChordsPage.rendered.test.tsx.
   });
 
-  it('distinguishes active charging from connected external power', () => {
-    expect(appSource).toContain(
-      'function isChargingPowerState(rawPowerState: number | undefined): boolean {'
-    );
-    expect(appSource).toContain('return rawPowerState === 0x01;');
-    expect(appSource).toContain(
-      'function isExternalPowerState(rawPowerState: number | undefined): boolean {'
-    );
-    expect(appSource).toContain('return rawPowerState === 0x01 || rawPowerState === 0x02;');
-    expect(appSource).toContain("batteryCharging ? 'Charging' : 'Connected to power'");
-    expect(appSource).toContain('powerLabel: batteryPowerLabel,');
+  it('styles the sidebar device card as a Devices shortcut with a power indicator', () => {
+    // The card's tone border, power label, and Devices link are rendered in
+    // App.rendered.test.tsx and features/devices/DevicesPage.rendered.test.tsx;
+    // features/shell/sidebar-device.test.ts covers the card model.
     expect(shellSidebarStyles).toContain('.device-power-indicator');
-  });
-
-  it('uses the compact Kitsune device card as a Devices shortcut', () => {
-    expect(appSource).toContain('const sidebarControllerCard = controllerDevicesModel.cards.find(');
-    expect(appSource).toContain("onOpenDevices={() => selectControlTab('devices')}");
-    expect(appSource).not.toContain('className={`battery-icon');
     expect(shellSidebarStyles).toContain('grid-template-columns: minmax(0, 1fr) 48px;');
     expect(shellSidebarStyles).toContain('min-height: 72px;');
     expect(shellSidebarStyles).toContain('.hero-main[role="button"]:focus-visible');
     expect(shellSidebarStyles).toContain('.device-battery-meta');
   });
 
-  it('keeps the haptics test button actionable instead of relabeling it as game-active', () => {
-    const start = appSource.indexOf('<button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable}');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</button>', start);
-    const buttonSource = appSource.slice(start, end);
-    const hapticsStart = buttonSource.indexOf(': connected && testLocked');
-    expect(hapticsStart).toBeGreaterThanOrEqual(0);
-    const hapticsButtonSource = buttonSource.slice(hapticsStart);
-
-    expect(hapticsButtonSource).not.toContain('Game Active');
-    expect(hapticsButtonSource).toContain('testLocked');
-    expect(hapticsButtonSource).toContain('Test Haptics');
-  });
-
-  it('keeps the rumble test button actionable instead of relabeling it as game-active', () => {
-    const start = appSource.indexOf('<button className="primary-action" type="button" disabled={activeFeedbackTestUnavailable}');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('</button>', start);
-    const buttonSource = appSource.slice(start, end);
-    const classicStart = buttonSource.indexOf('{showClassicRumbleControl');
-    expect(classicStart).toBeGreaterThanOrEqual(0);
-    const hapticsStart = buttonSource.indexOf(': connected && testLocked', classicStart);
-    expect(hapticsStart).toBeGreaterThanOrEqual(0);
-    const classicButtonSource = buttonSource.slice(classicStart, hapticsStart);
-
-    expect(classicButtonSource).not.toContain('Game Active');
-    expect(classicButtonSource).toContain('testLocked');
-    expect(classicButtonSource).toContain('Test Rumble');
-  });
-
-  it('does not let initial status overwrite a newer live snapshot', () => {
-    const start = appSource.indexOf('let cancelled = false;');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('return () => {', start);
-    const startupSubscriptionSource = appSource.slice(start, end);
-
-    expect(startupSubscriptionSource).toContain('let receivedLiveSnapshot = false;');
-    expect(startupSubscriptionSource).toContain('if (!cancelled && !receivedLiveSnapshot)');
-    expect(startupSubscriptionSource).toContain('receivedLiveSnapshot = true;');
-  });
-
-  it('does not snap snapshot values back to coarse slider notches', () => {
-    const start = appSource.indexOf('function displayHapticsValue');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = appSource.indexOf('function sliderTickClass', start);
-    expect(end).toBeGreaterThan(start);
-    const displaySource = appSource.slice(start, end);
-
-    expect(displaySource).not.toContain('snapHapticsValue');
-    expect(displaySource).not.toContain('snapLightbarBrightness');
-    expect(displaySource).not.toContain('snapTriggerEffectIntensity');
-    expect(displaySource).toContain('snapshot.settings.hapticsGainPercent');
-    expect(displaySource).toContain('snapshot.settings.lightbarBrightnessPercent');
-    expect(displaySource).toContain('snapshot.settings.triggerEffectIntensityPercent');
-  });
-
   it('shows mute as a chord starter when chord mode or keyboard chord starter is active', () => {
-    expect(appSource).toContain("mute: { id: CHORD_MUTE_STARTER_ID, label: 'Mute Button', Icon: MicOff }");
-    expect(appSource).toContain('[CHORD_STARTERS.mute.label, CHORD_MUTE_STARTER_ID]');
-    expect(appSource).toContain('chords-starter-icon-glyph');
-    expect(appSource).toContain('<Icon size={18} />');
-    expect(appSource).toContain('function chordStarterOptionsFor(currentStarter?: ChordStarterId)');
-    expect(appSource).toContain("currentStarter === CHORD_MUTE_STARTER_ID");
-    expect(appSource).toContain('mute-starter-inactive');
-    expect(appSource).toContain('muteButtonChordStarterActive');
-    expect(appSource).toContain("snapshot?.settings.muteButtonMode === 'chord'");
-    expect(appSource).toContain("snapshot?.settings.muteButtonMode === 'keyboard'");
-    expect(appSource).toContain('snapshot.settings.muteKeyboardChordStarterEnabled');
-    expect(appSource).toContain("assignment.starter === CHORD_MUTE_STARTER_ID && !muteButtonChordStarterActive");
-    expect(appSource).toContain('Duplicate, inactive, or shortcut-shadowed chord bindings');
+    // The starter definition is covered in features/chords/model.test.ts and the
+    // page behavior in features/chords/ChordsPage.rendered.test.tsx.
+    expect(featureSource('chords/ChordGlyphs.tsx')).toContain('chords-starter-icon-glyph');
+    expect(featureSource('chords/ChordGlyphs.tsx')).toContain('<Icon size={18} />');
     expect(stylesSource).toContain('.chords-assignment-row.mute-starter-inactive .remap-glyph-option img');
     expect(stylesSource).toContain('opacity: var(--disabled-opacity);');
-    expect(appSource).toContain("starter === CHORD_MUTE_STARTER_ID");
-    expect(appSource).toContain('Chord Starter');
-    expect(appSource).toContain("window.bridge.setMuteButtonAction(mode, keyUsage, keyModifiers, keyBehavior, keyChordStarterEnabled)");
-    expect(appSource).toContain('Pair PS, LFN, RFN, or Mute with a button.');
   });
 
-  it('offers Print Screen and numpad numerals as chord keyboard shortcut keys', () => {
-    const optionsStart = appSource.indexOf('const CHORD_KEYBOARD_KEY_OPTIONS');
-    expect(optionsStart).toBeGreaterThanOrEqual(0);
-    const optionsEnd = appSource.indexOf('const CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH', optionsStart);
-    expect(optionsEnd).toBeGreaterThan(optionsStart);
-    const optionsSource = appSource.slice(optionsStart, optionsEnd);
-
-    expect(optionsSource).toContain("['Print Screen', 'Print Screen']");
-    expect(optionsSource).toContain('`Numpad ${digit}`');
-    expect(optionsSource).toContain('`Numpad${digit}`');
-
-    const normalizeSource = extractFunction('normalizeChordKeyLabel');
-    expect(normalizeSource).toContain("case 'print screen':");
-    expect(normalizeSource).toContain("case 'printscreen':");
-    expect(normalizeSource).toContain("case 'prtsc':");
-    expect(normalizeSource).toContain("case 'prtscn':");
-    expect(normalizeSource).toContain("return 'Print Screen';");
-  });
-
-  it('exposes bridge selection, stable naming, and direct USB controller status', () => {
-    // The selector's rename, refresh, and USB-direct rows are rendered in
-    // features/shell/MainAppShell.rendered.test.tsx.
-    expect(appSource).toContain('snapshot?.bridgeDevices ?? null');
-    expect(appSource).toContain('window.bridge.selectBridge(devicePath)');
-    expect(appSource).toContain('window.bridge.setBridgeLabel(uniqueId, name)');
-    expect(appSource).toContain('window.bridge.refreshBridgeDevices()');
-    expect(appSource).toContain('directControllers={directControllers}');
+  it('styles bridge selection and direct USB controller status', () => {
+    // Selecting, refreshing, and renaming bridges is rendered in App.rendered.test.tsx.
     expect(stylesSource).toContain('.sidebar-bridge-selector');
     expect(stylesSource).toContain('.bridge-direct-controller');
   });
 
-  it('groups sidebar controls and promotes the two labs to navigation destinations', () => {
+  it('groups sidebar controls like Kitsune Input and promotes the two labs to navigation destinations', () => {
+    // Opening each lab as its own page is rendered in App.rendered.test.tsx.
     expect(CONTROL_TAB_GROUPS.map(({ id, label }) => [id, label])).toEqual([
       ['controller', 'Controller'],
       ['input', 'Input'],
-      ['labs', 'Labs']
+      ['tools', 'Tools']
     ]);
     expect(CONTROL_TAB_DEFINITIONS['audio-haptics'].label).toBe('Audio Haptics');
     expect(CONTROL_TAB_DEFINITIONS['trigger-lab'].label).toBe('Trigger Lab');
-    expect(CONTROL_TAB_GROUPS.find(({ id }) => id === 'labs')?.tabs.map(({ id }) => id))
-      .toEqual(['audio-haptics', 'trigger-lab']);
-    expect(CONTROL_TAB_TRAILING_ROWS.map(({ id }) => id)).toEqual(['system']);
-    expect(appSource).toContain("const triggerLabOpen = activeControlTab === 'trigger-lab'");
-    expect(appSource).toContain("const audioHapticsOpen = activeControlTab === 'audio-haptics'");
-    expect(appSource).not.toContain('setTriggerLabOpen');
-    expect(appSource).not.toContain('setAudioHapticsOpen');
+    expect(CONTROL_TAB_GROUPS.find(({ id }) => id === 'tools')?.tabs.map(({ id }) => id))
+      .toEqual(['audio-haptics', 'trigger-lab', 'system']);
   });
 
   it('exposes only radial stick deadzones from the premium analog controls', () => {
-    const deadzonesPanelStart = appSource.indexOf('id="control-panel-deadzones"');
-    const deadzonesPanelEnd = appSource.indexOf('<FeatureTipsPanel tab="deadzones" />', deadzonesPanelStart);
-    const deadzonesPanelSource = appSource.slice(deadzonesPanelStart, deadzonesPanelEnd);
-
+    // The page is rendered in features/stick-deadzones/StickDeadzonesPage.rendered.test.tsx.
     expect(CONTROL_TAB_DEFINITIONS.deadzones).toEqual({ id: 'deadzones', label: 'Stick Deadzones', Icon: IconViewfinder });
-    expect(deadzonesPanelSource).toContain('<span className="feature-icon"><IconViewfinder size={20} /></span>');
-    expect(deadzonesPanelSource).not.toContain('<ProfileSaveStatus />');
-    expect(appSource).toContain('window.bridge.setRadialDeadzones(leftPercent, rightPercent)');
-    expect(appSource).toContain('window.bridge.requestStickInputPreview()');
-    expect(appSource).toContain('window.bridge.releaseStickInputPreview()');
-    expect(appSource).toContain("`${Math.max(3, value)}%`");
-    expect(appSource).toContain('radialDeadzonePreview(');
-    expect(appSource).toContain('Physical</span>');
-    expect(appSource).toContain('Output</span>');
-    expect(appSource).toContain("'Left Stick' : 'Right Stick'");
-    expect(appSource).toContain('aria-label={`${label} radial deadzone`}');
-    expect(appSource).toContain('<FeatureTipsPanel tab="deadzones" />');
-    expect(appSource).toContain("title: 'Tune Each Stick'");
-    expect(appSource).toContain("title: 'Keep It Low'");
-    expect(appSource).not.toContain('How Radial Deadzones Work');
-    expect(appSource).not.toContain('All Personas');
-    expect(appSource).not.toContain('invertHorizontal');
-    expect(appSource).not.toContain('responseCurve');
-    expect(appSource).not.toContain('zoneRotation');
-    expect(appSource).not.toContain('zoneOuterLimits');
-    expect(appSource).not.toContain('maxRangePercent');
+    for (const premiumControl of ['invertHorizontal', 'responseCurve', 'zoneRotation', 'zoneOuterLimits', 'maxRangePercent']) {
+      expect(featureSource('stick-deadzones/StickDeadzonesPage.tsx')).not.toContain(premiumControl);
+      expect(featureSource('stick-deadzones/use-stick-deadzones-controller.ts')).not.toContain(premiumControl);
+    }
   });
 
   it('keeps all four abbreviated personas on the overview quick-actions row', () => {
+    // The buttons are rendered in features/overview/OverviewPage.rendered.test.tsx.
     expect(stylesSource).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
-    expect(appSource).toContain("dualsense: 'DS'");
-    expect(appSource).toContain("'dualsense-edge': 'DSE'");
-    expect(appSource).toContain("ds4: 'DS4'");
-    expect(appSource).toContain("xbox: 'XBOX'");
-    expect(appSource).toContain('<span>{HOST_PERSONA_SHORT_LABELS[mode]}</span>');
-    expect(appSource).toContain('aria-label={`Switch to ${label} mode`}');
   });
 
   it('advertises Kitsune Input with a dismissible titlebar promotion', () => {
-    expect(appSource).toContain("import '@fontsource/montserrat/latin-500.css';");
-    expect(appSource).toContain("import kitsuneInputLogoUrl from './assets/kitsune-input-logo.svg';");
-    expect(appSource).toContain('!snapshot.settings.kitsuneInputPromotionDismissed');
-    expect(appSource).toContain('aria-label="Explore Kitsune Input"');
-    expect(appSource).toContain('aria-label="Close Kitsune Input promotion"');
-    expect(appSource).toContain('Take controller customization further');
-    expect(appSource).toContain('Deeper tuning, smarter profiles, and controller-first tools.');
-    expect(appSource).not.toContain('Shape every movement.');
-    expect(appSource).not.toContain('Ready when you play.');
-    expect(appSource).not.toContain('Features exclusive to Kitsune Input');
-    expect(appSource).toContain('<strong>Tuning &amp; Compatibility</strong>');
-    expect(appSource).toContain('<strong>Profiles &amp; Tools</strong>');
-    expect(appSource).not.toContain('<span>01</span>');
-    expect(appSource).not.toContain('<span>02</span>');
-    expect(appSource).toContain('<li>Advanced Stick Tuning</li>');
-    expect(appSource).toContain('<li>Advanced Trigger Tuning</li>');
-    expect(appSource).toContain('<li>Touchpad Gestures</li>');
-    expect(appSource).toContain('<li>More Personas: XSX + Impulse Triggers</li>');
-    expect(appSource).toContain('<li>Kitsune Cursor &amp; Keyboard</li>');
-    expect(appSource).toContain('<li>Multi-Actions</li>');
-    expect(appSource).toContain('<li>Per-game Profiles</li>');
-    expect(appSource).toContain('<li>Kitsune Game Bar</li>');
-    expect(appSource).toContain('<li>NS Pro Support · DS4 in v1.1.1</li>');
-    expect(appSource).toContain('<li>Mod API</li>');
-    expect(appSource).toContain('Purchase');
-    expect(appSource).toContain('Learn More');
-    expect(appSource).toContain('secondary-action kitsune-promotion-learn');
-    expect(appSource).toContain('<ArrowRight size={16} />');
-    expect(appSource).toContain("Don't show Kitsune Input promotions again");
-    expect(appSource).toContain("const KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';");
-    expect(appSource).toContain("const KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';");
-    expect(appSource).toContain('window.bridge.setKitsuneInputPromotionDismissed(true)');
+    // The banner, dialog, dismissal, and one-time launch offer are rendered in
+    // features/kitsune-promotion/KitsunePromotion.rendered.test.tsx.
+    const promotionSource = featureSource('kitsune-promotion/KitsuneInputPromotionDialog.tsx');
+    for (const retiredCopy of ['Shape every movement.', 'Ready when you play.', 'Features exclusive to Kitsune Input', '<span>01</span>']) {
+      expect(promotionSource).not.toContain(retiredCopy);
+    }
+    expect(featureSource('kitsune-promotion/links.ts')).toContain("KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';");
+    expect(featureSource('kitsune-promotion/links.ts')).toContain("KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';");
   });
 
-  it('keeps Audio Haptics page enablement aligned with its feature tile', () => {
-    expect(appSource).toContain(
-      'aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}'
-    );
-    expect(appSource).toContain('if (enabled && !snapshot.settings.hapticsEnabled)');
-    expect(appSource).toContain('await window.bridge.setHapticsEnabled(true);');
-    expect(appSource).toContain('window.bridge.setAudioReactiveHapticsConfig({ enabled })');
-  });
-
-  it('keeps Trigger Lab enablement independent from the global adaptive-trigger setting', () => {
-    expect(appSource).toContain('const [triggerLabEnabled, setTriggerLabEnabled] = useState(triggerLabInitialState.enabled);');
-    expect(appSource).toContain('const triggerPageEnabled = triggerLabOpen ? triggerLabEnabled : adaptiveTriggersEnabled;');
-    expect(appSource).toContain('{triggerLabEnabled && triggerLabAnyActive ? (');
-    expect(appSource).toContain('aria-checked={triggerPageEnabled}');
-    expect(appSource).toContain('onClick={triggerLabOpen ? toggleTriggerLabEnabled : toggleAdaptiveTriggersEnabled}');
-    expect(appSource).toContain("void runAction('trigger-lab-enabled', () => window.bridge.resetAdaptiveTriggers());");
-  });
-
-  it('restores Trigger Lab independently, including after global trigger settings change', () => {
-    expect(appSource).toContain('}, [adaptiveTriggersEnabled, connected, triggerLabEnabled]);');
-    expect(appSource).toContain('|| !triggerLabEnabled');
-    expect(appSource).toContain('triggerLabRestoreAppliedRef.current = false;');
-  });
+  // Trigger Lab enablement and restore are rendered in
+  // features/adaptive-triggers/AdaptiveTriggersPage.rendered.test.tsx.
 });

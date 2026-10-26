@@ -8,7 +8,7 @@ export const SETTINGS_CATEGORIES = [
   { id: 'connection-power', label: 'Connection & Power' },
   { id: 'lights', label: 'Lights & Indicators' },
   { id: 'input', label: 'Shortcuts' },
-  { id: 'pc-wake', label: 'PC Wake' },
+  { id: 'pc-wake', label: 'Wake PC' },
   { id: 'maintenance', label: 'Bridge Firmware' },
   { id: 'about', label: 'Help & About' }
 ] as const;
@@ -22,7 +22,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'connection-power', label: 'Connection & Power', categories: ['connection-power'] },
   { id: 'lights', label: 'Lights & Indicators', categories: ['lights'] },
   { id: 'shortcuts', label: 'Shortcuts', categories: ['input'] },
-  { id: 'pc-wake', label: 'PC Wake', categories: ['pc-wake'] },
+  { id: 'pc-wake', label: 'Wake PC', categories: ['pc-wake'] },
   { id: 'maintenance', label: 'Bridge Firmware', categories: ['maintenance'] },
   { id: 'about', label: 'Help & About', categories: ['about'] }
 ] as const satisfies readonly {
@@ -67,7 +67,9 @@ export type SettingsSearchEntryId =
   | 'sleep-shortcut'
   | 'volume-shortcut'
   | 'remote-wake'
+  | 'wake-on-lan'
   | 'pico-tools'
+  | 'last-restart'
   | 'github'
   | 'discord';
 
@@ -103,7 +105,9 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'sleep-shortcut', label: 'Controller Sleep Shortcut', category: 'input', keywords: 'controller sleep shortcut chord triangle' },
   { id: 'volume-shortcut', label: 'Volume Shortcut', category: 'input', keywords: 'controller chord d-pad speaker' },
   { id: 'remote-wake', label: 'Wake PC via USB', category: 'pc-wake', keywords: 'usb remote wake sleep windows controller reconnect' },
+  { id: 'wake-on-lan', label: 'Wake-on-LAN', category: 'pc-wake', keywords: 'wifi wi-fi network ethernet magic packet lan sleep shutdown router' },
   { id: 'pico-tools', label: 'Bridge Firmware', category: 'maintenance', keywords: 'pico bridge firmware update recovery erase mount flash nuke uf2' },
+  { id: 'last-restart', label: 'Last Restart', category: 'maintenance', keywords: 'reset crash freeze watchdog reboot diagnostics bug report' },
   { id: 'github', label: 'GitHub', category: 'about', keywords: 'sunday moments profile developer source' },
   { id: 'discord', label: 'Support & Community', category: 'about', keywords: 'discord invite help server' }
 ];

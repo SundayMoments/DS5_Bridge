@@ -158,6 +158,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
   kitsuneInputPromotionDismissed: false,
+  kitsuneInputLaunchOfferShown: false,
   firmwareLogDirectory: null,
   leftStickRadialDeadzonePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.leftStickRadialDeadzonePercent,
   rightStickRadialDeadzonePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.rightStickRadialDeadzonePercent,
@@ -931,6 +932,8 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     kitsuneInputPromotionDismissed: typeof value?.kitsuneInputPromotionDismissed === 'boolean'
       ? value.kitsuneInputPromotionDismissed
       : DEFAULT_SETTINGS.kitsuneInputPromotionDismissed,
+    // Settings saved before this flag existed read as not shown, so every user sees the offer once.
+    kitsuneInputLaunchOfferShown: value?.kitsuneInputLaunchOfferShown === true,
     firmwareLogDirectory: typeof value?.firmwareLogDirectory === 'string' && value.firmwareLogDirectory.trim()
       ? value.firmwareLogDirectory.trim()
       : DEFAULT_SETTINGS.firmwareLogDirectory,
@@ -1143,7 +1146,12 @@ export class SettingsStore {
     }
 
     if (normalizedPresetId === 'custom') {
-      this.settings = { ...this.customSettings, selectedPresetId: 'custom' };
+      this.settings = {
+        ...this.customSettings,
+        selectedPresetId: 'custom',
+        // A one-time offer stays shown even if the saved custom settings predate it.
+        kitsuneInputLaunchOfferShown: this.settings.kitsuneInputLaunchOfferShown
+      };
     } else {
       this.settings = normalizeSettings({ ...this.settings, ...presetSettings, selectedPresetId: normalizedPresetId });
     }
@@ -1158,12 +1166,14 @@ export class SettingsStore {
     const selectedBridgePath = this.settings.selectedBridgePath;
     const bridgeIdentities = this.settings.bridgeIdentities;
     const kitsuneInputPromotionDismissed = this.settings.kitsuneInputPromotionDismissed;
+    const kitsuneInputLaunchOfferShown = this.settings.kitsuneInputLaunchOfferShown;
     this.settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
       firmwareLogDirectory,
       selectedBridgePath,
       bridgeIdentities,
       kitsuneInputPromotionDismissed,
+      kitsuneInputLaunchOfferShown,
       selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
       controllerProfiles
     });

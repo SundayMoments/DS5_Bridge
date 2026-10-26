@@ -41,6 +41,21 @@
   align-self: start;
 }
 
+/* A failed haptics test explains itself in the space above the test buttons. */
+.haptics-page .test-card {
+  grid-template-rows: var(--feature-card-header-height) minmax(76px, auto) var(--action-height) var(--action-height) minmax(40px, 1fr);
+}
+
+.feedback-test-error {
+  grid-row: 2;
+  align-self: center;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .audio-test-status {
   gap: 10px;
   flex-wrap: wrap;

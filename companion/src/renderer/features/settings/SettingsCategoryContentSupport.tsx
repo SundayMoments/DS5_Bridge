@@ -5,6 +5,8 @@ import type { SettingsPageActions, SettingsPageModel } from './types';
 export interface SettingsCategoryProps {
   readonly model: SettingsPageModel;
   readonly actions: SettingsPageActions;
+  /** The Settings page is on screen; sections that read the bridge do so only then. */
+  readonly active: boolean;
   readonly matchingSettingIds: ReadonlySet<SettingsSearchEntryId> | null;
 }
 

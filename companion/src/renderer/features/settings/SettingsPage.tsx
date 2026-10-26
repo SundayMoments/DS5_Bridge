@@ -2,7 +2,8 @@ import { useLayoutEffect, type ComponentType } from 'react';
 import { useScrollContextEdges } from '../../common/use-scroll-context-edges';
 import { AppearanceSettings, GeneralSettings, NotificationSettings, SystemTraySettings } from './AppSettings';
 import { ConnectionPowerSettings, LightsSettings, ShortcutSettings } from './ControllerBridgeSettings';
-import { AboutSettings, FirmwareSettings, PcWakeSettings } from './SystemSettings';
+import { AboutSettings, FirmwareSettings } from './SystemSettings';
+import { WakePcSettings } from './WakePcSettings';
 import type { SettingsCategoryProps } from './SettingsCategoryContentSupport';
 import { SETTINGS_CATEGORIES, type SettingsCategoryId } from './settings-navigation';
 import { SettingsSearchContext } from './settings-search-context';
@@ -19,7 +20,7 @@ const CATEGORY_CONTENT: Record<SettingsCategoryId, ComponentType<SettingsCategor
   'connection-power': ConnectionPowerSettings,
   lights: LightsSettings,
   input: ShortcutSettings,
-  'pc-wake': PcWakeSettings,
+  'pc-wake': WakePcSettings,
   maintenance: FirmwareSettings,
   about: AboutSettings
 };
@@ -77,7 +78,7 @@ export function SettingsPage({ active, navigation, model, actions }: {
                     hidden={!visibleCategories.has(category.id)}
                   >
                     {visibleCategories.has(category.id) ? (
-                      <Content model={model} actions={actions} matchingSettingIds={matchingSettingIds} />
+                      <Content model={model} actions={actions} active={active} matchingSettingIds={matchingSettingIds} />
                     ) : null}
                   </section>
                 );

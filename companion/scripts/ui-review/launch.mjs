@@ -70,8 +70,9 @@ const TAB_GROUPS = {
   'Stick Deadzones': 'Input',
   'Button Remapping': 'Input',
   Chords: 'Input',
-  'Audio Haptics': 'Labs',
-  'Trigger Lab': 'Labs'
+  'Audio Haptics': 'Tools',
+  'Trigger Lab': 'Tools',
+  System: 'Tools'
 };
 
 /** Opens a sidebar page by its label, expanding its group or leaving Settings first. */

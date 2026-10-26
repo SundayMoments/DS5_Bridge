@@ -20,6 +20,8 @@ export interface ShellBridgeSelectorProps {
   readonly selectedUniqueId: string | null;
   readonly directControllers: readonly ShellDirectController[];
   readonly busy: boolean;
+  /** Shown when no bridge is selected; defaults to "No bridge detected". */
+  readonly emptyLabel?: string;
   onSelect(devicePath: string): void;
   onRefresh(): void | Promise<unknown>;
   /** Saves a bridge name; an empty name restores the default label. */
@@ -38,6 +40,7 @@ export function ShellBridgeSelector({
   selectedUniqueId,
   directControllers,
   busy,
+  emptyLabel = 'No bridge detected',
   onSelect,
   onRefresh,
   onRename
@@ -90,7 +93,7 @@ export function ShellBridgeSelector({
             onChange={(path) => {
               if (path) onSelect(String(path));
             }}
-            renderValue={(label) => selectedName ?? (label || 'No bridge detected')}
+            renderValue={(label) => selectedName ?? (label || emptyLabel)}
             renderMenuFooter={(closeMenu) => (
               <div className="sidebar-bridge-menu-actions">
                 <button

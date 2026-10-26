@@ -35,7 +35,7 @@
 
 .system-card {
   --system-label-column: 118px;
-  --system-row-height: 47px;
+  --system-row-height: 45px;
   min-width: 0;
   padding: var(--card-padding);
   border-color: var(--surface-border);

@@ -34,8 +34,15 @@ const completeCatalogs = new Map([
 const allowedSourceIdenticalPhrases = [
   /^DS5 Bridge$/,
   /^Kitsune Input$/,
-  /^(?:DualSense|DualSense Edge|DualShock 4|Pico LED|Pico 2 W|Ko-fi|GitHub|Discord)$/,
+  /^(?:DualSense|DualSense Edge|DualShock 4|Xbox|Pico LED|Pico 2 W|Ko-fi|GitHub|Discord)$/,
   /^(?:Bubble Gum|Kiwi|Pomegranate)$/,
+  // USB vendor and product IDs are written the same way in every language.
+  /^VID \/ PID$/,
+  // Keyboard keys keep the legends printed on them.
+  /^(?:Caps Lock|Num Lock|Page Down|Page Up|Print Screen|Scroll Lock)$/,
+  /^F(?:[1-9]|1\d|2[0-4])$/,
+  // Polling rates are written the same way in every language.
+  /^\d+ Hz$/,
   /^\{\{0\}\}%$/
 ];
 
@@ -57,7 +64,11 @@ const visibleCall = /^(alert|confirm|notify|showToast|set\w*(Error|Message|Statu
 // Messages composed at runtime that the extractor cannot see in source.
 const seededMessages = [
   'AI-translated',
-  'Use system language'
+  'Use system language',
+  // Why the bridge refused a haptics test; main sends these and the Haptics page shows them.
+  'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.',
+  'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.',
+  'The controller audio endpoint is unavailable. Close any games using the controller and try again.'
 ];
 
 function normalize(value) {
@@ -77,6 +88,8 @@ function looksLikeUiText(value) {
   if (/^(https?:|mailto:|data:|file:|\.\.?[/\\]|[/\\]|--)/i.test(text)) return false;
   if (/^#[0-9a-f]{3,8}$/i.test(text) || /^\[[^\]]+\]$/.test(text)) return false;
   if (/^[#.a-z0-9_:/@%{}[\]="'-]+$/i.test(text) && /[-_#.[\]{}]/.test(text)) return false;
+  // A single lowercase word is an identifier such as a tone, side, or mode; copy is capitalized.
+  if (/^[a-z][a-z0-9]*$/.test(text)) return false;
   return true;
 }
 
@@ -221,7 +234,15 @@ function collectSourceFile(filePath, messages) {
       && ts.isVariableDeclaration(node.parent)
       && ts.isIdentifier(node.parent.name)
       && /(_OPTIONS|_TABS|_SECTIONS|_ACTIONS|_CHOICES|_LABELS|_CATEGORIES)$/.test(node.parent.name.text)) {
-      addExpressionLiterals(messages, node);
+      if (ts.isArrayLiteralExpression(node)) {
+        // Option tuples are [label, value]; only the label is copy.
+        node.elements.forEach((element) => addExpressionLiterals(
+          messages,
+          ts.isArrayLiteralExpression(element) && element.elements.length > 0 ? element.elements[0] : element
+        ));
+      } else {
+        addExpressionLiterals(messages, node);
+      }
     }
     ts.forEachChild(node, visit);
   }

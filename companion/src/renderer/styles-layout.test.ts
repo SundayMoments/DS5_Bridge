@@ -12,7 +12,6 @@ import {
 } from './ui-themes';
 
 const styles = rendererStyles();
-const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const palettesSource = rendererStyleModule('styles/theme-palettes.css');
 const tokensSource = rendererStyleModule('styles/theme-tokens.css');
 const ds5ThemeSource = rendererStyleModule('styles/theme-ds5.css');
@@ -94,7 +93,8 @@ describe('companion layout CSS', () => {
   });
 
   it('content-sizes the system profile panel so summary rows stay inside its border', () => {
-    const systemPage = cssBlock('.system-page', 'grid-template-rows: auto minmax(0, 1fr) 148px;');
+    // System cards match the other pages' 326px row; the profile panel keeps at least 148px.
+    const systemPage = cssBlock('.system-page', 'grid-template-rows: auto minmax(0, 326px) minmax(148px, 1fr);');
     expect(systemPage).toContain('height: 100%;');
     expect(systemPage).toContain('min-height: 0;');
     const profilePanel = cssBlock('.system-profile-panel', 'grid-template-rows: auto minmax(0, 1fr);');
@@ -124,13 +124,6 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.behavior-card .lighting-status', 'grid-row: 5;')).toContain('grid-row: 5;');
     expect(cssBlock('.behavior-card .light-color-panel', 'grid-row: 3 / 5;')).toContain('grid-row: 3 / 5;');
     expect(cssBlock('.light-color-meta', 'grid-row: 3;')).toContain('grid-row: 3;');
-  });
-
-  it('keeps system card subtitles short enough for shared headers', () => {
-    expect(appSource).toContain("'Firmware'");
-    expect(appSource).toContain("'Debug Data'");
-    expect(appSource).not.toContain('Firmware and polling.');
-    expect(appSource).not.toContain('Protocol and debug data.');
   });
 
   it('keeps feature cards visually aligned with the darker tips surface', () => {
@@ -176,36 +169,14 @@ describe('companion layout CSS', () => {
     expect(themeOptionSource).toContain('<span className="theme-option" data-theme-preview={value}>');
   });
 
-  it('uses the cached theme and branded panel for the startup loading state', () => {
+  it('starts in the cached theme with placeholder cards instead of a splash screen', () => {
+    // Rendering in the cached theme before the first snapshot, without a splash screen,
+    // is covered in features/startup/startup.rendered.test.tsx.
     expect(UI_THEME_PRESET_STORAGE_KEY).toBe('ds5bridge.uiThemePreset');
-    expect(appSource).toContain("const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';");
-    expect(appSource).toContain('const STARTUP_READY_HOLD_MS = 1000;');
-    expect(appSource).toContain('useState<UiThemePreset>(storedUiThemePreset)');
-    expect(appSource).toContain('function storedStartupTutorialStep()');
-    expect(appSource).toContain('function saveStartupTutorialCompleted()');
-    expect(appSource).toContain('function StartupScreen({ ready }: { ready: boolean })');
-    expect(appSource).toContain('const startupReadyArmedRef = useRef(false);');
-    expect(appSource).toContain("const [startupTutorialStep, setStartupTutorialStep] = useState<StartupTutorialStep>(storedStartupTutorialStep);");
-    expect(appSource).toContain('saveStartupTutorialCompleted();');
-    expect(appSource).toContain('}, [Boolean(snapshot), startupVisible]);');
-    expect(appSource).not.toContain('}, [snapshot, startupVisible]);');
-    expect(appSource).toContain('<StartupScreen ready={Boolean(snapshot)} />');
-    expect(appSource).not.toContain('>Starting bridge companion</div>');
-    expect(cssBlock('.loading', 'grid-template-rows: minmax(0, 1fr);')).toContain('place-items: center;');
-    expect(cssBlock('.startup-card', 'background: var(--surface-card);')).toContain(
-      'border: 1px solid var(--surface-border-strong);'
+    expect(normalizedStyles).not.toContain('startup-progress');
+    expect(cssBlock('.startup-placeholder-grid span', 'background: var(--surface-card);')).toContain(
+      'border: 1px solid var(--surface-border);'
     );
-    const startupProgress = cssBlock('.startup-progress span', 'animation: startup-progress-prime 180ms ease-out forwards;');
-    expect(startupProgress).toContain('background: var(--accent-selected);');
-    expect(startupProgress).toContain('transform: scaleX(0);');
-    expect(startupProgress).toContain('transform-origin: left center;');
-    expect(cssBlock('.startup-screen.ready .startup-progress span', 'animation: startup-progress-complete 1000ms ease-out forwards;')).toContain(
-      'animation: startup-progress-complete 1000ms ease-out forwards;'
-    );
-    expect(normalizedStyles).toContain('@keyframes startup-progress-prime');
-    expect(normalizedStyles).toContain('transform: scaleX(0.84);');
-    expect(normalizedStyles).toContain('@keyframes startup-progress-complete');
-    expect(normalizedStyles).toContain('transform: scaleX(1);');
   });
 
   it('keeps theme window bars and sidebars flat instead of gradient layered', () => {
@@ -228,7 +199,7 @@ describe('companion layout CSS', () => {
   it('keeps the DS5 mark in brand blue while its primary shape follows the theme text', () => {
     expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-primary)"');
     expect(bridgeMarkSource).toContain('fill="var(--bridge-mark-secondary)"');
-    expect(appSource).not.toContain('bridgeMarkUrl');
+    // The mark renders as inline SVG in features/startup/startup.rendered.test.tsx.
     const ds5Theme = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--bridge-mark-primary:');
     expect(ds5Theme).toContain('--bridge-mark-primary: #ffffff;');
     expect(ds5Theme).toContain('--bridge-mark-secondary: #046fff;');
@@ -330,9 +301,7 @@ describe('companion layout CSS', () => {
     expect(profileButtonBlock).toContain('font-weight: var(--font-weight-strong);');
     expect(profileButtonBlock).toContain('box-shadow: none;');
     expect(cssBlock('.system-profile-save-status', 'min-width: 0;')).not.toContain('background:');
-    expect(appSource).toContain('function ProfileSaveStatus()');
-    expect(appSource).toContain('autosave-check-outline');
-    expect(appSource).toContain('autosave-check-fill');
+    // The markup is rendered in common/FeatureTipsPanel.rendered.test.tsx.
     expect(cssBlock('.autosave-check-outline', 'color: #ffffff;')).toContain('stroke-width: 5;');
     expect(cssBlock('.autosave-check-fill', 'color: var(--success);')).toContain('stroke-width: 2.5;');
   });
@@ -362,9 +331,8 @@ describe('companion layout CSS', () => {
   });
 
   it('renders the Power Saving Green Icon tip as the filled success tile with a white glyph', () => {
+    // The tip renders with the success class in common/FeatureTipsPanel.rendered.test.tsx.
     const successTip = cssBlock('.feature-help-icon.success', 'background: var(--success-selected);');
-    expect(appSource).toContain("title: 'Green Icon'");
-    expect(appSource).toContain("tone: 'success'");
     expect(successTip).toContain('color: #ffffff;');
     expect(successTip).toContain('border-color: var(--success-border-strong);');
     expect(successTip).toContain('background: var(--success-selected);');
@@ -432,21 +400,17 @@ describe('companion layout CSS', () => {
     expect(ds5Chips).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);');
   });
 
-  it('uses the main haptics gain control in the Audio Haptics card', () => {
-    expect(appSource).not.toContain('AUDIO_REACTIVE_HAPTICS_GAIN_PERCENT');
-    expect(appSource).not.toContain('audioReactiveHapticsGainValue');
-    expect(appSource).not.toContain('commitAudioReactiveHapticsGain');
-    expect(appSource).not.toContain('setAudioReactiveHapticsPreset');
-    expect(appSource).toContain('aria-label="Haptics gain"');
-    expect(appSource).toContain('value={hapticsValue}');
-    expect(appSource).toContain('max={hapticsSliderMax}');
-    expect(appSource).toContain('onPointerUp={() => void commitHapticsValue()}');
-    expect(appSource).toContain('{HAPTICS_PRESETS.map(([label, value]) => {');
-    expect(appSource).toContain('onClick={() => setHapticsPreset(presetValue)}');
+  it('has no separate audio haptics gain', () => {
+    // The Audio Haptics card's use of the main haptics gain is rendered in
+    // features/controller-feedback/ControllerFeedbackPage.rendered.test.tsx.
+    const labSource = readFileSync(new URL('./features/audio-haptics-lab/use-audio-haptics-lab-controller.ts', import.meta.url), 'utf8');
+    for (const retired of ['AUDIO_REACTIVE_HAPTICS_GAIN_PERCENT', 'audioReactiveHapticsGainValue', 'commitAudioReactiveHapticsGain', 'setAudioReactiveHapticsPreset']) {
+      expect(labSource).not.toContain(retired);
+    }
   });
 
   it('keeps the audio buffer length control compact and aligned', () => {
-    expect(appSource).toContain("className={`audio-buffer-control framed-slider ${audioBufferLengthControlDisabled ? 'disabled' : ''}`}");
+    // The markup is rendered in features/controller-audio/ControllerAudioPage.rendered.test.tsx.
     expect(cssBlock('.audio-secondary-controls', 'margin-top: 8px;')).toContain('align-content: stretch;');
     expect(cssBlock('.audio-buffer-control', 'padding: 14px 18px;')).toContain('overflow: visible;');
     expect(cssBlock('.audio-buffer-control.disabled', 'opacity: 0.58;')).toContain('opacity: 0.58;');
@@ -547,7 +511,6 @@ describe('companion layout CSS', () => {
   });
 
   it('sets the Settings page in the shared type tokens and grouped rows', () => {
-    expect(appSource).not.toContain('bridge-settings-preferences-modal');
     expect(styles).not.toContain('.bridge-settings-preferences-modal');
     expect(cssBlockIn(settingsPageStyles, '.settings-page-heading h2', 'font-size: var(--font-size-title);'))
       .toContain('font-weight: var(--font-weight-semibold);');
@@ -585,7 +548,13 @@ describe('companion layout CSS', () => {
       .toContain('min-height: 0;');
     const list = cssBlockIn(shellSidebarSource, '.control-tab-list', 'overflow-y: auto;');
     expect(list).toContain('-webkit-app-region: no-drag;');
-    expect(cssBlockIn(shellSidebarSource, '.sidebar-footer', 'display: grid;')).toContain('-webkit-app-region: no-drag;');
+    expect(cssBlockIn(shellSidebarSource, '.control-tabs > .control-tab-button.utility', '-webkit-app-region: no-drag;'))
+      .toContain('-webkit-app-region: no-drag;');
+    // The section label sits 12px under the bridge selector, as in Kitsune Input.
+    expect(cssBlockIn(shellSidebarSource, '.sidebar-controls', 'margin-top: 12px;')).toContain('gap: 8px;');
+    expect(shellSidebarSource).not.toContain('.sidebar-footer');
+    expect(cssBlockIn(rendererStyleModule('styles/app-shell.css'), '.shell-kofi-link', 'height: 26px;'))
+      .toContain('background: transparent;');
     expect(cssBlock('.app-content', 'grid-template-columns: var(--sidebar-width) minmax(0, 1fr);'))
       .toContain('background: var(--sidebar-bg);');
     expect(cssBlock('.app-content::before', 'border-radius: var(--workspace-corner-radius) 0 0 0;'))

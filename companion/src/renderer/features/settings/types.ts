@@ -1,4 +1,6 @@
 import type { CompanionSettings, UiScalePercent, UiTextScalePercent, UiThemePreset } from '@shared/types';
+import type { WakeOnLanApi } from '@shared/wake-on-lan-types';
+import type { ResetEvidencePayload } from '@shared/protocol';
 import type { SettingsFocusTarget } from './settings-navigation';
 
 /** Everything the Settings page reads. Values come straight from the bridge snapshot. */
@@ -39,6 +41,16 @@ export interface SettingsPageModel {
     readonly message: string | null;
     readonly error: string | null;
   };
+  readonly wakeOnLan: {
+    /** Changes when the bridge connects or disconnects or the controller comes and goes. */
+    readonly connectionKey: string;
+    readonly controllerConnected: boolean;
+  };
+  readonly bridgeHealth: {
+    readonly firmwareVersion: string | null;
+    /** Why the bridge last reset; null or missing when its firmware does not report it. */
+    readonly resetEvidence: ResetEvidencePayload | null | undefined;
+  };
 }
 
 export interface SettingsPageActions {
@@ -67,4 +79,6 @@ export interface SettingsPageActions {
   flashPicoFirmware(): void;
   nukePicoFlash(): void;
   openExternal(url: string): void;
+  /** The bridge's Wake-on-LAN calls; each rejects with a message ready to show. */
+  readonly wakeOnLan: WakeOnLanApi;
 }

@@ -1,6 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/inter/standard.css';
+// Montserrat sets the DS5 Bridge wordmark in the window bar and sidebar.
+import '@fontsource/montserrat/latin-500.css';
+import '@fontsource/montserrat/latin-600.css';
 // The base stylesheet loads first so feature stylesheets imported by components cascade after it.
 import './styles.css';
 import { App } from './App';

@@ -3363,6 +3363,18 @@ describe('BridgeService', () => {
     expect(snapshot.settings.kitsuneInputPromotionDismissed).toBe(true);
   });
 
+  it('marks the one-time Kitsune Input offer shown and tells the renderer', () => {
+    const service = serviceFixture();
+    const emitted: boolean[] = [];
+    service.on('snapshot', (snapshot: { settings: { kitsuneInputLaunchOfferShown: boolean } }) => {
+      emitted.push(snapshot.settings.kitsuneInputLaunchOfferShown);
+    });
+
+    expect(service.getSnapshot().settings.kitsuneInputLaunchOfferShown).toBe(false);
+    expect(service.markKitsuneInputLaunchOfferShown().settings.kitsuneInputLaunchOfferShown).toBe(true);
+    expect(emitted).toEqual([true]);
+  });
+
   it('emits controller connect and disconnect toasts on status transitions', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();

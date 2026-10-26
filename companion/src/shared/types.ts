@@ -57,6 +57,8 @@ export interface CompanionSettings {
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
   kitsuneInputPromotionDismissed: boolean;
+  /** Set once the one-time Kitsune Input offer has been shown; it never shows again. */
+  kitsuneInputLaunchOfferShown: boolean;
   firmwareLogDirectory: string | null;
   leftStickRadialDeadzonePercent: number;
   rightStickRadialDeadzonePercent: number;

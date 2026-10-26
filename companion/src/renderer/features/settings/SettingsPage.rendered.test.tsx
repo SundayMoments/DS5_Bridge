@@ -49,6 +49,8 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
     support: { usbSuspendDisconnect: true, wakeOnConnect: true, sleepController: true },
     focusTarget: null,
     picoFirmware: { message: null, error: null },
+    wakeOnLan: { connectionKey: 'connected', controllerConnected: false },
+    bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null },
     ...overrides
   };
 }
@@ -61,7 +63,15 @@ function createActions(): SettingsPageActions & Record<string, ReturnType<typeof
     'toggleLightbarRestore', 'toggleEdgeProfileSwitching', 'toggleSleepShortcut', 'toggleVolumeShortcut',
     'toggleWakeOnConnect', 'mountPicoBootloader', 'flashPicoFirmware', 'nukePicoFlash', 'openExternal'
   ];
-  return Object.fromEntries(names.map((name) => [name, vi.fn()])) as never;
+  const wakeOnLan = {
+    getWakeOnLan: vi.fn(async () => ({ supported: false, availableCountries: [], configured: false } as never)),
+    getWakeOnLanTargets: vi.fn(async () => []),
+    configureWakeOnLan: vi.fn(),
+    setWakeOnLanEnabled: vi.fn(),
+    forgetWakeOnLan: vi.fn(),
+    cancelWakeOnLan: vi.fn()
+  };
+  return { ...Object.fromEntries(names.map((name) => [name, vi.fn()])), wakeOnLan } as never;
 }
 
 function Harness({ model, actions, onBack = vi.fn(), focusTarget = null }: {
@@ -118,7 +128,7 @@ describe('Settings page', () => {
     expect(groups).toEqual([
       { label: 'App', sections: ['General', 'Appearance', 'Notifications'] },
       { label: 'Controller & Bridge', sections: ['Connection & Power', 'Lights & Indicators', 'Shortcuts'] },
-      { label: 'System', sections: ['PC Wake', 'Bridge Firmware', 'Help & About'] }
+      { label: 'System', sections: ['Wake PC', 'Bridge Firmware', 'Help & About'] }
     ]);
     expect(host.querySelector('.header-probe')).not.toBeNull();
     expect(host.querySelector('#settings-page-title')?.textContent).toBe('General');
@@ -139,7 +149,7 @@ describe('Settings page', () => {
       ['Lights & Indicators', 'Player LEDs', 'togglePlayerLed'],
       ['Lights & Indicators', 'Automatic Restore', 'toggleLightbarRestore'],
       ['Shortcuts', 'Block Edge Profile Switching', 'toggleEdgeProfileSwitching'],
-      ['PC Wake', 'Wake PC on Controller', 'toggleWakeOnConnect']
+      ['Wake PC', 'Wake PC on Controller', 'toggleWakeOnConnect']
     ];
     for (const [section, label, action] of expectations) {
       act(() => sectionButton(host, section).click());
@@ -185,6 +195,23 @@ describe('Settings page', () => {
     expect(host.querySelector('.pico-firmware-message.bad')?.textContent).toBe('Drive missing');
   });
 
+  it('shows the last restart under the firmware tools when the firmware reports it', () => {
+    const resetEvidence = {
+      watchdogReset: true, evidenceValid: true, phase: 'companion', reason: 'watchdog-timeout',
+      consecutiveAbnormalResets: 1, uptimeBeforeResetMs: 600_000, detail: 0, uptimeMs: 5_000
+    };
+    const host = render(<Harness model={baseModel({ bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence } })} actions={createActions()} />);
+    act(() => sectionButton(host, 'Bridge Firmware').click());
+    const row = host.querySelector('#settings-section-maintenance .last-restart-row');
+    expect(row?.querySelector('.last-restart-text')?.textContent).toBe('Recovered from a system freeze in app commands after 10m');
+
+    act(() => root?.unmount());
+    root = null;
+    const older = render(<Harness model={baseModel()} actions={createActions()} />);
+    act(() => sectionButton(older, 'Bridge Firmware').click());
+    expect(older.querySelector('.last-restart-row')).toBeNull();
+  });
+
   it('links Discord and GitHub from Help & About', () => {
     const actions = createActions();
     const host = render(<Harness model={baseModel()} actions={actions} />);
@@ -209,14 +236,14 @@ describe('Settings page', () => {
       model={baseModel({ support: { usbSuspendDisconnect: true, wakeOnConnect: false, sleepController: true } })}
       actions={createActions()}
     />);
-    act(() => sectionButton(host, 'PC Wake').click());
+    act(() => sectionButton(host, 'Wake PC').click());
     expect(rowSwitch(host, 'Wake PC on Controller').disabled).toBe(true);
     expect(host.querySelector('.settings-unavailable-reason')?.textContent).toBe('Not supported by this bridge firmware.');
   });
 
   it('searches across sections and reports the result count', () => {
     const host = render(<Harness model={baseModel()} actions={createActions()} />);
-    search(host, 'wake');
+    search(host, 'magic packet');
     expect(host.querySelector('#settings-page-title')?.textContent).toBe('Search results');
     expect(host.querySelector('#settings-search-status')?.textContent).toBe('1 match');
     const visible = [...host.querySelectorAll('.settings-category-section:not([hidden])')]
