@@ -50,6 +50,13 @@ bool bt_disconnect_with_intent(BtControllerDisconnectIntent intent);
 bool bt_expected_disconnect_pending();
 bool bt_power_off_controller();
 bool bt_request_scan();
+// Wake-on-LAN: no controller link, pairing or recent incoming page.
+bool bt_wake_controllers_quiet();
+// Suspends (or restores) page and inquiry scans while Wi-Fi owns the radio.
+void bt_set_wake_radio_quiet(bool quiet);
+// The controller has confirmed scans are off; Wi-Fi may start.
+bool bt_wake_radio_ready();
+void bt_quiesce_gameplay_output();
 bool bt_forget_pairings();
 bool bt_forget_pairing(uint8_t address[6]);
 bool bt_get_device_identity(BtDeviceIdentitySnapshot *snapshot);

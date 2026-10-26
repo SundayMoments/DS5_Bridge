@@ -12,8 +12,8 @@ namespace {
 // 20 bits, the current main-loop phase in five bits, and a seven-bit checksum
 // over scratch 1-3. Scratch 1 holds the reset reason and the consecutive
 // abnormal-reset count, scratch 2 the uptime at the last heartbeat, and
-// scratch 3 reason-specific detail. Scratch 4-7 belong to the SDK's watchdog
-// reboot mode.
+// scratch 3 reason-specific detail. Scratch 4 belongs to the SDK's watchdog
+// reboot mode, and 5-7 hold the Wake-on-LAN radio marker (wake_on_lan.cpp).
 constexpr uint32_t kScratchSignature = 0x44542000u;
 constexpr uint32_t kScratchSignatureMask = 0xfffff000u;
 constexpr uint8_t kScratchPhaseShift = 7u;
@@ -203,6 +203,8 @@ const char *watchdog_telemetry_phase_name(uint8_t phase) {
             return "cyw43-second";
         case WatchdogMainLoopPhase::InterruptAfterCyw43:
             return "interrupt-after-cyw43";
+        case WatchdogMainLoopPhase::WakeOnLan:
+            return "wake-on-lan";
         default:
             return "unknown";
     }

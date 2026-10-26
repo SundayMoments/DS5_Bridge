@@ -19,6 +19,9 @@
 #include "persona/host_persona.h"
 #include "radial_deadzone.h"
 #include "trigger_motor_power.h"
+#include "wake_on_lan.h"
+#include "wake_on_lan_domain.h"
+#include "watchdog_telemetry.h"
 #include "pico/critical_section.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
@@ -39,6 +42,8 @@ namespace {
 constexpr uint8_t kMagic[] = {'D', 'S', '5', 'B'};
 constexpr uint8_t kProtocolMajor = 1;
 constexpr uint8_t kProtocolMinor = 24;
+static_assert(kProtocolMinor == ds5::wake_on_lan::kProtocolMinor);
+static_assert(COMPANION_REPORT_WAKE_ON_LAN == ds5::wake_on_lan::kStatusReportId);
 constexpr uint8_t kProtocolMinSupportedMinor = 7;
 static_assert(DS5_FIRMWARE_VERSION_MAJOR <= 255);
 static_assert(DS5_FIRMWARE_VERSION_MINOR <= 255);
@@ -170,6 +175,9 @@ enum CommandId : uint8_t {
     CommandSetLightbarRestoreEnabled = 0x36,
     CommandSetRadialDeadzones = 0x37,
     CommandSetEdgeProfileSwitchingBlocked = 0x45,
+    // Wake-on-LAN: the opcode is in value, its arguments in the payload. It
+    // is queued here and run from the main loop (companion_wake_command_poll).
+    CommandWakeOnLan = 0x57,
 };
 
 enum AckResult : uint8_t {
@@ -401,6 +409,10 @@ uint8_t companion_mic_volume_percent = 100;
 bool companion_mic_muted = false;
 bool companion_mic_enabled = false;
 uint8_t button_remap[RemapButtonCount]{};
+// One queued Wake-on-LAN command. It may carry the Wi-Fi password and is
+// erased as soon as the engine has consumed it.
+uint8_t pending_wake_command[COMPANION_PAYLOAD_SIZE]{};
+bool wake_command_pending = false;
 
 struct LastAck {
     uint8_t command_id = 0;
@@ -1820,6 +1832,30 @@ uint16_t build_device_identity(uint8_t *buffer, uint16_t reqlen) {
     return COMPANION_PAYLOAD_SIZE;
 }
 
+// Why the bridge last reset, captured at boot from the watchdog scratch
+// registers (watchdog_telemetry.h), so crashes can be read without a UART.
+uint16_t build_reset_evidence(uint8_t *buffer, uint16_t reqlen) {
+    if (reqlen < COMPANION_PAYLOAD_SIZE) {
+        return 0;
+    }
+
+    memset(buffer, 0, COMPANION_PAYLOAD_SIZE);
+    write_magic_and_version(buffer);
+    buffer[6] = 1; // Reset evidence schema version.
+    WatchdogTelemetrySnapshot snapshot{};
+    watchdog_telemetry_snapshot(&snapshot);
+    buffer[7] =
+        (snapshot.prior_watchdog_timeout ? 0x01 : 0x00)
+        | (snapshot.prior_snapshot_valid ? 0x02 : 0x00);
+    buffer[8] = snapshot.prior_phase;
+    buffer[9] = static_cast<uint8_t>(snapshot.prior_reason);
+    buffer[10] = snapshot.prior_abnormal_reset_count;
+    write_u32(buffer + 11, snapshot.prior_uptime_ms);
+    write_u32(buffer + 15, snapshot.prior_detail);
+    write_u32(buffer + 19, to_ms_since_boot(get_absolute_time()));
+    return COMPANION_PAYLOAD_SIZE;
+}
+
 uint16_t build_input_report(uint8_t *buffer, uint16_t reqlen) {
     if (reqlen < COMPANION_PAYLOAD_SIZE) {
         return 0;
@@ -2280,6 +2316,22 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
 
     const uint16_t value = read_u16(buffer + 8);
     const uint8_t protocol_minor = buffer[5];
+    if (command_id == CommandWakeOnLan) {
+        if (protocol_minor < ds5::wake_on_lan::kProtocolMinor) {
+            set_ack(command_id, sequence, AckBadVersion);
+        } else if (wake_command_pending) {
+            set_ack(command_id, sequence, AckBusy);
+        } else {
+            memcpy(pending_wake_command, buffer, sizeof(pending_wake_command));
+            wake_command_pending = true;
+        }
+        return;
+    }
+    // Wi-Fi owns the radio; everything else waits until it is released.
+    if (wake_on_lan_quiet_gate()) {
+        set_ack(command_id, sequence, AckBusy);
+        return;
+    }
     if (ds5::bootloader_maintenance::is_maintenance_command(command_id)) {
         const auto result = ds5::bootloader_maintenance::execute(
             bootloader_maintenance_context(),
@@ -3365,7 +3417,28 @@ void companion_init() {
 #endif
 }
 
+void companion_wake_command_poll() {
+    if (!wake_command_pending) {
+        return;
+    }
+    const uint8_t sequence = pending_wake_command[7];
+    const auto result = static_cast<AckResult>(wake_on_lan_command(
+        read_u16(pending_wake_command + 8),
+        pending_wake_command + 10,
+        COMPANION_PAYLOAD_SIZE - 10
+    ));
+    volatile uint8_t *secret = pending_wake_command;
+    for (size_t i = 0; i < sizeof(pending_wake_command); ++i) {
+        secret[i] = 0;
+    }
+    wake_command_pending = false;
+    set_ack(CommandWakeOnLan, sequence, result);
+}
+
 void companion_loop() {
+    if (wake_on_lan_quiet_gate()) {
+        return;
+    }
 #if DS5_FEEDBACK_TRACE_ENABLED && DS5_DEBUG_LOGS_ENABLED
     feedback_trace_uart_loop();
 #endif
@@ -3675,11 +3748,23 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
     }
 
     switch (report_id) {
+        case COMPANION_REPORT_WAKE_ON_LAN: {
+            if (buffer == nullptr || reqlen < COMPANION_PAYLOAD_SIZE) {
+                return 0;
+            }
+            uint8_t report[64]{};
+            wake_on_lan_encode_status(report, sizeof(report));
+            memcpy(buffer, report + 1, COMPANION_PAYLOAD_SIZE);
+            return COMPANION_PAYLOAD_SIZE;
+        }
         case COMPANION_REPORT_STATUS:
             return build_status(buffer, reqlen);
         case COMPANION_REPORT_ACK:
             return build_ack(buffer, reqlen);
         case COMPANION_REPORT_INPUT:
+            if (wake_on_lan_quiet_gate()) {
+                return 0;
+            }
             return build_input_report(buffer, reqlen);
 #if DS5_AUDIO_DEBUG_ENABLED
         case COMPANION_REPORT_AUDIO_DEBUG:
@@ -3695,6 +3780,8 @@ uint16_t companion_get_report(uint8_t report_id, hid_report_type_t report_type, 
             return build_firmware_log(buffer, reqlen);
         case COMPANION_REPORT_BOOTLOADER_AUTHORIZATION:
             return build_bootloader_authorization(buffer, reqlen);
+        case COMPANION_REPORT_RESET_EVIDENCE:
+            return build_reset_evidence(buffer, reqlen);
 #if DS5_TRIGGER_TRACE_ENABLED
         case COMPANION_REPORT_TRIGGER_TRACE:
             return build_trigger_trace(buffer, reqlen);

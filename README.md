@@ -17,9 +17,9 @@
 </p>
 
 <p align="center">
-  <strong>DS5 Bridge 1.7.1 is live.</strong><br>
-  This release includes controller microphone support, Audio Haptics, Trigger
-  Lab, controller personas, chords, and companion firmware tools.
+  <strong>DS5 Bridge 2.0 is live.</strong><br>
+  A redesigned, translated companion app, Wake-on-LAN from the controller,
+  firmware updates confirmed on the controller, and a steadier connection.
 </p>
 
 DS5 Bridge lets you use a real Sony DualSense or DualSense Edge controller
@@ -74,7 +74,37 @@ on the controller until its lightbar rapidly blinks blue.
 - Remap buttons and assign chord shortcuts.
 - Switch the host persona between DualSense, DualSense Edge, DualShock 4, and Xbox modes.
 - See Bluetooth signal quality at a glance.
-- Mount, flash, or nuke Pico firmware from Bridge Settings.
+- Wake a sleeping or shut-down PC by turning on the controller (Wake-on-LAN).
+- Mount, flash, or nuke Pico firmware from Settings, confirmed with a button
+  sequence on the controller.
+- Use the app in several languages.
+
+## Wake PC (Wake-on-LAN)
+
+When your PC sleeps or shuts down, turning on the controller can wake it. The
+bridge first tries a normal USB wake, then joins your Wi-Fi and sends a
+Wake-on-LAN packet to the PC's Ethernet adapter. The companion app does not
+need to be running.
+
+1. In Windows Device Manager, open your Ethernet adapter's properties and
+   enable **Wake on Magic Packet** (and, if listed, **Wake on magic packet
+   from power off state**). The PC must be wired to the same network.
+2. Turn off the controller, then open **Settings > Wake PC** in DS5 Bridge.
+3. Enter your Wi-Fi name and password (WPA2), choose your country and the
+   Ethernet adapter, and select **Test and save**. The bridge joins the network
+   once to check it; the password stays on the bridge and is never shown again.
+
+Only a controller already paired with the bridge can wake the PC; a new
+pairing never does. While the bridge uses Wi-Fi, it pauses the controller for
+a few seconds.
+
+## Firmware Updates From the App
+
+**Mount**, **Flash**, and **Nuke** ask you to press a short sequence of face
+buttons on the connected controller before the Pico enters USB flashing mode,
+so no other program on the PC can reflash the bridge. The first time, the app
+pairs this PC with the bridge the same way. Three brief `BOOTSEL` presses, or
+holding `BOOTSEL` while plugging in the Pico, still work without the app.
 
 ## Explore Kitsune Input
 
@@ -184,10 +214,11 @@ saved but inactive.
   <img src="assets/readme/app-chords.png" width="680" alt="Chord assignment controls in the DS5 Bridge companion app">
 </p>
 
-### Bridge Settings
+### Settings
 
-Set theme, UI scale, tray and startup behavior, firmware maintenance, power
-saving, LEDs, shortcuts, idle disconnect, and PC sleep disconnect.
+Set language, theme, UI scale, tray and startup behavior, firmware maintenance,
+Wake PC, power saving, LEDs, shortcuts, idle disconnect, and PC sleep
+disconnect.
 
 <p align="center">
   <img src="assets/readme/app-bridge-settings.png" width="680" alt="Bridge Settings dialog in the DS5 Bridge companion app">
@@ -209,6 +240,10 @@ saving, LEDs, shortcuts, idle disconnect, and PC sleep disconnect.
   [Windows device cleanup](docs/windows-device-cleanup.md) or System >
   Emergency Device Repair.
 - Battery level may be inaccurate while the controller is charging.
+- If Wake PC does not wake the computer, check that the PC is wired by
+  Ethernet, that **Wake on Magic Packet** is enabled for that adapter, and that
+  Windows Fast Startup is off if the PC was shut down rather than asleep. The
+  bridge only joins 2.4 GHz WPA2 networks.
 
 ## Requirements
 
@@ -233,6 +268,8 @@ steps.
 | `src/companion.cpp` | Vendor HID companion protocol, status reports, command ACKs, and runtime setting dispatch. |
 | `src/usb.cpp` | TinyUSB audio control callbacks and runtime settings fallback. |
 | `src/usb_descriptors.c` | USB device, configuration, HID report, audio, and string descriptors. |
+| `src/wake_on_lan*.{h,cpp}` | Wake-on-LAN engine, flash store, and the CYW43 Wi-Fi adapter that sends the magic packet. |
+| `src/bootloader_*.{h,cpp}` | Controller-confirmed, HMAC-authorized entry into USB flashing mode. |
 | `companion/` | Electron companion app source, protocol parser, HID service, assets, and UI. |
 | `companion/native/AudioHelper/` | Windows audio helper used by the companion app for audio sessions, haptics mirroring, endpoint setup, and media integrations. |
 | `.github/workflows` | CI and release builds. |

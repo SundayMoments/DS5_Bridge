@@ -90,6 +90,111 @@ function(ds5_generate_cyw43_shared_bus source output)
     file(CONFIGURE OUTPUT "${output}" CONTENT "${patched}" @ONLY NEWLINE_STYLE LF)
 endfunction()
 
+# Wake-on-LAN (ported from Kitsune Input). The pinned driver otherwise ACKs
+# firmware-rejected ioctls as success: match request IDs before checking the
+# CDC error bit and status, preserving event and HCI processing while waiting.
+# The station PMK is scrubbed from the stack and the shared SPI buffer once its
+# ioctl completes, and WLAN startup suppresses events the bridge never uses.
+function(ds5_patch_cyw43_ioctl content_var)
+    set(source "${${content_var}}")
+    ds5_cyw43_read_fragment(cyw43_wol_guards.inc guards)
+    ds5_cyw43_replace_once(source
+        "#define DATA_HEADER (2)"
+        "#define DATA_HEADER (2)\n${guards}\n// Internal receive result, never a transmitted SDPCM channel.\n#define DS5_CONTROL_ERROR (3)"
+        "packet result definitions")
+    set(anchor "            // TODO extract and check/use the interface number from ioctl_header->flags")
+    set(check [=[            // CDCF_IOC_ERROR is bit 0; bit 1 is the ordinary SET flag.
+            if (ds5_cyw43_ioctl_failed(ioctl_header->status, ioctl_header->flags)) {
+                *out_len = 0;
+                *out_buf = NULL;
+                return DS5_CONTROL_ERROR;
+            }
+]=])
+    ds5_cyw43_replace_once(source "${anchor}" "${check}${anchor}" "matched ioctl response")
+    set(anchor "        if (ret == CONTROL_HEADER) {\n            #if CYW43_USE_STATS")
+    ds5_cyw43_replace_once(source "${anchor}"
+        "        if (ret == DS5_CONTROL_ERROR) {\n            return -CYW43_EIO;\n        }\n${anchor}"
+        "ioctl wait")
+    # cyw43_send_ioctl() copies the payload into self->spid_buf after the SDPCM
+    # and ioctl headers, and the firmware's echoed response is read back into
+    # the same place. Later short commands overwrite only the first bytes, and
+    # Bluetooth transfers never reach it, so scrub that region as well as the
+    # stack copy.
+    set(anchor "        cyw43_do_ioctl(self, SDPCM_SET, WLC_SET_WSEC_PMK, 4 + CYW43_WPA_MAX_PASSWORD_LEN, buf, WWD_STA_INTERFACE); // 68, see wsec_pmk_t")
+    ds5_cyw43_replace_once(source "${anchor}"
+        "${anchor}\n        // The synchronous ioctl has completed. Scrub the stack copy and the\n        // shared SPI transfer buffer, which holds the request and the echoed\n        // response; short later commands would leave the password tail there.\n        ds5_cyw43_erase_secret(buf, 4 + CYW43_WPA_MAX_PASSWORD_LEN);\n        ds5_cyw43_erase_transfer_secret(self->spid_buf, sizeof(self->spid_buf),\n            SDPCM_HEADER_LEN + IOCTL_HEADER_LEN + 4 + CYW43_WPA_MAX_PASSWORD_LEN);"
+        "station PMK buffer")
+    ds5_cyw43_read_fragment(cyw43_wol_event_mask.inc event_mask)
+    set(anchor "int cyw43_ll_wifi_on(cyw43_ll_t *self_in, uint32_t country) {")
+    ds5_cyw43_replace_once(source "${anchor}" "${event_mask}\n${anchor}" "WLAN startup")
+    string(FIND "${source}" "    // Clear all async events\n" start)
+    set(anchor "    cyw43_do_ioctl(self, SDPCM_SET, WLC_SET_VAR, 18 + 4 + 19, buf, WWD_STA_INTERFACE);")
+    string(FIND "${source}" "${anchor}" end)
+    if(start LESS 0 OR end LESS start)
+        message(FATAL_ERROR "Audited CYW43 boundary changed: WLAN event mask")
+    endif()
+    string(LENGTH "${anchor}" anchor_length)
+    math(EXPR length "${end} + ${anchor_length} - ${start}")
+    string(SUBSTRING "${source}" ${start} ${length} original_mask)
+    string(REPLACE "${original_mask}"
+        "    int event_result = ds5_cyw43_enable_wifi_events(self, buf);\n    if (event_result != 0) return event_result;"
+        source "${source}")
+    set(${content_var} "${source}" PARENT_SCOPE)
+endfunction()
+
+# Wake-on-LAN station control. WLAN events and deferred rejoin work are dropped
+# unless the radio adapter allows WLAN, an RSN-mismatch retry is never
+# downgraded to WPA1 PSK, and the join state is reset before each SET_SSID so a
+# missed scan can be re-issued.
+function(ds5_generate_cyw43_wol_ctrl source output)
+    ds5_cyw43_read_pinned("${source}"
+        "c87785fa3791a12068f28d0de6c057351c467414b134dd4ffe77cad58952a776" ctrl)
+    ds5_cyw43_read_fragment(cyw43_wol_guards.inc guards)
+    ds5_cyw43_replace_once(ctrl
+        "static void cyw43_poll_func(void) {"
+        "${guards}\nstatic void ds5_cyw43_wifi_rejoin(cyw43_t *self);\n\nstatic void cyw43_poll_func(void) {"
+        "poll function")
+    set(guard [=[    // A queued late event must never reissue SET_SSID after WLAN teardown.
+    // Keep this after packet/HCI processing and before any deferred WLAN work.
+    ds5_cyw43_cancel_disabled_work(&self->pend_rejoin, &self->pend_rejoin_wpa, &self->pend_disassoc);
+
+]=])
+    ds5_cyw43_replace_once(ctrl "    if (self->pend_disassoc) {" "${guard}    if (self->pend_disassoc) {"
+        "deferred disassociation")
+    # PRUNE reason 8 (RSN mismatch) makes the stock poll switch the station to
+    # WPA1 PSK and re-issue the join, which can admit a WPA1-CCMP network.
+    set(anchor [=[    if (self->pend_rejoin_wpa) {
+        self->pend_rejoin_wpa = false;
+        cyw43_ll_wifi_set_wpa_auth(&self->cyw43_ll);
+    }
+]=])
+    set(guard [=[    // DS5 Bridge joins WPA2-AES (CCMP) networks only: never downgrade an
+    // RSN-mismatch retry to WPA1 PSK authentication.
+    ds5_cyw43_refuse_wpa_downgrade(&self->pend_rejoin, &self->pend_rejoin_wpa);
+]=])
+    ds5_cyw43_replace_once(ctrl "${anchor}" "${guard}" "WPA rejoin")
+    set(anchor "void cyw43_cb_process_async_event(void *cb_data, const cyw43_async_event_t *ev) {\n    cyw43_t *self = cb_data;")
+    ds5_cyw43_replace_once(ctrl "${anchor}"
+        "${anchor}\n\n    // WLAN events only, Bluetooth HCI has a separate packet channel.\n    if (!ds5_cyw43_wlan_allowed) {\n        return;\n    }"
+        "async event entry")
+    ds5_cyw43_read_fragment(cyw43_wol_join.inc join)
+    string(FIND "${ctrl}" "int cyw43_wifi_join(" start)
+    string(FIND "${ctrl}" "int cyw43_wifi_leave(" end)
+    if(start LESS 0 OR end LESS start)
+        message(FATAL_ERROR "Audited CYW43 boundary changed: station join")
+    endif()
+    math(EXPR length "${end} - ${start}")
+    string(SUBSTRING "${ctrl}" ${start} ${length} original_join)
+    string(REPLACE "${original_join}" "${join}\n\n" ctrl "${ctrl}")
+    ds5_cyw43_replace_once(ctrl
+        "        cyw43_ll_wifi_rejoin(&self->cyw43_ll);\n        self->wifi_join_state = WIFI_JOIN_STATE_ACTIVE;"
+        "        ds5_cyw43_wifi_rejoin(self);"
+        "deferred rejoin")
+    get_filename_component(output_directory "${output}" DIRECTORY)
+    file(MAKE_DIRECTORY "${output_directory}")
+    file(CONFIGURE OUTPUT "${output}" CONTENT "${ctrl}" @ONLY NEWLINE_STYLE LF)
+endfunction()
+
 # Bounded backplane-window reuse for HCI payloads, plus the F2 readiness fix.
 function(ds5_generate_cyw43_payload ll_source spi_source driver_source output_dir)
     ds5_cyw43_read_pinned("${ll_source}"
@@ -104,6 +209,9 @@ function(ds5_generate_cyw43_payload ll_source spi_source driver_source output_di
         "int cyw43_ll_read_backplane_mem("
         "${batch_reader}\nint cyw43_ll_read_backplane_mem("
         "backplane reader")
+    if(ENABLE_COMPANION)
+        ds5_patch_cyw43_ioctl(ll)
+    endif()
     # Keep SRAM relocation boundaries stable instead of duplicating helpers.
     foreach(signature "void cyw43_set_backplane_window" "void cyw43_write_backplane" "uint32_t cyw43_read_backplane")
         ds5_cyw43_replace_once(ll

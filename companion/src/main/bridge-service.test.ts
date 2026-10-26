@@ -161,6 +161,8 @@ class MockHidDevice extends EventEmitter {
   audioStatusReports: number[][] = [];
   firmwareLogReports: number[][] = [];
   deviceIdentity = deviceIdentityReport();
+  /** Firmware before 2.0 has no reset evidence report. */
+  resetEvidence: number[] | null = null;
   shortcutEvents: number[] = [];
   inputReports: number[][] = [];
   shortcutReadError: Error | null = null;
@@ -223,6 +225,12 @@ class MockHidDevice extends EventEmitter {
     }
     if (reportId === REPORT_ID.DEVICE_IDENTITY) {
       return [...this.deviceIdentity];
+    }
+    if (reportId === REPORT_ID.RESET_EVIDENCE) {
+      if (!this.resetEvidence) {
+        throw new Error('Unexpected report ID: 19');
+      }
+      return [...this.resetEvidence];
     }
     if (reportId === REPORT_ID.FIRMWARE_LOG) {
       return [...(this.firmwareLogReports.shift() ?? firmwareLogReport([], { enabled: false }))];
@@ -723,6 +731,29 @@ describe('BridgeService', () => {
     expect(service.getSnapshot().settings.micMuted).toBe(false);
   });
 
+  it('leaves the 20 Hz shortcut timer idle while no controller is connected', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    const runShortcutPoll = () => (service as unknown as { runShortcutPoll(): void }).runShortcutPoll();
+
+    await poll(service);
+    const reads = () => device.featureReportIds.filter((id) => id === REPORT_ID.INPUT).length;
+    const afterStatusPoll = reads();
+    runShortcutPoll();
+    await flushImmediate();
+    expect(reads()).toBe(afterStatusPoll);
+
+    device.status = statusReport({ controllerConnected: true });
+    await poll(service);
+    const afterConnect = reads();
+    runShortcutPoll();
+    await flushImmediate();
+    expect(reads()).toBe(afterConnect + 1);
+  });
+
   it('does not start the companion interrupt input read loop', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
@@ -863,14 +894,14 @@ describe('BridgeService', () => {
     expect(snapshot.diagnostics.lastError).toBeNull();
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toEqual({
       currentVersion: '1.6.3',
-      availableVersion: '1.7.1'
+      availableVersion: '2.0.0'
     });
   });
 
   it('does not surface an available update for the bundled bridge firmware', async () => {
     const service = serviceFixture();
     const device = new MockHidDevice();
-    device.status = statusReport({ firmwareMajor: 1, firmwareMinor: 7, firmwarePatch: 1 });
+    device.status = statusReport({ firmwareMajor: 2, firmwareMinor: 0, firmwarePatch: 0 });
     hidMock.state.devicesList = [companionDeviceInfo()];
     hidMock.state.openDevices.set('companion-path', device);
 
@@ -878,7 +909,7 @@ describe('BridgeService', () => {
 
     const snapshot = service.getSnapshot();
     expect(snapshot.state).toBe('connected');
-    expect(snapshot.status?.firmwareVersion).toBe('1.7.1');
+    expect(snapshot.status?.firmwareVersion).toBe('2.0.0');
     expect(snapshot.diagnostics.firmwareUpdateAvailable).toBeNull();
   });
 
@@ -1462,6 +1493,69 @@ describe('BridgeService', () => {
       resultCode: ACK_RESULT.OK
     });
     expect(snapshot.diagnostics.lastError).toContain('expected command 0x01 sequence');
+  });
+
+  it('reads why the bridge last reset once per bridge session', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, uptimeSeconds: 10 });
+    const evidence = new Array<number>(REPORT_LENGTH).fill(0);
+    evidence[0] = REPORT_ID.RESET_EVIDENCE;
+    writeMagic(evidence);
+    writeVersion(evidence);
+    evidence[7] = 1;
+    evidence[8] = 0x03;
+    evidence[9] = 5;
+    evidence[11] = 1;
+    writeU32(evidence, 12, 60_000);
+    device.resetEvidence = evidence;
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await poll(service);
+
+    expect(service.getSnapshot().diagnostics.resetEvidence).toMatchObject({
+      watchdogReset: true, phase: 'audio', reason: 'watchdog-timeout', uptimeBeforeResetMs: 60_000
+    });
+    expect(device.featureReportIds.filter((id) => id === REPORT_ID.RESET_EVIDENCE)).toHaveLength(1);
+
+    // A lower uptime means the bridge rebooted: its new evidence is read again.
+    device.status = statusReport({ controllerConnected: false, uptimeSeconds: 2 });
+    evidence[8] = 0;
+    await poll(service);
+    expect(service.getSnapshot().diagnostics.resetEvidence).toMatchObject({ watchdogReset: false });
+    expect(device.featureReportIds.filter((id) => id === REPORT_ID.RESET_EVIDENCE)).toHaveLength(2);
+  });
+
+  it('waits for the deferred Wake-on-LAN ACK instead of rejecting the previous one', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    // Firmware ACKs a queued Wake-on-LAN command on its next main-loop pass,
+    // so the first reads can still show the previous command.
+    for (let index = 0; index < 2; index++) {
+      device.ackReports.push(ackReport({
+        commandId: COMMAND_ID.SET_SPEAKER_VOLUME,
+        sequence: 99,
+        result: ACK_RESULT.OK,
+        settingsRevision: 0
+      }));
+    }
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    await (service as unknown as {
+      sendWakeOnLanCommand(operation: number, payload: Uint8Array): Promise<void>;
+    }).sendWakeOnLanCommand(7, new Uint8Array([4, 0, 0, 0]));
+
+    const sent = device.sentReports.at(-1)!;
+    expect(sent[7]).toBe(COMMAND_ID.WAKE_ON_LAN);
+    expect(sent[9]).toBe(7);
+    expect(sent.slice(11, 15)).toEqual([4, 0, 0, 0]);
+    expect(device.featureReportIds.filter((id) => id === REPORT_ID.ACK).length).toBeGreaterThanOrEqual(3);
+    expect(service.getSnapshot().diagnostics.lastError).toBeNull();
   });
 
   it('serializes overlapping companion commands before reading ACK reports', async () => {

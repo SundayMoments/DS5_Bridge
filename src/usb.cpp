@@ -6,6 +6,7 @@
 #include "tusb.h"
 #include "device/dcd.h"
 #include "bsp/board_api.h"
+#include "hardware/structs/usb.h"
 #include "hardware/watchdog.h"
 #include "pico/time.h"
 #include <algorithm>
@@ -17,6 +18,7 @@
 #include "persona/host_persona.h"
 #include "usb.h"
 #include "usb_descriptor_mode.h"
+#include "wake_on_lan.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
 float volume[2] = {DEFAULT_COMPANION_SPEAKER_GAIN, 1.0f}; // 0: companion speaker gain 0-1, 1: haptics gain 0-5
@@ -52,6 +54,20 @@ static volatile bool usb_remote_wakeup_pending = false;
 static volatile bool usb_wake_on_connect = true;
 static bool usb_attached_bridge_only = false;
 static bool usb_reconnect_target_bridge_only = false;
+// The host unconfigured the bridge itself (not a firmware reconnect).
+static bool usb_external_unmount = false;
+// The mounted session's host selected the HID boot protocol (BIOS/UEFI).
+static bool usb_session_firmware = false;
+static bool usb_ever_mounted = false;
+static bool usb_idle_down_seen = false;
+// Wake-on-LAN's sleep-disconnect exemption as seen by the previous PM poll.
+static bool usb_wake_exemption_seen = false;
+static volatile bool usb_gameplay_quiet = false;
+// Start-of-frame activity, sampled from the main loop (see usb_bus_idle).
+static bool usb_sof_sampled = false;
+static uint32_t usb_sof_frame_seen = 0;
+static uint32_t usb_sof_changed_at_us = 0;
+static uint32_t usb_sof_sampled_at_us = 0;
 
 extern "C" {
 uint8_t usb_hid_polling_interval_ms_value = 1;
@@ -66,6 +82,8 @@ uint8_t usb_hid_polling_interval_ms_value = 1;
 #define USB_SUSPEND_POWEROFF_DEBOUNCE_US 3000000
 #define USB_RECONNECT_GRACE_US          5000000
 #define USB_EXPECTED_DISCONNECT_GRACE_US 1500000
+#define USB_BUS_IDLE_US                 20000
+#define USB_SOF_SAMPLE_STALE_US         1000000
 
 enum UsbAudioDebugKind : uint8_t {
     UsbAudioDebugSetInterface = 1,
@@ -123,6 +141,36 @@ static void arm_suspend_disconnect(uint32_t now) {
 
 static bool usb_bus_suspended() {
     return usb_host_suspended || (tud_inited() && tud_suspended());
+}
+
+// Positive evidence that the host stopped driving the bus: the SIE's last
+// start-of-frame number has not advanced for 20 ms. TinyUSB drops SUSPEND and
+// RESUME while it is not "connected" (after a bus reset, until the next
+// SETUP), so this is the only signal for a host that resets the port and goes
+// away. A host that is awake keeps sending SOFs on an enabled port even before
+// it configures the device, so a late configuration is never mistaken for
+// sleep. A sample more than 1 s after the previous one restarts the interval,
+// so the 11-bit frame counter wrapping to the same value cannot read as idle.
+// SOF interrupts are unused here (no audio feedback endpoint, no tud_sof_cb),
+// so reading SOF_RD from the main loop cannot steal one. Ported from Kitsune.
+#if defined(CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP) && CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP
+#error "usb_bus_idle() reads SOF_RD, which would clear an audio feedback SOF interrupt"
+#endif
+static bool usb_bus_idle(uint32_t now) {
+    if (!tud_inited()) {
+        usb_sof_sampled = false;
+        return false;
+    }
+    const uint32_t frame = usb_hw->sof_rd & USB_SOF_RD_BITS;
+    const bool stale = static_cast<uint32_t>(now - usb_sof_sampled_at_us) >= USB_SOF_SAMPLE_STALE_US;
+    usb_sof_sampled_at_us = now;
+    if (!usb_sof_sampled || stale || frame != usb_sof_frame_seen) {
+        usb_sof_sampled = true;
+        usb_sof_frame_seen = frame;
+        usb_sof_changed_at_us = now;
+        return false;
+    }
+    return static_cast<uint32_t>(now - usb_sof_changed_at_us) >= USB_BUS_IDLE_US;
 }
 
 static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
@@ -283,15 +331,59 @@ bool __not_in_flash_func(usb_mounted_active)() {
 }
 
 bool __not_in_flash_func(usb_speaker_streaming_active)() {
-    return usb_speaker_streaming;
+    return usb_speaker_streaming && !usb_gameplay_quiet;
 }
 
 bool __not_in_flash_func(usb_mic_streaming_active)() {
-    return usb_mic_streaming;
+    return usb_mic_streaming && !usb_gameplay_quiet;
 }
 
 bool usb_line_streaming_active() {
-    return usb_line_streaming;
+    return usb_line_streaming && !usb_gameplay_quiet;
+}
+
+bool usb_wake_host_active() {
+    return usb_mounted
+        && !usb_bus_suspended()
+        && !usb_reconnect_requested
+        && !usb_reconnect_connect_pending;
+}
+
+bool usb_wake_external_suspended() {
+    const uint32_t now = time_us_32();
+    // An unconfigured bridge on an idle bus (a host that reset the port and
+    // went away, or never configured a firmware re-attach) is down as well.
+    const bool idle_unmounted = !usb_mounted && usb_bus_idle(now);
+    return !reconnect_grace_active(now)
+        && !usb_reconnect_requested
+        && !usb_reconnect_connect_pending
+        && (usb_bus_suspended() || usb_external_unmount || idle_unmounted);
+}
+
+bool usb_wake_host_firmware() {
+    return usb_mounted && usb_session_firmware;
+}
+
+// TinyUSB invokes this from tud_task for SET_PROTOCOL on a boot interface.
+// UEFI keyboard drivers (EDK2 UsbKbDxe and similar) select boot protocol (0);
+// the Windows HID driver keeps report protocol. This is an estimate, used only
+// to keep BIOS sessions from counting as a returned host.
+extern "C" void tud_hid_set_protocol_cb(uint8_t instance, uint8_t protocol) {
+    (void)instance;
+    usb_session_firmware = protocol == 0;
+}
+
+void usb_set_gameplay_quiet(bool quiet) {
+    if (usb_gameplay_quiet == quiet) {
+        return;
+    }
+    usb_gameplay_quiet = quiet;
+    // Neither direction may replay audio queued across the Wi-Fi window.
+    if (tud_inited()) {
+        tud_audio_clear_ep_out_ff();
+        tud_audio_n_clear_ep_in_ff(0);
+        tud_audio_n_clear_ep_in_ff(1);
+    }
 }
 
 void usb_set_wake_on_connect(bool enabled) {
@@ -327,7 +419,8 @@ void usb_handle_controller_transport_disconnect(bool expected_disconnect) {
 }
 
 void usb_handle_controller_link_connected() {
-    if (!usb_wake_on_connect) {
+    // While Wake-on-LAN owns a transition, only its qualified request wakes.
+    if (!usb_wake_on_connect || !wake_on_lan_allow_usb_wake()) {
         return;
     }
     // Bluetooth callbacks only publish wake intent. TinyUSB performs the
@@ -352,6 +445,9 @@ extern "C" void tud_mount_cb(void) {
     // A host bus reset can re-enumerate before a scheduled persona reconnect;
     // mount is where the newly read descriptor becomes the active format.
     usb_latch_mic_endpoint_channels();
+    usb_external_unmount = false;
+    usb_session_firmware = false;
+    usb_ever_mounted = true;
     usb_mounted = true;
     usb_host_suspended = false;
     usb_remote_wakeup_armed = false;
@@ -363,6 +459,9 @@ extern "C" void tud_mount_cb(void) {
 
 extern "C" void tud_umount_cb(void) {
     const uint32_t now = time_us_32();
+    usb_external_unmount = !reconnect_grace_active(now)
+        && !usb_reconnect_requested
+        && !usb_reconnect_connect_pending;
     usb_mounted = false;
     // Windows may report a durable unmount instead of suspend. Treat it as a
     // debounced power transition, excluding our own descriptor reconnects.
@@ -458,8 +557,39 @@ void usb_pm_poll() {
         usb_controller_transport_disconnect_grace_pending = false;
     }
 
+    // Wake-on-LAN suspends the sleep-disconnect policy while an attempt runs
+    // and while a PC it woke is starting. That exemption can end with the bus
+    // still down: a failed attempt, or a PC that never booted. The suspend that
+    // armed the debounce was consumed earlier, so restart it here and apply the
+    // user's setting 3 s later.
+    const bool wake_exempt = wake_on_lan_suspend_exempt();
+    if (
+        usb_wake_exemption_seen
+        && !wake_exempt
+        && usb_suspend_at_us == 0
+        && usb_wake_external_suspended()
+    ) {
+        arm_suspend_disconnect(now);
+    }
+    usb_wake_exemption_seen = wake_exempt;
+    // A bus that goes idle with the bridge unconfigured, outside a firmware
+    // re-attach grace (for example a persona re-attach the host never
+    // configured because it was going to sleep), starts the debounce like a
+    // suspend. A bridge never configured since power-on (a charger) is left
+    // alone. An awake host keeps sending start-of-frames, so a slow
+    // configuration never reads as idle.
+    const bool idle_unmounted = !usb_mounted && usb_bus_idle(now);
+    const bool idle_down = idle_unmounted
+        && !reconnect_grace_active(now)
+        && !usb_reconnect_requested
+        && !usb_reconnect_connect_pending;
+    if (idle_down && !usb_idle_down_seen && usb_ever_mounted && usb_suspend_at_us == 0) {
+        arm_suspend_disconnect(now);
+    }
+    usb_idle_down_seen = idle_down;
     if (
         usb_suspend_at_us != 0
+        && !wake_exempt
         && (usb_host_suspended || !usb_mounted)
         && static_cast<uint32_t>(now - usb_suspend_at_us) >= USB_SUSPEND_POWEROFF_DEBOUNCE_US
     ) {
@@ -467,10 +597,14 @@ void usb_pm_poll() {
         usb_suspend_at_us = 0;
     }
 
-    if (usb_remote_wakeup_pending) {
+    // A Wake-on-LAN qualified press wakes the PC over USB first, even while the
+    // feature blocks the ordinary wake-on-connect path.
+    const bool qualified_wake = wake_on_lan_take_usb_wake_request();
+    if (usb_remote_wakeup_pending || qualified_wake) {
         usb_remote_wakeup_pending = false;
         if (
             usb_wake_on_connect
+            && (qualified_wake || wake_on_lan_allow_usb_wake())
             && usb_remote_wakeup_armed
             && usb_bus_suspended()
             && tud_inited()
@@ -480,6 +614,14 @@ void usb_pm_poll() {
     }
 
     if (usb_host_suspended) {
+        return;
+    }
+    // No topology change while Wi-Fi owns the radio, or while an armed bridge
+    // waits on a sleeping host.
+    if (
+        wake_on_lan_quiet_gate()
+        || ((wake_on_lan_preparing() || wake_on_lan_armed()) && usb_wake_external_suspended())
+    ) {
         return;
     }
 

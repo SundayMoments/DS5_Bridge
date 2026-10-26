@@ -33,6 +33,7 @@ import {
   parseFeedbackTraceReport,
   parseFirmwareLogReport,
   parseCompanionInputReport,
+  parseResetEvidenceReport,
   parseStatusReport,
   readReportProtocolVersion,
   SHORTCUT_EVENT,
@@ -68,6 +69,7 @@ import type {
   MuteKeyboardBehavior,
   PollingRateMode,
   ReportProtocolVersion,
+  ResetEvidencePayload,
   ShortcutEvent,
   StickInputPreviewPayload,
   TriggerTestMode,
@@ -114,8 +116,18 @@ import {
   normalizeUiThemePreset
 } from './settings-store';
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
+import { WakeOnLanService, wakeOnLanAckError, type WakeOnLanBridgeSession } from './wake-on-lan-service';
+import { WindowsWakeOnLanTargets, type WakeOnLanTargetsPort } from './wake-on-lan-targets';
+import type {
+  WakeOnLanConfigurationInput,
+  WakeOnLanMetadata,
+  WakeOnLanTarget
+} from '../shared/wake-on-lan-types';
 
 const POLL_INTERVAL_MS = 500;
+// A queued Wake-on-LAN command is ACKed on the firmware's next main-loop pass;
+// saving waits for a flash sector erase and program.
+const WAKE_ON_LAN_ACK_TIMEOUT_MS = 1500;
 const SHORTCUT_POLL_INTERVAL_MS = 50;
 const SHORTCUT_POLL_ERROR_RETRY_MS = 250;
 const STICK_INPUT_PREVIEW_LEASE_MS = 1500;
@@ -145,7 +157,7 @@ const TEST_HAPTICS_FAILED_MESSAGE =
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
-const BUNDLED_FIRMWARE_VERSION = '1.7.1';
+const BUNDLED_FIRMWARE_VERSION = '2.0.0';
 const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
 const AUDIO_DEBUG_LOG_LINE_LIMIT = 300;
@@ -206,7 +218,15 @@ type CommandOptions = {
   extraPayload?: ArrayLike<number>;
   allowAckTransportLoss?: boolean;
   allowProtocolMismatch?: boolean;
+  /**
+   * The firmware queues this command and ACKs it from its main loop, so the
+   * first ACK read can still hold the previous command's result. Re-read it
+   * until the sequence matches or this many milliseconds pass.
+   */
+  deferredAckTimeoutMs?: number;
 };
+
+const DEFERRED_ACK_POLL_MS = 5;
 
 type HostPersonaTransitionState = HostPersonaTransition & {
   settlingUntil: number | null;
@@ -1331,6 +1351,7 @@ export class BridgeService extends EventEmitter {
   private previousControllerConnected: boolean | null = null;
   private lowBatteryToastActive = false;
   private shortcutFeaturePollRetryAt = 0;
+  private resetEvidence: ResetEvidencePayload | null = null;
   private shortcutActionQueue: Promise<void> = Promise.resolve();
   private readonly shortcutActionHandlers: Record<ShortcutEvent, () => Promise<void>> = {
     [SHORTCUT_EVENT.CONTROLLER_VOLUME_DOWN]: () => this.applyControllerVolumeShortcut(-10),
@@ -1340,11 +1361,24 @@ export class BridgeService extends EventEmitter {
     [SHORTCUT_EVENT.MIC_MUTE_OFF]: () => this.applyControllerMicMuteEvent(false)
   };
 
+  private readonly wakeOnLan: WakeOnLanService;
+
   constructor(
     private readonly settingsStore: SettingsStore,
-    private readonly bootloaderAuthorizationStore?: BootloaderAuthorizationStorePort
+    private readonly bootloaderAuthorizationStore?: BootloaderAuthorizationStorePort,
+    wakeOnLanTargets: WakeOnLanTargetsPort = new WindowsWakeOnLanTargets()
   ) {
     super();
+    this.wakeOnLan = new WakeOnLanService({
+      session: () => this.wakeOnLanSession(),
+      read: () => this.readWakeOnLanStatus(),
+      send: (operation, payload) => this.sendWakeOnLanCommand(operation, payload),
+      targets: wakeOnLanTargets,
+      now: () => Date.now(),
+      delay: (milliseconds) => new Promise<void>((resolve) => {
+        setTimeout(resolve, milliseconds);
+      })
+    });
     this.snapshot = {
       state: 'no-bridge',
       message: 'No bridge detected',
@@ -1413,7 +1447,6 @@ export class BridgeService extends EventEmitter {
     if (!device || now < this.shortcutFeaturePollRetryAt) {
       return;
     }
-
     try {
       const input = parseCompanionInputReport(
         await device.getFeatureReport(REPORT_ID.INPUT, REPORT_LENGTH)
@@ -1442,6 +1475,20 @@ export class BridgeService extends EventEmitter {
       // transfer failure does not leave controller shortcuts on the slow
       // status-poll path.
       this.shortcutFeaturePollRetryAt = Date.now() + SHORTCUT_POLL_ERROR_RETRY_MS;
+    }
+  }
+
+  private async readResetEvidence(): Promise<ResetEvidencePayload | null> {
+    if (!this.device) {
+      return null;
+    }
+    try {
+      return parseResetEvidenceReport(
+        await this.device.getFeatureReport(REPORT_ID.RESET_EVIDENCE, REPORT_LENGTH)
+      );
+    } catch {
+      // Supplementary, and absent from firmware before 2.0.
+      return null;
     }
   }
 
@@ -1482,6 +1529,9 @@ export class BridgeService extends EventEmitter {
       this.shortcutPollTimer = null;
     }
 
+    // A running Wake-on-LAN change stops at its next step; the firmware owns
+    // the radio teardown and drops unsaved staging on its own deadline.
+    this.wakeOnLan.stop();
     await this.stopControllerAudioPolling();
     this.hidDiscovery.stop();
     this.closeDevice();
@@ -1652,6 +1702,12 @@ export class BridgeService extends EventEmitter {
 
   private runShortcutPoll(): void {
     if (this.shortcutPollInFlight) {
+      return;
+    }
+    // Shortcut events and the stick preview come from the controller. With
+    // none connected, every 500 ms status poll already reads the report, so
+    // the 20 Hz timer would only repeat it.
+    if (this.snapshot.status && !this.snapshot.status.controllerConnected) {
       return;
     }
     this.shortcutPollInFlight = true;
@@ -3205,6 +3261,62 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  getWakeOnLan(): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.get();
+  }
+
+  getWakeOnLanTargets(refresh = false): Promise<WakeOnLanTarget[]> {
+    return this.wakeOnLan.listTargets(refresh);
+  }
+
+  configureWakeOnLan(input: WakeOnLanConfigurationInput): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.configure(input);
+  }
+
+  setWakeOnLanEnabled(enabled: boolean): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.setEnabled(enabled);
+  }
+
+  forgetWakeOnLan(): Promise<WakeOnLanMetadata> {
+    return this.wakeOnLan.forget();
+  }
+
+  cancelWakeOnLan(): Promise<void> {
+    return this.wakeOnLan.cancel();
+  }
+
+  private wakeOnLanSession(): WakeOnLanBridgeSession | null {
+    const bridgeId = this.snapshot.diagnostics.deviceIdentity?.bridgeId;
+    if (!this.device || this.snapshot.state !== 'connected' || !bridgeId) {
+      return null;
+    }
+    return {
+      bridgeId,
+      protocolVersion: this.snapshot.diagnostics.protocolVersion,
+      controllerConnected: Boolean(this.snapshot.status?.controllerConnected)
+    };
+  }
+
+  private readWakeOnLanStatus(): Promise<number[]> {
+    return this.enqueueCommand(async () => {
+      if (!this.device) {
+        throw new Error('No companion bridge is connected.');
+      }
+      return this.device.getFeatureReport(REPORT_ID.WAKE_ON_LAN, REPORT_LENGTH);
+    });
+  }
+
+  private async sendWakeOnLanCommand(operation: number, payload: Uint8Array): Promise<void> {
+    const ack = await this.sendCommand(COMMAND_ID.WAKE_ON_LAN, operation, {
+      extraPayload: payload,
+      deferredAckTimeoutMs: WAKE_ON_LAN_ACK_TIMEOUT_MS,
+      throwOnCommandError: false
+    });
+    if (ack.resultCode !== ACK_RESULT.OK) {
+      throw wakeOnLanAckError(ack.resultCode);
+    }
+  }
+
   async setNotifyControllerConnection(enabled: boolean): Promise<BridgeSnapshot> {
     this.snapshot.settings = this.settingsStore.update({ notifyControllerConnection: enabled });
     this.emitSnapshot();
@@ -3637,10 +3749,24 @@ export class BridgeService extends EventEmitter {
       }
       let ack: BridgeAckPayload;
       try {
-        const rawAckReport = await this.device.getFeatureReport(REPORT_ID.ACK, REPORT_LENGTH);
-        ack = options.allowProtocolMismatch
-          ? parseAckReport(rawAckReport, { allowProtocolMismatch: true })
-          : parseAckReport(rawAckReport);
+        const readAck = async () => {
+          const rawAckReport = await this.device!.getFeatureReport(REPORT_ID.ACK, REPORT_LENGTH);
+          return options.allowProtocolMismatch
+            ? parseAckReport(rawAckReport, { allowProtocolMismatch: true })
+            : parseAckReport(rawAckReport);
+        };
+        ack = await readAck();
+        if (options.deferredAckTimeoutMs !== undefined) {
+          const deadline = Date.now() + options.deferredAckTimeoutMs;
+          while (
+            (ack.commandId !== (commandId & 0xff) || ack.commandSequence !== sequence)
+            && Date.now() < deadline
+            && this.device
+          ) {
+            await new Promise<void>((resolve) => { setTimeout(resolve, DEFERRED_ACK_POLL_MS); });
+            ack = await readAck();
+          }
+        }
       } catch (error) {
         if (!options.allowAckTransportLoss || !isBridgeTransportError(error)) {
           throw error;
@@ -4010,6 +4136,8 @@ export class BridgeService extends EventEmitter {
       this.sessionKey = `${this.devicePath ?? 'unknown'}:${Date.now()}`;
       this.sessionPath = this.devicePath;
       this.resetStartupReapplyState();
+      // Captured once per bridge boot, so read it once per session.
+      this.resetEvidence = await this.readResetEvidence();
     }
     this.lastUptimeSeconds = status.uptimeSeconds;
 
@@ -4041,7 +4169,8 @@ export class BridgeService extends EventEmitter {
         firmwareUpdateAvailable: firmwareUpdateAvailable(status.firmwareVersion),
         lastPollAt: Date.now(),
         rawDevices,
-        deviceIdentity
+        deviceIdentity,
+        resetEvidence: this.resetEvidence
       }),
       personaTransition: transition
     };
@@ -4736,6 +4865,7 @@ export class BridgeService extends EventEmitter {
   private closeDevice(): void {
     const device = this.device;
     this.device = null;
+    this.resetEvidence = null;
     this.connectedBridgeUniqueId = null;
     this.connectedControllerMac = null;
     this.bindingAppliedForMac = null;
@@ -4793,7 +4923,11 @@ export class BridgeService extends EventEmitter {
       personaTransition,
       bridgeDevices: this.bridgeDevicesSnapshot()
     };
-    const publicSnapshot = this.getSnapshot();
+    // Most calls change nothing the renderer shows. Compare first and deep-clone
+    // only the snapshot that is actually delivered.
+    const stickInputPreview = this.stickInputPreviewLeaseUntil > Date.now()
+      ? this.stickInputPreview
+      : null;
     const signature = JSON.stringify({
       state: this.snapshot.state,
       message: this.snapshot.message,
@@ -4806,8 +4940,8 @@ export class BridgeService extends EventEmitter {
       settings: this.snapshot.settings,
       personaTransition: this.snapshot.personaTransition,
       bridgeDevices: this.snapshot.bridgeDevices,
-      stickInputPreview: publicSnapshot.stickInputPreview,
-      bootloaderConfirmation: publicSnapshot.bootloaderConfirmation,
+      stickInputPreview,
+      bootloaderConfirmation: this.bootloaderConfirmation,
       diagnostics: {
         hidPath: this.snapshot.diagnostics.hidPath,
         protocolVersion: this.snapshot.diagnostics.protocolVersion,
@@ -4816,6 +4950,7 @@ export class BridgeService extends EventEmitter {
         lastError: this.snapshot.diagnostics.lastError,
         firmwareUpdateAvailable: this.snapshot.diagnostics.firmwareUpdateAvailable,
         deviceIdentity: this.snapshot.diagnostics.deviceIdentity,
+        resetEvidence: this.snapshot.diagnostics.resetEvidence ?? null,
         firmwareLogDirectory: this.snapshot.diagnostics.firmwareLogDirectory,
         firmwareLogPath: this.snapshot.diagnostics.firmwareLogPath,
         firmwareLogEnabled: this.snapshot.diagnostics.firmwareLogEnabled,
@@ -4838,6 +4973,6 @@ export class BridgeService extends EventEmitter {
       return;
     }
     this.lastEmittedSnapshotSignature = signature;
-    this.emit('snapshot', publicSnapshot);
+    this.emit('snapshot', this.getSnapshot());
   }
 }

@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BootloaderAuthorizationStore } from './bootloader-authorization-store';
+import { wakeOnLanResult } from '../shared/wake-on-lan-result';
+import type { WakeOnLanConfigurationInput } from '../shared/wake-on-lan-types';
 import { BridgeService } from './bridge-service';
 import {
   PICO_UNIVERSAL_FLASH_NUKE_FILE,
@@ -62,6 +64,16 @@ let trayDefaultIcon: Electron.NativeImage | null = null;
 let bridgeService: BridgeService | null = null;
 let isQuitting = false;
 let shutdownComplete = false;
+// Ported from Kitsune Input: a tray start creates no window, and a window
+// left hidden this long is released (about 25-50 MiB of renderer memory)
+// and recreated on the next open.
+const MAIN_WINDOW_RETIRE_AFTER_HIDDEN_MS = 10 * 60_000;
+const MAIN_WINDOW_RETIRE_RETRY_MS = 60_000;
+let mainWindowRetireTimer: NodeJS.Timeout | null = null;
+let mainWindowShowPending = false;
+// Firmware actions own a renderer-visible result; never retire under them.
+let mainWindowBusyTasks = 0;
+let appSettingsStore: SettingsStore | null = null;
 const hasSingleInstanceLock = ALLOW_PARALLEL_AUTOMATION_INSTANCE || app.requestSingleInstanceLock();
 const audioHapticsIconCache = new Map<string, Promise<string | null> | string | null>();
 const TRAY_BATTERY_ICON_SIZE = 32;
@@ -501,8 +513,81 @@ function sendWindowMaximizedState(): void {
   mainWindow.webContents.send('window:maximizedChanged', mainWindow.isMaximized());
 }
 
+function clearMainWindowRetireTimer(): void {
+  if (mainWindowRetireTimer) {
+    clearTimeout(mainWindowRetireTimer);
+    mainWindowRetireTimer = null;
+  }
+}
+
+function scheduleMainWindowRetirement(delayMs = MAIN_WINDOW_RETIRE_AFTER_HIDDEN_MS): void {
+  clearMainWindowRetireTimer();
+  mainWindowRetireTimer = setTimeout(retireHiddenMainWindow, delayMs);
+  mainWindowRetireTimer.unref();
+}
+
+function retireHiddenMainWindow(): void {
+  mainWindowRetireTimer = null;
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || window.isVisible() || isQuitting) {
+    return;
+  }
+  if (mainWindowBusyTasks > 0 || bridgeService?.getSnapshot().bootloaderConfirmation) {
+    scheduleMainWindowRetirement(MAIN_WINDOW_RETIRE_RETRY_MS);
+    return;
+  }
+  mainWindow = null;
+  // destroy() skips the close handler, which would only hide it again.
+  window.destroy();
+}
+
+function ensureMainWindow(): BrowserWindow {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  const window = createWindow(appSettingsStore?.get().uiScalePercent ?? currentUiScalePercent());
+  mainWindow = window;
+  window.on('maximize', sendWindowMaximizedState);
+  window.on('unmaximize', sendWindowMaximizedState);
+  // Snapshots are not pushed to a hidden window; catch it up when it returns.
+  const sendLatestSnapshot = () => {
+    if (bridgeService) {
+      sendToMainWindow('bridge:snapshot', bridgeService.getSnapshot());
+    }
+  };
+  window.on('show', () => {
+    clearMainWindowRetireTimer();
+    scheduleMainWindowScaleRestore(false);
+    sendLatestSnapshot();
+  });
+  window.on('hide', () => scheduleMainWindowRetirement());
+  window.on('restore', () => {
+    scheduleMainWindowScaleRestore(false);
+    sendLatestSnapshot();
+  });
+  window.on('focus', () => scheduleMainWindowScaleRestore(false));
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+  window.once('ready-to-show', () => {
+    if (mainWindowShowPending) {
+      mainWindowShowPending = false;
+      showWindowCentered();
+    }
+  });
+  return window;
+}
+
 function showWindowCentered(): void {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    // Created hidden; shown once its first paint is ready.
+    mainWindowShowPending = true;
+    ensureMainWindow();
+    return;
+  }
+  if (mainWindowShowPending) {
     return;
   }
 
@@ -1042,6 +1127,7 @@ async function runPicoFirmwareIpcAction(
   action: PicoFirmwareAction,
   task: () => Promise<PicoFirmwareActionResult>
 ): Promise<PicoFirmwareActionResult> {
+  mainWindowBusyTasks += 1;
   try {
     return await task();
   } catch (error) {
@@ -1050,6 +1136,8 @@ async function runPicoFirmwareIpcAction(
       action,
       message: picoFirmwareErrorMessage(error)
     };
+  } finally {
+    mainWindowBusyTasks -= 1;
   }
 }
 
@@ -1200,6 +1288,18 @@ function registerIpc(service: BridgeService): void {
     () => mountPicoBootloaderDrive(picoFirmwareOptions(service))
   ));
   ipcMain.handle('bridge:cancelBootloaderConfirmation', () => service.cancelBootloaderConfirmation());
+  ipcMain.handle('bridge:getWakeOnLan', () => wakeOnLanResult(() => service.getWakeOnLan()));
+  ipcMain.handle('bridge:getWakeOnLanTargets', (_event, refresh: unknown) => wakeOnLanResult(
+    () => service.getWakeOnLanTargets(refresh === true)
+  ));
+  ipcMain.handle('bridge:configureWakeOnLan', (_event, input: unknown) => wakeOnLanResult(
+    () => service.configureWakeOnLan(input as WakeOnLanConfigurationInput)
+  ));
+  ipcMain.handle('bridge:setWakeOnLanEnabled', (_event, enabled: unknown) => wakeOnLanResult(
+    () => service.setWakeOnLanEnabled(enabled as boolean)
+  ));
+  ipcMain.handle('bridge:forgetWakeOnLan', () => wakeOnLanResult(() => service.forgetWakeOnLan()));
+  ipcMain.handle('bridge:cancelWakeOnLan', () => wakeOnLanResult(() => service.cancelWakeOnLan()));
   ipcMain.handle('bridge:flashPicoFirmware', () => runPicoFirmwareIpcAction(
     'flash',
     () => flashSelectedPicoFirmware(service)
@@ -1303,6 +1403,7 @@ app.whenReady().then(async () => {
   ensureWindowsNotificationShortcut();
   Menu.setApplicationMenu(null);
   const settingsStore = new SettingsStore(app.getPath('userData'));
+  appSettingsStore = settingsStore;
   applyLaunchAtStartup(settingsStore.get().launchAtStartupEnabled);
   bridgeService = new BridgeService(
     settingsStore,
@@ -1310,17 +1411,10 @@ app.whenReady().then(async () => {
   );
   registerIpc(bridgeService);
 
-  mainWindow = createWindow(settingsStore.get().uiScalePercent);
-  mainWindow.on('maximize', sendWindowMaximizedState);
-  mainWindow.on('unmaximize', sendWindowMaximizedState);
-  mainWindow.on('show', () => scheduleMainWindowScaleRestore(false));
-  mainWindow.on('restore', () => scheduleMainWindowScaleRestore(false));
-  mainWindow.on('focus', () => scheduleMainWindowScaleRestore(false));
-  mainWindow.once('ready-to-show', () => {
-    if (!shouldStartInTray()) {
-      showWindowCentered();
-    }
-  });
+  // A login (tray) start creates no renderer until the tray opens it.
+  if (!shouldStartInTray()) {
+    showWindowCentered();
+  }
   powerMonitor.on('resume', () => scheduleMainWindowScaleRestore(true));
   powerMonitor.on('unlock-screen', () => scheduleMainWindowScaleRestore(true));
   screen.on('display-metrics-changed', () => scheduleMainWindowScaleRestore(true));
@@ -1337,7 +1431,10 @@ app.whenReady().then(async () => {
 
   bridgeService.on('snapshot', (snapshot) => {
     updateTrayPresentation(snapshot);
-    sendToMainWindow('bridge:snapshot', snapshot);
+    // A hidden renderer would only re-render for nothing; 'show' catches it up.
+    if (mainWindow?.isVisible()) {
+      sendToMainWindow('bridge:snapshot', snapshot);
+    }
   });
   bridgeService.on('toast', (toast) => {
     showBridgeNotification(toast);

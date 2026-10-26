@@ -31,6 +31,12 @@ bool usb_host_suspended_active();
 bool usb_speaker_streaming_active();
 bool usb_mic_streaming_active();
 bool usb_line_streaming_active();
+// Wake-on-LAN observations, sampled from the main loop.
+bool usb_wake_host_active();
+bool usb_wake_external_suspended();
+bool usb_wake_host_firmware();
+// Stops USB audio streams and drops their queued samples while Wi-Fi runs.
+void usb_set_gameplay_quiet(bool quiet);
 bool usb_mounted_active();
 void usb_handle_controller_transport_disconnect(bool expected_disconnect = false);
 void usb_handle_controller_link_connected();

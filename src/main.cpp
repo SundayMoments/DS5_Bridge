@@ -17,6 +17,7 @@
 #include "usb.h"
 #include "usb_descriptor_mode.h"
 #include "host_input.h"
+#include "wake_on_lan.h"
 #include "controller_report.h"
 #include "dualsense_input_decoder.h"
 #include "dualsense_output.h"
@@ -354,6 +355,9 @@ static BridgeControllerState neutral_controller_state() {
 }
 
 static bool host_input_ready_for_persona(HostPersonaMode persona) {
+    if (wake_on_lan_quiet_gate()) {
+        return false;
+    }
 #ifdef ENABLE_COMPANION
     // Bridge-only HID instances are an inert composite helper and a wake
     // anchor. Controller-shaped reports are valid only after the full persona
@@ -509,6 +513,10 @@ void interrupt_loop() {
 
 void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     // DS5_LOG("[Main] BT data callback: channel=%u len=%u\n", channel, len);
+    // Controller input and microphone audio are dropped while Wi-Fi runs.
+    if (wake_on_lan_quiet_gate()) {
+        return;
+    }
     if (data == nullptr || channel != INTERRUPT || len <= 2 || data[1] != 0x31) {
         return;
     }
@@ -555,6 +563,9 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
 // Return zero will cause the stack to STALL request
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer,
                                uint16_t reqlen) {
+    if (report_type == HID_REPORT_TYPE_INPUT && wake_on_lan_quiet_gate()) {
+        return 0;
+    }
     (void) itf;
     (void) report_id;
     (void) report_type;
@@ -615,6 +626,10 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
+    // Game output must not reach the controller while Wi-Fi runs.
+    if (wake_on_lan_quiet_gate()) {
+        return;
+    }
     (void) itf;
     (void) report_id;
     (void) report_type;
@@ -706,6 +721,61 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     }
 }
 
+// Wake-on-LAN (ported from Kitsune Input). Runs at the top level of the main
+// loop only: commands and Bluetooth events can close the quiet gate, but only
+// this pass may start WLAN, after the audio, input and output queues retired.
+static void service_wake_on_lan() {
+#ifdef ENABLE_COMPANION
+    companion_wake_command_poll();
+#endif
+    static bool quiet_applied = false;
+    const auto apply_gate = []() {
+        const bool quiet = wake_on_lan_quiet_gate();
+        if (quiet == quiet_applied) {
+            return;
+        }
+        quiet_applied = quiet;
+        bt_set_wake_radio_quiet(quiet);
+        usb_set_gameplay_quiet(quiet);
+        audio_handle_controller_disconnect();
+        bt_quiesce_gameplay_output();
+        critical_section_enter_blocking(&report_cs);
+        report_dirty = false;
+        critical_section_exit(&report_cs);
+    };
+    apply_gate();
+    wake_on_lan_poll(
+        to_us_since_boot(get_absolute_time()) / 1000,
+        usb_wake_host_active(),
+        usb_wake_external_suspended(),
+        bt_wake_controllers_quiet(),
+        bt_wake_controllers_quiet() && usb_wake_host_active(),
+        bt_wake_radio_ready(),
+        usb_wake_host_firmware()
+    );
+    apply_gate();
+    // Only a host-prepared transition forces the controller off. A bridge-armed
+    // transition leaves that to the user's USB sleep-disconnect setting and
+    // arms once the controller is quiet.
+    if (
+        wake_on_lan_host_prepared()
+        && usb_wake_external_suspended()
+        && bt_is_controller_connected()
+        && !bt_expected_disconnect_pending()
+    ) {
+        (void)bt_power_off_controller();
+    }
+    // A failed WLAN teardown must never resume gameplay with an active radio.
+    // Reboot clears the RAM-only wake arm; it cannot repeat the same attempt.
+    if (wake_on_lan_recovery_required()) {
+        watchdog_reboot(0, 0, 10);
+        // Returning would let the normal watchdog feed postpone recovery forever.
+        while (true) {
+            tight_loop_contents();
+        }
+    }
+}
+
 int main() {
 #if SYS_CLOCK_KHZ != 150000
     vreg_set_voltage(VREG_VOLTAGE_1_20);
@@ -775,6 +845,7 @@ int main() {
 
     bt_init();
     bt_register_data_callback(on_bt_data);
+    wake_on_lan_init();
 
     watchdog_enable(1000, true);
 
@@ -793,6 +864,9 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
             tud_task();
             bt_output_service_after_usb();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::WakeOnLan, {
+            service_wake_on_lan();
         });
         RUN_MAIN_PHASE(
             WatchdogMainLoopPhase::FirmwareLogFlush,
@@ -834,9 +908,11 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Button, {
             button_check();
         });
-        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Lightbar, {
-            bt_lightbar_loop();
-        });
+        if (!wake_on_lan_quiet_gate()) {
+            RUN_MAIN_PHASE(WatchdogMainLoopPhase::Lightbar, {
+                bt_lightbar_loop();
+            });
+        }
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Rssi, {
             bt_signal_strength_loop();
         });
@@ -846,12 +922,14 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::ConnectionRecovery, {
             bt_connection_recovery_loop();
         });
-        RUN_MAIN_PHASE(WatchdogMainLoopPhase::FeaturePrefetch, {
-            bt_feature_prefetch_loop();
-        });
-        RUN_MAIN_PHASE(WatchdogMainLoopPhase::OutputRetry, {
-            bt_output_retry_loop();
-        });
+        if (!wake_on_lan_quiet_gate()) {
+            RUN_MAIN_PHASE(WatchdogMainLoopPhase::FeaturePrefetch, {
+                bt_feature_prefetch_loop();
+            });
+            RUN_MAIN_PHASE(WatchdogMainLoopPhase::OutputRetry, {
+                bt_output_retry_loop();
+            });
+        }
 #ifdef ENABLE_COMPANION
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Companion, {
             companion_loop();

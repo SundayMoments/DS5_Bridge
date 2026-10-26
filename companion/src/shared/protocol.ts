@@ -23,7 +23,9 @@ export const REPORT_ID = {
   FEEDBACK_TRACE: 0x0a,
   DEVICE_IDENTITY: 0x0d,
   FIRMWARE_LOG: 0x0e,
-  BOOTLOADER_AUTHORIZATION: 0x12
+  BOOTLOADER_AUTHORIZATION: 0x12,
+  RESET_EVIDENCE: 0x13,
+  WAKE_ON_LAN: 0x1d
 } as const;
 
 export const SHORTCUT_EVENT = {
@@ -110,7 +112,9 @@ export const COMMAND_ID = {
   BOOTLOADER_AUTH_CHALLENGE: 0x52,
   BOOTLOADER_AUTH_REVOKE: 0x53,
   BOOTLOADER_AUTH_CONFIRMATION_CANCEL: 0x54,
-  BOOTLOADER_AUTH_PHYSICAL_BEGIN: 0x55
+  BOOTLOADER_AUTH_PHYSICAL_BEGIN: 0x55,
+  // The Wake-on-LAN opcode travels in value (see wake-on-lan-protocol.ts).
+  WAKE_ON_LAN: 0x57
 } as const;
 
 export const RADIAL_DEADZONE_MAX_PERCENT = 50;
@@ -673,6 +677,11 @@ export interface ReportProtocolVersion {
   minor: number;
 }
 
+/** Length, report ID and DS5B magic; the caller checks the version. */
+export function assertCompanionReport(report: ArrayLike<number>, reportId: number): void {
+  assertReport(report, reportId);
+}
+
 function assertReport(report: ArrayLike<number>, reportId: number): void {
   if (report.length !== REPORT_LENGTH) {
     throw new ProtocolError(`Expected ${REPORT_LENGTH} bytes, received ${report.length}.`, 'bad-length');
@@ -774,6 +783,57 @@ export function parseBootloaderAuthorizationReport(
   };
 }
 
+// Names match watchdog_telemetry_phase_name/_reason_name in
+// src/watchdog_telemetry.cpp, indexed by the firmware enums.
+export const RESET_EVIDENCE_PHASES = [
+  'boot', 'cyw43', 'tinyusb', 'interrupt-before-audio', 'usb-power', 'audio', 'button',
+  'lightbar', 'rssi', 'inquiry', 'connection-recovery', 'feature-prefetch', 'output-retry',
+  'companion', 'interrupt-after-companion', 'firmware-log-flush', 'cyw43-second',
+  'interrupt-after-cyw43', 'wake-on-lan'
+] as const;
+export const RESET_EVIDENCE_REASONS = [
+  'watchdog-timeout', 'panic', 'out-of-memory', 'codec-fatal', 'audio-stack-overflow',
+  'container-contract', 'cyw43-rx-overflow'
+] as const;
+
+/** Why the bridge last reset, as the firmware captured it at boot. */
+export interface ResetEvidencePayload {
+  /** The current boot followed a watchdog reset: a crash, a hang or a deliberate recovery. */
+  watchdogReset: boolean;
+  /** The breadcrumb survived the reset, so phase, reason and uptime are meaningful. */
+  evidenceValid: boolean;
+  phase: string;
+  reason: string;
+  /** Consecutive abnormal resets since the last clean boot (saturates at 255). */
+  consecutiveAbnormalResets: number;
+  /** Uptime at the last heartbeat before the reset, 1 s resolution. */
+  uptimeBeforeResetMs: number;
+  /** Reason-specific evidence, such as the CYW43 receive counts. */
+  detail: number;
+  /** The bridge's uptime when this report was read. */
+  uptimeMs: number;
+}
+
+export function parseResetEvidenceReport(report: ArrayLike<number>): ResetEvidencePayload {
+  assertReport(report, REPORT_ID.RESET_EVIDENCE);
+  assertCurrentOrOlderVersion(report);
+  if (report[7] !== 1) {
+    throw new ProtocolError(`Unsupported reset evidence schema ${report[7]}.`, 'bad-reset-evidence');
+  }
+  const flags = report[8];
+  const evidenceValid = (flags & 0x02) !== 0;
+  return {
+    watchdogReset: (flags & 0x01) !== 0,
+    evidenceValid,
+    phase: evidenceValid ? RESET_EVIDENCE_PHASES[report[9]] ?? 'unknown' : 'unknown',
+    reason: evidenceValid ? RESET_EVIDENCE_REASONS[report[10]] ?? 'unknown' : 'unknown',
+    consecutiveAbnormalResets: report[11],
+    uptimeBeforeResetMs: evidenceValid ? readU32(report, 12) : 0,
+    detail: evidenceValid ? readU32(report, 16) : 0,
+    uptimeMs: readU32(report, 20)
+  };
+}
+
 export function readReportProtocolVersion(
   report: ArrayLike<number>,
   reportId: number
@@ -787,6 +847,10 @@ export function readReportProtocolVersion(
 
 function readU16(report: ArrayLike<number>, offset: number): number {
   return report[offset] | (report[offset + 1] << 8);
+}
+
+export function readWireU32(report: ArrayLike<number>, offset: number): number {
+  return readU32(report, offset);
 }
 
 function readU32(report: ArrayLike<number>, offset: number): number {

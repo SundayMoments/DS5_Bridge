@@ -71,6 +71,18 @@ add_executable(bootloader_maintenance_test
     ../../src/bootloader_maintenance.cpp
 )
 target_include_directories(bootloader_maintenance_test PRIVATE ../../src)
+add_executable(wake_on_lan_test
+    wake_on_lan_test.cpp
+    ../../src/wake_on_lan_domain.cpp
+    ../../src/wake_on_lan_engine.cpp
+    ../../src/wake_on_lan_store.cpp
+)
+target_include_directories(wake_on_lan_test PRIVATE ../../src)
+target_compile_definitions(wake_on_lan_test PRIVATE
+    DS5_WOL_FIXTURES="${CMAKE_CURRENT_LIST_DIR}/fixtures")
+# The exact Wake-on-LAN fragments compiled into the generated CYW43 copies.
+add_executable(cyw43_wol_guards_test cyw43_wol_guards_test.c)
+add_executable(cyw43_wol_join_test cyw43_wol_join_test.c)
 
 # The exact CYW43 transport fragments compiled into the generated SDK copies,
 # exercised against modeled ring, window and receive-loop behavior.
@@ -98,6 +110,21 @@ add_test(NAME bounded_containers_test COMMAND bounded_containers_test)
 add_test(NAME trigger_motor_power_test COMMAND trigger_motor_power_test)
 add_test(NAME keyboard_tap_sequencer_test COMMAND keyboard_tap_sequencer_test)
 add_test(NAME bootloader_maintenance_test COMMAND bootloader_maintenance_test)
+add_test(NAME wake_on_lan_test COMMAND wake_on_lan_test)
+add_test(NAME cyw43_wol_guards_test COMMAND cyw43_wol_guards_test)
+add_test(NAME cyw43_wol_inline_join_events_test COMMAND cyw43_wol_join_test events)
+add_test(NAME cyw43_wol_reused_event_buffer_test COMMAND cyw43_wol_join_test mask)
+# The generated SDK copies need the pinned Pico SDK; skipped without it.
+set(DS5_TEST_PICO_SDK_PATH "$ENV{PICO_SDK_PATH}" CACHE PATH "Pinned Pico SDK for the CYW43 patch contract")
+if(DS5_TEST_PICO_SDK_PATH AND EXISTS "${DS5_TEST_PICO_SDK_PATH}/lib/cyw43-driver/src/cyw43_ctrl.c")
+    add_test(NAME cyw43_wol_patch_contract COMMAND ${CMAKE_COMMAND}
+        -DSDK_PATH=${DS5_TEST_PICO_SDK_PATH}
+        -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cyw43-wol-patch-contract
+        -DSOURCE_DIR=${CMAKE_CURRENT_LIST_DIR}/../../src
+        -P ${CMAKE_CURRENT_LIST_DIR}/cyw43_wol_patch_contract.cmake)
+else()
+    message(STATUS "PICO_SDK_PATH not set; skipping cyw43_wol_patch_contract")
+endif()
 add_test(NAME cyw43_rx_packet_read_test COMMAND cyw43_rx_packet_read_test)
 add_test(NAME cyw43_tx_window_write_test COMMAND cyw43_tx_window_write_test)
 add_test(NAME cyw43_hci_receive_continuation_test COMMAND cyw43_hci_receive_continuation_test)
