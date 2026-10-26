@@ -1125,7 +1125,7 @@ describe('BridgeService', () => {
     expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, hostPersonaMode);
   });
 
-  it('skips test haptics while a host persona transition is active', async () => {
+  it('rejects test haptics with guidance while a host persona transition is active', async () => {
     const service = serviceFixture({ hapticsGainPercent: 130 });
     const device = new MockHidDevice();
     device.status = statusReport({
@@ -1138,14 +1138,17 @@ describe('BridgeService', () => {
 
     await poll(service);
     await service.setHostPersonaMode('xbox');
-    const snapshot = await service.testHaptics();
+    await expect(service.testHaptics()).rejects.toThrow(
+      'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.'
+    );
 
+    const snapshot = await service.getSnapshot();
     expect(audioHelperMock.playBridgeHapticsTestPattern).not.toHaveBeenCalled();
     expect(snapshot.personaTransition?.to).toBe('xbox');
     expect(snapshot.state).toBe('transitioning');
   });
 
-  it('does not reject test haptics when the persona audio endpoint is still reconnecting', async () => {
+  it('waits for a persona audio endpoint that is still reconnecting', async () => {
     const service = serviceFixture({ hapticsGainPercent: 130 });
     const device = new MockHidDevice();
     device.status = statusReport({ hostPersonaMode: 'xbox', supportedHostPersonaModesMask: 0x07 });
@@ -1158,8 +1161,103 @@ describe('BridgeService', () => {
     await poll(service);
     const snapshot = await service.testHaptics();
 
-    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledWith(130, 'xbox');
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledTimes(2);
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenLastCalledWith(130, 'xbox');
     expect(snapshot.settings.hapticsGainPercent).toBe(130);
+  });
+
+  it('reports a missing persona audio endpoint once the wait expires', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'xbox', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    audioHelperMock.playBridgeHapticsTestPattern.mockRejectedValue(new Error(
+      "Unhandled exception. System.InvalidOperationException: Render endpoint matching persona 'xbox' ('Xbox 360 Controller for Windows') was not found."
+    ));
+
+    await poll(service);
+    let now = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
+      now += 3000;
+      return now;
+    });
+    try {
+      await expect(service.testHaptics()).rejects.toThrow(
+        'The controller audio endpoint is unavailable. Close any games using the controller and try again.'
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects other test haptics failures with retry guidance', async () => {
+    const service = serviceFixture({ hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    audioHelperMock.playBridgeHapticsTestPattern.mockRejectedValueOnce(new Error('Haptics test helper timed out.'));
+
+    await poll(service);
+
+    await expect(service.testHaptics()).rejects.toThrow(
+      'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.'
+    );
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledOnce();
+  });
+
+  it('pauses system audio haptics while test haptics plays and runs one test at a time', async () => {
+    const service = serviceFixture({ audioReactiveHapticsEnabled: true, hapticsGainPercent: 130 });
+    const device = new MockHidDevice();
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+
+    const events: string[] = [];
+    let running = true;
+    const internals = service as unknown as {
+      systemAudioHapticsEngine: {
+        start(): Promise<void>;
+        stop(): Promise<void>;
+        isActive(): boolean;
+      };
+      resetSystemAudioHapticsRecovery(): void;
+    };
+    // The fixture's real helper cannot launch here; clear its retry backoff.
+    internals.resetSystemAudioHapticsRecovery();
+    internals.systemAudioHapticsEngine = {
+      start: vi.fn(async () => {
+        events.push('system-start');
+        running = true;
+      }),
+      stop: vi.fn(async () => {
+        if (running) {
+          events.push('system-stop');
+        }
+        running = false;
+      }),
+      isActive: () => running
+    };
+    let finishPattern: () => void = () => undefined;
+    audioHelperMock.playBridgeHapticsTestPattern.mockImplementationOnce(async () => {
+      events.push('test-start');
+      await new Promise<void>((resolve) => {
+        finishPattern = resolve;
+      });
+      events.push('test-end');
+    });
+
+    const first = service.testHaptics();
+    const second = service.testHaptics();
+    await vi.waitFor(() => expect(events).toContain('test-start'));
+    finishPattern();
+    await Promise.all([first, second]);
+
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledOnce();
+    expect(events).toEqual(['system-stop', 'test-start', 'test-end', 'system-start']);
   });
 
   it('plays test speaker through the current persona audio endpoint', async () => {

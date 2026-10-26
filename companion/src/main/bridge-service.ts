@@ -128,6 +128,14 @@ const MIC_KEEPALIVE_ENABLED = CompanionDebugConfig.micKeepaliveEnabled;
 const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
 const SYSTEM_AUDIO_HAPTICS_MAX_RETRY_MS = 30000;
 const SYSTEM_AUDIO_HAPTICS_STABLE_MS = 10000;
+const TEST_HAPTICS_ENDPOINT_WAIT_MS = 5000;
+const TEST_HAPTICS_ENDPOINT_RETRY_MS = 250;
+const TEST_HAPTICS_SWITCHING_MESSAGE =
+  'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.';
+const TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE =
+  'The controller audio endpoint is unavailable. Close any games using the controller and try again.';
+const TEST_HAPTICS_FAILED_MESSAGE =
+  'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.';
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
@@ -1296,6 +1304,8 @@ export class BridgeService extends EventEmitter {
   private systemAudioHapticsRetryAt = 0;
   private systemAudioHapticsFailures = 0;
   private systemAudioHapticsRunningSince: number | null = null;
+  private hapticsTestInFlight: Promise<BridgeSnapshot> | null = null;
+  private hapticsTestActive = false;
   private systemAudioHapticsPassthroughActive = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private lastAudioStatusReadAt = 0;
@@ -1957,11 +1967,6 @@ export class BridgeService extends EventEmitter {
   private isBridgeRenderEndpointUnavailableError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('Render endpoint matching') && message.includes('was not found');
-  }
-
-  private skipBridgeHapticsTest(reason: string): BridgeSnapshot {
-    this.appendAudioDebugLines([`[HostBridge] test haptics skipped: ${reason}`]);
-    return this.getSnapshot();
   }
 
   private async readAudioDebugEvents(): Promise<void> {
@@ -3161,22 +3166,75 @@ export class BridgeService extends EventEmitter {
   }
 
   async testHaptics(): Promise<BridgeSnapshot> {
-    const transition = this.hostPersonaTransitionMaskSnapshot();
+    if (this.hapticsTestInFlight) {
+      return this.hapticsTestInFlight;
+    }
+    const test = this.runHapticsTest().finally(() => {
+      this.hapticsTestInFlight = null;
+    });
+    this.hapticsTestInFlight = test;
+    return test;
+  }
+
+  // Failures reject with guidance the app shows next to the test button.
+  private async runHapticsTest(): Promise<BridgeSnapshot> {
+    const transition = this.hostPersonaTransitionSnapshot();
     if (transition) {
-      return this.skipBridgeHapticsTest(`switching to ${transition.to}`);
+      this.appendAudioDebugLines([`[HostBridge] test haptics skipped: switching to ${transition.to}`]);
+      throw new Error(TEST_HAPTICS_SWITCHING_MESSAGE);
     }
 
     const settings = this.settingsStore.get();
     const hostPersonaMode = this.currentHostPersonaMode();
+    // System Audio Haptics writes the same bridge frames, so pause it while
+    // the pattern plays rather than interleave the two.
+    this.hapticsTestActive = true;
     try {
-      await playBridgeHapticsTestPattern(settings.hapticsGainPercent, hostPersonaMode);
+      await this.systemAudioHapticsEngine.stop();
+      await this.playHapticsTestWhenEndpointReady(settings.hapticsGainPercent, hostPersonaMode);
     } catch (error) {
-      if (this.isBridgeRenderEndpointUnavailableError(error)) {
-        return this.skipBridgeHapticsTest(`${hostPersonaModeLabel(hostPersonaMode)} audio endpoint unavailable`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([
+        `[HostBridge] test haptics failed persona=${hostPersonaMode} error=${message}`
+      ]);
+      throw new Error(
+        this.isBridgeRenderEndpointUnavailableError(error)
+          ? TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE
+          : TEST_HAPTICS_FAILED_MESSAGE,
+        { cause: error }
+      );
+    } finally {
+      this.hapticsTestActive = false;
+      try {
+        await this.updateSystemAudioHapticsEngine();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.appendAudioDebugLines([`[SystemHaptics] resume after test haptics failed: ${message}`]);
       }
-      throw error;
     }
     return this.getSnapshot();
+  }
+
+  // Right after a persona switch the bridge's audio endpoint can appear a
+  // moment after its HID interface, so a missing endpoint gets a short wait.
+  private async playHapticsTestWhenEndpointReady(
+    gainPercent: number,
+    hostPersonaMode: HostPersonaMode
+  ): Promise<void> {
+    const deadline = Date.now() + TEST_HAPTICS_ENDPOINT_WAIT_MS;
+    for (;;) {
+      try {
+        await playBridgeHapticsTestPattern(gainPercent, hostPersonaMode);
+        return;
+      } catch (error) {
+        if (!this.isBridgeRenderEndpointUnavailableError(error) || Date.now() >= deadline) {
+          throw error;
+        }
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, TEST_HAPTICS_ENDPOINT_RETRY_MS);
+      });
+    }
   }
 
   async testSpeaker(): Promise<BridgeSnapshot> {
@@ -3560,6 +3618,11 @@ export class BridgeService extends EventEmitter {
   }
 
   private async updateSystemAudioHapticsEngine(): Promise<void> {
+    if (this.hapticsTestActive) {
+      // Test Haptics owns the bridge frames and resumes this when it ends.
+      await this.systemAudioHapticsEngine.stop();
+      return;
+    }
     const settings = this.settingsStore.get();
     if (
       !this.systemAudioHapticsDesired(settings)
