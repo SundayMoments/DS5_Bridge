@@ -308,11 +308,6 @@ relocate_to_ram(
 
 # Tier 2: transmit pumps and USB transfer submission.
 relocate_to_ram(
-        src/bt.cpp.o
-        ".text._ZNSt6vectorIhSaIhEE13_M_assign_auxIPKhEEvT_S5_St20forward_iterator_tag.isra.0=.time_critical.audio_packet_vector_assign"
-        "Relocating reusable audio packet copy to SRAM"
-)
-relocate_to_ram(
         lib/btstack/src/hci.c.o
         ".text.hci_run=.time_critical.hci_run@.text.hci_send_acl_packet_fragments=.time_critical.hci_send_acl_packet_fragments@.text.hci_send_acl_packet_buffer=.time_critical.hci_send_acl_packet_buffer@.text.hci_can_send_prepared_acl_packet_now=.time_critical.hci_can_send_prepared_acl_packet_now@.text.hci_can_send_acl_packet_now=.time_critical.hci_can_send_acl_packet_now@.text.hci_can_send_acl_classic_packet_now=.time_critical.hci_can_send_acl_classic_packet_now@.text.hci_is_packet_buffer_reserved=.time_critical.hci_is_packet_buffer_reserved@.text.hci_reserve_packet_buffer=.time_critical.hci_reserve_packet_buffer@.text.hci_get_outgoing_packet_buffer=.time_critical.hci_get_outgoing_packet_buffer@.text.hci_non_flushable_packet_boundary_flag_supported=.time_critical.hci_non_flushable_packet_boundary_flag_supported@.text.hci_automatic_flush_timeout=.time_critical.hci_automatic_flush_timeout"
         "Relocating HCI transmit pump to SRAM"

@@ -226,7 +226,7 @@ void assert_dualsense_persona_identity_reports_are_isolated(std::filesystem::pat
         || main_cpp.find("upstream_type == ControllerTypeDualSense") == std::string::npos
         || get_report_callback.find("report_type != HID_REPORT_TYPE_FEATURE") == std::string::npos
         || get_report_callback.find("dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)") == std::string::npos
-        || get_report_callback.find("get_feature_data(report_id, reqlen)") == std::string::npos
+        || get_report_callback.find("bt_copy_feature_data(report_id, buffer, reqlen, &copy_len)") == std::string::npos
         || get_report_callback.find("dualsense_persona_get_feature_report(active_persona, report_id, buffer, reqlen)") == std::string::npos
         || dualsense_persona_h.find("dualsense_persona_get_feature_report") == std::string::npos
         || dualsense_persona_cpp.find("kDualSenseFeatureFirmwareInfo = 0x20") == std::string::npos
@@ -1785,8 +1785,8 @@ void assert_dualsense_feature_startup_is_paced(std::filesystem::path const &root
             == std::string::npos
         || init_feature_block.find("schedule_feature_prefetch(0x20, 64);")
             == std::string::npos
-        || init_feature_block.find("get_feature_data(") != std::string::npos
-        || prefetch_loop.find("get_feature_data(request.report_id, request.len)")
+        || init_feature_block.find("request_feature_report_if_needed(") != std::string::npos
+        || prefetch_loop.find("request_feature_report_if_needed(request.report_id)")
             == std::string::npos
         || prefetch_loop.find("FEATURE_PREFETCH_SPACING_US") == std::string::npos
         || main_cpp.find("bt_feature_prefetch_loop();") == std::string::npos

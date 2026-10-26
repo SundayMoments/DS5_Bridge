@@ -7,7 +7,6 @@
 #define DS5_BRIDGE_BT_H
 
 #include <cstdint>
-#include <vector>
 
 enum CHANNEL_TYPE {
     INTERRUPT,
@@ -136,7 +135,10 @@ void bt_output_retry_loop();
 // Call after each top-level tud_task(): refills the bounded Bluetooth send
 // allowance and issues send requests deferred by nested BTstack callbacks.
 void bt_output_service_after_usb();
-std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
+// Copies the cached feature report payload (without its report ID byte) into
+// buffer and requests a fresh copy when needed. Returns whether a cached report
+// existed; *copied receives the payload bytes written.
+bool bt_copy_feature_data(uint8_t report_id, uint8_t *buffer, uint16_t capacity, uint16_t *copied);
 void init_feature();
 void set_feature_data(uint8_t reportId, uint8_t const* data,uint16_t len);
 

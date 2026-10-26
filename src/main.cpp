@@ -590,17 +590,12 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return 0;
     }
 
-    std::vector<uint8_t> feature_data;
-    if (dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)) {
-        feature_data = get_feature_data(report_id, reqlen);
-    }
-    if (!feature_data.empty() && buffer != nullptr) {
-        const uint16_t available = static_cast<uint16_t>(feature_data.size() - 1);
-        const uint16_t copy_len = available < reqlen ? available : reqlen;
-        if (copy_len > 0) {
-            memcpy(buffer, feature_data.data() + 1, copy_len);
-        }
-
+    uint16_t copy_len = 0;
+    if (
+        dualsense_feature_report_may_use_bt_passthrough(active_persona, report_id)
+        && bt_copy_feature_data(report_id, buffer, reqlen, &copy_len)
+        && buffer != nullptr
+    ) {
         return copy_len;
     }
 

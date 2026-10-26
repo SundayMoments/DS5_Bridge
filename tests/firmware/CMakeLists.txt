@@ -57,6 +57,8 @@ target_link_libraries(ram_mem_test PRIVATE ds5_ram_mem)
 
 add_executable(bt_output_send_dispatcher_test bt_output_send_dispatcher_test.cpp)
 target_include_directories(bt_output_send_dispatcher_test PRIVATE ../../src)
+add_executable(bounded_containers_test bounded_containers_test.cpp)
+target_include_directories(bounded_containers_test PRIVATE ../../src)
 
 # The exact CYW43 transport fragments compiled into the generated SDK copies,
 # exercised against modeled ring, window and receive-loop behavior.
@@ -80,6 +82,7 @@ add_test(NAME usb_descriptor_migration_test COMMAND usb_descriptor_migration_tes
 add_test(NAME diagnostics_config_test COMMAND diagnostics_config_test)
 add_test(NAME ram_mem_test COMMAND ram_mem_test)
 add_test(NAME bt_output_send_dispatcher_test COMMAND bt_output_send_dispatcher_test)
+add_test(NAME bounded_containers_test COMMAND bounded_containers_test)
 add_test(NAME cyw43_rx_packet_read_test COMMAND cyw43_rx_packet_read_test)
 add_test(NAME cyw43_tx_window_write_test COMMAND cyw43_tx_window_write_test)
 add_test(NAME cyw43_hci_receive_continuation_test COMMAND cyw43_hci_receive_continuation_test)
