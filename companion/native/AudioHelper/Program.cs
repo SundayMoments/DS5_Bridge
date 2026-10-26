@@ -183,12 +183,65 @@ static class AudioHelperTestHaptics
 
     public static void Play(HelperOptions options)
     {
+        // Audio already playing to the bridge endpoint (for example headphones
+        // on the controller) reaches the controller as one packet stream. WinUSB
+        // frames would add haptics-only packets beside it and make that audio
+        // stutter, so mix the pattern into the endpoint stream instead.
+        if (TryPlayViaActiveRenderEndpoint(options))
+        {
+            return;
+        }
+
         if (TryPlayViaBridgeFrames(options.HapticsGainPercent, options.CompanionDevicePath))
         {
             return;
         }
 
         PlayViaRenderEndpoint(options);
+    }
+
+    private static bool TryPlayViaActiveRenderEndpoint(HelperOptions options)
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        MMDevice device;
+        try
+        {
+            device = SelectBridgeRenderEndpoint(enumerator, options);
+            if (device.AudioClient.MixFormat.Channels < 4 || !HasActiveRenderSession(device))
+            {
+                return false;
+            }
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        PlayOnRenderEndpoint(device, options.HapticsGainPercent);
+        return true;
+    }
+
+    private static bool HasActiveRenderSession(MMDevice device)
+    {
+        var sessions = device.AudioSessionManager.Sessions;
+        for (var index = 0; index < sessions.Count; index++)
+        {
+            var session = sessions[index];
+            if (session.State == AudioSessionState.AudioSessionStateActive
+                && session.GetProcessID != Environment.ProcessId)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static MMDevice SelectBridgeRenderEndpoint(MMDeviceEnumerator enumerator, HelperOptions options)
+    {
+        return !string.IsNullOrWhiteSpace(options.BridgePersona)
+            ? EndpointManager.SelectRenderBridgeEndpointForPersona(enumerator, options.BridgePersona)
+            : EndpointManager.SelectRenderEndpoint(enumerator, options.DeviceName);
     }
 
     private static bool TryPlayViaBridgeFrames(int hapticsGainPercent, string? devicePath)
@@ -241,9 +294,11 @@ static class AudioHelperTestHaptics
     private static void PlayViaRenderEndpoint(HelperOptions options)
     {
         using var enumerator = new MMDeviceEnumerator();
-        var device = !string.IsNullOrWhiteSpace(options.BridgePersona)
-            ? EndpointManager.SelectRenderBridgeEndpointForPersona(enumerator, options.BridgePersona)
-            : EndpointManager.SelectRenderEndpoint(enumerator, options.DeviceName);
+        PlayOnRenderEndpoint(SelectBridgeRenderEndpoint(enumerator, options), options.HapticsGainPercent);
+    }
+
+    private static void PlayOnRenderEndpoint(MMDevice device, int hapticsGainPercent)
+    {
         var format = device.AudioClient.MixFormat;
         if (format.Channels < 4)
         {
@@ -251,7 +306,7 @@ static class AudioHelperTestHaptics
                 $"Test haptics requires a 4-channel bridge audio endpoint; '{device.FriendlyName}' exposes {format.Channels} channel(s).");
         }
 
-        var pcm = BuildTestPcm(format, options.HapticsGainPercent);
+        var pcm = BuildTestPcm(format, hapticsGainPercent);
         var waveProvider = new BufferedWaveProvider(format)
         {
             BufferDuration = TimeSpan.FromSeconds(1),

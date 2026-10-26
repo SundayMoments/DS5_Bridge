@@ -23,6 +23,32 @@ public sealed class AudioHelperTestHapticsTests
         Assert.True(ReadChannel(pcm, format, secondActiveFrame, 3) < 0);
     }
 
+    [Theory]
+    [InlineData(16, false)]
+    [InlineData(24, false)]
+    [InlineData(32, false)]
+    [InlineData(32, true)]
+    public void BuildTestPcmLeavesStereoSilentAndEndsWithNeutralBlocks(int bits, bool ieeeFloat)
+    {
+        var format = ieeeFloat
+            ? WaveFormat.CreateIeeeFloatWaveFormat(48000, 4)
+            : new WaveFormat(48000, bits, 4);
+        var frameBytes = format.BlockAlign;
+        var stereoBytes = bits / 8 * 2;
+
+        var pcm = AudioHelperTestHaptics.BuildTestPcm(format, 100);
+
+        Assert.Equal(44 * 512 * frameBytes, pcm.Length);
+        // Headphone audio on the shared endpoint mixes into channels 1/2, so
+        // this haptics stream must contribute silence there.
+        for (var offset = 0; offset < pcm.Length; offset += frameBytes)
+        {
+            Assert.All(pcm.AsSpan(offset, stereoBytes).ToArray(), sample => Assert.Equal(0, sample));
+        }
+        Assert.Contains(pcm.AsSpan(3 * 512 * frameBytes, 36 * 512 * frameBytes).ToArray(), sample => sample != 0);
+        Assert.All(pcm.AsSpan(39 * 512 * frameBytes).ToArray(), sample => Assert.Equal(0, sample));
+    }
+
     [Fact]
     public void BuildTestPcmClampsZeroGainToSilentHaptics()
     {
