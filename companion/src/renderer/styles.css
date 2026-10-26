@@ -22,5 +22,6 @@
 @import './styles/system-heading.css';
 @import './styles/chords.css';
 @import './styles/system-surfaces.css';
+@import './styles/custom-select.css';
 @import './styles/shared-controls.css';
 @import './styles/bridge-selector.css';

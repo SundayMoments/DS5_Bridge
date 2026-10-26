@@ -1,0 +1,106 @@
+/* A label that explains itself on hover or focus: dotted underline and a
+   question mark, like the Gyro and Haptics labels before it. */
+.help-tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  outline: none;
+}
+
+.help-tooltip-trigger.labelled { cursor: help; }
+
+/* The label keeps its own width, so the question mark always follows the
+   text, even where a row keeps labels on one line. */
+.help-tooltip-label {
+  text-decoration: underline dotted var(--surface-border-strong);
+  text-underline-offset: 3px;
+}
+
+.help-tooltip-trigger .help-tooltip-mark {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.help-tooltip-trigger.labelled:is(:hover, :focus-visible) .help-tooltip-label {
+  text-decoration-color: var(--accent-border-strong);
+}
+
+.help-tooltip-trigger.labelled:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The popup floats in the shell above every card and scroll area, with the
+   dropdown menu's opaque surface and corners and a pointer at its trigger. */
+.help-tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  display: grid;
+  gap: 4px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: 12px;
+  background: var(--surface-menu);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-control);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-align: left;
+  text-decoration: none;
+  text-transform: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+  cursor: default;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.help-tooltip.fit {
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
+}
+
+.help-tooltip.open { visibility: visible; }
+
+.help-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: calc(var(--help-tooltip-caret, 24px) - 5px);
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid var(--surface-border-strong);
+  border-bottom: 1px solid var(--surface-border-strong);
+  background: var(--surface-menu);
+  transform: rotate(45deg);
+}
+
+.help-tooltip[data-side="below"]::after {
+  top: -6px;
+  bottom: auto;
+  border: 0;
+  border-top: 1px solid var(--surface-border-strong);
+  border-left: 1px solid var(--surface-border-strong);
+}
+
+/* A quieter follow-up line, such as a condition or a charging note. */
+.help-tooltip-note {
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+/* Button glyphs for a shortcut, after a short lead-in. */
+.help-tooltip-glyphs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}

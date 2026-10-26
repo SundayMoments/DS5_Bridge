@@ -74,6 +74,15 @@
   --nav-active-text: var(--text-strong);
   --nav-active-icon: var(--accent-strong);
   --command-chip-base: var(--app-bg-flat);
+  --command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base) 82%);
+  --command-chip-border: color-mix(in srgb, var(--accent) 58%, var(--command-chip-base) 42%);
+  --command-chip-hover-bg: color-mix(in srgb, var(--accent) 28%, var(--command-chip-base) 72%);
+  --command-chip-hover-border: color-mix(in srgb, var(--accent) 82%, var(--command-chip-base) 18%);
+  --command-chip-active-bg: color-mix(in srgb, var(--accent) 44%, var(--command-chip-base) 56%);
+  --command-chip-active-border: color-mix(in srgb, var(--accent) 86%, var(--command-chip-base) 14%);
+  --command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);
+  --command-chip-muted-border: color-mix(in srgb, var(--accent) 38%, var(--command-chip-base) 62%);
+  --command-chip-success-hover-bg: color-mix(in srgb, var(--success-selected) 86%, var(--command-chip-base) 14%);
   --command-chip-text: var(--text-control);
   --command-chip-hover-text: var(--text-strong);
   --command-chip-active-text: var(--text-strong);

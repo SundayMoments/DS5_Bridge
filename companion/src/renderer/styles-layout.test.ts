@@ -400,9 +400,10 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.audio-haptics-mode-state.retry', 'background: var(--info-selected);')).toContain(
       'color: var(--info-selected-text);'
     );
-    expect(cssBlock('.custom-select-menu button.selected', 'background: var(--accent-selected);')).toContain(
-      'color: var(--accent-text);'
+    expect(cssBlock('.custom-select-menu button.selected', 'background: var(--surface-control-hover);')).toContain(
+      'color: var(--text-strong);'
     );
+    expect(cssBlock('.custom-select-menu button.selected > svg', 'color: var(--accent);')).toContain('justify-self: end;');
     expect(cssBlock('.custom-select-menu button.selected span,', 'color: inherit;')).toContain('color: inherit;');
     expect(shellTokens).toContain(
       '--nav-active-bg: color-mix(in srgb, var(--accent) var(--nav-active-bg-weight), var(--nav-active-base));'
@@ -422,9 +423,10 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.emergency-repair-button', 'background: var(--danger-selected);')).toContain(
       'color: var(--danger-selected-text);'
     );
-    expect(shellTokens).toContain('--command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base) 82%);');
-    expect(shellTokens).toContain('--command-chip-active-bg: color-mix(in srgb, var(--accent) 44%, var(--command-chip-base) 56%);');
-    expect(shellTokens).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);');
+    const ds5Chips = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"]', '--command-chip-bg:');
+    expect(ds5Chips).toContain('--command-chip-bg: color-mix(in srgb, var(--accent) 18%, var(--command-chip-base) 82%);');
+    expect(ds5Chips).toContain('--command-chip-active-bg: color-mix(in srgb, var(--accent) 44%, var(--command-chip-base) 56%);');
+    expect(ds5Chips).toContain('--command-chip-muted-bg: color-mix(in srgb, var(--accent) 14%, var(--command-chip-base) 86%);');
   });
 
   it('uses the main haptics gain control in the Audio Haptics card', () => {

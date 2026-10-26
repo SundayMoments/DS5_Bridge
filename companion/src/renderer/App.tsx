@@ -3,6 +3,11 @@ import '@fontsource/montserrat/latin-600.css';
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  CustomSelect as SharedCustomSelect,
+  type CustomSelectProps
+} from './components/CustomSelect';
+import type { SelectValue } from './components/custom-select-types';
+import {
   type TablerIcon,
   IconAdjustmentsSpark,
   IconActivity as Activity,
@@ -829,7 +834,6 @@ function controlPanelIdFor(tab: SidebarControlTab): string {
   if (tab === 'trigger-lab') return 'control-panel-triggers';
   return `control-panel-${tab}`;
 }
-type SelectValue = string | number;
 type SinkSelectableAudio = HTMLAudioElement & {
   setSinkId?: (sinkId: string) => Promise<void>;
   sinkId?: string;
@@ -852,28 +856,6 @@ function storedStartupTutorialStep(): StartupTutorialStep {
 function saveStartupTutorialCompleted(): void {
   window.localStorage.setItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY, '1');
 }
-
-type CustomSelectProps<T extends SelectValue> = {
-  value: T;
-  options: Array<[string, T]>;
-  disabled?: boolean;
-  className?: string;
-  floatingMenu?: boolean;
-  floatingMenuMinWidth?: number;
-  suspendOutsideClose?: boolean;
-  showSelectedCheck?: boolean;
-  closeOnSelect?: boolean;
-  getOptionClassName?: (label: string, value: T) => string | undefined;
-  renderValue?: (label: string, value: T) => ReactNode;
-  renderOption?: (label: string, value: T) => ReactNode;
-  renderMenuFooter?: (closeMenu: () => void) => ReactNode;
-  ariaLabel: string;
-  onChange: (value: T) => void;
-};
-
-type CustomSelectMenuStyle = CSSProperties & {
-  '--custom-select-menu-max-height'?: string;
-};
 
 function snapHapticsValue(value: number, max = STANDARD_FEEDBACK_GAIN_PERCENT): number {
   return Math.max(0, Math.min(max, Math.round(value / HAPTICS_STEP) * HAPTICS_STEP));
@@ -2337,217 +2319,9 @@ async function playMicLiveListen(durationMs: number): Promise<void> {
   });
 }
 
-function CustomSelect<T extends SelectValue>({
-  value,
-  options,
-  disabled = false,
-  className = '',
-  floatingMenu = false,
-  floatingMenuMinWidth,
-  suspendOutsideClose = false,
-  showSelectedCheck = true,
-  closeOnSelect = true,
-  getOptionClassName,
-  renderValue,
-  renderOption,
-  renderMenuFooter,
-  ariaLabel,
-  onChange
-}: CustomSelectProps<T>) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const selected = options.find(([, optionValue]) => optionValue === value);
-  const longList = options.length > 18;
-  const defaultMenuMaxHeight = longList ? 360 : 232;
-  const [menuMaxHeight, setMenuMaxHeight] = useState(defaultMenuMaxHeight);
-  const [menuPlacement, setMenuPlacement] = useState<'top' | 'bottom'>('bottom');
-  const [floatingMenuStyle, setFloatingMenuStyle] = useState<CustomSelectMenuStyle>({});
-
-  function updateMenuMaxHeight() {
-    const root = rootRef.current;
-    if (!root) {
-      setMenuMaxHeight(defaultMenuMaxHeight);
-      return;
-    }
-
-    const rootRect = root.getBoundingClientRect();
-    const boundary = floatingMenu
-      ? null
-      : root.closest('.system-card, .feature-card, .settings-menu, .control-page') as HTMLElement | null;
-    const boundaryRect = boundary?.getBoundingClientRect();
-    const menuGap = 6;
-    const viewportPadding = floatingMenu ? 8 : 0;
-    const lowerLimit = Math.min(window.innerHeight - viewportPadding, boundaryRect?.bottom ?? window.innerHeight);
-    const upperLimit = Math.max(viewportPadding, boundaryRect?.top ?? 0);
-    const spaceBelow = Math.max(1, Math.floor(lowerLimit - rootRect.bottom - menuGap));
-    const spaceAbove = Math.max(1, Math.floor(rootRect.top - upperLimit - menuGap));
-    const preferredVisibleHeight = Math.min(defaultMenuMaxHeight, 184);
-    const nextPlacement = spaceBelow < preferredVisibleHeight && spaceAbove > spaceBelow ? 'top' : 'bottom';
-    const availableSpace = nextPlacement === 'top' ? spaceAbove : spaceBelow;
-    const nextMaxHeight = longList ? availableSpace : Math.min(defaultMenuMaxHeight, availableSpace);
-
-    setMenuPlacement(nextPlacement);
-    setMenuMaxHeight(Math.max(1, nextMaxHeight));
-
-    if (floatingMenu) {
-      const minimumWidth = floatingMenuMinWidth ?? rootRect.width;
-      const width = Math.min(
-        Math.max(rootRect.width, minimumWidth),
-        Math.max(1, window.innerWidth - viewportPadding * 2)
-      );
-      const idealLeft = rootRect.left + (rootRect.width - width) / 2;
-      const left = Math.min(
-        Math.max(viewportPadding, idealLeft),
-        Math.max(viewportPadding, window.innerWidth - viewportPadding - width)
-      );
-      setFloatingMenuStyle({
-        left: `${Math.round(left)}px`,
-        width: `${Math.round(width)}px`,
-        ...(nextPlacement === 'top'
-          ? { bottom: `${Math.round(window.innerHeight - rootRect.top + menuGap)}px` }
-          : { top: `${Math.round(rootRect.bottom + menuGap)}px` }),
-        '--custom-select-menu-max-height': `${Math.max(1, nextMaxHeight)}px`
-      });
-    }
-  }
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function closeIfOutside(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        !suspendOutsideClose
-        && !rootRef.current?.contains(target)
-        && !menuRef.current?.contains(target)
-      ) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', closeIfOutside);
-    return () => document.removeEventListener('mousedown', closeIfOutside);
-  }, [open, suspendOutsideClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    updateMenuMaxHeight();
-    window.addEventListener('resize', updateMenuMaxHeight);
-    window.addEventListener('scroll', updateMenuMaxHeight, true);
-    return () => {
-      window.removeEventListener('resize', updateMenuMaxHeight);
-      window.removeEventListener('scroll', updateMenuMaxHeight, true);
-    };
-  }, [open, defaultMenuMaxHeight, floatingMenu, floatingMenuMinWidth, longList]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.requestAnimationFrame(() => {
-      const menu = menuRef.current;
-      const optionsContainer = menu?.querySelector('.custom-select-menu-options') as HTMLElement | null;
-      const selectedElement = menu?.querySelector('[data-selected="true"]') as HTMLElement | null;
-      if (!optionsContainer || !selectedElement) {
-        return;
-      }
-      const selectedCenter = selectedElement.offsetTop + selectedElement.offsetHeight / 2;
-      optionsContainer.scrollTop = Math.max(0, selectedCenter - optionsContainer.clientHeight / 2);
-    });
-  }, [open]);
-
-  function choose(nextValue: T) {
-    if (closeOnSelect) {
-      setOpen(false);
-    }
-    if (nextValue !== value) {
-      onChange(nextValue);
-    }
-  }
-
-  function toggleOpen() {
-    if (!open) {
-      updateMenuMaxHeight();
-    }
-    setOpen((nextOpen) => !nextOpen);
-  }
-
-  function openMenu() {
-    updateMenuMaxHeight();
-    setOpen(true);
-  }
-
-  const menu = open ? (
-    <div ref={menuRef} className="custom-select-menu" role="listbox" aria-label={ariaLabel}>
-      <div className="custom-select-menu-options">
-        {options.map(([label, optionValue]) => {
-          const selectedOption = optionValue === value;
-          const optionClassName = getOptionClassName?.(label, optionValue);
-          return (
-            <button
-              key={String(optionValue)}
-              type="button"
-              role="option"
-              aria-selected={selectedOption}
-              data-selected={selectedOption ? 'true' : undefined}
-              className={[selectedOption ? 'selected' : '', optionClassName].filter(Boolean).join(' ')}
-              onClick={() => choose(optionValue)}
-            >
-              <span>{renderOption?.(label, optionValue) ?? label}</span>
-              {showSelectedCheck && selectedOption && <Check size={15} />}
-            </button>
-          );
-        })}
-      </div>
-      {renderMenuFooter && (
-        <div className="custom-select-menu-footer">
-          {renderMenuFooter(() => setOpen(false))}
-        </div>
-      )}
-    </div>
-  ) : null;
-
-  const portalTarget = floatingMenu
-    ? (rootRef.current?.closest('.shell') as HTMLElement | null) ?? document.body
-    : null;
-
-  return (
-    <div
-      ref={rootRef}
-      className={`custom-select ${className} ${open ? 'open' : ''} menu-${menuPlacement} ${disabled ? 'disabled' : ''}`}
-      style={{ '--custom-select-menu-max-height': `${menuMaxHeight}px` } as CSSProperties}
-    >
-      <button
-        type="button"
-        className="custom-select-button"
-        disabled={disabled}
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={toggleOpen}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            openMenu();
-          }
-          if (event.key === 'Escape') {
-            setOpen(false);
-          }
-        }}
-      >
-        <span>{renderValue?.(selected?.[0] ?? String(value), selected?.[1] ?? value) ?? selected?.[0] ?? String(value)}</span>
-        <ChevronDown size={18} />
-      </button>
-      {floatingMenu && portalTarget && menu
-        ? createPortal(
-          <div
-            className={`custom-select custom-select-floating-layer open menu-${menuPlacement} ${suspendOutsideClose ? 'dialog-suspended' : ''} ${className}`}
-            style={floatingMenuStyle}
-          >
-            {menu}
-          </div>,
-          portalTarget
-        )
-        : menu}
-    </div>
-  );
+// The 1.x pages style their menus in place; keep them inline until the page split.
+function CustomSelect<T extends SelectValue>(props: CustomSelectProps<T>) {
+  return <SharedCustomSelect floatingMenu={false} {...props} />;
 }
 
 function ThemeOption({ label, value }: { label: string; value: UiThemePreset }) {

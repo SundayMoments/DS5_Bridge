@@ -1,0 +1,16 @@
+.labeled-switch {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.labeled-switch > span {
+  min-width: 0;
+}
+
+.labeled-switch:has(.switch:disabled) > span {
+  color: var(--text-disabled);
+}
