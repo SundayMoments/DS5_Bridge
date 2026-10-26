@@ -1047,7 +1047,7 @@ void audio_handle_controller_disconnect() {
     last_audio_us = 0;
 }
 
-static bool should_keep_speaker_route_open() {
+static bool __not_in_flash_func(should_keep_speaker_route_open)() {
     return bt_is_controller_connected() && controller_state_ready && volume[0] > 0.0f;
 }
 
@@ -1889,6 +1889,14 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
     const int haptic_input_frames = std::min(frames, requested_haptic_frames);
     const float speaker_gain = usb_host_mute[0] ? 0.0f : clamp(volume[0], 0.0f, 1.0f);
     const float haptic_gain = clamp(volume[1], 0.0f, MAX_HAPTICS_GAIN);
+    // Zero speaker volume, or a controller that has not reported its headset
+    // state yet, keeps the speaker route closed. Sending speaker payloads anyway
+    // reopened the route on every packet while update_persistent_speaker_route
+    // closed it again on every pass. Audio haptics still flow without it.
+    const bool speaker_route_demanded = should_keep_speaker_route_open();
+    if (!speaker_route_demanded) {
+        audio_buf_pos = 0;
+    }
     // Windows sends USB Audio volume controls for this endpoint instead of pre-scaling PCM.
     const float host_render_gain = clamp(usb_host_speaker_gain, 0.0f, 1.0f);
     for (int i = 0; i < frames; i++) {
@@ -1905,8 +1913,10 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
         const int16_t speaker_r = rendered.speaker_right;
         const int16_t haptic_l = rendered.haptic_left;
         const int16_t haptic_r = rendered.haptic_right;
-        audio_buf[audio_buf_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
-        audio_buf[audio_buf_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
+        if (speaker_route_demanded) {
+            audio_buf[audio_buf_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
+            audio_buf[audio_buf_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
+        }
         if (audio_buf_pos == 512 * 2) {
             static audio_raw_element element{};
             memcpy(element.data,audio_buf,512 * 2 * 4);
@@ -1951,7 +1961,7 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
     const int out_frames = resampler.ResampleOut(out_buf, haptic_input_frames, SAMPLE_SIZE / OUTPUT_CHANNELS, OUTPUT_CHANNELS);
     for (int i = 0; i < out_frames; i++) {
         if (append_resampled_haptic_sample(out_buf[i * OUTPUT_CHANNELS], out_buf[i * OUTPUT_CHANNELS + 1], haptic_gain)) {
-            send_audio_haptics_packet(audio_haptic_buf, true);
+            send_audio_haptics_packet(audio_haptic_buf, speaker_route_demanded);
         }
     }
     return true;
