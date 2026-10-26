@@ -9,6 +9,12 @@ function updateSettings(settings) {
   emit();
   return snapshot;
 }
+// Replaces top-level snapshot fields, such as a pending bootloader confirmation.
+function update(fields) {
+  snapshot = { ...snapshot, ...fields };
+  emit();
+  return snapshot;
+}
 
 const settingSetters = {
   setUiThemePreset: 'uiThemePreset',
@@ -31,10 +37,11 @@ const handlers = {
     listeners.add(listener);
     return () => listeners.delete(listener);
   },
-  onWindowMaximizedChange: () => () => undefined
+  onWindowMaximizedChange: () => () => undefined,
+  cancelBootloaderConfirmation: async () => update({ bootloaderConfirmation: null })
 };
 
-window.__uiReview = { updateSettings, snapshot: () => snapshot };
+window.__uiReview = { update, updateSettings, snapshot: () => snapshot };
 // Captures skip the first-run tutorial unless a script asks to check it.
 if (process.env.DS5_UI_REVIEW_SHOW_TUTORIAL !== '1') {
   const skipTutorial = () => window.localStorage?.setItem('ds5bridge.startupTutorialCompleted.v1', '1');

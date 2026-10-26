@@ -46,6 +46,37 @@ try {
       }
     }
   }
+  // Dialogs that appear over any page.
+  const sequence = ['triangle', 'circle', 'cross', 'square', 'cross', 'triangle', 'square', 'circle'];
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((theme) => {
+      window.__uiReview.updateSettings({ uiThemePreset: theme, uiTextScalePercent: 100 });
+    }, theme);
+    await openControlTab(page, 'Overview');
+    for (const purpose of ['enrollment', 'bootloader-entry']) {
+      await page.evaluate(({ purpose, sequence }) => {
+        window.__uiReview.update({
+          bootloaderConfirmation: { purpose, sequence, progress: 3, mistakes: 0, expiresAtUnixMs: Date.now() + 27_000 }
+        });
+      }, { purpose, sequence });
+      await page.locator('.bootloader-confirmation-modal').waitFor();
+      await settle();
+      const file = `${theme}-100-${purpose === 'enrollment' ? 'bootloader-enrollment' : 'bootloader-entry'}.png`;
+      await captureWindow(app, path.join(outputDir, file));
+      shots.push(file);
+    }
+    // A wrong press restarts the sequence and briefly shows the incorrect state.
+    await page.evaluate(() => {
+      const pending = window.__uiReview.snapshot().bootloaderConfirmation;
+      window.__uiReview.update({ bootloaderConfirmation: { ...pending, progress: 0, mistakes: 1 } });
+    });
+    await page.locator('.bootloader-confirmation-modal.incorrect').waitFor();
+    await page.waitForTimeout(400);
+    const incorrectFile = `${theme}-100-bootloader-incorrect.png`;
+    await captureWindow(app, path.join(outputDir, incorrectFile));
+    shots.push(incorrectFile);
+    await page.evaluate(() => window.__uiReview.update({ bootloaderConfirmation: null }));
+  }
   if (failures.length) {
     throw new Error(`Renderer errors:\n${failures.join('\n')}`);
   }

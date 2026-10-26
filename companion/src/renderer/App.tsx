@@ -124,6 +124,7 @@ import { TRIGGER_EFFECT_STEP, snapTriggerEffectIntensity } from './features/adap
 import { TriggerLabProfileDialog, useTriggerLabController } from './features/trigger-lab';
 import { ButtonRemappingPage, ButtonRemappingProfileDialog, useButtonRemappingController } from './features/button-remapping';
 import { ChordFunctionDialog, ChordsPage, useChordsController } from './features/chords';
+import { BootloaderConfirmationDialog } from './features/bootloader-confirmation';
 import { lightbarColorLabel, LIGHTBAR_BRIGHTNESS_STEP, snapLightbarBrightness } from './features/controller-lighting/model';
 import { normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 import {
@@ -3761,6 +3762,11 @@ export function App() {
       <TriggerLabProfileDialog lab={triggerLab} pendingAction={pendingAction} />
 
       <ButtonRemappingProfileDialog controller={buttonRemapping} pendingAction={pendingAction} />
+
+      <BootloaderConfirmationDialog
+        confirmation={snapshot.bootloaderConfirmation}
+        onCancel={() => void runQuietAction(() => window.bridge.cancelBootloaderConfirmation())}
+      />
 
       {controllerProfileDialogMode && (
         <div
