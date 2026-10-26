@@ -1828,6 +1828,16 @@ void audio_debug_get_stats(audio_debug_stats *stats) {
 }
 
 void audio_test_haptics_loop() {
+    // Retire an elapsed cooldown on every pass. Left in place, it would read
+    // as future again once the signed clock difference wraps (~36 minutes),
+    // refusing Test Haptics for up to as long again.
+    if (
+        test_haptics_cooldown_until_us != 0
+        && time_reached(time_us_32(), test_haptics_cooldown_until_us)
+    ) {
+        test_haptics_cooldown_until_us = 0;
+    }
+
     if (quiet_mode_enabled) {
         return;
     }
@@ -2575,7 +2585,12 @@ static bool __not_in_flash_func(core1_process_speaker)() {
         in_buf[i] = audio_element.data[i];
     }
     static WDL_ResampleSample out_buf[480 * 2];
-    resampler_audio.ResampleOut(out_buf,nframes,480,2);
+    const int output_frames = resampler_audio.ResampleOut(out_buf, nframes, 480, 2);
+    // WDL can return fewer than 480 frames, for example on the first block
+    // after a reset. Never feed the encoder samples left from the last block.
+    if (output_frames < 480) {
+        std::fill(out_buf + std::max(0, output_frames) * 2, out_buf + 480 * 2, 0.0f);
+    }
     static uint8_t encoded[SPEAKER_OPUS_SIZE];
 #if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     const uint32_t encode_start_us = time_us_32();
