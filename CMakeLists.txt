@@ -90,8 +90,31 @@ add_executable(ds5-bridge
         src/audio.cpp
         src/bt.cpp
         src/firmware_log.cpp
+        src/runtime_fail_fast.cpp
         src/watchdog_telemetry.cpp
 )
+
+# Third-party archives follow the firmware's exception/RTTI policy instead of
+# retaining an otherwise unused exception-unwinding runtime.
+function(ds5_apply_pico_archive_compile_policy target)
+    target_compile_options(${target} PRIVATE -fsigned-char)
+    if(NOT PICO_CXX_ENABLE_EXCEPTIONS)
+        target_compile_definitions(${target} PRIVATE PICO_CXX_ENABLE_EXCEPTIONS=0)
+        target_compile_options(${target} PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+            $<$<COMPILE_LANGUAGE:CXX>:-fno-unwind-tables>
+        )
+    endif()
+    if(NOT PICO_CXX_ENABLE_RTTI)
+        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
+    endif()
+    if(NOT PICO_CXX_ENABLE_CXA_ATEXIT)
+        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-use-cxa-atexit>)
+    endif()
+    if(NOT PICO_NO_GC_SECTIONS)
+        target_compile_options(${target} PRIVATE -ffunction-sections -fdata-sections)
+    endif()
+endfunction()
 
 # Cockos WDLResampler
 add_library(wdl_resampler STATIC
@@ -100,29 +123,60 @@ add_library(wdl_resampler STATIC
 target_include_directories(wdl_resampler PUBLIC
         lib/WDL/WDL
 )
+ds5_apply_pico_archive_compile_policy(wdl_resampler)
 
 # Opus
+# The DualSense speaker path encodes CELT-only frames: audio.cpp creates the
+# encoder with OPUS_APPLICATION_RESTRICTED_CELT at 48 kHz stereo, 10 ms, CBR,
+# complexity 0. That application never allocates, initializes or runs the SILK
+# encoder, and complexity 0 never runs the tonality analysis. The linker
+# wrappers on ds5-bridge redirect those entry points so --gc-sections can
+# discard both trees instead of copying them to SRAM. The stack protector is
+# disabled: its canaries sat in every codec hot loop while hardening checks
+# (OPUS_HARDENING) remain enabled.
+set(OPUS_STACK_PROTECTOR OFF CACHE BOOL "DS5 Bridge keeps Opus hardening without stack canaries" FORCE)
+set(OPUS_STACK_PROTECTOR OFF)
 add_subdirectory(lib/opus)
 
-# Relocate libopus into Pico SDK .time_critical sections so the host fallback
-# encoder runs from SRAM instead of XIP flash.
+# Keep live Opus instructions and numerical tables in SRAM. Preserve individual
+# sections so the linker can discard unused routines and tables. Diagnostic
+# strings stay in flash; normalize legacy archives on incremental builds too.
 add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
-        COMMAND ${CMAKE_OBJCOPY}
-                --rename-section .text=.time_critical.opus_text
-                --rename-section .rodata=.time_critical.opus_rodata
-                --rename-section .rodata.str1.4=.time_critical.opus_strings
-                $<TARGET_FILE:opus>
+        COMMAND ${CMAKE_COMMAND}
+                "-DARCHIVE=$<TARGET_FILE:opus>"
+                "-DOBJDUMP=${CMAKE_OBJDUMP}"
+                "-DOBJCOPY=${CMAKE_OBJCOPY}"
+                -P "${CMAKE_SOURCE_DIR}/cmake/relocate_opus_sections.cmake"
         COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
         DEPENDS $<TARGET_FILE:opus>
-        COMMENT "Relocating libopus to .time_critical.* sections"
+                "${CMAKE_SOURCE_DIR}/cmake/relocate_opus_sections.cmake"
+                "${CMAKE_SOURCE_DIR}/cmake/opus_sections.cmake"
+        COMMENT "Placing Opus code/tables in SRAM and diagnostic strings in flash"
         VERBATIM
 )
 add_custom_target(opus_ram_relocate ALL DEPENDS ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp)
 add_dependencies(ds5-bridge opus_ram_relocate)
 
-target_compile_options(opus PRIVATE -O2)
-target_compile_options(wdl_resampler PRIVATE -O2 -fsigned-char -ffunction-sections)
+# Opus' hardening failure path normally formats a diagnostic through fprintf.
+# The firmware supplies a watchdog-backed fail-fast implementation instead, and
+# the forced include discards the message and source-path strings before they
+# are emitted while the hardening checks keep running.
+target_compile_definitions(opus PRIVATE OVERRIDE_celt_fatal)
+target_compile_options(opus PRIVATE -O2 -ffunction-sections -fdata-sections)
+target_compile_options(opus PRIVATE
+        "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/opus_fatal_override.h"
+        # The rewritten celt_fatal prototype loses its parameter list in C.
+        -Wno-strict-prototypes)
+target_link_options(ds5-bridge PRIVATE
+        "LINKER:--wrap=silk_Encode"
+        "LINKER:--wrap=silk_InitEncoder"
+        "LINKER:--wrap=run_analysis"
+        "LINKER:--wrap=tonality_analysis_init"
+        "LINKER:--wrap=tonality_analysis_reset"
+        "LINKER:--wrap=tonality_get_info"
+)
+target_compile_options(wdl_resampler PRIVATE -O2)
 add_custom_command(TARGET wdl_resampler POST_BUILD
         COMMAND ${CMAKE_OBJCOPY}
                 --rename-section .text._ZN13WDL_Resampler11ResampleOutEPfiii=.time_critical.WDL_ResampleOut
@@ -444,6 +498,11 @@ if(DS5_ENABLE_FIRMWARE_LOGS)
             PICO_DEFAULT_UART_BAUD_RATE=921600
             PICO_STACK_SIZE=4096
     )
+else()
+    # Release builds have no stdio sink. The CYW43 driver's CYW43_PRINTF sites
+    # were the only printf callers; compiling them out drops the SDK printf
+    # implementation and its float/double formatting helpers from flash.
+    target_compile_definitions(ds5-bridge PRIVATE PICO_CYW43_LOGGING_ENABLED=0)
 endif()
 
 if(DS5_ENABLE_AUDIO_DEBUG_REPORTS)
@@ -495,14 +554,23 @@ target_link_libraries(ds5-bridge
 )
 
 # The exact-capacity audio queues use static storage. Codec and resampler
-# startup still allocate 79,120 bytes; retain another 8 KiB after those known
-# allocations so a successful link cannot become an OOM boot.
-set(DS5_KNOWN_STARTUP_HEAP_BYTES 79120)
+# startup still allocate 54,872 bytes; retain another 8 KiB after those known
+# allocations so a successful link cannot become an OOM boot. The previous
+# 79,120-byte figure included the SILK encoder state (20,408 bytes) and the
+# 10 ms delay buffer (3,840 bytes) that OPUS_APPLICATION_RESTRICTED_CELT no
+# longer reserves inside the encoder.
+set(DS5_KNOWN_STARTUP_HEAP_BYTES 54872)
 set(DS5_MIN_POST_STARTUP_HEAP_BYTES 8192)
 math(EXPR DS5_MIN_RUNTIME_HEAP_BYTES
         "${DS5_KNOWN_STARTUP_HEAP_BYTES} + ${DS5_MIN_POST_STARTUP_HEAP_BYTES}"
 )
 add_custom_command(TARGET ds5-bridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+                "-DMAP=$<TARGET_FILE:ds5-bridge>.map"
+                -P "${CMAKE_SOURCE_DIR}/cmake/verify_opus_sections.cmake"
+        COMMAND ${CMAKE_COMMAND}
+                "-DMAP=$<TARGET_FILE:ds5-bridge>.map"
+                -P "${CMAKE_SOURCE_DIR}/cmake/verify_opus_strings.cmake"
         COMMAND ${CMAKE_COMMAND}
                 "-DNM=${CMAKE_NM}"
                 "-DELF=$<TARGET_FILE:ds5-bridge>"
@@ -511,6 +579,12 @@ add_custom_command(TARGET ds5-bridge POST_BUILD
                 -P "${CMAKE_SOURCE_DIR}/cmake/verify_core1_sram.cmake"
         COMMENT "Verifying complete firmware hot paths and runtime heap headroom"
         VERBATIM
+)
+set_property(TARGET ds5-bridge APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_SOURCE_DIR}/cmake/verify_opus_sections.cmake"
+        "${CMAKE_SOURCE_DIR}/cmake/opus_sections.cmake"
+        "${CMAKE_SOURCE_DIR}/cmake/verify_opus_strings.cmake"
+        "${CMAKE_SOURCE_DIR}/cmake/verify_core1_sram.cmake"
 )
 
 pico_add_extra_outputs(ds5-bridge)

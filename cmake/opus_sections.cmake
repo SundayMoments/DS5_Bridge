@@ -1,0 +1,46 @@
+# Share section classification between archive relocation and the final-map
+# guard. Keep each function/table/string suffix so --gc-sections can remove
+# unused Opus content without moving live codec work out of SRAM.
+function(ds5_opus_section_destination section destination_var kind_var)
+    set(original "${section}")
+    # Normalize archives relocated by earlier builds (whole-unit renames and
+    # already suffixed names) back to their compiler section names.
+    if(section MATCHES "^[.]time_critical[.]opus_text($|[.])")
+        string(REGEX REPLACE "^[.]time_critical[.]opus_text" ".text" section "${section}")
+    elseif(section MATCHES "^[.]time_critical[.]opus_rodata($|[.])")
+        string(REGEX REPLACE "^[.]time_critical[.]opus_rodata" ".rodata" section "${section}")
+    elseif(section MATCHES "^[.]time_critical[.]opus_strings($|[.])")
+        string(REGEX REPLACE "^[.]time_critical[.]opus_strings" ".rodata.opus_strings" section "${section}")
+    elseif(section MATCHES "^[.]time_critical[.]opus[.](text|rodata)($|[.])")
+        string(REGEX REPLACE "^[.]time_critical[.]opus" "" section "${section}")
+    endif()
+
+    if(section MATCHES "^[.]rodata[.]opus_strings($|[.])")
+        set(destination "${section}")
+        set(kind "strings")
+    elseif(section MATCHES "^[.]text($|[.])")
+        set(destination ".time_critical.opus${section}")
+        set(kind "code")
+    elseif(section MATCHES "^[.]rodata($|[.])")
+        # -fdata-sections also emits .rodata.<function>.str1.4. Restrict
+        # flash placement to GCC's string-section suffix, never all rodata.
+        if(section MATCHES "[.]str[0-9]+[.][0-9]+$")
+            string(REGEX REPLACE "^[.]rodata" ".rodata.opus_strings" destination "${section}")
+            set(kind "strings")
+        else()
+            set(destination ".time_critical.opus${section}")
+            set(kind "tables")
+        endif()
+    elseif(section MATCHES "^[.](data|bss|sdata|sbss|noinit)($|[.])")
+        set(destination "${original}")
+        set(kind "state")
+    elseif(section MATCHES "^[.]ARM[.](exidx|extab)($|[.])")
+        set(destination "${original}")
+        set(kind "unwind")
+    else()
+        set(destination "${original}")
+        set(kind "unknown")
+    endif()
+    set(${destination_var} "${destination}" PARENT_SCOPE)
+    set(${kind_var} "${kind}" PARENT_SCOPE)
+endfunction()

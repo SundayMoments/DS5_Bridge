@@ -2577,7 +2577,10 @@ static bool __not_in_flash_func(core1_process_speaker)() {
 
 static void __not_in_flash_func(core1_entry)() {
     int error = 0;
-    encoder = opus_encoder_create(48000,2,OPUS_APPLICATION_AUDIO,&error);
+    // Restricted CELT is the mode this bitrate always selected; the restricted
+    // application also skips the SILK encoder state and the 10 ms delay buffer,
+    // and the link retires the SILK encoder code entirely.
+    encoder = opus_encoder_create(48000,2,OPUS_APPLICATION_RESTRICTED_CELT,&error);
     if (error != OPUS_OK) {
         DS5_LOG("[Audio] OpusEncoder create failed\n");
         encoder = nullptr;

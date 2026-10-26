@@ -1832,9 +1832,10 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             != std::string::npos
         || cmake.find(".text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset")
             == std::string::npos
-        || cmake.find("target_compile_options(opus PRIVATE -O2)") == std::string::npos
+        || cmake.find("target_compile_options(opus PRIVATE -O2 -ffunction-sections -fdata-sections)")
+            == std::string::npos
         || cmake.find("\"-DOBJDUMP=${CMAKE_OBJDUMP}\"") == std::string::npos
-        || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 79120)")
+        || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 54872)")
             == std::string::npos
         || cmake.find("set(DS5_MIN_POST_STARTUP_HEAP_BYTES 8192)")
             == std::string::npos
@@ -1895,6 +1896,35 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
     ) {
         throw std::runtime_error(
             "Firmware build must bound CYW43 event bursts and retain multicore flash safety"
+        );
+    }
+
+    const auto runtime_fail_fast_cpp = read_text(root / "src" / "runtime_fail_fast.cpp");
+    if (
+        audio_cpp.find("opus_encoder_create(48000,2,OPUS_APPLICATION_RESTRICTED_CELT,&error)")
+            == std::string::npos
+        || audio_cpp.find("OPUS_APPLICATION_AUDIO") != std::string::npos
+        || cmake.find("set(OPUS_STACK_PROTECTOR OFF CACHE BOOL") == std::string::npos
+        || cmake.find("target_compile_definitions(opus PRIVATE OVERRIDE_celt_fatal)")
+            == std::string::npos
+        || cmake.find("cmake/opus_fatal_override.h") == std::string::npos
+        || cmake.find("cmake/relocate_opus_sections.cmake") == std::string::npos
+        || cmake.find("cmake/verify_opus_sections.cmake") == std::string::npos
+        || cmake.find("cmake/verify_opus_strings.cmake") == std::string::npos
+        || cmake.find(".time_critical.opus_strings") != std::string::npos
+        || cmake.find("\"LINKER:--wrap=silk_Encode\"") == std::string::npos
+        || cmake.find("\"LINKER:--wrap=silk_InitEncoder\"") == std::string::npos
+        || cmake.find("\"LINKER:--wrap=run_analysis\"") == std::string::npos
+        || cmake.find("\"LINKER:--wrap=tonality_analysis_init\"") == std::string::npos
+        || cmake.find("\"LINKER:--wrap=tonality_analysis_reset\"") == std::string::npos
+        || cmake.find("\"LINKER:--wrap=tonality_get_info\"") == std::string::npos
+        || runtime_fail_fast_cpp.find("void ds5_celt_fatal_noargs()") == std::string::npos
+        || runtime_fail_fast_cpp.find("void __wrap_silk_Encode()") == std::string::npos
+        || runtime_fail_fast_cpp.find("void __wrap_run_analysis()") == std::string::npos
+        || runtime_fail_fast_cpp.find("watchdog_enable(0, false);") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "The speaker encoder must stay CELT-only with the SILK encoder, tonality analysis and Opus diagnostic strings retired from SRAM"
         );
     }
 

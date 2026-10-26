@@ -52,3 +52,6 @@ enable_testing()
 add_test(NAME firmware_logic_tests COMMAND firmware_logic_tests)
 add_test(NAME usb_descriptor_migration_test COMMAND usb_descriptor_migration_test)
 add_test(NAME diagnostics_config_test COMMAND diagnostics_config_test)
+add_test(NAME opus_section_placement_test COMMAND ${CMAKE_COMMAND}
+    -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/opus-section-placement-test
+    -P ${CMAKE_CURRENT_LIST_DIR}/opus_section_placement_test.cmake)
