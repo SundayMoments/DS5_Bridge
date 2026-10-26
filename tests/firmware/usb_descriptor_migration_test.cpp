@@ -2255,13 +2255,14 @@ void assert_companion_trigger_tests_survive_continuous_audio(
             == std::string::npos
         || state_submit.find("enqueue_feedback_state_output")
             == std::string::npos
-        || standard_test.find("adaptive_trigger_motor_power_for_intensity")
+        || standard_test.find("ds5::trigger_power::trigger_motor_power_from_percent(intensity_percent)")
             == std::string::npos
         || standard_test.find("queue_adaptive_trigger_state_report")
             == std::string::npos
         || standard_test.find("bt_write(") != std::string::npos
-        || custom_test.find("queue_adaptive_trigger_state_report(report, 0)")
+        || custom_test.find("queue_adaptive_trigger_state_report(report, motor_power)")
             == std::string::npos
+        || companion_cpp.find("persistent_trigger_motor_power()") == std::string::npos
         || custom_test.find("bt_write(") != std::string::npos
         || companion_cpp.find("bool replay_cached_game_trigger_effect(")
             == std::string::npos

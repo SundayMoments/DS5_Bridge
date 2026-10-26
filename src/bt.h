@@ -113,7 +113,10 @@ void bt_set_custom_adaptive_trigger_effects(
     uint8_t left_start_percent,
     uint8_t left_wall_percent,
     uint8_t left_force_percent,
-    bool left_active
+    bool left_active,
+    // DualSense motor power byte sent with the effects; pass the game's
+    // body-rumble nibble so a persistent effect does not reset it.
+    uint8_t motor_power
 );
 void bt_replay_adaptive_trigger_effect(
     uint8_t const *right_trigger,

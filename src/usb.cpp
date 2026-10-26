@@ -391,6 +391,18 @@ extern "C" void tud_resume_cb(void) {
     usb_suspend_at_us = 0;
 }
 
+// TinyUSB reports every device-controller event here, usually from the USB
+// IRQ. A bus reset ends suspend (TinyUSB clears its own flag too); leaving
+// ours set let the suspend debounce power the controller off while the host
+// was already sending start-of-frames before SET_CONFIGURATION.
+extern "C" void __not_in_flash_func(tud_event_hook_cb)(uint8_t rhport, uint32_t eventid, bool in_isr) {
+    (void)rhport;
+    (void)in_isr;
+    if (eventid == DCD_EVENT_BUS_RESET) {
+        usb_host_suspended = false;
+    }
+}
+
 void usb_pm_poll() {
     const uint32_t now = time_us_32();
     if (usb_reconnect_grace_until_us != 0 && time_reached(now, usb_reconnect_grace_until_us)) {

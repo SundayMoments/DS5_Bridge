@@ -1112,14 +1112,22 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         && request->wIndex == bridge_interface_number
         && request->bmRequestType_bit.direction == TUSB_DIR_OUT
     ) {
-        host_bridge_set_report(vendor_bridge_control_buffer, vendor_bridge_control_len);
+        if (vendor_bridge_control_len == 0) {
+            return false;
+        }
+        const uint16_t report_len = vendor_bridge_control_len;
         vendor_bridge_control_len = 0;
+        host_bridge_set_report(vendor_bridge_control_buffer, report_len);
         return true;
     }
 
     if (stage != CONTROL_STAGE_SETUP) {
         return true;
     }
+
+    // A new setup retires an interrupted vendor transfer before reusing its
+    // buffer for another read or write.
+    vendor_bridge_control_len = 0;
 
     if (
         !descriptor_bridge_only_active
@@ -1183,10 +1191,19 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
         request->bRequest == VENDOR_BRIDGE_CONTROL_SET_REPORT
         && request->bmRequestType_bit.direction == TUSB_DIR_OUT
     ) {
-        vendor_bridge_control_len = request->wLength < sizeof(vendor_bridge_control_buffer)
-            ? request->wLength
-            : sizeof(vendor_bridge_control_buffer);
-        return tud_control_xfer(rhport, request, vendor_bridge_control_buffer, vendor_bridge_control_len);
+        if (request->wLength == 0 || request->wLength > sizeof(vendor_bridge_control_buffer)) {
+            return false;
+        }
+        // TinyUSB's vendor callback has no received-length argument and can
+        // finish an OUT stage on a short packet. Never retain a previous
+        // report's command or data in the unread tail.
+        memset(vendor_bridge_control_buffer, 0, sizeof(vendor_bridge_control_buffer));
+        vendor_bridge_control_len = request->wLength;
+        if (!tud_control_xfer(rhport, request, vendor_bridge_control_buffer, vendor_bridge_control_len)) {
+            vendor_bridge_control_len = 0;
+            return false;
+        }
+        return true;
     }
 
     return false;

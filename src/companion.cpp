@@ -14,6 +14,7 @@
 #include "host_input.h"
 #include "persona/host_persona.h"
 #include "radial_deadzone.h"
+#include "trigger_motor_power.h"
 #include "pico/critical_section.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
@@ -727,7 +728,9 @@ void feedback_trace_uart_loop() {
 #endif
 
 uint32_t uptime_seconds() {
-    return to_ms_since_boot(get_absolute_time()) / 1000;
+    // 64-bit microseconds: 32-bit milliseconds wrap after 49.7 days, which the
+    // companion would read as a bridge restart.
+    return static_cast<uint32_t>(time_us_64() / 1'000'000u);
 }
 
 void reset_button_remap() {
@@ -1059,15 +1062,6 @@ void toggle_quiet_mode() {
     refresh_mute_led_policy();
 }
 
-uint8_t trigger_power_reduction(uint8_t intensity_percent) {
-    if (intensity_percent >= 100) {
-        return 0;
-    }
-    const uint8_t clamped = intensity_percent > 100 ? 100 : intensity_percent;
-    const uint8_t reduction = static_cast<uint8_t>(((100 - clamped) * 8 + 50) / 100);
-    return std::min<uint8_t>(reduction, 7);
-}
-
 void set_trigger_off(uint8_t *trigger) {
     memset(trigger, 0, kTriggerEffectSize);
     trigger[0] = kTriggerEffectOff;
@@ -1162,6 +1156,14 @@ void cache_game_trigger_effects(uint8_t const *payload, uint16_t len) {
         return;
     }
 
+    // Latch the game's motor power byte whenever it is valid. Its low nibble
+    // (body rumble) and high nibble (trigger reduction) persist on the
+    // controller until the game sends the flag again.
+    if (len > kTriggerEffectPowerOffset && (payload[1] & kTriggerMotorPowerFlag) != 0) {
+        cached_game_trigger_motor_power = payload[kTriggerEffectPowerOffset];
+        cached_game_trigger_motor_power_valid = true;
+    }
+
     const uint8_t trigger_flags = payload[0] & kTriggerEffectFlags;
     if (trigger_flags == 0) {
         return;
@@ -1183,14 +1185,6 @@ void cache_game_trigger_effects(uint8_t const *payload, uint16_t len) {
         memcpy(cached_game_trigger_left, payload + kTriggerEffectLeftOffset, sizeof(cached_game_trigger_left));
         cached_game_trigger_left_valid = true;
     }
-
-    const bool has_motor_power = (
-        len > 1
-        && len > kTriggerEffectPowerOffset
-        && (payload[1] & kTriggerMotorPowerFlag) != 0
-    );
-    cached_game_trigger_motor_power = has_motor_power ? payload[kTriggerEffectPowerOffset] : 0;
-    cached_game_trigger_motor_power_valid = has_motor_power;
 }
 
 bool build_scaled_cached_game_trigger_effect(
@@ -1226,7 +1220,7 @@ bool build_scaled_cached_game_trigger_effect(
         if (left_valid && trigger_effect_block_active(left_trigger)) {
             set_trigger_off(left_trigger);
         }
-        motor_power = 0;
+        motor_power = ds5::trigger_power::with_trigger_motor_power(motor_power, 0);
         motor_power_valid = true;
         return true;
     }
@@ -1238,8 +1232,9 @@ bool build_scaled_cached_game_trigger_effect(
         if (left_valid && trigger_effect_block_active(left_trigger)) {
             scale_trigger_effect_block(left_trigger, trigger_effect_intensity_percent);
         }
-        motor_power = static_cast<uint8_t>(
-            (motor_power & 0xF0) | trigger_power_reduction(trigger_effect_intensity_percent)
+        motor_power = ds5::trigger_power::with_trigger_motor_power(
+            motor_power,
+            trigger_effect_intensity_percent
         );
         motor_power_valid = true;
         return true;
@@ -1472,11 +1467,25 @@ bool strip_persistent_trigger_effect_fields(uint8_t *payload, uint16_t len, uint
         payload[0] &= static_cast<uint8_t>(~kTriggerLeftEffectFlag);
         changed = true;
     }
-    if (len > 1 && (payload[1] & kTriggerMotorPowerFlag) != 0) {
-        payload[1] &= static_cast<uint8_t>(~kTriggerMotorPowerFlag);
+    // Keep the game's body-rumble reduction; only its trigger reduction must
+    // not weaken the bridge's persistent effect.
+    if (
+        len > kTriggerEffectPowerOffset
+        && (payload[1] & kTriggerMotorPowerFlag) != 0
+        && (payload[kTriggerEffectPowerOffset] & 0xf0) != 0
+    ) {
+        payload[kTriggerEffectPowerOffset] &= 0x0f;
         changed = true;
     }
     return changed;
+}
+
+// A persistent effect owns trigger strength, but the game's body-rumble
+// reduction (low nibble) must survive the periodic re-apply.
+uint8_t persistent_trigger_motor_power() {
+    return cached_game_trigger_motor_power_valid
+        ? static_cast<uint8_t>(cached_game_trigger_motor_power & 0x0f)
+        : 0;
 }
 
 void set_persistent_trigger_effect_state(
@@ -1517,7 +1526,8 @@ void apply_persistent_trigger_effect(bool force = false) {
         persistent_trigger_effect_left.start_percent,
         persistent_trigger_effect_left.wall_percent,
         persistent_trigger_effect_left.force_percent,
-        persistent_trigger_effect_left.active
+        persistent_trigger_effect_left.active,
+        persistent_trigger_motor_power()
     );
     // The custom report explicitly clears any side without a Lab override.
     // Immediately restore that side from the cached game output while leaving
@@ -3126,6 +3136,14 @@ void companion_loop() {
 #if DS5_FEEDBACK_TRACE_ENABLED && DS5_DEBUG_LOGS_ENABLED
     feedback_trace_uart_loop();
 #endif
+    // A game's trigger effects belong to that controller session; a later
+    // intensity change must not replay them onto a reconnected controller.
+    static bool controller_was_connected = false;
+    const bool controller_connected = bt_is_controller_connected();
+    if (controller_was_connected && !controller_connected) {
+        clear_cached_game_trigger_effects();
+    }
+    controller_was_connected = controller_connected;
     audio_test_haptics_loop();
     classic_rumble_test_loop();
     mute_keyboard_chord_window_loop();
@@ -3392,8 +3410,14 @@ bool companion_apply_trigger_effect_intensity(uint8_t *payload, uint16_t len) {
 
     if (len > kTriggerEffectPowerOffset) {
         const uint8_t next_flags = payload[1] | kTriggerMotorPowerFlag;
-        const uint8_t next_power = static_cast<uint8_t>(
-            (payload[kTriggerEffectPowerOffset] & 0xF0) | trigger_power_reduction(trigger_effect_intensity_percent)
+        // Compose with the game's latched motor power rather than this
+        // report's byte, which is stale when the report omits the flag.
+        const uint8_t game_power = cached_game_trigger_motor_power_valid
+            ? cached_game_trigger_motor_power
+            : 0;
+        const uint8_t next_power = ds5::trigger_power::with_trigger_motor_power(
+            game_power,
+            trigger_effect_intensity_percent
         );
         changed = changed || payload[1] != next_flags || payload[kTriggerEffectPowerOffset] != next_power;
         payload[1] = next_flags;
