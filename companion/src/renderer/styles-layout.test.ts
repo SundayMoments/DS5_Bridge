@@ -176,36 +176,16 @@ describe('companion layout CSS', () => {
     expect(themeOptionSource).toContain('<span className="theme-option" data-theme-preview={value}>');
   });
 
-  it('uses the cached theme and branded panel for the startup loading state', () => {
+  it('starts in the cached theme with placeholder cards instead of a splash screen', () => {
+    // Rendering before and after the first snapshot is covered in features/startup/startup.rendered.test.tsx.
     expect(UI_THEME_PRESET_STORAGE_KEY).toBe('ds5bridge.uiThemePreset');
-    expect(appSource).toContain("const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';");
-    expect(appSource).toContain('const STARTUP_READY_HOLD_MS = 1000;');
     expect(appSource).toContain('useState<UiThemePreset>(storedUiThemePreset)');
-    expect(appSource).toContain('function storedStartupTutorialStep()');
-    expect(appSource).toContain('function saveStartupTutorialCompleted()');
-    expect(appSource).toContain('function StartupScreen({ ready }: { ready: boolean })');
-    expect(appSource).toContain('const startupReadyArmedRef = useRef(false);');
-    expect(appSource).toContain("const [startupTutorialStep, setStartupTutorialStep] = useState<StartupTutorialStep>(storedStartupTutorialStep);");
-    expect(appSource).toContain('saveStartupTutorialCompleted();');
-    expect(appSource).toContain('}, [Boolean(snapshot), startupVisible]);');
-    expect(appSource).not.toContain('}, [snapshot, startupVisible]);');
-    expect(appSource).toContain('<StartupScreen ready={Boolean(snapshot)} />');
-    expect(appSource).not.toContain('>Starting bridge companion</div>');
-    expect(cssBlock('.loading', 'grid-template-rows: minmax(0, 1fr);')).toContain('place-items: center;');
-    expect(cssBlock('.startup-card', 'background: var(--surface-card);')).toContain(
-      'border: 1px solid var(--surface-border-strong);'
+    expect(appSource).not.toContain('StartupScreen');
+    expect(appSource).not.toContain('STARTUP_READY_HOLD_MS');
+    expect(normalizedStyles).not.toContain('startup-progress');
+    expect(cssBlock('.startup-placeholder-grid span', 'background: var(--surface-card);')).toContain(
+      'border: 1px solid var(--surface-border);'
     );
-    const startupProgress = cssBlock('.startup-progress span', 'animation: startup-progress-prime 180ms ease-out forwards;');
-    expect(startupProgress).toContain('background: var(--accent-selected);');
-    expect(startupProgress).toContain('transform: scaleX(0);');
-    expect(startupProgress).toContain('transform-origin: left center;');
-    expect(cssBlock('.startup-screen.ready .startup-progress span', 'animation: startup-progress-complete 1000ms ease-out forwards;')).toContain(
-      'animation: startup-progress-complete 1000ms ease-out forwards;'
-    );
-    expect(normalizedStyles).toContain('@keyframes startup-progress-prime');
-    expect(normalizedStyles).toContain('transform: scaleX(0.84);');
-    expect(normalizedStyles).toContain('@keyframes startup-progress-complete');
-    expect(normalizedStyles).toContain('transform: scaleX(1);');
   });
 
   it('keeps theme window bars and sidebars flat instead of gradient layered', () => {

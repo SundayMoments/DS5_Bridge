@@ -194,7 +194,7 @@ export function installBridgeMock(initial: BridgeSnapshot = fixtureSnapshot()): 
 
 let mountedRoot: Root | null = null;
 
-/** Mounts the full renderer as main.tsx does and waits past the startup screen. */
+/** Mounts the full renderer as main.tsx does and lets the first snapshot and timers settle. */
 export async function renderApp(): Promise<HTMLElement> {
   window.localStorage.setItem('ds5bridge.startupTutorialCompleted.v1', '1');
   const host = document.createElement('div');

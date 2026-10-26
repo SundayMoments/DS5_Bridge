@@ -15,10 +15,10 @@ beforeAll(installDomStubs);
 afterEach(unmountApp);
 
 describe('App against a fixture bridge', () => {
-  it('leaves the startup screen once a snapshot arrives and opens Overview', async () => {
+  it('replaces the startup placeholder once a snapshot arrives and opens Overview', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();
-    expect(host.querySelector('.startup-screen')).toBeNull();
+    expect(host.querySelector('.startup-placeholder-page')).toBeNull();
     expect(host.querySelector('#control-panel-overview.active h2')?.textContent).toBe('Overview');
   });
 

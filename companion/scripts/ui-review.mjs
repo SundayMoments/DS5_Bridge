@@ -1,4 +1,4 @@
-﻿// Captures the built renderer with fixture data for design review.
+// Captures the built renderer with fixture data for design review.
 // The renderer runs in a minimal Electron host (scripts/ui-review/main.cjs)
 // whose preload replaces the bridge API: no bridge service, HID access, or
 // saved companion settings are involved.
@@ -23,7 +23,7 @@ try {
   const page = await app.firstWindow();
   const failures = [];
   page.on('pageerror', (error) => failures.push(error.message));
-  await page.waitForSelector('.hero-card', { timeout: 20000 });
+  await page.waitForSelector('.shell:not(.starting) .hero-card', { timeout: 20000 });
 
   async function settle() {
     await page.evaluate(() => document.fonts.ready);

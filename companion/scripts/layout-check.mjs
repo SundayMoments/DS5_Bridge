@@ -15,14 +15,14 @@ const { app, close } = await launchCompanion({ fixture: fixtureRequested(), show
 try {
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForSelector('.hero-card', { timeout: 10000 });
+  await page.waitForSelector('.shell:not(.starting) .hero-card', { timeout: 10000 });
   await page.waitForTimeout(250);
   await page.evaluate((storageKey) => {
     window.localStorage.removeItem(storageKey);
   }, startupTutorialStorageKey);
   await page.reload();
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForSelector('.hero-card', { timeout: 10000 });
+  await page.waitForSelector('.shell:not(.starting) .hero-card', { timeout: 10000 });
   await page.waitForTimeout(250);
 
   const failures = [];

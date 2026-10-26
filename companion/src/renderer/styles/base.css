@@ -42,13 +42,6 @@ button {
   background: var(--app-bg);
 }
 
-.loading {
-  grid-template-rows: minmax(0, 1fr);
-  display: grid;
-  place-items: center;
-  color: var(--text-secondary);
-}
-
 .renderer-failure {
   grid-template-rows: minmax(0, 1fr);
   place-items: center;

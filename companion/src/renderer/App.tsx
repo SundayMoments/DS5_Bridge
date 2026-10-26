@@ -104,7 +104,13 @@ import { ShellBridgeSelector } from './features/shell/ShellBridgeSelector';
 import { ShellNotifications } from './features/shell/ShellNotifications';
 import { ShellSidebarDevice } from './features/shell/ShellSidebarDevice';
 import { ShellSupportBadge } from './features/shell/ShellSupportBadge';
-import { controlPanelIdFor, type ControlTab } from './features/shell/control-tabs';
+import { CONTROL_TAB_DEFINITIONS, controlPanelIdFor, type ControlTab } from './features/shell/control-tabs';
+import {
+  StartupPlaceholderPage,
+  StartupTutorial,
+  startingDevicePresentation,
+  useStartupTutorial
+} from './features/startup';
 import { useLocalization, type UiLocalePreference } from './common/localization';
 import type { AppRuntime } from './composition/app-runtime';
 import { FeatureTipsPanel } from './common/FeatureTipsPanel';
@@ -185,7 +191,6 @@ import { ChordButtonGlyphOption, ChordStarterGlyphOption } from './features/chor
 import { AUDIO_BUFFER_LENGTH_MAX, AUDIO_BUFFER_LENGTH_MIN, BRIDGE_AUDIO_ENDPOINT_UNAVAILABLE, BRIDGE_MIC_ENDPOINT_UNAVAILABLE, MIC_VOLUME_PRESETS, MIC_VOLUME_STEP, SPEAKER_GAIN_OPTIONS, SPEAKER_VOLUME_PRESETS, SPEAKER_VOLUME_STEP, TEST_MIC_LISTEN_MS, TEST_SPEAKER_ENDPOINT_REFRESH_MS, TEST_SPEAKER_LOCK_MS, TEST_SPEAKER_VOLUME_SETTLE_MS, audioBufferDelayLabel, audioBufferPercent, audioBufferZoneLabel, audioBufferZoneTone, audioBufferZoneTooltip, clampAudioBufferLength, snapMicVolume, snapSpeakerVolume } from './features/controller-audio/model';
 import { delay, findBridgeAudioOutputId, playMicLiveListen, stopMicLiveListen } from './features/controller-audio/audio-playback';
 
-type StartupTutorialStep = 'feature-toggle' | 'support' | 'done';
 type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
 type ControllerProfileDialogMode = 'save' | 'rename' | 'delete';
 type NotificationFocusTarget = 'controller-status' | 'low-battery' | 'all';
@@ -283,17 +288,6 @@ const AUDIO_REACTIVE_HAPTICS_FIELD_TOOLTIPS = {
   attack: 'Controls how quickly the haptics ramp when a sound rises or spikes.',
   release: 'Controls how quickly the haptics fade when a sound drops.'
 } as const;
-const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
-const STARTUP_READY_HOLD_MS = 1000;
-
-function storedStartupTutorialStep(): StartupTutorialStep {
-  return window.localStorage.getItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY) === '1' ? 'done' : 'feature-toggle';
-}
-
-function saveStartupTutorialCompleted(): void {
-  window.localStorage.setItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY, '1');
-}
-
 function snapHapticsValue(value: number, max = STANDARD_FEEDBACK_GAIN_PERCENT): number {
   return Math.max(0, Math.min(max, Math.round(value / HAPTICS_STEP) * HAPTICS_STEP));
 }
@@ -473,130 +467,6 @@ function KitsuneInputPromotionDialog({
     </div>
   );
 }
-
-function StartupScreen({ ready }: { ready: boolean }) {
-  return (
-    <main className={`startup-screen ${ready ? 'ready' : ''}`} aria-live="polite">
-      <section className="startup-card" aria-label="Starting DS5 Bridge">
-        <div className="startup-brand">
-          <BridgeMark />
-          <div>
-            <strong>DS5 Bridge</strong>
-            <span>Starting companion</span>
-          </div>
-        </div>
-        <div className="startup-progress" aria-hidden="true">
-          <span />
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function StartupTutorial({
-  step,
-  featureExampleActive,
-  supportCountdown,
-  kofiBadgeUrl,
-  onFeatureExampleToggle,
-  onFeatureStepComplete,
-  onSupport,
-  onFinish
-}: {
-  step: Exclude<StartupTutorialStep, 'done'>;
-  featureExampleActive: boolean;
-  supportCountdown: number;
-  kofiBadgeUrl: string;
-  onFeatureExampleToggle: () => void;
-  onFeatureStepComplete: () => void;
-  onSupport: () => void;
-  onFinish: () => void;
-}) {
-  return (
-    <div className="modal-backdrop startup-tutorial-backdrop" role="presentation">
-      <section
-        className="settings-menu bridge-settings-modal startup-tutorial-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={step === 'feature-toggle' ? 'Feature tile tutorial' : 'Support DS5 Bridge'}
-      >
-        {step === 'feature-toggle' ? (
-          <>
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                <IconSparkleHighlight size={16} />
-                <span>Feature Tiles</span>
-              </div>
-              <span className="startup-tutorial-step">1 / 2</span>
-            </div>
-            <div className="startup-tutorial-copy">
-              <h2>Click The Square</h2>
-              <p>Feature tiles turn effects on and off. Try it once here, then keep going.</p>
-            </div>
-            <div className="startup-tutorial-feature-demo">
-              <button
-                className={`startup-tutorial-feature-icon ${featureExampleActive ? 'active' : ''}`}
-                type="button"
-                aria-pressed={featureExampleActive}
-                aria-label="Toggle example effect"
-                onClick={onFeatureExampleToggle}
-              >
-                <IconSparkleHighlight size={24} />
-              </button>
-              <span>
-                <strong>Example Effect</strong>
-                <span>{featureExampleActive ? 'On' : 'Off'}</span>
-              </span>
-            </div>
-            <div className="startup-tutorial-actions">
-              <button
-                type="button"
-                className="primary-action"
-                disabled={!featureExampleActive}
-                onClick={onFeatureStepComplete}
-              >
-                Next <ArrowRight size={16} />
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                <Heart size={16} />
-                <span>One Tiny Ask</span>
-              </div>
-              <span className="startup-tutorial-step">2 / 2</span>
-            </div>
-            <div className="startup-tutorial-copy">
-              <h2>Enjoying DS5 Bridge?</h2>
-              <p>If this app makes your setup better, please consider supporting the work on Ko-fi.</p>
-            </div>
-            <button
-              className="startup-tutorial-kofi-button"
-              type="button"
-              aria-label="Support SundayMoments on Ko-fi"
-              onClick={onSupport}
-            >
-              <img src={kofiBadgeUrl} alt="" />
-            </button>
-            <div className="startup-tutorial-actions">
-              <button
-                type="button"
-                className="primary-action"
-                disabled={supportCountdown > 0}
-                onClick={onFinish}
-              >
-                {supportCountdown > 0 ? `Continue In ${supportCountdown}` : 'Continue'}
-              </button>
-            </div>
-          </>
-        )}
-      </section>
-    </div>
-  );
-}
-
 
 function controllerProfileSettingsFromSnapshot(snapshot: BridgeSnapshot): ControllerProfileSettings {
   return {
@@ -896,7 +766,6 @@ function AudioHapticsSourceOption({
 
 export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
-  const [startupVisible, setStartupVisible] = useState(true);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [bridgeRenameDraft, setBridgeRenameDraft] = useState<{ uniqueId: string; value: string } | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
@@ -927,9 +796,7 @@ export function App() {
   const [audioReactiveHapticsCommitPending, setAudioReactiveHapticsCommitPending] = useState(false);
   const [overviewSleepConfirmVisible, setOverviewSleepConfirmVisible] = useState(false);
   const [deviceCleanupConfirmVisible, setDeviceCleanupConfirmVisible] = useState(false);
-  const [startupTutorialStep, setStartupTutorialStep] = useState<StartupTutorialStep>(storedStartupTutorialStep);
-  const [startupTutorialFeatureActive, setStartupTutorialFeatureActive] = useState(false);
-  const [startupTutorialSupportCountdown, setStartupTutorialSupportCountdown] = useState(5);
+  const startupTutorial = useStartupTutorial();
   const [deviceCleanupMessage, setDeviceCleanupMessage] = useState<string | null>(null);
   const [deviceCleanupError, setDeviceCleanupError] = useState<string | null>(null);
   const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
@@ -943,8 +810,6 @@ export function App() {
   const notificationFocusTimerRef = useRef<number | null>(null);
   const windowDraggingRef = useRef(false);
   const windowDragReleaseTimerRef = useRef<number | null>(null);
-  const startupReadyTimerRef = useRef<number | null>(null);
-  const startupReadyArmedRef = useRef(false);
   const deferredSnapshotRef = useRef<BridgeSnapshot | null>(null);
   const overviewSleepConfirmArmedRef = useRef(false);
   useEffect(() => {
@@ -980,36 +845,6 @@ export function App() {
     applyUiTextScalePercent(liveTextScale);
     saveUiTextScalePercent(liveTextScale);
   }, [snapshot?.settings.uiTextScalePercent]);
-
-  useEffect(() => {
-    const hasSnapshot = Boolean(snapshot);
-    if (!hasSnapshot || !startupVisible || startupReadyArmedRef.current) return undefined;
-    startupReadyArmedRef.current = true;
-    startupReadyTimerRef.current = window.setTimeout(() => {
-      setStartupVisible(false);
-      startupReadyTimerRef.current = null;
-    }, STARTUP_READY_HOLD_MS);
-    return () => {
-      if (startupReadyTimerRef.current !== null) {
-        window.clearTimeout(startupReadyTimerRef.current);
-        startupReadyTimerRef.current = null;
-      }
-    };
-  }, [Boolean(snapshot), startupVisible]);
-
-  useEffect(() => {
-    if (startupTutorialStep !== 'support') {
-      return undefined;
-    }
-
-    setStartupTutorialSupportCountdown(5);
-    const interval = window.setInterval(() => {
-      setStartupTutorialSupportCountdown((value) => Math.max(0, value - 1));
-    }, 1000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [startupTutorialStep]);
 
   const personaTransition = snapshot?.personaTransition ?? null;
   const personaTransitionActive = Boolean(personaTransition);
@@ -1119,9 +954,6 @@ export function App() {
       }
       if (windowDragReleaseTimerRef.current !== null) {
         window.clearTimeout(windowDragReleaseTimerRef.current);
-      }
-      if (startupReadyTimerRef.current !== null) {
-        window.clearTimeout(startupReadyTimerRef.current);
       }
       window.removeEventListener('mouseup', finishWindowDrag);
       window.removeEventListener('blur', finishWindowDrag);
@@ -2149,11 +1981,26 @@ export function App() {
   useDocumentTheme(activeTheme, activeTextScale);
   const settingsNavigation = useSettingsNavigation({ focusTarget: settingsFocusTarget });
 
-  if (!snapshot || startupVisible) {
+  // The shell renders at once; until the first snapshot arrives the device card
+  // and page area show placeholders instead of a full-window splash screen.
+  if (!snapshot) {
     return (
-      <div className="shell loading" data-theme={activeTheme} data-text-scale={activeTextScale}>
-        <StartupScreen ready={Boolean(snapshot)} />
-      </div>
+      <MainAppShell
+        className="shell starting"
+        theme={activeTheme}
+        textScale={activeTextScale}
+        activeTab={activeControlTab}
+        panelIdForTab={controlPanelIdFor}
+        onSelectTab={selectControlTab}
+        onWindowChromeMouseDown={() => undefined}
+        onBeginWindowDrag={beginWindowDrag}
+        onMinimize={() => void window.bridge.minimizeWindow()}
+        onHide={() => void window.bridge.hideWindow()}
+        sidebarDevice={(
+          <ShellSidebarDevice device={startingDevicePresentation(controllerImage)} />
+        )}
+        pages={<StartupPlaceholderPage title={CONTROL_TAB_DEFINITIONS[activeControlTab].label} />}
+      />
     );
   }
 
@@ -3660,19 +3507,16 @@ export function App() {
         />
       )}
 
-      {startupTutorialStep !== 'done' && (
+      {startupTutorial.step !== 'done' && (
         <StartupTutorial
-          step={startupTutorialStep}
-          featureExampleActive={startupTutorialFeatureActive}
-          supportCountdown={startupTutorialSupportCountdown}
+          step={startupTutorial.step}
+          featureExampleActive={startupTutorial.featureExampleActive}
+          supportCountdown={startupTutorial.supportCountdown}
           kofiBadgeUrl={kofiBadgeUrl}
-          onFeatureExampleToggle={() => setStartupTutorialFeatureActive((active) => !active)}
-          onFeatureStepComplete={() => setStartupTutorialStep('support')}
+          onFeatureExampleToggle={startupTutorial.toggleFeatureExample}
+          onFeatureStepComplete={startupTutorial.completeFeatureStep}
           onSupport={() => void window.bridge.openExternal('https://ko-fi.com/sundaymoments')}
-          onFinish={() => {
-            saveStartupTutorialCompleted();
-            setStartupTutorialStep('done');
-          }}
+          onFinish={startupTutorial.finish}
         />
       )}
 

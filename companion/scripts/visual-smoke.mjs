@@ -33,7 +33,7 @@ let originalKitsuneInputPromotionDismissed;
 try {
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForSelector('.hero-card', { timeout: 10000 });
+  await page.waitForSelector('.shell:not(.starting) .hero-card', { timeout: 10000 });
   await page.waitForTimeout(250);
 
   const featureTutorial = page.getByRole('dialog', { name: 'Feature tile tutorial' });
