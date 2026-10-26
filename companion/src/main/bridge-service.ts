@@ -129,6 +129,8 @@ const SYSTEM_AUDIO_HAPTICS_RETRY_MS = 5000;
 const SYSTEM_AUDIO_HAPTICS_MAX_RETRY_MS = 30000;
 const SYSTEM_AUDIO_HAPTICS_STABLE_MS = 10000;
 const SYSTEM_AUDIO_HAPTICS_APP_CHECK_MS = 1000;
+// SET_LIGHTBAR_COLOR flags byte: save the color without replacing a game's.
+const LIGHTBAR_COLOR_REFRESH_FLAG = 0x01;
 const TEST_HAPTICS_ENDPOINT_WAIT_MS = 5000;
 const TEST_HAPTICS_ENDPOINT_RETRY_MS = 250;
 const TEST_HAPTICS_SWITCHING_MESSAGE =
@@ -2665,7 +2667,7 @@ export class BridgeService extends EventEmitter {
   async setLightbarEnabled(enabled: boolean): Promise<BridgeSnapshot> {
     this.snapshot.settings = this.settingsStore.update(customSettingUpdate({ lightbarEnabled: enabled }));
     if (this.snapshot.state === 'connected') {
-      await this.applyLightbarSettings(this.snapshot.settings, true);
+      await this.applyLightbarSettings(this.snapshot.settings, true, false);
     }
     this.emitSnapshot();
     return this.getSnapshot();
@@ -4327,14 +4329,21 @@ export class BridgeService extends EventEmitter {
     );
   }
 
-  private async applyLightbarSettings(settings: CompanionSettings, expectSettingsRevisionChange: boolean): Promise<void> {
+  // A refresh (reconnect reapply, power-saving change) must not replace a
+  // color a game is showing, so firmware only saves it while a game owns the
+  // lightbar. An explicit change from the app always shows at once.
+  private async applyLightbarSettings(
+    settings: CompanionSettings,
+    expectSettingsRevisionChange: boolean,
+    refresh = true
+  ): Promise<void> {
     const color = settings.lightbarEnabled ? parseHexColor(settings.lightbarColor) : { red: 0, green: 0, blue: 0 };
     await this.sendCommand(
       COMMAND_ID.SET_LIGHTBAR_COLOR,
       this.effectiveLightbarBrightness(settings),
       {
         expectSettingsRevisionChange,
-        extraPayload: [color.red, color.green, color.blue]
+        extraPayload: [color.red, color.green, color.blue, refresh ? LIGHTBAR_COLOR_REFRESH_FLAG : 0]
       }
     );
     await this.sendCommand(COMMAND_ID.SET_LIGHTBAR_OVERRIDE, (!settings.lightbarEnabled || settings.lightbarOverrideEnabled) ? 1 : 0, {

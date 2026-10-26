@@ -565,24 +565,32 @@ void lightbar_override_removes_host_led_claims_without_mutating_color_bytes() {
     EXPECT_EQ(payload[kLightbarBlueOffset], 7);
 }
 
-void host_led_clear_detection_covers_release_player_and_lightbar_paths() {
+void host_lightbar_clear_detection_covers_release_and_blank_lightbar_only() {
     auto payload = empty_payload();
-    EXPECT_FALSE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
 
     payload[kValidFlag1Offset] = kFlag1ReleaseLeds;
-    EXPECT_TRUE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_TRUE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
 
+    // Turning the player LEDs off leaves the game's lightbar color alone.
     payload = empty_payload();
     payload[kValidFlag1Offset] = kFlag1PlayerIndicatorControlEnable;
     payload[kPlayerLedsOffset] = 0;
-    EXPECT_TRUE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
 
     payload = empty_payload();
-    payload[kValidFlag1Offset] = kFlag1LightbarControlEnable;
+    payload[kValidFlag1Offset] = kFlag1LightbarControlEnable | kFlag1PlayerIndicatorControlEnable;
     payload[kLightbarRedOffset] = 1;
-    EXPECT_FALSE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
+    EXPECT_TRUE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
     payload[kLightbarRedOffset] = 0;
-    EXPECT_TRUE(controller_output_policy_host_output_clears_leds(payload.data(), payload.size()));
+    EXPECT_TRUE(controller_output_policy_host_output_clears_lightbar(payload.data(), payload.size()));
+    EXPECT_FALSE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
+
+    payload[kLightbarBlueOffset] = 9;
+    payload[kValidFlag1Offset] |= kFlag1ReleaseLeds;
+    EXPECT_FALSE(controller_output_policy_host_output_sets_lightbar(payload.data(), payload.size()));
 }
 
 void output_state_audio_snapshot_routes_to_speaker_and_headphones_safely() {
@@ -1649,7 +1657,7 @@ std::vector<TestCase> tests{
     {"speaker sanitizer strips host amp flags and zeroes only controlled fields", speaker_sanitizer_strips_host_amp_flags_and_zeroes_only_controlled_fields},
     {"mic sanitizer removes mute led and only mic power save bit", mic_sanitizer_removes_mute_led_and_only_mic_power_save_bit},
     {"lightbar override removes host led claims without mutating color bytes", lightbar_override_removes_host_led_claims_without_mutating_color_bytes},
-    {"host led clear detection covers release player and lightbar paths", host_led_clear_detection_covers_release_player_and_lightbar_paths},
+    {"host lightbar clear detection covers release and blank lightbar only", host_lightbar_clear_detection_covers_release_and_blank_lightbar_only},
     {"output state audio snapshot routes to speaker and headphones safely", output_state_audio_snapshot_routes_to_speaker_and_headphones_safely},
     {"output state audio snapshot preserves adaptive trigger effects and motor power", output_state_audio_snapshot_preserves_adaptive_trigger_effects_and_motor_power},
     {"output state lightbar override is scaled and survives audio snapshot", output_state_lightbar_override_is_scaled_and_survives_audio_snapshot},

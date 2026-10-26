@@ -79,6 +79,8 @@ constexpr uint8_t kDpadNeutral = 0x08;
 constexpr uint32_t kShortcutRepeatUs = 180000;
 constexpr uint32_t kHomeChordSuppressUs = 250000;
 constexpr uint32_t kHomeChordFallbackReplayUs = 80000;
+// SET_LIGHTBAR_COLOR flags byte. Older apps send 0, which always applies.
+constexpr uint8_t kLightbarColorRefreshFlag = 0x01;
 constexpr uint8_t kDefaultMuteKeyboardUsage = 0x68; // F13
 constexpr uint8_t kMuteKeyboardModifierMask = 0x0F;
 constexpr uint8_t kMuteKeyboardChordStarterFlag = 0x10;
@@ -793,6 +795,14 @@ void set_lightbar_color(uint8_t red, uint8_t green, uint8_t blue, uint8_t bright
         bt_set_lightbar_color(lightbar_red, lightbar_green, lightbar_blue, lightbar_brightness);
         bt_schedule_lightbar_restore(250);
     }
+}
+
+void save_lightbar_color(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness) {
+    lightbar_red = red;
+    lightbar_green = green;
+    lightbar_blue = blue;
+    lightbar_brightness = std::min<uint8_t>(brightness, 100);
+    bt_save_lightbar_color(lightbar_red, lightbar_green, lightbar_blue, lightbar_brightness);
 }
 
 void clear_shortcut_events() {
@@ -2142,7 +2152,17 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 set_ack(command_id, sequence, AckNotConnected);
                 return;
             }
-            set_lightbar_color(buffer[10], buffer[11], buffer[12], static_cast<uint8_t>(value));
+            if (
+                (buffer[13] & kLightbarColorRefreshFlag) != 0
+                && !lightbar_override_enabled
+                && bt_host_lightbar_owned()
+            ) {
+                // A routine settings refresh while a game shows its own
+                // color only saves ours for the next restore.
+                save_lightbar_color(buffer[10], buffer[11], buffer[12], static_cast<uint8_t>(value));
+            } else {
+                set_lightbar_color(buffer[10], buffer[11], buffer[12], static_cast<uint8_t>(value));
+            }
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;

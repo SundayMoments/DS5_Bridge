@@ -222,7 +222,8 @@ void controller_output_submit_usb_payload(uint8_t const *payload, uint16_t paylo
     }
 
     const bool lightbarOverride = companion_lightbar_override_active();
-    const bool hostClearsLeds = controller_output_policy_host_output_clears_leds(outputData + 3, payloadLen);
+    const bool hostClearsLightbar = controller_output_policy_host_output_clears_lightbar(outputData + 3, payloadLen);
+    const bool hostSetsLightbar = controller_output_policy_host_output_sets_lightbar(outputData + 3, payloadLen);
 #ifdef ENABLE_COMPANION
     const bool triggerIntensityChanged = companion_apply_trigger_effect_intensity(outputData + 3, payloadLen);
     uint8_t companionOutput[sizeof(outputData)]{};
@@ -285,8 +286,13 @@ void controller_output_submit_usb_payload(uint8_t const *payload, uint16_t paylo
         return;
     }
     audio_set_state_data(audioStateData, static_cast<uint8_t>(payloadLen));
-    if (hostClearsLeds && !lightbarOverride) {
-        bt_schedule_lightbar_restore(HOST_LIGHTBAR_RESTORE_DELAY_MS);
+    if (!lightbarOverride) {
+        if (hostClearsLightbar) {
+            bt_note_host_lightbar_released();
+            bt_schedule_lightbar_restore(HOST_LIGHTBAR_RESTORE_DELAY_MS);
+        } else if (hostSetsLightbar) {
+            bt_note_host_lightbar_set();
+        }
     }
 }
 

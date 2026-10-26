@@ -522,6 +522,9 @@ static bool player_led_enabled = true;
 static bool lightbar_restore_enabled = true;
 static bool lightbar_restore_pending = false;
 static uint32_t lightbar_restore_at_us = 0;
+// The game set a visible lightbar color this connection and has not since
+// released or blanked it. Routine settings refreshes then only save a color.
+static bool host_lightbar_owned = false;
 static uint8_t state_report_seq = 0;
 static bool edge_profile_switching_blocked = false;
 static bool edge_profile_switching_mode_applied = false;
@@ -578,6 +581,7 @@ static void reset_controller_output_session_locked() {
     speaker_output_headset_route = false;
     lightbar_restore_pending = false;
     lightbar_restore_at_us = 0;
+    host_lightbar_owned = false;
 }
 
 static bool output_pending_locked() {
@@ -2290,6 +2294,28 @@ void bt_schedule_lightbar_restore(uint32_t delay_ms) {
 
     lightbar_restore_pending = true;
     lightbar_restore_at_us = time_us_32() + delay_ms * 1000;
+}
+
+void bt_note_host_lightbar_set() {
+    host_lightbar_owned = true;
+    // A restore scheduled when the game blanked the lightbar is stale once the
+    // game sets a new color; firing it would overwrite that color.
+    lightbar_restore_pending = false;
+}
+
+void bt_note_host_lightbar_released() {
+    host_lightbar_owned = false;
+}
+
+bool bt_host_lightbar_owned() {
+    return host_lightbar_owned;
+}
+
+void bt_save_lightbar_color(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness_percent) {
+    saved_lightbar_red = red;
+    saved_lightbar_green = green;
+    saved_lightbar_blue = blue;
+    saved_lightbar_brightness = brightness_percent > 100 ? 100 : brightness_percent;
 }
 
 void bt_lightbar_loop() {

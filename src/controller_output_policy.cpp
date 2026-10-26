@@ -384,25 +384,31 @@ bool controller_output_policy_sanitize_host_lightbar_payload(
     return changed;
 }
 
-bool controller_output_policy_host_output_clears_leds(uint8_t const *payload, uint16_t len) {
+// Restoring the saved color is for a lightbar the game released or blanked.
+// Player indicator changes leave the game's lightbar color alone; counting
+// them overwrote a game's color 250 ms after it turned the player LEDs off.
+bool controller_output_policy_host_output_clears_lightbar(uint8_t const *payload, uint16_t len) {
     if (payload == nullptr || len <= kValidFlag1Offset) {
         return false;
     }
 
-    const uint8_t led_flags = payload[kValidFlag1Offset] & kHostLedControlMask;
-    if (led_flags == 0) {
-        return false;
-    }
-
     const bool releases_leds = (payload[kValidFlag1Offset] & kFlag1ReleaseLeds) != 0;
-    const bool clears_player_indicator = (payload[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0
-        && len > kPlayerLedsOffset
-        && payload[kPlayerLedsOffset] == 0;
     const bool clears_lightbar = (payload[kValidFlag1Offset] & kFlag1LightbarControlEnable) != 0
         && len > kLightbarBlueOffset
         && payload[kLightbarRedOffset] == 0
         && payload[kLightbarGreenOffset] == 0
         && payload[kLightbarBlueOffset] == 0;
 
-    return releases_leds || clears_player_indicator || clears_lightbar;
+    return releases_leds || clears_lightbar;
+}
+
+bool controller_output_policy_host_output_sets_lightbar(uint8_t const *payload, uint16_t len) {
+    if (payload == nullptr || len <= kLightbarBlueOffset) {
+        return false;
+    }
+
+    const uint8_t flags = payload[kValidFlag1Offset];
+    return (flags & kFlag1LightbarControlEnable) != 0
+        && (flags & kFlag1ReleaseLeds) == 0
+        && (payload[kLightbarRedOffset] | payload[kLightbarGreenOffset] | payload[kLightbarBlueOffset]) != 0;
 }

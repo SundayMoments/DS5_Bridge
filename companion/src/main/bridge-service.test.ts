@@ -1122,6 +1122,32 @@ describe('BridgeService', () => {
     expect(service.getSnapshot().settings.micMuted).toBe(true);
   });
 
+  it('marks reapplied lightbar colors as refreshes and explicit changes as immediate', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.settingsRevision = 4;
+    device.status = statusReport({ controllerConnected: true, settingsRevision: 4, uptimeSeconds: 30 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+
+    await poll(service);
+    await flushReapply();
+    const lightbarFlags = (from: number) => device.sentReports.slice(from)
+      .filter((report) => report[7] === COMMAND_ID.SET_LIGHTBAR_COLOR)
+      .map((report) => report[14]);
+
+    // Firmware only saves a refreshed color while a game shows its own.
+    expect(lightbarFlags(0)).toEqual([1]);
+
+    let mark = device.sentReports.length;
+    await service.setLightbarColor('#112233', 50);
+    expect(lightbarFlags(mark)).toEqual([0]);
+
+    mark = device.sentReports.length;
+    await service.setLightbarEnabled(false);
+    expect(lightbarFlags(mark)).toEqual([0]);
+  });
+
   it('toggles Mic Enabled without passing through an enabled, muted mic', async () => {
     const service = serviceFixture({ duplexMicEnabled: true, micMuted: false });
     const device = new MockHidDevice();
