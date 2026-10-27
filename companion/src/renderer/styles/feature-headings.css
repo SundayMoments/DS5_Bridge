@@ -54,6 +54,45 @@
   box-shadow: var(--shadow-panel);
 }
 
+/*
+ * Kitsune Input's page header card: the page's icon tile (its on/off toggle
+ * where the page has one), title and description, then the page controls.
+ */
+.studio-feature-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--card-radius);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-panel);
+}
+
+.studio-heading-copy {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.studio-heading-copy > div {
+  min-width: 0;
+}
+
+.studio-feature-heading p {
+  font-size: var(--font-size-subtitle);
+}
+
+/* Button Remapping keeps its profile controls over the right half. */
+.studio-feature-heading.remapping-heading {
+  grid-template-columns: var(--feature-left-column) var(--feature-right-column);
+  gap: var(--card-gap);
+}
+
 .audio-heading-controls {
   display: flex;
   flex-wrap: nowrap;

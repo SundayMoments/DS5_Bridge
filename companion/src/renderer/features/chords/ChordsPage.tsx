@@ -161,10 +161,13 @@ export function ChordsPage({ active, controller, snapshot, pendingAction }: Chor
       aria-labelledby="control-tab-chords"
       aria-hidden={activeControlTab !== 'chords'}
     >
-        <div className="feature-heading chords-heading">
-          <div>
-            <h2>Chords</h2>
-            <p>Assign reusable functions to controller buttons and starter chords.</p>
+        <div className="feature-heading studio-feature-heading chords-heading">
+          <div className="studio-heading-copy">
+            <span className="feature-icon"><IconReplace size={20} /></span>
+            <div>
+              <h2>Chords</h2>
+              <p>Assign reusable functions to controller buttons and starter chords.</p>
+            </div>
           </div>
         </div>
 

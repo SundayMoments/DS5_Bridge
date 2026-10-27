@@ -89,7 +89,9 @@ describe('Trigger Lab page', () => {
     expect(page.querySelector('h2')?.textContent).toBe('Trigger Lab');
     expect([...page.querySelectorAll('.trigger-lab-card h3')].map((title) => title.textContent))
       .toEqual(['Left Trigger', 'Right Trigger']);
-    const labSwitch = page.querySelector<HTMLButtonElement>('[aria-label="Enable Trigger Lab"]')!;
+    const labSwitch = page.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Enable Trigger Lab"]')!;
+    // The header's icon tile toggles the lab too, as in Kitsune Input.
+    expect(page.querySelector('.studio-heading-copy .feature-icon')?.getAttribute('aria-label')).toBe('Enable Trigger Lab');
     expect(labSwitch.getAttribute('aria-checked')).toBe('false');
     await click(labSwitch);
     expect(labSwitch.getAttribute('aria-checked')).toBe('true');

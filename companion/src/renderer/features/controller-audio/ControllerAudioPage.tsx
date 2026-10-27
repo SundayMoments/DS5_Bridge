@@ -95,10 +95,35 @@ export function ControllerAudioPage({
       aria-labelledby="control-tab-audio"
       aria-hidden={!active}
     >
-        <div className="feature-heading">
-          <div>
-            <h2>Audio</h2>
-            <p>{headphones ? 'Adjust controller headphones and microphone levels.' : 'Adjust controller speaker and microphone levels.'}</p>
+        <div className="feature-heading studio-feature-heading">
+          <div className="studio-heading-copy">
+            <button
+              type="button"
+              className={`feature-icon audio-enable-button icon-medium ${
+                showMicrophoneControl
+                  ? duplexMicEnabled
+                    ? 'active'
+                    : ''
+                  : snapshot.settings.speakerEnabled
+                    ? 'active'
+                    : ''
+              }`}
+              aria-pressed={showMicrophoneControl ? duplexMicEnabled : snapshot.settings.speakerEnabled}
+              aria-label={showMicrophoneControl ? duplexMicLabel : headphones ? 'Enable controller headphones' : 'Enable controller speaker'}
+              title={showMicrophoneControl ? duplexMicLabel : headphones ? 'Enable controller headphones' : 'Enable controller speaker'}
+              disabled={
+                showMicrophoneControl
+                  ? !controllerControlsAvailable || pendingAction !== null
+                  : !controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null
+              }
+              onClick={showMicrophoneControl ? toggleDuplexMicEnabled : toggleSpeakerEnabled}
+            >
+              {showMicrophoneControl ? <Mic size={20} /> : <OutputIcon size={20} />}
+            </button>
+            <div>
+              <h2>Audio</h2>
+              <p>{headphones ? 'Adjust controller headphones and microphone levels.' : 'Adjust controller speaker and microphone levels.'}</p>
+            </div>
           </div>
           <div className="audio-heading-actions">
             <div className="chords-field chords-inline-field audio-speaker-gain-field">
@@ -141,58 +166,27 @@ export function ControllerAudioPage({
         </div>
         <div className="feature-card-grid">
           <section className="feature-card preset-card">
-            <div className="feature-card-title">
+            <div className="dual-selector studio-mode-tabs audio-mode-selector" role="tablist" aria-label="Audio control mode">
               <button
                 type="button"
-                className={`feature-icon audio-enable-button icon-medium ${
-                  showMicrophoneControl
-                    ? duplexMicEnabled
-                      ? 'active'
-                      : ''
-                    : snapshot.settings.speakerEnabled
-                      ? 'active'
-                      : ''
-                }`}
-                aria-pressed={showMicrophoneControl ? duplexMicEnabled : snapshot.settings.speakerEnabled}
-                aria-label={showMicrophoneControl ? duplexMicLabel : headphones ? 'Enable controller headphones' : 'Enable controller speaker'}
-                title={showMicrophoneControl ? duplexMicLabel : headphones ? 'Enable controller headphones' : 'Enable controller speaker'}
-                disabled={
-                  showMicrophoneControl
-                    ? !controllerControlsAvailable || pendingAction !== null
-                    : !controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null
-                }
-                onClick={showMicrophoneControl ? toggleDuplexMicEnabled : toggleSpeakerEnabled}
+                role="tab"
+                aria-selected={!showMicrophoneControl}
+                className={!showMicrophoneControl ? 'active' : ''}
+                onClick={() => setShowMicrophoneControl(false)}
               >
-                {showMicrophoneControl ? <Mic size={20} /> : <OutputIcon size={20} />}
+                <OutputIcon size={18} />
+                {outputControlLabel}
               </button>
-              <div className="title-copy">
-                <h3>{showMicrophoneControl ? 'Microphone' : outputControlLabel}</h3>
-                <p>
-                  {showMicrophoneControl
-                    ? 'Microphone level'
-                    : headphones ? 'Headphones level' : 'Speaker level'}
-                </p>
-              </div>
-              <div className="dual-selector audio-mode-selector" role="tablist" aria-label="Audio control mode">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={!showMicrophoneControl}
-                  className={!showMicrophoneControl ? 'active' : ''}
-                  onClick={() => setShowMicrophoneControl(false)}
-                >
-                  {outputControlLabel}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={showMicrophoneControl}
-                  className={showMicrophoneControl ? 'active' : ''}
-                  onClick={() => setShowMicrophoneControl(true)}
-                >
-                  Mic
-                </button>
-              </div>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={showMicrophoneControl}
+                className={showMicrophoneControl ? 'active' : ''}
+                onClick={() => setShowMicrophoneControl(true)}
+              >
+                <Mic size={18} />
+                Mic
+              </button>
             </div>
             <div className="framed-slider">
               <label className="slider-row">

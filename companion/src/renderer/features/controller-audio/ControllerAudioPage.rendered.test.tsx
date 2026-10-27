@@ -93,7 +93,8 @@ describe('Audio page', () => {
     const host = await renderApp();
     const page = await openPage(host, 'audio');
     await click(buttonByText(page.querySelector('.audio-mode-selector')!, 'Mic'));
-    expect(page.querySelector('.preset-card h3')?.textContent).toBe('Microphone');
+    expect(page.querySelector('.preset-card .studio-mode-tabs [aria-selected="true"]')?.textContent).toBe('Mic');
+    expect(page.querySelector('.studio-heading-copy .feature-icon svg')).not.toBeNull();
     await click(buttonByText(page.querySelector('.preset-card .segmented-row')!, 'Low'));
     expect(bridge.fn('setMicVolume')).toHaveBeenCalledWith(30);
   });

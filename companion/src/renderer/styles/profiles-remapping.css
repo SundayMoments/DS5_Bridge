@@ -1,5 +1,6 @@
 .remapping-card {
-  --remapping-art-height: clamp(370px, calc(100vh - var(--window-bar-height) - 240px), 500px);
+  /* Leaves room for the page's header card above the remapping card. */
+  --remapping-art-height: clamp(342px, calc(100vh - var(--window-bar-height) - 268px), 500px);
   --remapping-profile-strip-height: var(--feature-card-header-height);
   min-height: 0;
   height: 100%;

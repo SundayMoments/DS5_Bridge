@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import {
   IconDeviceGamepad2,
+  IconFlask2,
   IconPlayerPlay as Play,
   IconRefresh as RefreshCcw,
   IconTestPipe
@@ -82,10 +83,37 @@ export function AdaptiveTriggersPage({
       aria-labelledby={triggerLabOpen ? 'control-tab-trigger-lab' : 'control-tab-triggers'}
       aria-hidden={!active}
     >
-        <div className="feature-heading">
-          <div>
-            <h2>{triggerLabOpen ? 'Trigger Lab' : 'Adaptive Triggers'}</h2>
-            <p>{triggerLabOpen ? 'Experimental adaptive trigger profile editor' : 'Set trigger effect intensity and test mode'}</p>
+        <div className="feature-heading studio-feature-heading">
+          <div className="studio-heading-copy">
+            {triggerLabOpen ? (
+              <button
+                type="button"
+                className={`feature-icon triggers-enable-button icon-compact ${triggerLabEnabled ? 'active' : ''}`}
+                aria-pressed={triggerLabEnabled}
+                aria-label={triggerLabEnabled ? 'Disable Trigger Lab' : 'Enable Trigger Lab'}
+                title={triggerLabEnabled ? 'Disable Trigger Lab' : 'Enable Trigger Lab'}
+                disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
+                onClick={toggleTriggerLabEnabled}
+              >
+                <IconFlask2 size={20} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`feature-icon triggers-enable-button icon-compact ${snapshot.settings.adaptiveTriggersEnabled ? 'active' : ''} ${controllerPowerSavingActive && snapshot.settings.adaptiveTriggersEnabled ? 'power-saving-active' : ''}`}
+                aria-pressed={snapshot.settings.adaptiveTriggersEnabled}
+                aria-label="Enable adaptive triggers"
+                title="Enable adaptive triggers"
+                disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
+                onClick={toggleAdaptiveTriggersEnabled}
+              >
+                <IconDeviceGamepad2 size={20} />
+              </button>
+            )}
+            <div>
+              <h2>{triggerLabOpen ? 'Trigger Lab' : 'Adaptive Triggers'}</h2>
+              <p>{triggerLabOpen ? 'Experimental adaptive trigger profile editor' : 'Set trigger effect intensity and test mode'}</p>
+            </div>
           </div>
           <div className="triggers-heading-controls">
             {triggerLabEnabled && triggerLabAnyActive ? (
@@ -121,18 +149,7 @@ export function AdaptiveTriggersPage({
         ) : (
         <div className="feature-card-grid">
           <section className="feature-card preset-card">
-            <div className="feature-card-title">
-              <button
-                type="button"
-                className={`feature-icon triggers-enable-button icon-compact ${snapshot.settings.adaptiveTriggersEnabled ? 'active' : ''} ${controllerPowerSavingActive && snapshot.settings.adaptiveTriggersEnabled ? 'power-saving-active' : ''}`}
-                aria-pressed={snapshot.settings.adaptiveTriggersEnabled}
-                aria-label="Enable adaptive triggers"
-                title="Enable adaptive triggers"
-                disabled={!controllerControlsAvailable || !adaptiveTriggersSupported || pendingAction !== null}
-                onClick={toggleAdaptiveTriggersEnabled}
-              >
-                <IconDeviceGamepad2 size={20} />
-              </button>
+            <div className="feature-card-title title-only">
               <div className="title-copy">
                 <h3>Intensity</h3>
                 <p>Set the overall strength of adaptive trigger effects</p>

@@ -340,6 +340,18 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.remapping-pill', 'border-radius:')).toContain('border-radius: var(--control-radius);');
   });
 
+  it('heads Controller and Input pages with Kitsune Input header cards', () => {
+    const heading = cssBlock('.studio-feature-heading {', 'border-radius: var(--card-radius);');
+    expect(heading).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+    expect(heading).toContain('background: var(--surface-card);');
+    expect(cssBlock('.studio-heading-copy {', 'grid-template-columns:')).toContain('grid-template-columns: 44px minmax(0, 1fr);');
+    // Mode tabs keep the card title's height so presets stay level across pages.
+    const modeTabs = cssBlock('.dual-selector.studio-mode-tabs {', 'min-height:');
+    expect(modeTabs).toContain('min-height: var(--feature-card-header-height);');
+    expect(modeTabs).toContain('margin: calc(var(--card-padding) * -1) calc(var(--card-padding) * -1) 16px;');
+    expect(cssBlock('.feature-card-title.title-only', 'grid-template-columns:')).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+  });
+
   it('has no Tips panel under the feature pages', () => {
     expect(styles).not.toContain('.feature-help-');
   });

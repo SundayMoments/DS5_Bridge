@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import {
   IconArrowRight as ArrowRight,
   IconDeviceFloppy as Save,
+  IconDeviceGamepad3,
   IconPencil as Pencil,
   IconRefresh as RefreshCcw,
   IconTrash as Trash2
@@ -59,10 +60,13 @@ export function ButtonRemappingPage({ active, controller, pendingAction }: Butto
       aria-labelledby="control-tab-remapping"
       aria-hidden={!active}
     >
-        <div className="feature-heading system-heading remapping-heading">
-          <div>
-            <h2>Button Remapping</h2>
-            <p>Choose replacement targets for controller button slots.</p>
+        <div className="feature-heading studio-feature-heading remapping-heading">
+          <div className="studio-heading-copy">
+            <span className="feature-icon"><IconDeviceGamepad3 size={20} /></span>
+            <div>
+              <h2>Button Remapping</h2>
+              <p>Choose replacement targets for controller button slots.</p>
+            </div>
           </div>
           <div className="profile-controls">
             <CustomSelect

@@ -69,10 +69,23 @@ export function ControllerLightingPage({
       aria-labelledby="control-tab-lighting"
       aria-hidden={!active}
     >
-        <div className="feature-heading">
-          <div>
-            <h2>Lighting</h2>
-            <p>Customize the controller light bar and override behavior</p>
+        <div className="feature-heading studio-feature-heading">
+          <div className="studio-heading-copy">
+            <button
+              type="button"
+              className={`feature-icon lighting-enable-button icon-large ${snapshot.settings.lightbarEnabled ? 'active' : ''} ${controllerPowerSavingActive && snapshot.settings.lightbarEnabled ? 'power-saving-active' : ''}`}
+              aria-pressed={snapshot.settings.lightbarEnabled}
+              aria-label="Enable lighting"
+              title="Enable lighting"
+              disabled={!controllerControlsAvailable || !lightbarSupported || pendingAction !== null}
+              onClick={toggleLightbarEnabled}
+            >
+              <IconBulb size={20} />
+            </button>
+            <div>
+              <h2>Lighting</h2>
+              <p>Customize the controller light bar and override behavior</p>
+            </div>
           </div>
           <div className="inline-switch">
             <span>Enabled</span>
@@ -90,18 +103,7 @@ export function ControllerLightingPage({
         </div>
         <div className="feature-card-grid lighting-grid">
           <section className="feature-card preset-card">
-            <div className="feature-card-title">
-              <button
-                type="button"
-                className={`feature-icon lighting-enable-button icon-large ${snapshot.settings.lightbarEnabled ? 'active' : ''} ${controllerPowerSavingActive && snapshot.settings.lightbarEnabled ? 'power-saving-active' : ''}`}
-                aria-pressed={snapshot.settings.lightbarEnabled}
-                aria-label="Enable lighting"
-                title="Enable lighting"
-                disabled={!controllerControlsAvailable || !lightbarSupported || pendingAction !== null}
-                onClick={toggleLightbarEnabled}
-              >
-                <IconBulb size={20} />
-              </button>
+            <div className="feature-card-title title-only">
               <div className="title-copy">
                 <h3>Brightness</h3>
                 <p>Set the controller light bar brightness</p>

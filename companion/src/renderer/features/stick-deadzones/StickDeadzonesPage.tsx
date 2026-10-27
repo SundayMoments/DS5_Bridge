@@ -26,10 +26,13 @@ export function StickDeadzonesPage({ active, controller, stickInputPreview, lock
       aria-labelledby="control-tab-deadzones"
       aria-hidden={!active}
     >
-      <div className="feature-heading">
-        <div>
-          <h2>Stick Deadzones</h2>
-          <p>Remove center drift with independent radial deadzones for each stick.</p>
+      <div className="feature-heading studio-feature-heading">
+        <div className="studio-heading-copy">
+          <span className="feature-icon"><IconViewfinder size={20} /></span>
+          <div>
+            <h2>Stick Deadzones</h2>
+            <p>Remove center drift with independent radial deadzones for each stick.</p>
+          </div>
         </div>
       </div>
 

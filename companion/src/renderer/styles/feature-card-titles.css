@@ -22,12 +22,58 @@
   background: var(--surface-card-header);
 }
 
-.haptics-mode-selector,
-.audio-mode-selector {
-  align-self: start;
-  justify-self: end;
-  margin-left: 0;
-  white-space: nowrap;
+/* A card whose feature toggle sits in the page header keeps only its title. */
+.feature-card-title.title-only {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/*
+ * Kitsune Input's mode tabs fill the header of a card that switches modes
+ * (Speaker / Mic, Haptics / Rumble). They keep the title's height and spacing
+ * so the slider and presets below sit where every other card has them.
+ */
+.dual-selector.studio-mode-tabs {
+  min-height: var(--feature-card-header-height);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-columns: initial;
+  align-items: center;
+  margin: calc(var(--card-padding) * -1) calc(var(--card-padding) * -1) 16px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--surface-divider);
+  border-radius: calc(var(--card-radius) - 1px) calc(var(--card-radius) - 1px) 0 0;
+  overflow: visible;
+  background: var(--surface-card-header);
+  box-shadow: none;
+}
+
+.dual-selector.studio-mode-tabs button {
+  min-height: 40px;
+  border: 1px solid var(--surface-border-strong);
+  border-right: 0;
+  gap: 10px;
+  background: var(--surface-control);
+  font-size: var(--font-size-body);
+}
+
+.dual-selector.studio-mode-tabs button:first-child {
+  border-radius: var(--control-radius) 0 0 var(--control-radius);
+}
+
+.dual-selector.studio-mode-tabs button:last-child {
+  border-right: 1px solid var(--surface-border-strong);
+  border-radius: 0 var(--control-radius) var(--control-radius) 0;
+}
+
+.dual-selector.studio-mode-tabs button.active {
+  color: var(--accent-text);
+  background: var(--accent-selected);
+}
+
+.dual-selector.studio-mode-tabs button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .feature-icon {

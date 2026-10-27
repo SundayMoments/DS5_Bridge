@@ -113,10 +113,37 @@ export function ControllerFeedbackPage({
       aria-labelledby={audioHapticsOpen ? 'control-tab-audio-haptics' : 'control-tab-haptics'}
       aria-hidden={!active}
     >
-        <div className="feature-heading">
-          <div>
-            <h2>{audioHapticsOpen ? 'Audio Haptics' : 'Haptics'}</h2>
-            <p>{audioHapticsOpen ? 'Turn system audio into haptic feedback.' : 'Adjust controller haptic feedback and run a quick test.'}</p>
+        <div className="feature-heading studio-feature-heading">
+          <div className="studio-heading-copy">
+            {audioHapticsOpen ? (
+              <button
+                type="button"
+                className={`feature-icon audio-haptics-enable-button icon-compact ${audioReactiveHapticsEnabled ? 'active' : ''}`}
+                aria-pressed={audioReactiveHapticsEnabled}
+                aria-label={audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'}
+                title={audioReactiveHapticsStatusLabel}
+                disabled={audioReactiveHapticsControlDisabled}
+                onClick={() => void toggleAudioReactiveHapticsEnabled()}
+              >
+                <IconDeviceAudioTape size={20} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`feature-icon haptics-enable-button ${showClassicRumbleControl ? 'icon-medium' : 'icon-compact'} ${activeHapticsFeatureEnabled ? 'active' : ''} ${controllerPowerSavingActive && activeHapticsFeatureEnabled ? 'power-saving-active' : ''}`}
+                aria-pressed={activeHapticsFeatureEnabled}
+                aria-label={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
+                title={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
+                disabled={!controllerControlsAvailable || pendingAction !== null}
+                onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
+              >
+                {showClassicRumbleControl ? <Vibrate size={20} /> : <Sparkles size={20} />}
+              </button>
+            )}
+            <div>
+              <h2>{audioHapticsOpen ? 'Audio Haptics' : 'Haptics'}</h2>
+              <p>{audioHapticsOpen ? 'Turn system audio into haptic feedback.' : 'Adjust controller haptic feedback and run a quick test.'}</p>
+            </div>
           </div>
           <div className="audio-heading-controls">
             {audioReactiveHapticsModeBadgeLabel ? (
@@ -151,18 +178,7 @@ export function ControllerFeedbackPage({
         {audioHapticsOpen ? (
           <div className="feature-card-grid audio-haptics-grid">
             <section className="feature-card audio-haptics-card">
-              <div className="feature-card-title">
-                <button
-                  type="button"
-                  className={`feature-icon audio-haptics-enable-button icon-compact ${audioReactiveHapticsEnabled ? 'active' : ''}`}
-                  aria-pressed={audioReactiveHapticsEnabled}
-                  aria-label={audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'}
-                  title={audioReactiveHapticsStatusLabel}
-                  disabled={audioReactiveHapticsControlDisabled}
-                  onClick={() => void toggleAudioReactiveHapticsEnabled()}
-                >
-                  <IconDeviceAudioTape size={20} />
-                </button>
+              <div className="feature-card-title title-only">
                 <div className="title-copy">
                   <h3>Audio Haptics</h3>
                   <p>System audio feedback</p>
@@ -360,42 +376,27 @@ export function ControllerFeedbackPage({
         ) : (
         <div className="feature-card-grid">
           <section className="feature-card preset-card">
-            <div className="feature-card-title">
+            <div className="dual-selector studio-mode-tabs haptics-mode-selector" role="tablist" aria-label="Haptics control mode">
               <button
                 type="button"
-                className={`feature-icon haptics-enable-button ${showClassicRumbleControl ? 'icon-medium' : 'icon-compact'} ${activeHapticsFeatureEnabled ? 'active' : ''} ${controllerPowerSavingActive && activeHapticsFeatureEnabled ? 'power-saving-active' : ''}`}
-                aria-pressed={activeHapticsFeatureEnabled}
-                aria-label={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
-                title={showClassicRumbleControl ? 'Enable rumble' : 'Enable haptics'}
-                disabled={!controllerControlsAvailable || pendingAction !== null}
-                onClick={showClassicRumbleControl ? toggleClassicRumbleEnabled : toggleHapticsEnabled}
+                role="tab"
+                aria-selected={!showClassicRumbleControl}
+                className={!showClassicRumbleControl ? 'active' : ''}
+                onClick={() => setShowClassicRumbleControl(false)}
               >
-                {showClassicRumbleControl ? <Vibrate size={20} /> : <Sparkles size={20} />}
+                <Sparkles size={18} />
+                Haptics
               </button>
-              <div className="title-copy">
-                <h3>{showClassicRumbleControl ? 'Rumble' : 'Intensity'}</h3>
-                <p>{showClassicRumbleControl ? 'Rumble Strength' : 'Haptic Strength'}</p>
-              </div>
-              <div className="dual-selector haptics-mode-selector" role="tablist" aria-label="Haptics control mode">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={!showClassicRumbleControl}
-                  className={!showClassicRumbleControl ? 'active' : ''}
-                  onClick={() => setShowClassicRumbleControl(false)}
-                >
-                  Haptics
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={showClassicRumbleControl}
-                  className={showClassicRumbleControl ? 'active' : ''}
-                  onClick={() => setShowClassicRumbleControl(true)}
-                >
-                  Rumble
-                </button>
-              </div>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={showClassicRumbleControl}
+                className={showClassicRumbleControl ? 'active' : ''}
+                onClick={() => setShowClassicRumbleControl(true)}
+              >
+                <Vibrate size={18} />
+                Rumble
+              </button>
             </div>
             <div className="framed-slider">
               <label className="slider-row">

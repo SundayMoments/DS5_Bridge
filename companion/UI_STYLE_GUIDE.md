@@ -91,8 +91,9 @@ Every main tab should follow this order:
 1. `feature-heading`
    - Left: page title and one short sentence.
    - Right: page-level enabled switch when the feature supports a kill switch.
+   - Controller and Input pages (Audio, Haptics, Adaptive Triggers, Lighting, Stick Deadzones, Button Remapping, Chords, and the Audio Haptics and Trigger Lab tools) use Kitsune Input's header card: `feature-heading studio-feature-heading` with a `studio-heading-copy` holding the page's icon tile and its title. Where the page has an on/off toggle, that icon tile is the toggle button (`feature-icon … -enable-button`), so the left card no longer carries one. Overview, Devices, System, and Settings keep their own headings.
 2. `feature-card-grid`
-   - Left card: primary setting or value control.
+   - Left card: primary setting or value control. Its header is `feature-card-title title-only` (title and description, no icon) or, when the card switches modes, `dual-selector studio-mode-tabs` (full-width icon tabs such as Speaker / Mic and Haptics / Rumble) at the title's height.
    - Right card: testing, behavior, status, or secondary controls.
 
 The outer `control-panel` is intentionally flat. Do not wrap feature cards in another visual card; the repeated paired-card layout is the page structure.
