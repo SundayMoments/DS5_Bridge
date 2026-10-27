@@ -349,37 +349,9 @@
   color: var(--accent-strong);
 }
 
-/* A linked control is framed briefly instead of tinting the whole row. */
-.settings-page .settings-menu-row-highlight {
-  position: relative;
-  animation: none;
-}
-
+/* The linked-row frame follows the grouped rows' rounded corners. */
 .settings-page .settings-menu-row-highlight::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  inset: 2px;
-  border: 2px solid var(--focus-ring);
   border-radius: 10px;
-  opacity: 0;
-  pointer-events: none;
-  animation: settings-row-focus-frame 2000ms ease-out forwards;
-}
-
-@keyframes settings-row-focus-frame {
-  0% {
-    opacity: 0;
-  }
-
-  8%,
-  72% {
-    opacity: 1;
-  }
-
-  100% {
-    opacity: 0;
-  }
 }
 
 .scroll-context-edge {
@@ -409,11 +381,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .settings-page .settings-menu-row-highlight::after {
-    animation: none;
-    opacity: 1;
-  }
-
   .scroll-context-edge {
     transition: none;
   }

@@ -19,9 +19,44 @@
   border-top: 1px solid var(--surface-divider);
 }
 
+/* A row another page links to is framed briefly in the focus color, as in
+ * Kitsune Input, instead of tinting the whole row. */
 .settings-menu-row-highlight {
+  position: relative;
+}
+
+.settings-menu-row-highlight::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 2px;
+  border: 2px solid var(--focus-ring);
   border-radius: var(--control-radius);
-  animation: settings-row-highlight 2200ms ease-out;
+  opacity: 0;
+  pointer-events: none;
+  animation: settings-row-focus-frame 2000ms ease-out forwards;
+}
+
+@keyframes settings-row-focus-frame {
+  0% {
+    opacity: 0;
+  }
+
+  8%,
+  72% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-menu-row-highlight::after {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 .feature-focus-highlight {
@@ -34,21 +69,6 @@
 
 .feature-focus-highlight-1 {
   animation: feature-control-highlight-b 2200ms ease-out;
-}
-
-@keyframes settings-row-highlight {
-  0%,
-  72% {
-    background: var(--success-bg-hover);
-    box-shadow:
-      inset 0 0 0 1px var(--success-border-strong),
-      0 0 0 1px var(--success-glow);
-  }
-
-  100% {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px transparent;
-  }
 }
 
 @keyframes feature-control-highlight-a {

@@ -1,6 +1,7 @@
 /*
- * The one-time Kitsune Input offer. Flat surfaces only: no gradients or glows.
- * Kitsune's orange marks the call to action in every theme.
+ * Both Kitsune Input offers: the one-time launch offer and the window-bar
+ * banner's dialog. Flat surfaces only: no gradients or glows. Kitsune's
+ * orange marks the call to action in every theme.
  */
 .kitsune-launch-offer-backdrop {
   z-index: 140;
@@ -287,6 +288,36 @@
 
 .kitsune-launch-offer-learn svg {
   color: var(--kitsune-orange);
+}
+
+/* The banner's dialog can hide the banner for good; a quiet link, not a third button. */
+.kitsune-promotion-dismiss {
+  margin: 14px auto 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--control-radius);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-subtitle);
+  cursor: pointer;
+}
+
+.kitsune-promotion-dismiss:not(:disabled):hover {
+  color: var(--text-strong);
+}
+
+.kitsune-promotion-dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.kitsune-promotion-dismiss:disabled {
+  cursor: default;
+  opacity: var(--disabled-opacity);
 }
 
 @media (max-width: 620px) {

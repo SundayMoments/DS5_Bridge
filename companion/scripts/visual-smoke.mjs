@@ -76,7 +76,7 @@ try {
   await screenshot('kitsune-input-banner-hover.png');
   await kitsunePromotionBanner.click();
   const kitsunePromotionDialog = page.getByRole('dialog', {
-    name: 'Take controller customization further'
+    name: 'Make your controller yours.'
   });
   await kitsunePromotionDialog.waitFor();
   await page.waitForTimeout(250);

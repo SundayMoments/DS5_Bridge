@@ -71,8 +71,11 @@
   color: var(--success);
 }
 
+/* Reaches into the menu's padding so a linked row's frame clears its text. */
 .notifications-options {
   min-height: 0;
+  margin-inline: -8px;
+  padding-inline: 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -111,6 +114,11 @@
 
 .notifications-menu .settings-menu-row .switch {
   flex: 0 0 48px;
+}
+
+.notifications-menu .settings-menu-row-highlight::after {
+  inset: 3px -8px;
+  border-radius: 8px;
 }
 
 .notifications-actions {

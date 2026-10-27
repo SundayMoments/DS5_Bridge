@@ -31,7 +31,7 @@
 }
 
 .overview-card-grid {
-  width: min(100%, 800px);
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--card-gap);
@@ -136,7 +136,7 @@
 }
 
 .overview-control-grid {
-  width: min(100%, 800px);
+  width: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
@@ -428,7 +428,7 @@
 }
 
 .overview-status-panel {
-  width: min(100%, 800px);
+  width: 100%;
   min-height: 88px;
   border: 1px solid var(--section-border);
   border-radius: var(--card-radius);

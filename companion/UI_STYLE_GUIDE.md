@@ -66,6 +66,8 @@ Modal dialogs use `modal-backdrop` with a `role="dialog"` form or panel, a label
 
 - The controller confirmation for UF2 mode (`features/bootloader-confirmation`) sits above everything (z-index 200), on any page, and can only be cancelled.
 - The one-time Kitsune Input offer opens shortly after the first snapshot, never over the first-run tutorial, the controller confirmation, or the promotion dialog. Its close button and Escape stay locked for 5 seconds; `kitsuneInputLaunchOfferShown` records that it was shown.
+- The window-bar banner opens the same offer (`KitsuneInputOfferContent`) without the countdown, plus a quiet "Don't show Kitsune Input promotions again" link. Keep the two in step: change the shared content, not one dialog.
+- A row that another page links to (Overview's chips, Settings search) is framed briefly in `--focus-ring` (`settings-menu-row-highlight`), never tinted.
 - System's emergency device repair asks first and refuses while a controller is connected; its profile dialogs save, rename, and delete.
 
 ## Shared Primitives
@@ -97,7 +99,7 @@ Every main tab should follow this order:
    - Left card: primary setting or value control. Its header is `feature-card-title title-only` (title and description, no icon) or, when the card switches modes, `dual-selector studio-mode-tabs` (full-width icon tabs such as Speaker / Mic and Haptics / Rumble) at the title's height.
    - Right card: testing, behavior, status, or secondary controls.
 
-The outer `control-panel` is intentionally flat. Do not wrap feature cards in another visual card; the repeated paired-card layout is the page structure.
+The outer `control-panel` is intentionally flat. Do not wrap feature cards in another visual card; the repeated paired-card layout is the page structure. Pages fill the workspace (`.control-page` is `width: 100%`), so the left and right gutters match, as in Kitsune Input.
 
 Lighting and System must preserve the same two-column card geometry as Haptics, Audio, and Triggers. Their card bottoms should align within the active tab and their rendered card heights should match the other main tabs.
 

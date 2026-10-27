@@ -16,6 +16,7 @@ import {
 } from '../../test-support/app-harness';
 import { STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY } from '../startup';
 import { KitsuneInputLaunchOffer } from './KitsuneInputLaunchOffer';
+import { LAUNCH_OFFER_FEATURES } from './KitsuneInputOfferContent';
 import { KitsuneInputPromotionDialog } from './KitsuneInputPromotionDialog';
 import { LAUNCH_OFFER_DELAY_MS } from './use-kitsune-launch-offer';
 
@@ -105,7 +106,8 @@ describe('KitsuneInputLaunchOffer', () => {
       promotionSource.indexOf('.kitsune-promotion-backdrop'),
       promotionSource.indexOf('.remap-profile-modal')
     );
-    expect(kitsuneRules).toContain('.kitsune-promotion-actions .primary-action');
+    // Both offers share one panel stylesheet; only the backdrop lives here.
+    expect(kitsuneRules).not.toContain('.kitsune-promotion-modal');
     for (const css of [source, kitsuneRules]) {
       expect(css).not.toMatch(/gradient\(/);
       expect(css).not.toMatch(/drop-shadow/);
@@ -155,24 +157,35 @@ describe('KitsuneInputLaunchOffer', () => {
 });
 
 describe('KitsuneInputPromotionDialog', () => {
-  it('lists what Kitsune Input adds and closes on Escape', () => {
+  it('shows the launch offer content, closes at once, and can hide the banner for good', async () => {
     const onClose = vi.fn();
+    const onPurchase = vi.fn();
+    const onDismissForever = vi.fn();
     mountElement(
       <KitsuneInputPromotionDialog
         dismissing={false}
         onClose={onClose}
-        onDismissForever={vi.fn()}
+        onDismissForever={onDismissForever}
         onLearnMore={vi.fn()}
-        onPurchase={vi.fn()}
+        onPurchase={onPurchase}
       />
     );
-    const dialog = document.querySelector('.kitsune-promotion-modal')!;
-    expect(dialog.querySelector('h2')?.textContent).toBe('Take controller customization further');
-    expect([...dialog.querySelectorAll('.kitsune-promotion-feature-kicker strong')].map((title) => title.textContent))
-      .toEqual(['Tuning & Compatibility', 'Profiles & Tools']);
-    expect(dialog.querySelectorAll('.kitsune-promotion-feature-card li')).toHaveLength(12);
+    const dialog = document.querySelector<HTMLElement>('.kitsune-promotion-modal')!;
+    // Same panel and content as the launch offer.
+    expect(dialog.classList.contains('kitsune-launch-offer-modal')).toBe(true);
+    expect(dialog.getAttribute('aria-labelledby')).toBe('kitsune-promotion-title');
+    expect(dialog.querySelector('#kitsune-promotion-title')?.textContent).toBe('Make your controller yours.');
+    expect([...dialog.querySelectorAll('.kitsune-launch-offer-features strong')].map((title) => title.textContent))
+      .toEqual(LAUNCH_OFFER_FEATURES.map(({ title }) => title));
+    expect(dialog.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
     expect(dialog.querySelector('.kitsune-promotion-wordmark')?.getAttribute('data-l10n')).toBe('off');
-    expect(buttonByText(dialog, "Don't show Kitsune Input promotions again")).toBeDefined();
+    // No countdown: the banner's dialog was asked for.
+    expect(dialog.querySelector<HTMLButtonElement>('.kitsune-launch-offer-close')?.disabled).toBe(false);
+
+    await click(dialog.querySelector('.kitsune-launch-offer-get'));
+    expect(onPurchase).toHaveBeenCalledOnce();
+    await click(buttonByText(dialog, "Don't show Kitsune Input promotions again"));
+    expect(onDismissForever).toHaveBeenCalledOnce();
     pressEscape();
     expect(onClose).toHaveBeenCalledOnce();
   });

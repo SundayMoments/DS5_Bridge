@@ -629,15 +629,13 @@ describe('companion layout CSS', () => {
       .slice(rendererStyleModule('styles/app-shell.css').indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(reducedMotion).toContain('.kitsune-promotion-banner:hover::after');
     expect(reducedMotion).toContain('animation: none;');
-    expect(cssBlock('.kitsune-promotion-feature-grid', 'grid-template-columns: repeat(2, minmax(0, 1fr));'))
+    // The banner's dialog reuses the launch offer's panel; its hide-for-good
+    // option is a quiet link under the actions.
+    const offerStyles = rendererStyleModule('features/kitsune-promotion/kitsune-launch-offer.css');
+    expect(cssBlockIn(offerStyles, '.kitsune-launch-offer-features {', 'grid-template-columns:'))
       .toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
-    expect(cssBlock('.kitsune-promotion-actions', 'grid-template-columns: repeat(2, minmax(0, 1fr));'))
-      .toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
-    expect(cssBlock('.kitsune-promotion-learn,', 'background: var(--surface-control);'))
-      .toContain('color: var(--text-primary);');
-    expect(cssBlock('.kitsune-promotion-learn svg,', 'color: #ff7a32;'))
-      .toContain('color: #ff7a32;');
-    expect(cssBlock('.kitsune-promotion-dismiss', 'grid-column: 1 / -1;'))
-      .toContain('background: var(--surface-control-soft);');
+    const dismiss = cssBlockIn(offerStyles, '.kitsune-promotion-dismiss {', 'background:');
+    expect(dismiss).toContain('background: transparent;');
+    expect(dismiss).toContain('color: var(--text-muted);');
   });
 });

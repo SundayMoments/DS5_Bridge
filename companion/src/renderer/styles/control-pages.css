@@ -35,7 +35,8 @@
 
 .control-page {
   grid-area: 1 / 1;
-  width: min(100%, 800px);
+  /* Pages fill the workspace with even gutters, like Kitsune Input's. */
+  width: 100%;
   display: grid;
   grid-template-rows: auto minmax(var(--feature-card-height), auto);
   align-content: start;
