@@ -61,6 +61,12 @@ add_executable(bounded_containers_test bounded_containers_test.cpp)
 target_include_directories(bounded_containers_test PRIVATE ../../src)
 add_executable(trigger_motor_power_test trigger_motor_power_test.cpp)
 target_include_directories(trigger_motor_power_test PRIVATE ../../src)
+add_executable(controller_input_handoff_test
+    controller_input_handoff_test.cpp
+    ../../src/dualsense_input_decoder.cpp
+    ../../src/persona/dualsense_persona.cpp
+)
+target_include_directories(controller_input_handoff_test PRIVATE ../../src)
 add_executable(keyboard_tap_sequencer_test
     keyboard_tap_sequencer_test.cpp
     ../../src/keyboard_tap_sequencer.cpp
@@ -108,6 +114,7 @@ add_test(NAME ram_mem_test COMMAND ram_mem_test)
 add_test(NAME bt_output_send_dispatcher_test COMMAND bt_output_send_dispatcher_test)
 add_test(NAME bounded_containers_test COMMAND bounded_containers_test)
 add_test(NAME trigger_motor_power_test COMMAND trigger_motor_power_test)
+add_test(NAME controller_input_handoff_test COMMAND controller_input_handoff_test)
 add_test(NAME keyboard_tap_sequencer_test COMMAND keyboard_tap_sequencer_test)
 add_test(NAME bootloader_maintenance_test COMMAND bootloader_maintenance_test)
 add_test(NAME wake_on_lan_test COMMAND wake_on_lan_test)

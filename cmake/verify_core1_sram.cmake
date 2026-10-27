@@ -25,7 +25,10 @@ endif()
 
 set(required_sram_symbols
         "_Z10on_bt_data12CHANNEL_TYPEPht"
+        "_ZL31process_controller_input_packetRKN3ds529ReceivedControllerInputPacketE"
         "_Z14interrupt_loopv"
+        "_Z26host_input_report_completev"
+        "tud_hid_report_complete_cb"
         "_Z18usb_mounted_activev"
         "usb_descriptor_bridge_only_active"
         "_Z33dualsense_decode_usb_input_reportPKhtR21BridgeControllerState"

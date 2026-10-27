@@ -408,8 +408,13 @@ relocate_to_ram(
 # Tier 3: controller input-report and scheduler tail.
 relocate_to_ram(
         src/main.cpp.o
-        ".text._Z10on_bt_data12CHANNEL_TYPEPht=.time_critical.controller_input_bt_callback@.text._Z14interrupt_loopv=.time_critical.controller_input_usb_submit"
+        ".text._Z10on_bt_data12CHANNEL_TYPEPht=.time_critical.controller_input_bt_callback@.text._Z14interrupt_loopv=.time_critical.controller_input_usb_submit@.text._Z26host_input_report_completev=.time_critical.controller_input_usb_complete"
         "Relocating controller input receive and USB submission to SRAM"
+)
+relocate_to_ram(
+        src/usb.cpp.o
+        ".text.tud_hid_report_complete_cb=.time_critical.tud_hid_report_complete_cb"
+        "Relocating the HID input completion callback to SRAM"
 )
 if(ENABLE_COMPANION)
     relocate_to_ram(
@@ -522,8 +527,10 @@ target_compile_definitions(ds5-bridge PRIVATE
         # park core 1 while that happens.
         PICO_FLASH_ASSUME_CORE1_SAFE=0
         # Bound each CYW43/BTstack service pass so connection-event bursts
-        # cannot starve TinyUSB, audio, BOOTSEL, or the watchdog.
-        PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4
+        # cannot starve TinyUSB, audio, BOOTSEL, or the watchdog. Two packets
+        # is the stock SDK loop; the controller input handoff holds exactly
+        # one pass, and receive continuation reads the rest on the next poll.
+        PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=2
         # Put TinyUSB's RP2 IRQ path (handler, buffer start and completion) in
         # SRAM; every input-report completion otherwise ran from flash.
         PICO_RP2040_USB_FAST_IRQ=1

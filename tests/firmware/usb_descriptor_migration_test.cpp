@@ -1952,7 +1952,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         || verify_cmake.find("_Z24usb_mic_streaming_activev") == std::string::npos
         || verify_cmake.find("tud_audio_n_available") == std::string::npos
         || verify_cmake.find("tud_audio_n_get_ep_in_ff") == std::string::npos
-        || cmake.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=4")
+        || cmake.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT=2")
             == std::string::npos
         || cmake.find("PICO_FLASH_ASSUME_CORE1_SAFE=0") == std::string::npos
     ) {
@@ -2045,7 +2045,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
         "RUN_MAIN_PHASE(WatchdogMainLoopPhase::Cyw43, {",
         watchdog_start
     );
-    const auto first_poll = main_cpp.find("cyw43_arch_poll();", watchdog_start);
+    const auto first_poll = main_cpp.find("poll_bluetooth_once();", watchdog_start);
     const std::string run_main_phase = extract_between(
         main_cpp,
         "#define RUN_MAIN_PHASE(phase_id, block)",
@@ -2408,6 +2408,78 @@ void assert_dualsense_battery_buckets_preserve_power_state(
     }
 }
 
+void assert_bluetooth_input_is_handed_off_after_the_poll(std::filesystem::path const &root) {
+    const auto main_cpp = read_text(root / "src" / "main.cpp");
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+    const auto xusb_usb_cpp = read_text(root / "src" / "persona" / "xusb360_usb.cpp");
+
+    const std::string receive = extract_between(
+        main_cpp,
+        "void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {",
+        "\n}\n"
+    );
+    const std::string poll = extract_between(
+        main_cpp,
+        "static void poll_bluetooth_once() {",
+        "\n}\n"
+    );
+    const std::string reset = extract_between(
+        main_cpp,
+        "void reset_controller_input_report_cache() {",
+        "\n}\n"
+    );
+    const std::string persona_switch = extract_between(
+        main_cpp,
+        "void host_input_prepare_persona_switch() {",
+        "\n}\n"
+    );
+    const std::string completion = extract_between(
+        usb_cpp,
+        "void tud_hid_report_complete_cb(",
+        "\n}\n"
+    );
+    const auto drain_after = [&](std::size_t poll_position) {
+        const auto drain = main_cpp.find("drain_controller_input_batch(true);", poll_position);
+        const auto next_poll = main_cpp.find("poll_bluetooth_once();", poll_position + 1);
+        return drain != std::string::npos && (next_poll == std::string::npos || drain < next_poll);
+    };
+    const auto loop_start = main_cpp.find("watchdog_enable(1000, true);");
+    const auto first_poll = main_cpp.find("poll_bluetooth_once();", loop_start);
+    const auto second_poll = first_poll == std::string::npos
+        ? std::string::npos
+        : main_cpp.find("poll_bluetooth_once();", first_poll + 1);
+    if (
+        receive.find("controller_input_receive_batch.push(data + 3)") == std::string::npos
+        || receive.find("companion_process_controller_report") != std::string::npos
+        || receive.find("dualsense_decode_usb_input_report") != std::string::npos
+        || poll.find("drain_controller_input_batch(false);") == std::string::npos
+        || poll.find("drain_controller_input_batch(false);") > poll.find("cyw43_arch_poll();")
+        || main_cpp.find("PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT == ControllerInputReceiveBatch::capacity()")
+            == std::string::npos
+        || first_poll == std::string::npos
+        || second_poll == std::string::npos
+        || !drain_after(first_poll)
+        || !drain_after(second_poll)
+        || main_cpp.find("if (!controller_input_receive_batch.current(packet))") == std::string::npos
+        || main_cpp.find("const bool received_input_pending = !controller_input_receive_batch.empty();")
+            == std::string::npos
+        || main_cpp.find("ds5::controller_input_refresh_analog_sticks(safe_state, interrupt_in_state);")
+            == std::string::npos
+        || reset.find("controller_input_receive_batch.clear();") == std::string::npos
+        || reset.find("clear_host_input_delivery();") == std::string::npos
+        || persona_switch.find("controller_input_receive_batch.clear();") == std::string::npos
+        || persona_switch.find("clear_host_input_delivery();") == std::string::npos
+        || completion.find("instance == 0 && host_persona_is_native_hid()") == std::string::npos
+        || completion.find("host_input_report_complete();") == std::string::npos
+        || xusb_usb_cpp.find("        xusb_in_busy = false;\n        host_input_report_complete();")
+            == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "Bluetooth input must be staged during the poll, drained with USB service between reports, and chained from IN completions"
+        );
+    }
+}
+
 } // namespace
 
 int main() {
@@ -2444,6 +2516,7 @@ int main() {
         assert_companion_trigger_tests_survive_continuous_audio(source_root);
         assert_lightbar_restore_can_be_disabled(source_root);
         assert_dualsense_battery_buckets_preserve_power_state(source_root);
+        assert_bluetooth_input_is_handed_off_after_the_poll(source_root);
 
         if (bcd_device != kExpectedUsbDeviceRevision) {
             std::cerr << "USB bcdDevice changed unexpectedly. Expected 0x" << std::hex

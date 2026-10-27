@@ -939,6 +939,11 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 }
 
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint16_t len) {
-    (void) instance;
+    // Instance 0 is the controller only in a native HID topology; with the
+    // Xbox 360 persona it is the keyboard, whose completions are not input.
+    if (instance == 0 && host_persona_is_native_hid()) {
+        host_input_report_complete();
+    }
+    (void) report;
     (void) len;
 }

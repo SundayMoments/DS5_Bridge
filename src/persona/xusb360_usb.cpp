@@ -3,6 +3,7 @@
 
 #include "controller_output_submit.h"
 #include "dualsense_output.h"
+#include "host_input.h"
 #include "persona/host_persona.h"
 #include "persona/xusb360_persona.h"
 #include "tusb.h"
@@ -134,6 +135,7 @@ bool xusb360_driver_xfer_cb(
 ) {
     if (ep_addr == xusb_ep_in) {
         xusb_in_busy = false;
+        host_input_report_complete();
         return true;
     }
 

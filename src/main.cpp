@@ -8,6 +8,8 @@
 #include "bsp/board_api.h"
 #include "button_functions.h"
 #include "bt.h"
+#include "controller_input_delivery_queue.h"
+#include "controller_input_receive_batch.h"
 #include "controller_packet_compositor.h"
 #include "controller_output_policy.h"
 #include "controller_output_submit.h"
@@ -315,6 +317,28 @@ BridgeControllerState interrupt_in_state{};
 static volatile bool host_input_waiting_for_mount = false;
 static volatile uint32_t host_input_fallback_until_us = 0;
 
+// Distinct button/contact transitions each take a slot; continuous motion
+// shares one. Every queued edge goes out with the newest stick positions.
+static constexpr std::size_t HOST_INPUT_QUEUE_CAPACITY = 8;
+static ds5::ControllerInputDeliveryQueue<HOST_INPUT_QUEUE_CAPACITY> host_input_queue{};
+using ControllerInputReceiveBatch = ds5::ControllerInputReceiveBatch<2>;
+static_assert(PICO_BTSTACK_CYW43_MAX_HCI_PROCESS_LOOP_COUNT == ControllerInputReceiveBatch::capacity(),
+              "The receive handoff must hold one complete Bluetooth receive pass");
+static ControllerInputReceiveBatch controller_input_receive_batch{};
+// A report the USB class rejected. It goes out before anything queued.
+static bool host_input_retry_pending = false;
+static BridgeControllerState host_input_retry_state{};
+// The last report the USB class accepted; unknown after a reset or a mount.
+static BridgeControllerState host_input_accepted_state{};
+static bool host_input_have_accepted_state = false;
+
+// Caller holds report_cs.
+static void clear_host_input_delivery() {
+    host_input_queue.clear();
+    host_input_retry_pending = false;
+    host_input_have_accepted_state = false;
+}
+
 static constexpr uint8_t kNeutralDualSenseUsbInputReport[63] = {
     0x7f, 0x7d, 0x7f, 0x7e, 0x00, 0x00, 0xa7,
     0x08, 0x00, 0x00, 0x00, 0x52, 0x43, 0x30, 0x41,
@@ -428,6 +452,7 @@ static bool dualsense_feature_report_may_use_bt_passthrough(
 }
 
 void host_input_prepare_persona_switch() {
+    controller_input_receive_batch.clear();
     const HostPersonaMode current_persona = host_persona_active();
     const BridgeControllerState neutral_state = neutral_controller_state();
     const uint32_t now = time_us_32();
@@ -435,6 +460,7 @@ void host_input_prepare_persona_switch() {
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
     interrupt_in_state = neutral_state;
+    clear_host_input_delivery();
     report_dirty = false;
     host_input_waiting_for_mount = true;
     host_input_fallback_until_us = now + HOST_PERSONA_SWITCH_INPUT_FALLBACK_US;
@@ -444,11 +470,15 @@ void host_input_prepare_persona_switch() {
 }
 
 void host_input_note_usb_mounted() {
+    critical_section_enter_blocking(&report_cs);
+    host_input_have_accepted_state = false;
+    critical_section_exit(&report_cs);
     host_input_waiting_for_mount = false;
     host_input_fallback_until_us = 0;
 }
 
 void reset_controller_input_report_cache() {
+    controller_input_receive_batch.clear();
     BridgeControllerState default_state{};
     (void)dualsense_decode_usb_input_report(
         kNeutralDualSenseUsbInputReport,
@@ -459,6 +489,7 @@ void reset_controller_input_report_cache() {
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, kNeutralDualSenseUsbInputReport, sizeof(interrupt_in_data));
     interrupt_in_state = default_state;
+    clear_host_input_delivery();
     // Publish neutral before replacing a mounted full controller topology. A
     // bridge-only topology never accepts controller-shaped reports.
     report_dirty = usb_mounted_active() && !usb_descriptor_bridge_only_active();
@@ -477,38 +508,69 @@ void interrupt_loop() {
         return;
     }
 
+    // Received but unprocessed input is newer than anything queued, so do not
+    // spend the endpoint on older continuous state. Only the next pending
+    // report may go first, and only when it carries a button/contact edge.
+    const bool received_input_pending = !controller_input_receive_batch.empty();
     bool should_send = false;
     BridgeControllerState safe_state{};
 
-
     critical_section_enter_blocking(&report_cs);
-    if (report_dirty) {
+    if (received_input_pending) {
+        BridgeControllerState const *pending = host_input_retry_pending
+            ? &host_input_retry_state
+            : host_input_queue.front();
+        if (
+            !host_input_have_accepted_state
+            || pending == nullptr
+            || ds5::controller_input_transition_equivalent(host_input_accepted_state, *pending)
+        ) {
+            critical_section_exit(&report_cs);
+            return;
+        }
+    }
+    if (host_input_retry_pending) {
+        safe_state = host_input_retry_state;
+        host_input_retry_pending = false;
+        should_send = true;
+    } else if (host_input_queue.pop_front(safe_state)) {
+        should_send = true;
+    } else if (report_dirty) {
         safe_state = interrupt_in_state;
         report_dirty = false;
         should_send = true;
     }
+    if (should_send) {
+        ds5::controller_input_refresh_analog_sticks(safe_state, interrupt_in_state);
+    }
     critical_section_exit(&report_cs);
 
-    // Only send to TinyUSB if we actually grabbed fresh data
-    if (should_send) {
-        HostPersonaInputReport safe_report{};
-        if (!host_persona_encode_input(persona, safe_state, safe_report)) {
-            return;
-        }
+    if (!should_send) {
+        return;
+    }
+    HostPersonaInputReport safe_report{};
+    bool queued = false;
+    if (host_persona_encode_input(persona, safe_state, safe_report)) {
         note_usb_input_report(safe_report.bytes, safe_report.len);
-        const bool queued = xusb
+        queued = xusb
             ? xusb360_usb_send_report(safe_report.bytes, safe_report.len)
             : tud_hid_report(safe_report.report_id, safe_report.bytes, safe_report.len);
         if (!queued) {
             DS5_LOG("[USBHID] tud_hid_report error\n");
-            
-            // If the report failed to queue, restore the dirty flag 
-            // so we try again on the next loop iteration.
-            critical_section_enter_blocking(&report_cs);
-            report_dirty = true;
-            critical_section_exit(&report_cs);
         }
     }
+
+    critical_section_enter_blocking(&report_cs);
+    if (queued) {
+        host_input_accepted_state = safe_state;
+        host_input_have_accepted_state = true;
+    } else {
+        // Keep the unsent report. Equivalent newer input may refresh it, but
+        // the transitions queued behind it are never skipped.
+        host_input_retry_state = safe_state;
+        host_input_retry_pending = true;
+    }
+    critical_section_exit(&report_cs);
 }
 
 void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
@@ -530,11 +592,28 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
         return;
     }
 
-    uint8_t controller_report[63];
-    memcpy(controller_report, data + 3, sizeof(controller_report));
+    // BTstack reuses its packet buffer after this callback. Copy the report,
+    // but leave chords, decoding and USB submission until the radio poll has
+    // returned, so the poll ends sooner and USB is serviced between reports.
+    (void)controller_input_receive_batch.push(data + 3);
+}
+
+static __attribute__((noinline, noclone)) void __not_in_flash_func(process_controller_input_packet)(
+    ds5::ReceivedControllerInputPacket const &packet
+) {
+    if (!controller_input_receive_batch.current(packet)) {
+        return;
+    }
+    uint8_t controller_report[sizeof(packet.report)];
+    memcpy(controller_report, packet.report, sizeof(controller_report));
     set_headset((controller_report[53] & 1) != 0);
 #ifdef ENABLE_COMPANION
     companion_process_controller_report(controller_report, sizeof(controller_report));
+    // A chord can disconnect the controller or change persona. Do not publish
+    // an old session's held controls after its state has been reset.
+    if (!controller_input_receive_batch.current(packet)) {
+        return;
+    }
 #endif
 
     BridgeControllerState controller_state{};
@@ -542,20 +621,53 @@ void on_bt_data(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
         return;
     }
 
-    // We add the critical section here to avoid any race conditions when writing to the interrupt_in_data buffer,
-    // which is shared between the main loop and this callback.
-    // The critical section ensures that only one thread can access the buffer at a time,
-    // preventing data corruption and ensuring thread safety.
-    // We also set the report_dirty flag to true to indicate that new data is available
-    //  and needs to be sent in the next interrupt report.
     critical_section_enter_blocking(&report_cs);
     memcpy(interrupt_in_data, controller_report, sizeof(controller_report));
     interrupt_in_state = controller_state;
-    report_dirty = true;
+    if (host_input_waiting_for_mount) {
+        // No endpoint exists while the persona re-enumerates. Keep only the
+        // latest state for the first mounted report, not a backlog.
+        report_dirty = true;
+    } else {
+        report_dirty = false;
+        if (
+            !host_input_retry_pending
+            || !host_input_queue.refresh_retry(host_input_retry_state, controller_state)
+        ) {
+            (void)host_input_queue.push(controller_state);
+        }
+    }
     critical_section_exit(&report_cs);
 #ifdef ENABLE_COMPANION
     companion_update_controller_report(controller_report, sizeof(controller_report));
 #endif
+}
+
+static void drain_controller_input_batch(bool service_usb) {
+    controller_input_receive_batch.drain(process_controller_input_packet, [service_usb] {
+        // An edge may go out before the next packet is processed; continuous
+        // state waits for the last one. This runs even when decoding rejected
+        // the last packet, so earlier valid input is never stranded.
+        interrupt_loop();
+        // One USB service per processed packet, bounded by the batch.
+        if (service_usb) {
+            tud_task();
+        }
+    });
+}
+
+static void poll_bluetooth_once() {
+    // The main loop drains every batch after its poll; this only guarantees a
+    // full batch can never refuse the next pass's reports.
+    drain_controller_input_batch(false);
+    cyw43_arch_poll();
+}
+
+// The controller's IN endpoint finished a transfer. Chain the next pending
+// report now instead of waiting for the main loop's next submission point.
+// With nothing new to send, nothing is sent.
+void host_input_report_complete() {
+    interrupt_loop();
 }
 
 // Invoked when received GET_REPORT control request
@@ -739,7 +851,9 @@ static void service_wake_on_lan() {
         usb_set_gameplay_quiet(quiet);
         audio_handle_controller_disconnect();
         bt_quiesce_gameplay_output();
+        controller_input_receive_batch.clear();
         critical_section_enter_blocking(&report_cs);
+        clear_host_input_delivery();
         report_dirty = false;
         critical_section_exit(&report_cs);
     };
@@ -849,20 +963,25 @@ int main() {
 
     watchdog_enable(1000, true);
 
-    // Each pass polls Bluetooth twice and submits fresh input straight after
-    // each poll. USB is serviced between the radio and audio work, and every
-    // tud_task() is followed by the bounded Bluetooth send service, which is
-    // the only place deferred send requests are re-issued.
+    // Each pass polls Bluetooth twice. A poll only stages the reports it reads;
+    // after the USB service that follows it, the batch is drained, servicing
+    // USB between individual reports. Completed IN transfers chain the next
+    // pending report themselves. Every tud_task() is followed by the bounded
+    // Bluetooth send service, the only place deferred sends are re-issued.
     while (1) {
         watchdog_update();
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Cyw43, {
-            cyw43_arch_poll();
+            poll_bluetooth_once();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::InterruptAfterCyw43, {
             interrupt_loop();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
             tud_task();
+            bt_output_service_after_usb();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::InterruptAfterCyw43, {
+            drain_controller_input_batch(true);
             bt_output_service_after_usb();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::WakeOnLan, {
@@ -891,13 +1010,17 @@ int main() {
             bt_output_service_after_usb();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Cyw43Second, {
-            cyw43_arch_poll();
+            poll_bluetooth_once();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::InterruptAfterCyw43, {
             interrupt_loop();
         });
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::TinyUsb, {
             tud_task();
+            bt_output_service_after_usb();
+        });
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::InterruptAfterCyw43, {
+            drain_controller_input_batch(true);
             bt_output_service_after_usb();
         });
         // A second audio pass keeps USB audio and Bluetooth audio sends at the
