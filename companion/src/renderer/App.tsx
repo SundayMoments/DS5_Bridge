@@ -253,7 +253,7 @@ export function App() {
           busy={pendingAction !== null}
           onSelect={(devicePath) => void runAction('bridge-select', () => window.bridge.selectBridge(devicePath))}
           onRefresh={() => runAction('bridge-refresh', () => window.bridge.refreshBridgeDevices())}
-          onRename={(uniqueId, name) => void runAction('bridge-rename', () => window.bridge.setBridgeLabel(uniqueId, name))}
+          onRename={(uniqueId, name) => runAction('bridge-rename', () => window.bridge.setBridgeLabel(uniqueId, name))}
         />
       )}
     />

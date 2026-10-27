@@ -144,7 +144,7 @@ describe('ShellSidebarDevice', () => {
 
 describe('ShellBridgeSelector', () => {
   const baseProps: ShellBridgeSelectorProps = {
-    bridges: [{ label: 'Pico 2 W (active)', path: 'hid-1' }],
+    bridges: [{ label: 'Pico 2 W', path: 'hid-1' }],
     selectedPath: 'hid-1',
     selectedName: 'Pico 2 W',
     selectedUniqueId: 'e6614c311b7d3a2f',
@@ -170,33 +170,50 @@ describe('ShellBridgeSelector', () => {
     expect(host.querySelector('.custom-select-button')?.textContent).toContain('No bridge detected');
   });
 
-  it('renames inline, trimming the name and clearing an empty one', () => {
-    const onRename = vi.fn();
-    const host = render(<ShellBridgeSelector {...baseProps} onRename={onRename} />);
+  function openRename(host: HTMLElement) {
     openMenu(host);
     act(() => document.querySelector<HTMLButtonElement>('button[title="Rename bridge"]')!.click());
-    const input = host.querySelector<HTMLInputElement>('.bridge-rename-input')!;
-    expect(input.value).toBe('Pico 2 W');
+    return document.querySelector<HTMLFormElement>('[role="dialog"][aria-label="Rename bridge"]')!;
+  }
+
+  function typeName(input: HTMLInputElement, value: string) {
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-      setter.call(input, '  Desk Pico  ');
+      setter.call(input, value);
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
-    act(() => input.blur());
-    expect(onRename).toHaveBeenLastCalledWith('e6614c311b7d3a2f', 'Desk Pico');
+  }
+
+  it('renames in a dialog, not in the picker, and trims the name', async () => {
+    let finish!: () => void;
+    const onRename = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const host = render(<ShellBridgeSelector {...baseProps} onRename={onRename} />);
+    const dialog = openRename(host);
+    // The picker keeps showing the bridge; the name is edited in the dialog.
+    expect(host.querySelector('.custom-select-button')?.textContent).toContain('Pico 2 W');
+    const input = dialog.querySelector<HTMLInputElement>('input')!;
+    expect(input.value).toBe('Pico 2 W');
+    typeName(input, '  Desk Pico  ');
+    await act(async () => dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.click());
+    expect(onRename).toHaveBeenCalledWith('e6614c311b7d3a2f', 'Desk Pico');
+    expect(dialog.querySelector('button[type="submit"]')?.textContent).toBe('Renaming...');
+    await act(async () => finish());
+    expect(document.querySelector('[aria-label="Rename bridge"]')).toBeNull();
   });
 
-  it('cancels a rename with Escape', () => {
+  it('needs a name, and Escape or Cancel close the dialog without renaming', () => {
     const onRename = vi.fn();
     const host = render(<ShellBridgeSelector {...baseProps} onRename={onRename} />);
-    openMenu(host);
-    act(() => document.querySelector<HTMLButtonElement>('button[title="Rename bridge"]')!.click());
-    const input = host.querySelector<HTMLInputElement>('.bridge-rename-input')!;
-    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-    act(() => input.blur());
+    let dialog = openRename(host);
+    typeName(dialog.querySelector<HTMLInputElement>('input')!, '   ');
+    expect(dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+    act(() => dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(document.querySelector('[aria-label="Rename bridge"]')).toBeNull();
+
+    dialog = openRename(host);
+    act(() => dialog.querySelector<HTMLButtonElement>('button.secondary-action')!.click());
+    expect(document.querySelector('[aria-label="Rename bridge"]')).toBeNull();
     expect(onRename).not.toHaveBeenCalled();
-    expect(host.querySelector('.bridge-rename-input')).toBeNull();
   });
 
   it('refreshes from the menu footer', async () => {

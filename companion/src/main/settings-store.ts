@@ -44,7 +44,13 @@ import { isUiScalePercent, isUiTextScalePercent } from '../shared/types';
 import { isUiThemePreset } from '../shared/ui-theme';
 import { SYSTEM_UI_LOCALE, normalizeUiLocalePreference } from '../shared/ui-locale-matching';
 export { normalizeUiLocalePreference };
-import type { CompanionSettings, UiScalePercent, UiTextScalePercent, UiThemePreset } from '../shared/types';
+import type { BridgeWorkspace, CompanionSettings, UiScalePercent, UiTextScalePercent, UiThemePreset } from '../shared/types';
+import {
+  captureBridgeWorkspace,
+  isBridgeWorkspaceKey,
+  saveSelectedBridgeWorkspace,
+  transitionBridgeWorkspace
+} from './settings-bridge-workspaces';
 
 const DEFAULT_CONTROLLER_PROFILE_SETTINGS: ControllerProfileSettings = {
   leftStickRadialDeadzonePercent: 0,
@@ -178,7 +184,9 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   speakerVolumePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.speakerVolumePercent,
   speakerGainLevel: 4,
   selectedBridgePath: null,
+  selectedBridgeUniqueId: null,
   bridgeIdentities: {},
+  bridgeWorkspaces: {},
   controllerBindings: {},
   micVolumePercent: DEFAULT_CONTROLLER_PROFILE_SETTINGS.micVolumePercent,
   micMuted: DEFAULT_CONTROLLER_PROFILE_SETTINGS.micMuted,
@@ -856,6 +864,7 @@ function cloneSettings(settings: CompanionSettings): CompanionSettings {
     bridgeIdentities: Object.fromEntries(
       Object.entries(settings.bridgeIdentities).map(([uniqueId, identity]) => [uniqueId, { ...identity }])
     ),
+    bridgeWorkspaces: structuredClone(settings.bridgeWorkspaces),
     controllerBindings: { ...settings.controllerBindings },
     controllerProfiles: settings.controllerProfiles.map((profile) => ({
       ...profile,
@@ -1003,7 +1012,12 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
       && value.selectedBridgePath.length <= 4096
       ? value.selectedBridgePath
       : null,
+    selectedBridgeUniqueId: typeof value?.selectedBridgeUniqueId === 'string'
+      && /^[0-9a-f]{16}$/i.test(value.selectedBridgeUniqueId)
+      ? value.selectedBridgeUniqueId.toLowerCase()
+      : null,
     bridgeIdentities: normalizeBridgeIdentities(value?.bridgeIdentities),
+    bridgeWorkspaces: normalizeBridgeWorkspaces(value?.bridgeWorkspaces),
     controllerBindings: normalizeControllerBindings(value?.controllerBindings, controllerProfiles),
     micVolumePercent: Number.isFinite(value?.micVolumePercent)
       ? Math.max(0, Math.min(100, Math.round(value!.micVolumePercent!)))
@@ -1125,7 +1139,12 @@ export class SettingsStore {
   }
 
   update(next: Partial<CompanionSettings>): CompanionSettings {
-    this.settings = normalizeSettings({ ...this.settings, ...next });
+    const previous = this.settings;
+    this.settings = withTrustedBridgeWorkspaces(transitionBridgeWorkspace(
+      previous,
+      normalizeSettings({ ...previous, ...next }),
+      DEFAULT_BRIDGE_WORKSPACE
+    ));
     if (includesControllerProfileSettingUpdate(next) && next.selectedControllerProfileId === undefined) {
       this.settings = syncSelectedControllerProfile(this.settings);
     }
@@ -1150,7 +1169,10 @@ export class SettingsStore {
         ...this.customSettings,
         selectedPresetId: 'custom',
         // A one-time offer stays shown even if the saved custom settings predate it.
-        kitsuneInputLaunchOfferShown: this.settings.kitsuneInputLaunchOfferShown
+        kitsuneInputLaunchOfferShown: this.settings.kitsuneInputLaunchOfferShown,
+        // The saved custom settings apply to the selected bridge; they never
+        // restore an older bridge selection or other bridges' workspaces.
+        ...bridgeBookkeeping(this.settings)
       };
     } else {
       this.settings = normalizeSettings({ ...this.settings, ...presetSettings, selectedPresetId: normalizedPresetId });
@@ -1163,15 +1185,13 @@ export class SettingsStore {
   restoreDefaults(): CompanionSettings {
     const controllerProfiles = restoreDefaultControllerProfile(this.settings.controllerProfiles);
     const firmwareLogDirectory = this.settings.firmwareLogDirectory;
-    const selectedBridgePath = this.settings.selectedBridgePath;
-    const bridgeIdentities = this.settings.bridgeIdentities;
     const kitsuneInputPromotionDismissed = this.settings.kitsuneInputPromotionDismissed;
     const kitsuneInputLaunchOfferShown = this.settings.kitsuneInputLaunchOfferShown;
+    // Defaults replace the selected bridge's settings only; other bridges keep theirs.
     this.settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
       firmwareLogDirectory,
-      selectedBridgePath,
-      bridgeIdentities,
+      ...bridgeBookkeeping(this.settings),
       kitsuneInputPromotionDismissed,
       kitsuneInputLaunchOfferShown,
       selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
@@ -1406,10 +1426,12 @@ export class SettingsStore {
   }
 
   private write(): void {
+    this.settings = withTrustedBridgeWorkspaces(saveSelectedBridgeWorkspace(this.settings));
     const text = `${JSON.stringify({
       settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
       ...this.settings,
-      customProfile: this.customSettings
+      // Bridge bookkeeping lives once, in the live settings.
+      customProfile: { ...this.customSettings, bridgeWorkspaces: {} }
     }, null, 2)}\n`;
     // Many updates change nothing; skip rewriting an identical file.
     if (text === this.lastWrittenText) {
@@ -1429,6 +1451,52 @@ export class SettingsStore {
     }
     this.lastWrittenText = text;
   }
+}
+
+const DEFAULT_BRIDGE_WORKSPACE: BridgeWorkspace = captureBridgeWorkspace(DEFAULT_SETTINGS);
+
+function bridgeBookkeeping(settings: CompanionSettings): Pick<CompanionSettings,
+  'selectedBridgePath' | 'selectedBridgeUniqueId' | 'bridgeIdentities' | 'bridgeWorkspaces'> {
+  return {
+    selectedBridgePath: settings.selectedBridgePath,
+    selectedBridgeUniqueId: settings.selectedBridgeUniqueId,
+    bridgeIdentities: settings.bridgeIdentities,
+    bridgeWorkspaces: settings.bridgeWorkspaces
+  };
+}
+
+// Workspace maps are replaced, never mutated, so one already normalized can be
+// reused as-is when the live settings are normalized again.
+const normalizedBridgeWorkspaceMaps = new WeakSet<object>();
+
+/** Maps built from normalized live settings need no second normalization. */
+function withTrustedBridgeWorkspaces(settings: CompanionSettings): CompanionSettings {
+  normalizedBridgeWorkspaceMaps.add(settings.bridgeWorkspaces);
+  return settings;
+}
+
+function normalizeBridgeWorkspaces(value: unknown): CompanionSettings['bridgeWorkspaces'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  if (normalizedBridgeWorkspaceMaps.has(value)) {
+    return value as CompanionSettings['bridgeWorkspaces'];
+  }
+  const result: CompanionSettings['bridgeWorkspaces'] = {};
+  for (const [rawKey, rawWorkspace] of Object.entries(value as Record<string, unknown>)) {
+    const key = rawKey.trim().toLowerCase();
+    if (!isBridgeWorkspaceKey(key) || !rawWorkspace || typeof rawWorkspace !== 'object' || Array.isArray(rawWorkspace)) {
+      continue;
+    }
+    // Missing or invalid values take their defaults, like the live settings.
+    result[key] = captureBridgeWorkspace(normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      ...(rawWorkspace as Partial<CompanionSettings>),
+      bridgeWorkspaces: {}
+    }));
+  }
+  normalizedBridgeWorkspaceMaps.add(result);
+  return result;
 }
 
 function normalizeBridgeIdentities(value: unknown): CompanionSettings['bridgeIdentities'] {

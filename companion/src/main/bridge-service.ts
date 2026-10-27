@@ -105,6 +105,7 @@ import {
   type SystemAudioHapticsConfig
 } from './audio-helper';
 import type { BootloaderAuthorizationStorePort } from './bootloader-authorization-store';
+import { orderBridgesByIdentity } from './bridge-order';
 import { CompanionDebugConfig } from './debug-config';
 import { PicoBootloaderAuthorizationCoordinator } from './pico-bootloader-authorization-coordinator';
 import { HidDiscoveryClient } from './hid-discovery-client';
@@ -4599,18 +4600,28 @@ export class BridgeService extends EventEmitter {
   private async refreshBridgeCensus(): Promise<void> {
     this.lastBridgeCensusAt = Date.now();
     try {
-      this.bridgeCensus = await listBridges();
-      const selectedPath = this.settingsStore.get().selectedBridgePath;
+      const census = await listBridges();
+      const settings = this.settingsStore.get();
+      this.bridgeCensus = {
+        ...census,
+        bridges: orderBridgesByIdentity(census.bridges, settings.bridgeIdentities, (bridge) => (
+          this.uniqueIdForCensusBridge(bridge.path, bridge.containerId, settings)
+        ))
+      };
+      const selectedPath = settings.selectedBridgePath;
+      const onlyBridge = this.bridgeCensus.bridges.length === 1 ? this.bridgeCensus.bridges[0] : null;
       if (
         selectedPath
-        && this.bridgeCensus.bridges.length === 1
-        && !BridgeService.isBridgeOnlyPath(this.bridgeCensus.bridges[0].path)
-        && !this.bridgeCensus.bridges.some((bridge) => (
-          BridgeService.bridgePathsEqual(bridge.path, selectedPath)
-        ))
+        && onlyBridge
+        && !BridgeService.isBridgeOnlyPath(onlyBridge.path)
+        && !BridgeService.bridgePathsEqual(onlyBridge.path, selectedPath)
       ) {
+        // The selected bridge most likely came back on a new path, so it keeps
+        // its workspace unless the census or its firmware names another bridge.
         this.snapshot.settings = this.settingsStore.update({
-          selectedBridgePath: this.bridgeCensus.bridges[0].path
+          selectedBridgePath: onlyBridge.path,
+          selectedBridgeUniqueId: this.uniqueIdForCensusBridge(onlyBridge.path, onlyBridge.containerId, settings)
+            ?? settings.selectedBridgeUniqueId
         });
       }
     } catch {
@@ -4659,6 +4670,7 @@ export class BridgeService extends EventEmitter {
   ): void {
     if (identity?.bridgeId) {
       this.connectedBridgeUniqueId = identity.bridgeId.toLowerCase();
+      this.noteSelectedBridgeIdentity(this.connectedBridgeUniqueId);
     }
     if (!controllerConnected) {
       this.connectedControllerMac = null;
@@ -4673,6 +4685,31 @@ export class BridgeService extends EventEmitter {
       }
     }
     this.recordBridgeIdentityAssociation();
+  }
+
+  /**
+   * The connected bridge's firmware ID is authoritative for whose workspace
+   * the live settings are. Runs before the profile binding and the settings
+   * reapply, so a bridge is only ever sent its own settings. With no bridge
+   * selected yet, the connected one becomes the selection.
+   */
+  private noteSelectedBridgeIdentity(uniqueId: string): void {
+    const devicePath = this.device?.path;
+    if (!devicePath || BridgeService.isBridgeOnlyPath(devicePath)) {
+      return;
+    }
+    const settings = this.settingsStore.get();
+    const selectedPath = settings.selectedBridgePath;
+    if (selectedPath && !BridgeService.bridgePathsEqual(selectedPath, devicePath)) {
+      return;
+    }
+    if (selectedPath && settings.selectedBridgeUniqueId === uniqueId) {
+      return;
+    }
+    this.snapshot.settings = this.settingsStore.update({
+      selectedBridgePath: selectedPath ?? devicePath,
+      selectedBridgeUniqueId: uniqueId
+    });
   }
 
   private applyBoundControllerProfile(): CompanionSettings {
@@ -4743,6 +4780,23 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  /** The connected bridge's reported ID, else the ID recorded for its container. */
+  private uniqueIdForCensusBridge(
+    path: string,
+    containerId: string | null,
+    settings: CompanionSettings
+  ): string | null {
+    if (BridgeService.bridgePathsEqual(path, this.device?.path ?? null) && this.connectedBridgeUniqueId) {
+      return this.connectedBridgeUniqueId;
+    }
+    if (!containerId) {
+      return null;
+    }
+    return Object.entries(settings.bridgeIdentities).find(([, identity]) => (
+      identity.containerId?.toLowerCase() === containerId.toLowerCase()
+    ))?.[0] ?? null;
+  }
+
   private bridgeDevicesSnapshot(): BridgeDeviceCensus | null {
     if (!this.bridgeCensus) {
       return null;
@@ -4750,20 +4804,9 @@ export class BridgeService extends EventEmitter {
     const settings = this.settingsStore.get();
     const selectedPath = settings.selectedBridgePath;
     const activePath = this.device?.path ?? null;
-    const uniqueIdForBridge = (path: string, containerId: string | null): string | null => {
-      if (BridgeService.bridgePathsEqual(path, activePath) && this.connectedBridgeUniqueId) {
-        return this.connectedBridgeUniqueId;
-      }
-      if (!containerId) {
-        return null;
-      }
-      return Object.entries(settings.bridgeIdentities).find(([, identity]) => (
-        identity.containerId?.toLowerCase() === containerId.toLowerCase()
-      ))?.[0] ?? null;
-    };
     return {
       bridges: this.bridgeCensus.bridges.map((bridge) => {
-        const uniqueId = uniqueIdForBridge(bridge.path, bridge.containerId);
+        const uniqueId = this.uniqueIdForCensusBridge(bridge.path, bridge.containerId, settings);
         return {
           path: bridge.path,
           containerId: bridge.containerId,
@@ -4788,13 +4831,16 @@ export class BridgeService extends EventEmitter {
   async selectBridge(devicePath: string | null): Promise<BridgeSnapshot> {
     await this.refreshBridgeCensus();
     let selectedPath: string | null = null;
+    let selectedUniqueId: string | null = null;
     if (devicePath !== null) {
-      selectedPath = this.bridgeCensus?.bridges.find((bridge) => (
+      const selected = this.bridgeCensus?.bridges.find((bridge) => (
         BridgeService.bridgePathsEqual(bridge.path, devicePath)
-      ))?.path ?? null;
-      if (!selectedPath) {
+      ));
+      if (!selected) {
         throw new Error('The selected bridge is no longer connected.');
       }
+      selectedPath = selected.path;
+      selectedUniqueId = this.uniqueIdForCensusBridge(selected.path, selected.containerId, this.settingsStore.get());
     }
     const switchingDevices = Boolean(
       this.device
@@ -4804,7 +4850,12 @@ export class BridgeService extends EventEmitter {
     if (switchingDevices) {
       await this.stopControllerAudioPolling();
     }
-    this.snapshot.settings = this.settingsStore.update({ selectedBridgePath: selectedPath });
+    // Selecting a bridge stores the outgoing bridge's workspace and loads the
+    // incoming one's; its controller is sent those settings on reconnect.
+    this.snapshot.settings = this.settingsStore.update({
+      selectedBridgePath: selectedPath,
+      selectedBridgeUniqueId: selectedUniqueId
+    });
     if (switchingDevices) {
       this.closeDevice();
     } else {

@@ -8,7 +8,6 @@
   },
   "translations": {
     "· USB direct": "· bezpośrednio przez USB",
-    "(active)": "(aktywny)",
     "{{0}} — {{1}}% step": "{{0}} — krok {{1}}%",
     "{{0}} actions": "Działania {{0}}",
     "{{0}} button": "Przycisk {{0}}",
@@ -164,6 +163,7 @@
     "Clear search": "Wyczyść wyszukiwanie",
     "Click The Square": "Kliknij kwadrat",
     "Close": "Zamknij",
+    "Close bridge rename dialog": "Zamknij okno zmiany nazwy mostka",
     "Close chord function dialog": "Zamknij okno funkcji skrótu",
     "Close controller forget dialog": "Zamknij okno zapominania kontrolerów",
     "Close controller rename dialog": "Zamknij okno zmiany nazwy kontrolera",
@@ -676,6 +676,7 @@
     "Removes stale Windows DualSense, DualSense Edge, DS5 Bridge USB/HID, audio endpoint, and Bluetooth pairing records.": "Usuwa nieaktualne wpisy systemu Windows dotyczące DualSense, DualSense Edge, USB/HID DS5 Bridge, punktów końcowych audio i parowania Bluetooth.",
     "Rename": "Zmień nazwę",
     "Rename bridge": "Zmień nazwę mostka",
+    "Rename Bridge": "Zmień nazwę mostka",
     "Rename controller": "Zmień nazwę kontrolera",
     "Rename Controller": "Zmień nazwę kontrolera",
     "Rename Function": "Zmień nazwę funkcji",

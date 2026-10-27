@@ -201,13 +201,15 @@ describe('App against a fixture bridge', () => {
 
     await openMenu();
     await click(document.querySelector('button[title="Rename bridge"]'));
-    const input = host.querySelector<HTMLInputElement>('.bridge-rename-input')!;
+    const dialog = document.querySelector<HTMLFormElement>('[role="dialog"][aria-label="Rename bridge"]')!;
+    const input = dialog.querySelector<HTMLInputElement>('input')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Living Room');
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
+    await click(dialog.querySelector('button[type="submit"]'));
     expect(bridge.fn('setBridgeLabel')).toHaveBeenCalledWith('e6614c311b7d3a2f', 'Living Room');
+    expect(document.querySelector('[aria-label="Rename bridge"]')).toBeNull();
   });
 
   it('closes the notifications menu on an outside click or Escape', async () => {

@@ -8,7 +8,6 @@
   },
   "translations": {
     "· USB direct": "· USB 직접 연결",
-    "(active)": "(활성)",
     "{{0}} — {{1}}% step": "{{0}} — {{1}}% 단계",
     "{{0}} actions": "{{0}}개 동작",
     "{{0}} button": "{{0}} 버튼",
@@ -164,6 +163,7 @@
     "Clear search": "검색 지우기",
     "Click The Square": "사각형을 클릭하세요",
     "Close": "닫기",
+    "Close bridge rename dialog": "브리지 이름 변경 대화 상자 닫기",
     "Close chord function dialog": "조합키 기능 대화 상자 닫기",
     "Close controller forget dialog": "컨트롤러 삭제 대화 상자 닫기",
     "Close controller rename dialog": "컨트롤러 이름 변경 대화 상자 닫기",
@@ -676,6 +676,7 @@
     "Removes stale Windows DualSense, DualSense Edge, DS5 Bridge USB/HID, audio endpoint, and Bluetooth pairing records.": "오래된 Windows의 DualSense, DualSense Edge, DS5 Bridge USB/HID, 오디오 엔드포인트 및 Bluetooth 페어링 기록을 제거합니다.",
     "Rename": "이름 변경",
     "Rename bridge": "브리지 이름 변경",
+    "Rename Bridge": "브리지 이름 변경",
     "Rename controller": "컨트롤러 이름 변경",
     "Rename Controller": "컨트롤러 이름 변경",
     "Rename Function": "기능 이름 변경",

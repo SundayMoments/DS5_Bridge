@@ -8,7 +8,6 @@
   },
   "translations": {
     "· USB direct": "· USB 直连",
-    "(active)": "（当前）",
     "{{0}} — {{1}}% step": "{{0}} — 步长 {{1}}%",
     "{{0}} actions": "{{0}} 个动作",
     "{{0}} button": "{{0}} 键",
@@ -164,6 +163,7 @@
     "Clear search": "清除搜索",
     "Click The Square": "点击方块",
     "Close": "关闭",
+    "Close bridge rename dialog": "关闭桥接器重命名对话框",
     "Close chord function dialog": "关闭组合键功能对话框",
     "Close controller forget dialog": "关闭忘记控制器对话框",
     "Close controller rename dialog": "关闭控制器重命名对话框",
@@ -676,6 +676,7 @@
     "Removes stale Windows DualSense, DualSense Edge, DS5 Bridge USB/HID, audio endpoint, and Bluetooth pairing records.": "移除 Windows 中过时的 DualSense、DualSense Edge、DS5 Bridge USB/HID、音频端点和蓝牙配对记录。",
     "Rename": "重命名",
     "Rename bridge": "重命名桥接器",
+    "Rename Bridge": "重命名桥接器",
     "Rename controller": "重命名控制器",
     "Rename Controller": "重命名控制器",
     "Rename Function": "重命名功能",

@@ -57,7 +57,7 @@ export function bridgeSelectorModel(
     ?? null;
   return {
     bridges: bridges.map((bridge, index) => ({
-      label: `${bridge.name ?? `Bridge ${index + 1}`}${bridge.connected ? ' (active)' : ''}`,
+      label: bridge.name ?? `Bridge ${index + 1}`,
       path: bridge.path
     })),
     selectedPath: selected?.path ?? '',

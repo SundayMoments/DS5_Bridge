@@ -3128,6 +3128,48 @@ describe('BridgeService', () => {
     expect(named.bridgeDevices?.bridges.find((bridge) => bridge.path === bridgeB.path)?.name).toBe('Desk');
   });
 
+  it('keeps each bridge’s profiles to that bridge across selections', async () => {
+    const service = serviceFixture();
+    const bridgeA = new MockHidDevice();
+    bridgeA.path = 'winusb://bridge-a';
+    bridgeA.deviceIdentity = deviceIdentityReport({ bridgeId: 'aaaaaaaaaaaaaaaa' });
+    const bridgeB = new MockHidDevice();
+    bridgeB.path = 'winusb://bridge-b';
+    bridgeB.deviceIdentity = deviceIdentityReport({ bridgeId: 'bbbbbbbbbbbbbbbb' });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('bridge-a', bridgeA);
+    hidMock.state.openDevices.set('bridge-b', bridgeB);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [
+        { path: bridgeA.path, containerId: '11111111-1111-1111-1111-111111111111' },
+        { path: bridgeB.path, containerId: '22222222-2222-2222-2222-222222222222' }
+      ],
+      hidDevices: []
+    });
+    const profileNames = () => service.getSnapshot().settings.controllerProfiles.map((profile) => profile.name);
+
+    await service.selectBridge(bridgeA.path);
+    await poll(service);
+    expect(service.getSnapshot().settings.selectedBridgeUniqueId).toBe('aaaaaaaaaaaaaaaa');
+    await service.saveControllerProfile('Racing');
+
+    // B has never been used, so it starts from defaults, then takes its own ID.
+    await service.selectBridge(bridgeB.path);
+    expect(profileNames()).toEqual(['Default']);
+    await poll(service);
+    expect(service.getSnapshot().settings.selectedBridgeUniqueId).toBe('bbbbbbbbbbbbbbbb');
+    await service.saveControllerProfile('Couch');
+
+    // A is recognized by its recorded container and gets its own profiles back.
+    await service.selectBridge(bridgeA.path);
+    expect(service.getSnapshot().settings.selectedBridgeUniqueId).toBe('aaaaaaaaaaaaaaaa');
+    expect(profileNames()).toEqual(['Default', 'Racing']);
+    await poll(service);
+    expect(profileNames()).toEqual(['Default', 'Racing']);
+    await service.selectBridge(bridgeB.path);
+    expect(profileNames()).toEqual(['Default', 'Couch']);
+  });
+
   it('adopts the only connected bridge when the saved device path is stale', async () => {
     const stalePath = 'winusb://disconnected-waveshare';
     const currentPath = 'winusb://regular-pico';

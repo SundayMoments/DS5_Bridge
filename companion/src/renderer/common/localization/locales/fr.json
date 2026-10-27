@@ -8,7 +8,6 @@
   },
   "translations": {
     "· USB direct": "· USB en direct",
-    "(active)": "(actif)",
     "{{0}} — {{1}}% step": "{{0}} — pas de {{1}} %",
     "{{0}} actions": "{{0}} actions",
     "{{0}} button": "Touche {{0}}",
@@ -164,6 +163,7 @@
     "Clear search": "Effacer la recherche",
     "Click The Square": "Cliquez sur le carré",
     "Close": "Fermer",
+    "Close bridge rename dialog": "Fermer la boîte de dialogue de renommage du pont",
     "Close chord function dialog": "Fermer la boîte de dialogue de fonction du raccourci",
     "Close controller forget dialog": "Fermer la boîte de dialogue d’oubli de la manette",
     "Close controller rename dialog": "Fermer la boîte de dialogue de renommage de la manette",
@@ -676,6 +676,7 @@
     "Removes stale Windows DualSense, DualSense Edge, DS5 Bridge USB/HID, audio endpoint, and Bluetooth pairing records.": "Supprime les enregistrements Windows obsolètes de DualSense, DualSense Edge, USB/HID DS5 Bridge, points de terminaison audio et appairages Bluetooth.",
     "Rename": "Renommer",
     "Rename bridge": "Renommer le pont",
+    "Rename Bridge": "Renommer le pont",
     "Rename controller": "Renommer la manette",
     "Rename Controller": "Renommer la manette",
     "Rename Function": "Renommer la fonction",

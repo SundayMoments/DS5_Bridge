@@ -20,8 +20,7 @@
   -webkit-app-region: no-drag;
 }
 
-.sidebar-bridge-selector:has(.custom-select.open),
-.sidebar-bridge-selector:has(.bridge-rename-input:focus) {
+.sidebar-bridge-selector:has(.custom-select.open) {
   border-color: var(--accent-border-strong);
 }
 
@@ -36,8 +35,7 @@
   pointer-events: none;
 }
 
-.sidebar-bridge-selector > .sidebar-bridge-select,
-.sidebar-bridge-selector > .bridge-rename-input {
+.sidebar-bridge-selector > .sidebar-bridge-select {
   grid-area: 1 / 1;
 }
 
@@ -166,19 +164,4 @@
 .bridge-direct-controller span {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.bridge-rename-input {
-  width: 100%;
-  min-width: 0;
-  height: 38px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: 8px;
-  padding: 0 10px 0 38px;
-  color: var(--text-control);
-  background: transparent;
-  font: inherit;
-  font-size: var(--font-size-body);
-  outline: none;
 }

@@ -67,7 +67,7 @@ describe('sidebar device card', () => {
 });
 
 describe('bridge selector', () => {
-  it('names each bridge, marks the active one, and picks the selected bridge', () => {
+  it('names each bridge without an active marker and picks the selected bridge', () => {
     const model = bridgeSelectorModel(snapshot({
       bridgeDevices: {
         bridges: [
@@ -79,7 +79,7 @@ describe('bridge selector', () => {
     }));
     expect(model.bridges).toEqual([
       { label: 'Desk', path: 'a' },
-      { label: 'Bridge 2 (active)', path: 'b' }
+      { label: 'Bridge 2', path: 'b' }
     ]);
     expect(model).toMatchObject({ selectedPath: 'b', selectedName: null, selectedUniqueId: '2' });
     expect(model.directControllers).toEqual([{ path: 'usb', product: 'DualSense' }]);

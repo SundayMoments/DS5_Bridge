@@ -78,7 +78,11 @@ export interface CompanionSettings {
   speakerVolumePercent: number;
   speakerGainLevel: number;
   selectedBridgePath: string | null;
+  /** The selected bridge's firmware ID once known; with the path, it keys that bridge's workspace. */
+  selectedBridgeUniqueId: string | null;
   bridgeIdentities: Record<string, BridgeIdentityRecord>;
+  /** Each bridge's own profiles and controller settings, keyed by unique ID or `path:`. */
+  bridgeWorkspaces: Record<string, BridgeWorkspace>;
   controllerBindings: Record<string, string>;
   micVolumePercent: number;
   micMuted: boolean;
@@ -123,6 +127,36 @@ export interface CompanionSettings {
   chordFunctions: ChordFunction[];
   chordAssignments: ChordAssignment[];
 }
+
+/**
+ * The settings that belong to one bridge, as in Kitsune Input: its profiles,
+ * button maps, chords, controller bindings and every controller setting. The
+ * live CompanionSettings hold the selected bridge's workspace; all other
+ * settings stay app-wide.
+ */
+export type BridgeWorkspace = Pick<CompanionSettings,
+  | 'leftStickRadialDeadzonePercent' | 'rightStickRadialDeadzonePercent'
+  | 'hapticsEnabled' | 'hapticsGainPercent' | 'feedbackBoostEnabled' | 'hapticsBufferLength'
+  | 'classicRumbleEnabled' | 'classicRumbleGainPercent' | 'classicRumbleV1Enabled'
+  | 'adaptiveTriggersEnabled' | 'triggerEffectIntensityPercent' | 'triggerTestMode'
+  | 'speakerEnabled' | 'speakerVolumePercent' | 'speakerGainLevel'
+  | 'micVolumePercent' | 'micMuted'
+  | 'audioReactiveHapticsEnabled' | 'audioReactiveHapticsSource' | 'audioReactiveHapticsMode'
+  | 'audioReactiveHapticsGainPercent' | 'audioReactiveHapticsBassFocus' | 'audioReactiveHapticsResponse'
+  | 'audioReactiveHapticsAttack' | 'audioReactiveHapticsRelease'
+  | 'lightbarEnabled' | 'lightbarColor' | 'lightbarBrightnessPercent'
+  | 'lightbarOverrideEnabled' | 'lightbarRestoreEnabled'
+  | 'muteButtonMode' | 'muteKeyboardUsage' | 'muteKeyboardModifiers' | 'muteKeyboardBehavior'
+  | 'muteKeyboardChordStarterEnabled' | 'edgeProfileSwitchingBlocked'
+  | 'ledEnabled' | 'playerLedEnabled' | 'idleDisconnectEnabled' | 'idleDisconnectTimeoutMinutes'
+  | 'usbSuspendDisconnectEnabled' | 'wakeOnConnectEnabled'
+  | 'sleepKeybindEnabled' | 'speakerVolumeShortcutEnabled'
+  | 'pollingRateMode' | 'hostPersonaMode' | 'duplexMicEnabled' | 'controllerPowerSavingEnabled'
+  | 'controllerBindings'
+  | 'selectedControllerProfileId' | 'controllerProfiles'
+  | 'selectedButtonRemappingProfileId' | 'buttonRemappingProfiles' | 'buttonRemappingDraft'
+  | 'chordFunctions' | 'chordAssignments'
+>;
 
 export interface HidDeviceSummary {
   path?: string;
