@@ -74,6 +74,17 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.feature-card-grid', 'height: auto;')).toContain('height: auto;');
   });
 
+  it('delays the disabled look of controls locked by an app-wide action', () => {
+    expect(tokensSource).toContain('--app-action-pending-look-delay: 300ms;');
+    const delayedLook = cssBlock(
+      '.shell[data-app-action-pending] :disabled,',
+      'transition-delay: var(--app-action-pending-look-delay) !important;'
+    );
+    expect(delayedLook).toContain('transition-duration: 0s !important;');
+    // The switch knob slides with transform; the delay must not hold it back.
+    expect(delayedLook).not.toContain('transform');
+  });
+
   it('animates the battery meter with transform instead of layout width', () => {
     expect(cssBlock('.battery-track div', 'transform: scaleX(var(--battery-scale, 0));')).toContain(
       'transform: scaleX(var(--battery-scale, 0));'

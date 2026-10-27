@@ -25,6 +25,8 @@ export interface MainAppShellProps {
   readonly onBeginWindowDrag: () => void;
   readonly onMinimize: () => void;
   readonly onHide: () => void;
+  /** An app-wide action holds the lock; its disabled look waits briefly (see shared-controls.css). */
+  readonly appActionPending?: boolean;
 }
 
 const INTERACTIVE_CHROME = [
@@ -51,7 +53,8 @@ export function MainAppShell({
   onWindowChromeMouseDown,
   onBeginWindowDrag,
   onMinimize,
-  onHide
+  onHide,
+  appActionPending = false
 }: MainAppShellProps) {
   function handleWindowChromeMouseDown(event: ReactMouseEvent<HTMLElement>): void {
     const target = event.target as HTMLElement;
@@ -61,7 +64,8 @@ export function MainAppShell({
   }
 
   return (
-    <div className={className} data-theme={theme} data-text-scale={textScale}>
+    <div className={className} data-theme={theme} data-text-scale={textScale}
+      data-app-action-pending={appActionPending ? '' : undefined}>
       <div className="window-bar" onMouseDown={handleWindowChromeMouseDown}>
         {windowBarCenter ? <div className="window-bar-center">{windowBarCenter}</div> : <span />}
         <div className="topbar-right">

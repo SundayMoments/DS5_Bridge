@@ -53,7 +53,7 @@ Do not hardcode replacements for these values in a tab unless the component is a
 
 ## App Composition
 
-`App.tsx` owns the `AppRuntime` (snapshot, `pendingAction`, `runAction`, `runQuietAction`), creates each feature's controller, and composes the pages. It holds no page markup.
+`App.tsx` owns the `AppRuntime` (snapshot, `pendingAction`, `runAction`, `runQuietAction`), creates each feature's controller, and composes the pages. It holds no page markup. `runAction` takes the app-wide lock synchronously (`useAppActionLock`), so two actions started in one tick cannot both run. While it holds the lock the shell carries `data-app-action-pending`: locked controls refuse input at once, but their disabled look waits `--app-action-pending-look-delay` (300 ms), so quick commands never flash the page.
 
 - Each page lives in `features/<feature>/`: a `<Name>Page.tsx` that renders, a `use-<feature>-controller.ts` hook `(runtime, input)` that returns state and actions (and `syncSnapshot` when it keeps slider drafts), a pure `model.ts` for anything worked out from the snapshot, and an `index.ts`.
 - Overview, Haptics/Audio Haptics, Audio, Adaptive Triggers/Trigger Lab, and Lighting are in the main chunk. Devices, Stick Deadzones, Button Remapping, Chords, System, and Settings load on first visit through `composition/lazy-pages.tsx` (`lazyPage` with a `pageShell` placeholder that keeps the page's classes). App imports those pages' controllers and dialogs from their module files, never the feature index, so the pages stay out of the main chunk.

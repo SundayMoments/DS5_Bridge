@@ -42,6 +42,8 @@
   --dual-selector-segment-width: 76px;
   --control-height: 36px;
   --action-height: 48px;
+  /* How long an app-wide action may run before its locked controls look disabled. */
+  --app-action-pending-look-delay: 300ms;
 }
 
 /* Resolve the shared aliases at both roots. A nested shell must not inherit

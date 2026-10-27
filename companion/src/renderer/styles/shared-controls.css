@@ -230,6 +230,22 @@ select:disabled {
   opacity: var(--disabled-opacity);
 }
 
+/*
+ * Ported from Kitsune Input. An app-wide action disables controls at once, so
+ * they refuse input, but their disabled look waits for the action to outlast
+ * the delay. Most actions finish sooner and nothing visibly changes; a slow one
+ * still shows the lock. Re-enabling cancels the delayed change, so the look
+ * never flickers. The switch knob slides with transform, which stays untouched.
+ */
+.shell[data-app-action-pending] :disabled,
+.shell[data-app-action-pending] :disabled *,
+.shell[data-app-action-pending] :is(.overview-slider-row, .audio-buffer-control, .deadzone-slider-row).disabled,
+.shell[data-app-action-pending] :is(.overview-slider-row, .audio-buffer-control, .deadzone-slider-row).disabled * {
+  transition-property: opacity, color, background-color, border-color, box-shadow, fill, stroke, filter !important;
+  transition-duration: 0s !important;
+  transition-delay: var(--app-action-pending-look-delay) !important;
+}
+
 .button-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

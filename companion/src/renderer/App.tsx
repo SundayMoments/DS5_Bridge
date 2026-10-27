@@ -4,6 +4,7 @@ import { DEFAULT_UI_THEME_PRESET, UI_THEME_KOFI_BADGES } from './ui-themes';
 import { useDocumentVisible } from './common/use-document-visible';
 import { DeferredPage } from './common/DeferredPage';
 import type { AppRuntime } from './composition/app-runtime';
+import { useAppActionLock } from './composition/use-app-action-lock';
 import { useAppAppearance } from './composition/use-app-appearance';
 import { useBridgeSnapshots } from './composition/use-bridge-snapshots';
 // Pages that load on first visit come from composition/lazy-pages; their
@@ -71,7 +72,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
   const [settingsReturnTab, setSettingsReturnTab] = useState<ControlTab>('overview');
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const { pendingAction, setPendingAction, beginAppAction, endAppAction } = useAppActionLock(snapshot !== null);
   const [showKitsuneInputPromotion, setShowKitsuneInputPromotion] = useState(false);
   const triggerLabOpen = activeControlTab === 'trigger-lab';
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
@@ -85,16 +86,15 @@ export function App() {
   const controllerControlsAvailable = connected && controllerConnected;
 
   async function runAction(label: string, action: () => Promise<BridgeSnapshot>) {
-    if (!snapshot || pendingAction) {
+    if (!beginAppAction(label)) {
       return;
     }
-    setPendingAction(label);
     try {
       setSnapshot(await action());
     } catch {
       setSnapshot(await window.bridge.getStatus());
     } finally {
-      setPendingAction(null);
+      endAppAction(label);
     }
   }
 
@@ -267,6 +267,7 @@ export function App() {
   return (
     <MainAppShell
       className={shellClassName}
+      appActionPending={pendingAction !== null}
       theme={appearance.theme}
       textScale={appearance.textScale}
       activeTab={activeControlTab}

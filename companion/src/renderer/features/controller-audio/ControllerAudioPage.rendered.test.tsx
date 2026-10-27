@@ -40,6 +40,28 @@ describe('Audio page', () => {
     expect(bridge.fn('setDuplexMicEnabled')).not.toHaveBeenCalled();
   });
 
+  it('locks controls during an action and marks the shell so their disabled look can wait', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot(audioOn));
+    let finish!: () => void;
+    bridge.fn('setSpeakerEnabled').mockImplementation(() => new Promise((resolve) => {
+      finish = () => resolve(fixtureSnapshot({ settings: { ...audioOn.settings, speakerEnabled: false } }));
+    }));
+    const host = await renderApp();
+    const page = await openPage(host, 'audio');
+    const shell = host.querySelector('.shell')!;
+    const headerSwitch = page.querySelector<HTMLButtonElement>('.studio-feature-heading [role="switch"]')!;
+    expect(shell.hasAttribute('data-app-action-pending')).toBe(false);
+    await click(headerSwitch);
+    expect(shell.hasAttribute('data-app-action-pending')).toBe(true);
+    expect(headerSwitch.disabled).toBe(true);
+    // A second click during the action is refused, not queued.
+    await click(headerSwitch);
+    expect(bridge.fn('setSpeakerEnabled')).toHaveBeenCalledOnce();
+    await act(async () => finish());
+    expect(shell.hasAttribute('data-app-action-pending')).toBe(false);
+    expect(headerSwitch.disabled).toBe(false);
+  });
+
   it('turns the selected tab’s feature on and off from both header controls', async () => {
     // The speaker is on and the mic off: on the Mic tab, the header follows the mic, not the speaker.
     const bridge = installBridgeMock(fixtureSnapshot({ settings: { ...audioOn.settings, duplexMicEnabled: false } }));
