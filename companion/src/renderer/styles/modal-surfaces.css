@@ -79,11 +79,10 @@
   background: var(--surface-control-hover);
 }
 
+/* Kitsune Input promotions use flat surfaces: no gradients or glows. */
 .kitsune-promotion-backdrop {
   z-index: 130;
-  background:
-    radial-gradient(circle at 50% 34%, rgba(255, 92, 0, 0.13), transparent 38%),
-    var(--modal-backdrop-bg);
+  background: rgb(0 0 0 / 0.6);
 }
 
 .kitsune-promotion-modal {
@@ -117,7 +116,6 @@
   width: 78px;
   height: 78px;
   object-fit: contain;
-  filter: drop-shadow(0 8px 16px rgba(255, 92, 0, 0.2));
 }
 
 .kitsune-promotion-hero-copy {
@@ -224,13 +222,13 @@
 .kitsune-promotion-actions .primary-action {
   border-color: #ff6a18;
   color: #fff;
-  background: linear-gradient(180deg, #ff7a32, #e44d00);
-  box-shadow: inset 0 -2px 0 rgba(118, 35, 0, 0.42), 0 6px 16px rgba(255, 92, 0, 0.15);
+  background: #ff6a18;
+  box-shadow: none;
 }
 
 .kitsune-promotion-actions .primary-action:hover {
-  border-color: #ff925d;
-  background: linear-gradient(180deg, #ff8847, #f1590d);
+  border-color: #ff7f3a;
+  background: #ff7f3a;
 }
 
 .kitsune-promotion-learn,

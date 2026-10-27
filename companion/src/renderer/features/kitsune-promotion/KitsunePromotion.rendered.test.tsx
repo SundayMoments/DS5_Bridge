@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { act, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -62,31 +64,54 @@ function pressEscape() {
 }
 
 describe('KitsuneInputLaunchOffer', () => {
-  it('sells Kitsune Input for the bridge the user already owns without calling DS5 Bridge a trial', () => {
+  it('sells only what Kitsune Input adds, for the bridge the user already owns', () => {
     mountElement(<KitsuneInputLaunchOffer onGet={vi.fn()} onLearnMore={vi.fn()} onClose={vi.fn()} />);
     const text = offer()?.textContent ?? '';
     expect(offer()?.getAttribute('aria-modal')).toBe('true');
     expect(document.querySelector('#kitsune-launch-offer-title')?.textContent).toBe('Make your controller yours.');
-    expect(text).toContain('Pico 2 W or Waveshare RP2350B-Plus-W');
-    expect(text).toContain('nothing new to buy but the app');
+    expect(text).toContain('A separate Windows app from the developer of DS5 Bridge');
+    expect(text).toContain('Same Pico 2 W or Waveshare RP2350B-Plus-W bridge. Nothing else to buy.');
+    expect(text).toContain('Also works with DualShock 4 and the original Switch Pro Controller.');
     expect(text).toContain('One-time purchase on Ko-fi');
     expect(text).toContain('DS5 Bridge stays free and open source.');
-    expect(text).not.toMatch(/trial|lite|upgrade/i);
-    expect([...document.querySelectorAll('.kitsune-launch-offer-features li')].map((item) => item.textContent)).toEqual([
+    // kitsuneinput.com: DS5 Bridge is a separate project, not a free tier.
+    expect(text).not.toMatch(/trial|lite|upgrade|full version|free version/i);
+    const features = [...document.querySelectorAll('.kitsune-launch-offer-features li')];
+    expect(features.map((item) => item.querySelector('strong')?.textContent)).toEqual([
       'Auto-Switching Per-Game Profiles',
-      'Button Remapping',
+      'Shift Layers',
       'Gyro Aim and Flick Stick',
       'Touchpad Gestures',
       'Multi-Actions',
-      'Audio Haptics',
-      'Adaptive Triggers',
-      'Kitsune Bar Overlay',
-      'PC Wake',
-      'Themes'
+      'Stick and Trigger Tuning',
+      'Xbox Series X Mode',
+      'Kitsune Bar and Keyboard'
     ]);
-    expect(document.querySelector('.kitsune-launch-offer-controller-names')?.textContent)
-      .toBe('DualSense · DualSense Edge · DualShock 4 · Switch Pro Controller');
-    expect(document.querySelector('.kitsune-launch-offer-get')?.textContent).toBe('Get Kitsune Input — $7.99');
+    expect(features.length % 2).toBe(0);
+    // Never list what DS5 Bridge already does.
+    expect(text).not.toMatch(/Audio Haptics|Adaptive Triggers|Button Remapping|PC Wake|Wake PC|Themes/);
+    expect(features.every((item) => item.querySelector('.kitsune-launch-offer-feature-copy span')?.textContent)).toBe(true);
+    expect(document.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
+    expect(document.querySelector('.kitsune-launch-offer-amount')?.getAttribute('data-l10n')).toBe('off');
+    expect(document.querySelector('.kitsune-launch-offer-get')?.textContent).toBe('Get Kitsune Input');
+  });
+
+  it('uses flat surfaces with no gradients or glows', () => {
+    // jsdom gives import.meta.url a non-file scheme; vitest runs from companion/.
+    const renderer = path.join(process.cwd(), 'src', 'renderer');
+    const source = readFileSync(path.join(renderer, 'features', 'kitsune-promotion', 'kitsune-launch-offer.css'), 'utf8');
+    const promotionSource = readFileSync(path.join(renderer, 'styles', 'modal-surfaces.css'), 'utf8');
+    const kitsuneRules = promotionSource.slice(
+      promotionSource.indexOf('.kitsune-promotion-backdrop'),
+      promotionSource.indexOf('.remap-profile-modal')
+    );
+    expect(kitsuneRules).toContain('.kitsune-promotion-actions .primary-action');
+    for (const css of [source, kitsuneRules]) {
+      expect(css).not.toMatch(/gradient\(/);
+      expect(css).not.toMatch(/drop-shadow/);
+      // No orange glow shadows.
+      expect(css).not.toMatch(/box-shadow:[^;]*rgba\(255,/);
+    }
   });
 
   it('keeps the close button, Escape, and the backdrop inert for five seconds', async () => {

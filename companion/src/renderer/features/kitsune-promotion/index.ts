@@ -1,7 +1,8 @@
 export {
   KitsuneInputLaunchOffer,
+  KITSUNE_INPUT_PRICE,
   LAUNCH_OFFER_CLOSE_DELAY_SECONDS,
-  LAUNCH_OFFER_FEATURE_LABELS,
+  LAUNCH_OFFER_FEATURES,
   type KitsuneInputLaunchOfferProps
 } from './KitsuneInputLaunchOffer';
 export { KitsuneInputPromotionDialog, type KitsuneInputPromotionDialogProps } from './KitsuneInputPromotionDialog';

@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import {
+  IconAdjustmentsHorizontal,
   IconArrowRight as ArrowRight,
-  IconCheck,
+  IconBrandXbox,
   IconCpu,
   IconDeviceGamepad2,
   IconExternalLink,
+  IconHandFinger,
+  IconLayersSubtract,
+  IconLayoutNavbar,
+  IconRotate360,
+  IconStack2,
+  IconSwitchHorizontal,
   IconX as X
 } from '@tabler/icons-react';
 import kitsuneInputLogoUrl from '../../assets/kitsune-input-logo.svg';
@@ -14,22 +21,61 @@ import './kitsune-launch-offer.css';
 /** Seconds before the offer can be closed. */
 export const LAUNCH_OFFER_CLOSE_DELAY_SECONDS = 5;
 
-// Feature names as kitsuneinput.com lists them; several share DS5 Bridge's page names.
-export const LAUNCH_OFFER_FEATURE_LABELS = [
-  'Auto-Switching Per-Game Profiles',
-  'Button Remapping',
-  'Gyro Aim and Flick Stick',
-  'Touchpad Gestures',
-  'Multi-Actions',
-  'Audio Haptics',
-  'Adaptive Triggers',
-  'Kitsune Bar Overlay',
-  'PC Wake',
-  'Themes'
-] as const;
+/** Kitsune Input's Ko-fi price; currency text stays out of the catalogs. */
+export const KITSUNE_INPUT_PRICE = '$7.99';
 
-// Controller names are product names and stay in English.
-const SUPPORTED_CONTROLLERS = ['DualSense', 'DualSense Edge', 'DualShock 4', 'Switch Pro Controller'];
+interface LaunchOfferFeature {
+  readonly title: string;
+  readonly detail: string;
+  readonly Icon: ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' }>;
+}
+
+// Only what Kitsune Input adds: DS5 Bridge already has Audio Haptics,
+// adaptive triggers, button remapping, chords, Wake PC and themes. Wording
+// follows kitsuneinput.com. Keep an even count for the two-column grid.
+export const LAUNCH_OFFER_FEATURES: readonly LaunchOfferFeature[] = [
+  {
+    title: 'Auto-Switching Per-Game Profiles',
+    detail: 'Your setup changes with the game you launch.',
+    Icon: IconSwitchHorizontal
+  },
+  {
+    title: 'Shift Layers',
+    detail: 'Hold a button for a second set of controls.',
+    Icon: IconLayersSubtract
+  },
+  {
+    title: 'Gyro Aim and Flick Stick',
+    detail: 'Motion aiming, activation and quick turns.',
+    Icon: IconRotate360
+  },
+  {
+    title: 'Touchpad Gestures',
+    detail: 'Swipe sequences that trigger any action.',
+    Icon: IconHandFinger
+  },
+  {
+    title: 'Multi-Actions',
+    detail: 'Actions built from button states, thresholds and repeats.',
+    Icon: IconStack2
+  },
+  {
+    title: 'Stick and Trigger Tuning',
+    detail: 'Deadzones, range and response curves.',
+    Icon: IconAdjustmentsHorizontal
+  },
+  {
+    // DS5 Bridge's Xbox persona is an Xbox 360 controller.
+    title: 'Xbox Series X Mode',
+    detail: 'Games see an Xbox Series X controller.',
+    Icon: IconBrandXbox
+  },
+  {
+    title: 'Kitsune Bar and Keyboard',
+    detail: 'An in-game overlay, and typing with your controller.',
+    Icon: IconLayoutNavbar
+  }
+];
 
 export interface KitsuneInputLaunchOfferProps {
   onGet(): void;
@@ -83,6 +129,7 @@ export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: Kitsune
         role="dialog"
         aria-modal="true"
         aria-labelledby="kitsune-launch-offer-title"
+        aria-describedby="kitsune-launch-offer-summary"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -102,41 +149,46 @@ export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: Kitsune
           <div className="kitsune-launch-offer-hero-copy">
             <KitsuneInputWordmark />
             <h2 id="kitsune-launch-offer-title">Make your controller yours.</h2>
-            <p>The full controller app for the bridge you already own.</p>
+            <p id="kitsune-launch-offer-summary">
+              A separate Windows app from the developer of DS5 Bridge, for the bridge you already own.
+            </p>
           </div>
         </header>
 
-        <div className="kitsune-launch-offer-bridge">
-          <span className="kitsune-launch-offer-bridge-icon" aria-hidden="true"><IconCpu size={22} /></span>
-          <div>
-            <strong>Runs on the bridge you already own</strong>
-            <p>
-              Kitsune Input uses the same Pico 2 W or Waveshare RP2350B-Plus-W bridge, so there is nothing new to buy but the app.
-            </p>
-          </div>
-        </div>
+        <section className="kitsune-launch-offer-adds" aria-labelledby="kitsune-launch-offer-adds-title">
+          <h3 id="kitsune-launch-offer-adds-title">What Kitsune Input adds</h3>
+          <ul className="kitsune-launch-offer-features">
+            {LAUNCH_OFFER_FEATURES.map(({ title, detail, Icon }) => (
+              <li key={title}>
+                <span className="kitsune-launch-offer-feature-icon" aria-hidden="true"><Icon size={18} /></span>
+                <span className="kitsune-launch-offer-feature-copy">
+                  <strong>{title}</strong>
+                  <span>{detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-        <ul className="kitsune-launch-offer-features">
-          {LAUNCH_OFFER_FEATURE_LABELS.map((feature) => (
-            <li key={feature}>
-              <IconCheck size={15} aria-hidden="true" />
-              <span>{feature}</span>
-            </li>
-          ))}
+        <ul className="kitsune-launch-offer-facts">
+          <li>
+            <IconCpu size={16} aria-hidden="true" />
+            <span>Same Pico 2 W or Waveshare RP2350B-Plus-W bridge. Nothing else to buy.</span>
+          </li>
+          <li>
+            <IconDeviceGamepad2 size={16} aria-hidden="true" />
+            <span>Also works with DualShock 4 and the original Switch Pro Controller.</span>
+          </li>
         </ul>
 
-        <div className="kitsune-launch-offer-controllers">
-          <IconDeviceGamepad2 size={16} aria-hidden="true" />
-          <span>Works with</span>
-          <span className="kitsune-launch-offer-controller-names" data-l10n="off">
-            {SUPPORTED_CONTROLLERS.join(' · ')}
-          </span>
-        </div>
-
         <footer className="kitsune-launch-offer-footer">
-          <div className="kitsune-launch-offer-terms">
-            <strong>One-time purchase on Ko-fi</strong>
-            <span>DS5 Bridge stays free and open source.</span>
+          <div className="kitsune-launch-offer-price">
+            <strong className="kitsune-launch-offer-amount" data-l10n="off">{KITSUNE_INPUT_PRICE}</strong>
+            <span className="kitsune-launch-offer-terms">
+              <strong>One-time purchase on Ko-fi</strong>
+              <span>Your purchase supports the developer of DS5 Bridge.</span>
+              <span>DS5 Bridge stays free and open source.</span>
+            </span>
           </div>
           <div className="kitsune-launch-offer-actions">
             <button type="button" className="secondary-action kitsune-launch-offer-learn" onClick={onLearnMore}>
@@ -145,7 +197,7 @@ export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: Kitsune
             </button>
             <button type="button" className="primary-action kitsune-launch-offer-get" onClick={onGet}>
               <IconExternalLink size={16} aria-hidden="true" />
-              Get Kitsune Input — $7.99
+              Get Kitsune Input
             </button>
           </div>
         </footer>
