@@ -129,6 +129,8 @@ export const CHORD_CONTROLLER_SETTING_ACTION_OPTIONS: Array<[string, ChordContro
   ...CHORD_NOTCH_TARGETS.map((target): [string, ChordNotchTargetId] => [target.label, target.id])
 ];
 export const CHORD_KEYBOARD_KEY_OPTIONS: Array<[string, string]> = [
+  // A modifier-only shortcut, such as Ctrl+Shift.
+  ['None', ''],
   ['Esc', 'Esc'],
   ['Enter', 'Enter'],
   ['Space', 'Space'],
@@ -313,6 +315,10 @@ export function normalizeChordKeyLabel(key: string): string {
     case 'control':
     case 'ctrl':
       return 'Ctrl';
+    case 'shift':
+      return 'Shift';
+    case 'alt':
+      return 'Alt';
     case 'escape':
     case 'esc':
       return 'Esc';
@@ -347,13 +353,28 @@ export function chordKeyboardParts(keys: string[]): {
   modifiers: ChordKeyboardModifier[];
 } {
   const normalizedKeys = keys.map(normalizeChordKeyLabel);
+  const supportedKeys = new Set(CHORD_KEYBOARD_KEY_OPTIONS.map(([, value]) => value).filter(Boolean));
+  const key = normalizedKeys.find((candidate) => supportedKeys.has(candidate)) ?? '';
+  // Modifiers alone are a shortcut; only a shortcut with nothing usable falls back to Esc.
   const modifiers = CHORD_KEYBOARD_MODIFIER_OPTIONS
     .map(([, modifier]) => modifier)
     .filter((modifier) => normalizedKeys.includes(modifier))
-    .slice(0, MAX_KEYBOARD_FUNCTION_KEYS - 1);
-  const supportedKeys = new Set(CHORD_KEYBOARD_KEY_OPTIONS.map(([, value]) => value));
-  const key = normalizedKeys.find((candidate) => supportedKeys.has(candidate)) ?? 'Esc';
-  return { key, modifiers };
+    .slice(0, MAX_KEYBOARD_FUNCTION_KEYS - (key ? 1 : 0));
+  return { key: key || (modifiers.length ? '' : 'Esc'), modifiers };
+}
+
+/** None needs a modifier; a key needs room beside the modifiers. */
+export function chordKeyboardKeyUnavailable(draft: ChordFunctionDraft, key: string): boolean {
+  return key === ''
+    ? draft.keyboardModifiers.length === 0
+    : draft.keyboardModifiers.length >= MAX_KEYBOARD_FUNCTION_KEYS;
+}
+
+/** The last modifier of a modifier-only shortcut stays on, and the four-key limit holds. */
+export function chordKeyboardModifierUnavailable(draft: ChordFunctionDraft, modifier: ChordKeyboardModifier): boolean {
+  return draft.keyboardModifiers.includes(modifier)
+    ? draft.keyboardKey === '' && draft.keyboardModifiers.length === 1
+    : draft.keyboardModifiers.length >= MAX_KEYBOARD_FUNCTION_KEYS - (draft.keyboardKey ? 1 : 0);
 }
 
 export function chordFunctionFromDraft(draft: ChordFunctionDraft): ChordFunction {
@@ -365,7 +386,7 @@ export function chordFunctionFromDraft(draft: ChordFunctionDraft): ChordFunction
         id,
         name,
         type: 'keyboard',
-        keys: [...draft.keyboardModifiers, draft.keyboardKey].slice(0, MAX_KEYBOARD_FUNCTION_KEYS)
+        keys: [...new Set([...draft.keyboardModifiers, draft.keyboardKey].filter(Boolean))].slice(0, MAX_KEYBOARD_FUNCTION_KEYS)
       };
     case 'media':
       return {

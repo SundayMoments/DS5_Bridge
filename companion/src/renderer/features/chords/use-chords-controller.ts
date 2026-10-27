@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { AppRuntime } from '../../composition/app-runtime';
 import { CHORD_MUTE_STARTER_ID, ChordAssignableButtonId, ChordAssignment, ChordControllerSettingAction, ChordFunction, ChordStarterId, MAX_CHORD_ASSIGNMENTS, MAX_CHORD_FUNCTION_NAME_LENGTH, MAX_KEYBOARD_FUNCTION_KEYS, isChordBindingAllowed, normalizeChordControllerSettingStepPercent } from '@shared/protocol';
-import { CHORD_BUTTON_MENU_IDS, CHORD_KEYBOARD_MODIFIER_OPTIONS, CHORD_STARTERS, CHORD_STARTER_OPTIONS, CHORD_UNASSIGNED_BUTTON, ChordAssignmentDraftRow, ChordAssignmentDragSession, ChordAssignmentDropHint, ChordAssignmentScrollbarState, ChordButtonSelectValue, ChordFunctionDialogMode, ChordFunctionDialogState, ChordFunctionDraft, ChordKeyboardModifier, EMPTY_CHORD_FUNCTION_DRAFT, chordAssignmentKey, chordBindingKey, chordButtonLabel, chordFunctionFromDraft, chordFunctionSummary, chordFunctionToDraft, createChordAssignmentId } from './model';
+import { CHORD_BUTTON_MENU_IDS, CHORD_KEYBOARD_MODIFIER_OPTIONS, CHORD_STARTERS, CHORD_STARTER_OPTIONS, CHORD_UNASSIGNED_BUTTON, ChordAssignmentDraftRow, ChordAssignmentDragSession, ChordAssignmentDropHint, ChordAssignmentScrollbarState, ChordButtonSelectValue, ChordFunctionDialogMode, ChordFunctionDialogState, ChordFunctionDraft, ChordKeyboardModifier, EMPTY_CHORD_FUNCTION_DRAFT, chordAssignmentKey, chordBindingKey, chordButtonLabel, chordFunctionFromDraft, chordFunctionSummary, chordFunctionToDraft, chordKeyboardKeyUnavailable, chordKeyboardModifierUnavailable, createChordAssignmentId } from './model';
 import { REMAP_STANDARD_TARGET_BUTTON_IDS } from '../button-remapping/remap-buttons';
 
 export interface ChordsControllerInput {
@@ -251,6 +251,9 @@ export function useChordsController(runtime: AppRuntime, { active, showDualSense
   }
 
   function setChordFunctionKeyboardKey(keyboardKey: string) {
+    if (chordKeyboardKeyUnavailable(chordFunctionDraft, keyboardKey)) {
+      return;
+    }
     const nextDraft = { ...chordFunctionDraft, keyboardKey };
     setChordFunctionDraft(nextDraft);
     commitChordFunctionDraft(nextDraft);
@@ -258,7 +261,7 @@ export function useChordsController(runtime: AppRuntime, { active, showDualSense
 
   function toggleChordFunctionKeyboardModifier(modifier: ChordKeyboardModifier) {
     const enabled = chordFunctionDraft.keyboardModifiers.includes(modifier);
-    if (!enabled && chordFunctionDraft.keyboardModifiers.length >= MAX_KEYBOARD_FUNCTION_KEYS - 1) {
+    if (chordKeyboardModifierUnavailable(chordFunctionDraft, modifier)) {
       return;
     }
     const keyboardModifiers = enabled

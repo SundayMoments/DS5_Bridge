@@ -12,7 +12,7 @@ import type { BridgeSnapshot } from '@shared/types';
 import { InlineSelect as CustomSelect } from '../../components/InlineSelect';
 import type { ChordsController } from './use-chords-controller';
 import { CHORD_CONTROLLER_SETTING_STEP_MAX, CHORD_CONTROLLER_SETTING_STEP_MIN, ChordFunction, MAX_KEYBOARD_FUNCTION_KEYS, normalizeChordControllerSettingStepPercent } from '@shared/protocol';
-import { CHORD_CONTROLLER_SETTING_ACTION_OPTIONS, CHORD_FUNCTION_TYPE_OPTIONS, CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH, CHORD_KEYBOARD_KEY_OPTIONS, CHORD_KEYBOARD_MODIFIER_OPTIONS, CHORD_MEDIA_ACTION_OPTIONS, CHORD_UNASSIGNED_BUTTON, chordAssignmentKey, chordAssignmentLabel, chordControllerSettingActionFromSelectValue, chordControllerSettingAdjustmentText, chordControllerSettingSelectValue, chordFunctionSummary, chordFunctionToDraft, chordFunctionTypeLabel, chordNotchTargetForAction } from './model';
+import { CHORD_CONTROLLER_SETTING_ACTION_OPTIONS, CHORD_FUNCTION_TYPE_OPTIONS, CHORD_KEYBOARD_KEY_MAX_LABEL_LENGTH, CHORD_KEYBOARD_KEY_OPTIONS, CHORD_KEYBOARD_MODIFIER_OPTIONS, CHORD_MEDIA_ACTION_OPTIONS, CHORD_UNASSIGNED_BUTTON, chordAssignmentKey, chordAssignmentLabel, chordControllerSettingActionFromSelectValue, chordControllerSettingAdjustmentText, chordControllerSettingSelectValue, chordFunctionSummary, chordFunctionToDraft, chordFunctionTypeLabel, chordKeyboardKeyUnavailable, chordKeyboardModifierUnavailable, chordNotchTargetForAction } from './model';
 import { ChordButtonGlyphOption, ChordStarterGlyphOption } from './ChordGlyphs';
 
 export interface ChordsPageProps {
@@ -266,14 +266,14 @@ export function ChordsPage({ active, controller, snapshot, pendingAction }: Chor
                       value={chordFunctionDraft.keyboardKey}
                       options={CHORD_KEYBOARD_KEY_OPTIONS}
                       disabled={pendingAction !== null}
+                      isOptionDisabled={(key) => chordKeyboardKeyUnavailable(chordFunctionDraft, key)}
                       ariaLabel="Keyboard shortcut key"
                       onChange={setChordFunctionKeyboardKey}
                     />
                     <div className="chords-keyboard-modifiers" aria-label="Keyboard shortcut modifiers">
                       {CHORD_KEYBOARD_MODIFIER_OPTIONS.map(([label, modifier]) => {
                         const active = chordFunctionDraft.keyboardModifiers.includes(modifier);
-                        const unavailable = !active
-                          && chordFunctionDraft.keyboardModifiers.length >= MAX_KEYBOARD_FUNCTION_KEYS - 1;
+                        const unavailable = chordKeyboardModifierUnavailable(chordFunctionDraft, modifier);
                         return (
                           <button
                             key={modifier}

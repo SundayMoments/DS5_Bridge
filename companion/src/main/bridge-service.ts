@@ -119,6 +119,7 @@ import { WinUsbCompanionTransport } from './winusb-companion-transport';
 import { WakeOnLanService, wakeOnLanAckError, type WakeOnLanBridgeSession } from './wake-on-lan-service';
 import { WindowsWakeOnLanTargets, type WakeOnLanTargetsPort } from './wake-on-lan-targets';
 import { WakeOnLanReadinessService } from './wake-on-lan-readiness';
+import { KeyboardInputHelper, type KeyboardInputPort } from './keyboard-input-helper';
 import type {
   WakeOnLanConfigurationInput,
   WakeOnLanMetadata,
@@ -780,47 +781,6 @@ function virtualKeyCodeFor(key: string): number | null {
   return VIRTUAL_KEY_CODES[normalized] ?? null;
 }
 
-async function sendVirtualKeySequence(codes: number[]): Promise<void> {
-  const normalized = codes
-    .map((code) => Math.max(0, Math.min(0xff, Math.round(code))))
-    .filter((code) => Number.isFinite(code) && code > 0);
-  if (normalized.length === 0) {
-    return;
-  }
-  const downCodes = normalized.join(',');
-  const upCodes = [...normalized].reverse().join(',');
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    "Add-Type -Namespace DS5Bridge -Name KeyboardInput -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);'",
-    `foreach ($vk in @(${downCodes})) { [DS5Bridge.KeyboardInput]::keybd_event([byte]$vk, 0, 0, [UIntPtr]::Zero) }`,
-    'Start-Sleep -Milliseconds 20',
-    `foreach ($vk in @(${upCodes})) { [DS5Bridge.KeyboardInput]::keybd_event([byte]$vk, 0, 2, [UIntPtr]::Zero) }`
-  ].join('; ');
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn('powershell.exe', [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      script
-    ], {
-      windowsHide: true
-    });
-    let stderr = '';
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Shortcut key injection failed${stderr ? `: ${stderr.trim()}` : ''}`));
-      }
-    });
-  });
-}
-
 function formatUsbDebugEvent(prefix: string, args: number[]): string {
   const [type, arg1, arg2, arg3, arg4] = args;
   switch (type) {
@@ -1365,6 +1325,7 @@ export class BridgeService extends EventEmitter {
 
   private readonly wakeOnLan: WakeOnLanService;
   private readonly wakeOnLanReadiness = new WakeOnLanReadinessService();
+  private readonly keyboardInput: KeyboardInputPort = new KeyboardInputHelper();
 
   constructor(
     private readonly settingsStore: SettingsStore,
@@ -1535,6 +1496,7 @@ export class BridgeService extends EventEmitter {
     // A running Wake-on-LAN change stops at its next step; the firmware owns
     // the radio teardown and drops unsaved staging on its own deadline.
     this.wakeOnLan.stop();
+    this.keyboardInput.stop();
     await this.stopControllerAudioPolling();
     this.hidDiscovery.stop();
     this.closeDevice();
@@ -2866,18 +2828,28 @@ export class BridgeService extends EventEmitter {
       case 'keyboard': {
         const codes = func.keys.map(virtualKeyCodeFor).filter((code): code is number => code !== null);
         if (codes.length !== func.keys.length || codes.length === 0) {
-          this.appendAudioDebugLines([`[Chords] ignored invalid keyboard function id=${func.id} keys=${func.keys.join('+')}`]);
+          this.appendAudioDebugLines([`[Chords] keyboard function id=${func.id} has unmapped keys: ${func.keys.join('+')}`]);
           return;
         }
-        await sendVirtualKeySequence(codes);
+        await this.typeChordKeys(func.id, codes);
         return;
       }
       case 'media':
-        await sendVirtualKeySequence([MEDIA_ACTION_KEY_CODES[func.action]]);
+        await this.typeChordKeys(func.id, [MEDIA_ACTION_KEY_CODES[func.action]]);
         return;
       case 'controller-setting':
         await this.executeChordControllerSettingAction(func.action, func.stepPercent);
         return;
+    }
+  }
+
+  /** Types through the resident keyboard helper; a key press that could not be sent is logged, never thrown. */
+  private async typeChordKeys(functionId: string, codes: number[]): Promise<void> {
+    try {
+      await this.keyboardInput.tap(codes);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.appendAudioDebugLines([`[Chords] function id=${functionId} not sent: ${message}`]);
     }
   }
 

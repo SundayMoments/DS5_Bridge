@@ -23,6 +23,12 @@ if (options.QueryWakeOnLanReadiness)
     Environment.ExitCode = WakeOnLanReadiness.PrintJson(args);
     return;
 }
+// Chord keyboard shortcuts: a resident SendInput server that opens no bridge or audio endpoint.
+if (options.KeyboardInputServer)
+{
+    Environment.ExitCode = await KeyboardInputServer.RunAsync();
+    return;
+}
 EndpointManager.TargetBridgeContainer = options.BridgeContainer;
 if (EndpointManager.TargetBridgeContainer is null
     && options.CompanionDevicePath is { Length: > 0 } targetPath
@@ -2843,6 +2849,7 @@ sealed record HelperOptions(
     public Guid? BridgeContainer { get; init; }
     public bool ListPhysicalEthernetAdapters { get; init; }
     public bool QueryWakeOnLanReadiness { get; init; }
+    public bool KeyboardInputServer { get; init; }
 
     public string SourceArgument => Source switch
     {
@@ -2877,6 +2884,7 @@ sealed record HelperOptions(
         Guid? bridgeContainer = null;
         var listPhysicalEthernetAdapters = false;
         var queryWakeOnLanReadiness = false;
+        var keyboardInputServer = false;
         var micKeepaliveOnly = false;
         int? appProcessId = null;
         string? appProcessPath = null;
@@ -3033,6 +3041,9 @@ sealed record HelperOptions(
                     // --target-mac is read from the raw arguments by WakeOnLanReadiness.
                     queryWakeOnLanReadiness = true;
                     break;
+                case "--keyboard-input-server":
+                    keyboardInputServer = true;
+                    break;
                 case "--mic-keepalive-only":
                     micKeepaliveOnly = true;
                     break;
@@ -3107,7 +3118,8 @@ sealed record HelperOptions(
             CompanionDevicePath = companionDevicePath,
             BridgeContainer = bridgeContainer,
             ListPhysicalEthernetAdapters = listPhysicalEthernetAdapters,
-            QueryWakeOnLanReadiness = queryWakeOnLanReadiness
+            QueryWakeOnLanReadiness = queryWakeOnLanReadiness,
+            KeyboardInputServer = keyboardInputServer
         };
     }
 

@@ -9,8 +9,12 @@ import {
   chordFunctionFromDraft,
   chordFunctionSummary,
   chordFunctionToDraft,
+  chordKeyboardKeyUnavailable,
+  chordKeyboardModifierUnavailable,
+  chordKeyboardParts,
   normalizeChordKeyLabel
 } from './model';
+import type { ChordFunction } from '@shared/protocol';
 
 describe('chord model', () => {
   it('offers Print Screen and numpad numerals as keyboard shortcut keys', () => {
@@ -42,5 +46,35 @@ describe('chord model', () => {
     const func = chordFunctionFromDraft({ ...draft, id: 'task-manager' });
     expect(chordFunctionToDraft(func)).toEqual({ ...draft, id: 'task-manager' });
     expect(chordFunctionSummary(func)).toContain('Esc');
+  });
+
+  it.each([['Ctrl'], ['Alt', 'Win'], ['Ctrl', 'Shift', 'Alt', 'Win']])('round-trips modifier-only keys %j without adding Escape', (...keys) => {
+    const func: ChordFunction = { id: 'modifiers', name: 'Modifiers', type: 'keyboard', keys };
+    const draft = chordFunctionToDraft(func);
+    expect(draft.keyboardKey).toBe('');
+    expect(draft.keyboardModifiers).toEqual(keys);
+    expect(chordFunctionFromDraft(draft)).toEqual(func);
+    expect(chordFunctionSummary(func)).toBe(keys.join(' + '));
+  });
+
+  it('offers None as a key and reads lowercase modifiers', () => {
+    expect(CHORD_KEYBOARD_KEY_OPTIONS[0]).toEqual(['None', '']);
+    expect(chordKeyboardParts(['control', 'shift', 'alt', 'meta'])).toEqual({ key: '', modifiers: ['Ctrl', 'Shift', 'Alt', 'Win'] });
+    expect(chordKeyboardParts(['alt', 'Win', 'Win'])).toEqual({ key: '', modifiers: ['Alt', 'Win'] });
+    // Nothing usable at all still falls back to Esc.
+    expect(chordKeyboardParts(['Bogus'])).toEqual({ key: 'Esc', modifiers: [] });
+  });
+
+  it('keeps a shortcut non-empty and within four keys', () => {
+    const draft = { ...chordFunctionToDraft(null), keyboardKey: 'A', keyboardModifiers: [] as Array<'Ctrl' | 'Shift' | 'Alt' | 'Win'> };
+    // None needs at least one modifier.
+    expect(chordKeyboardKeyUnavailable(draft, '')).toBe(true);
+    expect(chordKeyboardKeyUnavailable({ ...draft, keyboardModifiers: ['Ctrl'] }, '')).toBe(false);
+    // The last modifier of a modifier-only shortcut cannot be turned off.
+    expect(chordKeyboardModifierUnavailable({ ...draft, keyboardKey: '', keyboardModifiers: ['Ctrl'] }, 'Ctrl')).toBe(true);
+    // With a key, three modifiers fill the four keys; with None, all four modifiers fit.
+    expect(chordKeyboardModifierUnavailable({ ...draft, keyboardModifiers: ['Ctrl', 'Shift', 'Alt'] }, 'Win')).toBe(true);
+    expect(chordKeyboardModifierUnavailable({ ...draft, keyboardKey: '', keyboardModifiers: ['Ctrl', 'Shift', 'Alt'] }, 'Win')).toBe(false);
+    expect(chordKeyboardKeyUnavailable({ ...draft, keyboardKey: '', keyboardModifiers: ['Ctrl', 'Shift', 'Alt', 'Win'] }, 'A')).toBe(true);
   });
 });
