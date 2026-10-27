@@ -236,9 +236,7 @@ button.trigger-lab-chip {
 .trigger-lab-mode-button.active {
   color: var(--text-strong);
   border-color: var(--accent-border-strong);
-  background:
-    var(--overview-accent-gradient),
-    var(--accent-soft);
+  background: var(--accent-soft);
   box-shadow: inset 0 -2px 0 var(--accent-border-strong);
 }
 

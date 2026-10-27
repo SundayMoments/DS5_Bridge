@@ -12,7 +12,7 @@
   min-width: 0;
   min-height: var(--feature-card-min-height);
   padding: var(--card-padding);
-  border-color: var(--surface-border);
+  border-color: var(--section-border);
   background: var(--surface-card);
   box-shadow: var(--shadow-panel);
 }

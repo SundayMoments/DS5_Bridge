@@ -140,10 +140,11 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.hero-card,', 'background-clip: padding-box;')).toContain('background-clip: padding-box;');
   });
 
-  it('keeps overview containers on the darker card surface while retaining restrained radial accents', () => {
+  it('keeps overview containers on the flat card surface with no glow', () => {
     const overviewCard = cssBlock('.overview-card', 'background:');
-    expect(overviewCard).toContain('var(--overview-accent-gradient)');
-    expect(overviewCard).toContain('var(--surface-card)');
+    expect(overviewCard).toContain('background: var(--surface-card);');
+    expect(overviewCard).toContain('border: 1px solid var(--section-border);');
+    expect(styles).not.toContain('overview-accent-gradient');
     const overviewControlPanel = cssBlock('.overview-control-panel', 'background: var(--surface-panel);');
     expect(overviewControlPanel).toContain('background: var(--surface-panel);');
     const overviewStatusPanel = cssBlock('.overview-status-panel', 'background: var(--surface-panel);');
@@ -338,6 +339,22 @@ describe('companion layout CSS', () => {
     expect(settingsPageStyles).not.toContain('--card-radius:');
     expect(settingsSidebarStyles).not.toContain('--control-radius:');
     expect(cssBlock('.remapping-pill', 'border-radius:')).toContain('border-radius: var(--control-radius);');
+  });
+
+  it('draws flat cards like Kitsune Input in the DS5 dark theme', () => {
+    const dark = cssBlockIn(ds5ThemeSource, '.shell[data-theme="dark"] {', '--surface-card:');
+    // One solid card color in the workspace color, framed by a firmer border.
+    expect(dark).toContain('--surface-card: var(--app-bg-flat);');
+    expect(dark).toContain('--surface-card-header: var(--surface-card);');
+    expect(dark).toContain('--surface-panel: var(--surface-card);');
+    expect(dark).toContain('--section-border: var(--surface-border-strong);');
+    for (const shadow of ['--shadow-card', '--shadow-panel', '--shadow-control']) {
+      expect(dark).toContain(`${shadow}: none;`);
+    }
+    // Floating menus still lift off the page.
+    expect(dark).toContain('--shadow-menu: 0 24px 70px rgba(0, 0, 0, 0.52);');
+    expect(cssBlock('.feature-card {', 'border-color:')).toContain('border-color: var(--section-border);');
+    expect(cssBlock('.system-card {', 'border-color:')).toContain('border-color: var(--section-border);');
   });
 
   it('heads Controller and Input pages with Kitsune Input header cards', () => {

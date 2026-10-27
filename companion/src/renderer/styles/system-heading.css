@@ -38,7 +38,7 @@
   --system-row-height: 45px;
   min-width: 0;
   padding: var(--card-padding);
-  border-color: var(--surface-border);
+  border-color: var(--section-border);
   background: var(--surface-card);
   box-shadow: var(--shadow-panel);
 }

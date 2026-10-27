@@ -1,7 +1,9 @@
 /* DS5 Bridge's established dark colors, lifted from the 1.x :root theme.
  * This is the brand reference, not another palette to redesign. Keep its blue
- * accent, green status, translucent surfaces and shadows intact as other presets
- * evolve. Root scope also covers dialogs and portals outside the main shell. */
+ * accent and green status intact as other presets evolve. Cards are flat like
+ * Kitsune Input's: one solid surface in the workspace color, a firmer border,
+ * no header band, shadow, or glow. Floating menus keep their shadow.
+ * Root scope also covers dialogs and portals outside the main shell. */
 :root:not([data-theme]),
 :root[data-theme="dark"],
 .shell[data-theme="dark"] {
@@ -40,10 +42,12 @@
   --surface-border: rgba(142, 164, 194, 0.18);
   --surface-border-strong: rgba(142, 164, 194, 0.28);
   --surface-divider: rgba(142, 164, 194, 0.16);
-  --surface-card: rgba(3, 10, 18, 0.52);
-  --surface-card-hover: rgba(5, 14, 24, 0.66);
-  --surface-card-header: rgba(3, 9, 16, 0.48);
-  --surface-panel: rgba(3, 10, 18, 0.52);
+  --surface-card: var(--app-bg-flat);
+  --surface-card-hover: #08111d;
+  --surface-card-header: var(--surface-card);
+  --surface-panel: var(--surface-card);
+  --surface-section: var(--surface-card);
+  --section-border: var(--surface-border-strong);
   --surface-column: rgba(3, 9, 16, 0.22);
   --surface-menu: rgba(8, 17, 28, 0.98);
   --surface-control: rgba(6, 14, 23, 0.78);
@@ -52,10 +56,8 @@
   --surface-control-muted: rgba(142, 164, 194, 0.1);
   --surface-disabled: rgba(255, 255, 255, 0.035);
   --surface-disabled-strong: rgba(126, 145, 172, 0.2);
-  --surface-raised: linear-gradient(145deg, rgba(9, 22, 36, 0.92), rgba(5, 12, 20, 0.96)), #08111d;
+  --surface-raised: #0b1622;
   --surface-hero-main: linear-gradient(180deg, rgba(8, 18, 30, 0.76), rgba(4, 11, 19, 0.7)), rgba(5, 13, 22, 0.5);
-  --overview-accent-gradient: radial-gradient(circle at 92% 0%, rgba(40, 124, 255, 0.045), transparent 38%);
-  --overview-accent-gradient-hover: radial-gradient(circle at 92% 0%, rgba(40, 124, 255, 0.075), transparent 38%);
   --modal-backdrop-bg: radial-gradient(circle at 50% 42%, rgba(40, 124, 255, 0.08), transparent 42%), rgba(2, 6, 11, 0.66);
   --accent: #287cff;
   --accent-strong: #3d9bff;
@@ -120,10 +122,10 @@
   --glyph-surface: var(--surface-control-soft);
   --glyph-border: var(--surface-border-strong);
   --glyph-filter: none;
-  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.02), 0 12px 28px rgba(0, 0, 0, 0.12);
-  --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --shadow-card: none;
+  --shadow-panel: none;
   --shadow-menu: 0 24px 70px rgba(0, 0, 0, 0.52);
-  --shadow-control: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 18px rgba(0, 0, 0, 0.2);
+  --shadow-control: none;
   --scrollbar-thumb: rgba(125, 146, 176, 0.7);
   --scrollbar-track: rgba(9, 14, 22, 0.22);
   --range-track-rest: rgba(126, 145, 172, 0.34);
@@ -133,8 +135,8 @@
   --range-tick: rgba(169, 185, 207, 0.34);
   --range-tick-strong: rgba(241, 245, 255, 0.78);
   --range-tick-endpoint: rgba(241, 245, 255, 0.7);
-  --remapping-card-bg: #030b14;
-  --remapping-strip-bg: #020812;
+  --remapping-card-bg: var(--surface-card);
+  --remapping-strip-bg: var(--surface-card);
   --remapping-pill-bg: rgba(5, 13, 23, 0.58);
   --remapping-pill-hover-bg: rgba(9, 24, 40, 0.82);
   --remapping-callout-underlay: rgba(2, 7, 13, 0.44);

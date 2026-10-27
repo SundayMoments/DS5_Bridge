@@ -360,7 +360,7 @@
   align-items: center;
   gap: 10px;
   padding: 6px 8px 6px 10px;
-  background: var(--surface-card-header);
+  background: var(--surface-control-muted);
 }
 
 .chords-function-summary .chords-function-summary-header > span {

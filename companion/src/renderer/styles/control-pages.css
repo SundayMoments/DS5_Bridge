@@ -60,7 +60,7 @@
 .studio-tab-strip {
   width: 100%;
   min-height: 38px;
-  border: 1px solid var(--surface-border);
+  border: 1px solid var(--section-border);
   border-radius: var(--control-radius);
   display: grid;
   grid-auto-flow: column;

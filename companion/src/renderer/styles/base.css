@@ -70,7 +70,6 @@ button {
   border-radius: var(--card-radius);
   color: var(--text-primary);
   background: var(--surface-raised);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.36);
 }
 
 .renderer-failure-eyebrow {

@@ -124,8 +124,6 @@
   --section-border: var(--surface-border);
   --surface-popup: var(--surface-menu);
   --surface-hero-main: var(--palette-surface);
-  --overview-accent-gradient: none;
-  --overview-accent-gradient-hover: none;
   --modal-backdrop-bg: rgb(0 0 0 / 0.55);
   --accent: var(--palette-accent);
   --accent-strong: var(--palette-accent);
@@ -197,7 +195,7 @@
   --range-tick-strong: var(--text-muted);
   --range-tick-endpoint: var(--text-muted);
   --remapping-card-bg: var(--surface-panel);
-  --remapping-strip-bg: var(--surface-control);
+  --remapping-strip-bg: var(--surface-panel);
   --remapping-pill-bg: var(--surface-control);
   --remapping-pill-hover-bg: var(--surface-control-hover);
   --remapping-callout-underlay: var(--surface-panel);
