@@ -12,6 +12,17 @@ using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 
 var options = HelperOptions.Parse(args);
+// Read-only Wake-on-LAN queries: they open no bridge, HID device or audio endpoint.
+if (options.ListPhysicalEthernetAdapters)
+{
+    Environment.ExitCode = PhysicalEthernetAdapters.PrintJson();
+    return;
+}
+if (options.QueryWakeOnLanReadiness)
+{
+    Environment.ExitCode = WakeOnLanReadiness.PrintJson(args);
+    return;
+}
 EndpointManager.TargetBridgeContainer = options.BridgeContainer;
 if (EndpointManager.TargetBridgeContainer is null
     && options.CompanionDevicePath is { Length: > 0 } targetPath
@@ -2830,6 +2841,8 @@ sealed record HelperOptions(
     public bool ListBridges { get; init; }
     public string? CompanionDevicePath { get; init; }
     public Guid? BridgeContainer { get; init; }
+    public bool ListPhysicalEthernetAdapters { get; init; }
+    public bool QueryWakeOnLanReadiness { get; init; }
 
     public string SourceArgument => Source switch
     {
@@ -2862,6 +2875,8 @@ sealed record HelperOptions(
         var listBridges = false;
         string? companionDevicePath = null;
         Guid? bridgeContainer = null;
+        var listPhysicalEthernetAdapters = false;
+        var queryWakeOnLanReadiness = false;
         var micKeepaliveOnly = false;
         int? appProcessId = null;
         string? appProcessPath = null;
@@ -3011,6 +3026,13 @@ sealed record HelperOptions(
                         bridgeContainer = parsedBridgeContainer;
                     }
                     break;
+                case "--list-physical-ethernet-adapters":
+                    listPhysicalEthernetAdapters = true;
+                    break;
+                case "--wake-on-lan-readiness":
+                    // --target-mac is read from the raw arguments by WakeOnLanReadiness.
+                    queryWakeOnLanReadiness = true;
+                    break;
                 case "--mic-keepalive-only":
                     micKeepaliveOnly = true;
                     break;
@@ -3083,7 +3105,9 @@ sealed record HelperOptions(
         {
             ListBridges = listBridges,
             CompanionDevicePath = companionDevicePath,
-            BridgeContainer = bridgeContainer
+            BridgeContainer = bridgeContainer,
+            ListPhysicalEthernetAdapters = listPhysicalEthernetAdapters,
+            QueryWakeOnLanReadiness = queryWakeOnLanReadiness
         };
     }
 

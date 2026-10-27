@@ -14,6 +14,13 @@ Sources:
 - `cmake/patches/cyw43_wol_*.inc`: CYW43 driver hardening.
 - `companion/src/shared/wake-on-lan-protocol.ts` and
   `companion/src/main/wake-on-lan-service.ts`: the app side.
+- `companion/src/renderer/features/settings/WakeOnLanSettings.tsx`: the
+  Settings panel, ported from Kitsune Input with its "Before you rely on it"
+  checklist.
+- `companion/src/main/wake-on-lan-readiness.ts`,
+  `companion/src/main/wake-on-lan-targets.ts` and
+  `companion/native/AudioHelper/{WakeOnLanReadiness,PhysicalEthernetAdapters}.cs`:
+  the read-only Windows checks.
 
 Host tests:
 - `wake_on_lan_test` covers the engine and store against `tests/firmware/fixtures`.
@@ -52,6 +59,26 @@ Wake-on-LAN is idle. The service pass runs as watchdog phase 18, `wake-on-lan`.
 If Wi-Fi teardown cannot be verified, the bridge reboots instead of resuming
 gameplay with the radio on. Watchdog scratch registers 5-7 then carry the
 interrupted attempt, so the next status reports Failed/RadioTeardown.
+
+## Windows readiness checks
+
+The checklist reads this PC's settings through two audio helper commands.
+They match Kitsune Input's Windows host output. Neither command opens a
+bridge, HID device or audio endpoint, and neither changes a setting.
+
+- `--list-physical-ethernet-adapters` prints the physical Ethernet adapters
+  (GetIfTable2, regardless of link state) as Get-NetAdapter-shaped JSON, plus
+  `EnumeratorName`, `InLocalMachineContainer` and `DefaultRoute`. The app
+  falls back to PowerShell only when the helper is missing.
+- `--wake-on-lan-readiness --target-mac AA-BB-CC-DD-EE-FF` prints `version: 1`
+  JSON with `power` (Modern Standby, S3, hibernate, Fast Startup),
+  `adapterStatus`, `adapter` (link, bus, enclosure, route, the driver's wake
+  keywords, Windows wake arming, driver) and `lastWake` (newest
+  Power-Troubleshooter source and Kernel-Boot 27 boot). Reads stop after
+  2.8 s. Anything it cannot read is `unknown` or `null`. Bad arguments exit 2.
+
+The app caches each adapter's result for 60 s. A missing helper, a timeout
+or invalid output shows every check as Unknown.
 
 ## Wire format (companion protocol 1.24)
 
