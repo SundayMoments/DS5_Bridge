@@ -3397,14 +3397,6 @@ describe('BridgeService', () => {
     expect(snapshot.settings.notifyLowBattery).toBe(true);
   });
 
-  it('stores permanent Kitsune Input promotion dismissal without firmware traffic', () => {
-    const service = serviceFixture();
-
-    const snapshot = service.setKitsuneInputPromotionDismissed(true);
-
-    expect(snapshot.settings.kitsuneInputPromotionDismissed).toBe(true);
-  });
-
   it('marks the one-time Kitsune Input offer shown and tells the renderer', () => {
     const service = serviceFixture();
     const emitted: boolean[] = [];

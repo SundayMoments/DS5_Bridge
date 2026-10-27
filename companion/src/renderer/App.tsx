@@ -157,7 +157,8 @@ export function App() {
     }
   });
   const kitsuneMonthlyAsk = useKitsuneMonthlyAsk({
-    // Never after "Don't show Kitsune Input promotions again".
+    // Never for anyone who chose "Don't show Kitsune Input promotions again"
+    // in an earlier version; that choice still hides the banner too.
     eligible: Boolean(snapshot?.settings.kitsuneInputLaunchOfferShown)
       && !snapshot?.settings.kitsuneInputPromotionDismissed,
     blocked: startupTutorial.step !== 'done'
@@ -432,14 +433,9 @@ export function App() {
         <>
           {showKitsuneInputPromotion && !snapshot.settings.kitsuneInputPromotionDismissed && (
             <KitsuneInputPromotionDialog
-              dismissing={pendingAction === 'dismiss-kitsune-input-promotion'}
               onClose={() => setShowKitsuneInputPromotion(false)}
               onPurchase={() => void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
               onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
-              onDismissForever={() => {
-                setShowKitsuneInputPromotion(false);
-                void runAction('dismiss-kitsune-input-promotion', () => window.bridge.setKitsuneInputPromotionDismissed(true));
-              }}
             />
           )}
 

@@ -171,15 +171,12 @@ describe('KitsuneInputLaunchOffer', () => {
 });
 
 describe('KitsuneInputPromotionDialog', () => {
-  it('shows the launch offer content, closes at once, and can hide the banner for good', async () => {
+  it('shows the launch offer content and closes at once, with no way to hide promotions for good', async () => {
     const onClose = vi.fn();
     const onPurchase = vi.fn();
-    const onDismissForever = vi.fn();
     mountElement(
       <KitsuneInputPromotionDialog
-        dismissing={false}
         onClose={onClose}
-        onDismissForever={onDismissForever}
         onLearnMore={vi.fn()}
         onPurchase={onPurchase}
       />
@@ -196,10 +193,10 @@ describe('KitsuneInputPromotionDialog', () => {
     // No countdown: the banner's dialog was asked for.
     expect(dialog.querySelector<HTMLButtonElement>('.kitsune-launch-offer-close')?.disabled).toBe(false);
 
+    expect(dialog.textContent).not.toContain("Don't show");
+
     await click(dialog.querySelector('.kitsune-launch-offer-get'));
     expect(onPurchase).toHaveBeenCalledOnce();
-    await click(buttonByText(dialog, "Don't show Kitsune Input promotions again"));
-    expect(onDismissForever).toHaveBeenCalledOnce();
     pressEscape();
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -333,16 +330,16 @@ describe('Kitsune Input offers in the app', () => {
     expect(monthlyAsk()).toBeNull();
   });
 
-  it('hides the window-bar promotion for good when asked', async () => {
-    const bridge = installBridgeMock(fixtureSnapshot());
-    bridge.fn('setKitsuneInputPromotionDismissed').mockImplementation(async () => (
-      fixtureSnapshot({ settings: { kitsuneInputPromotionDismissed: true } })
-    ));
+  it('keeps honoring a dismissal made before the option was removed', async () => {
+    installBridgeMock(fixtureSnapshot());
     await mountApp();
-    await click(host.querySelector('.kitsune-promotion-banner'));
-    await click(buttonByText(document.querySelector('.kitsune-promotion-modal')!, "Don't show Kitsune Input promotions again"));
-    expect(bridge.fn('setKitsuneInputPromotionDismissed')).toHaveBeenCalledWith(true);
+    expect(host.querySelector('.kitsune-promotion-banner')).not.toBeNull();
+    act(() => root!.unmount());
+    root = null;
+    document.body.innerHTML = '';
+
+    installBridgeMock(fixtureSnapshot({ settings: { kitsuneInputPromotionDismissed: true } }));
+    await mountApp();
     expect(host.querySelector('.kitsune-promotion-banner')).toBeNull();
-    expect(document.querySelector('.kitsune-promotion-modal')).toBeNull();
   });
 });

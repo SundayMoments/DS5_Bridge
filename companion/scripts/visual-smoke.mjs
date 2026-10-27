@@ -28,7 +28,6 @@ const screenshot = (name) => captureWindow(app, path.join(outputDir, name));
 let page;
 let originalUiScalePercent;
 let originalUiThemePreset;
-let originalKitsuneInputPromotionDismissed;
 
 try {
   page = await app.firstWindow();
@@ -54,7 +53,6 @@ try {
   });
   originalUiScalePercent = originalSettings.uiScalePercent;
   originalUiThemePreset = originalSettings.uiThemePreset;
-  originalKitsuneInputPromotionDismissed = originalSettings.kitsuneInputPromotionDismissed;
 
   if (originalUiThemePreset !== 'dark') {
     await page.evaluate(() => window.bridge.setUiThemePreset('dark'));
@@ -62,36 +60,32 @@ try {
   if (originalUiScalePercent !== 100) {
     await page.evaluate(() => window.bridge.setUiScalePercent(100));
   }
-  if (originalKitsuneInputPromotionDismissed) {
-    await page.evaluate(() => window.bridge.setKitsuneInputPromotionDismissed(false));
-  }
   await page.waitForTimeout(300);
 
-  // The promotion banner sits in the center of the window bar.
-  const kitsunePromotionBanner = page.locator('.window-bar-center').getByRole('button', {
-    name: 'Explore Kitsune Input'
-  });
-  await kitsunePromotionBanner.hover();
-  await page.waitForTimeout(420);
-  await screenshot('kitsune-input-banner-hover.png');
-  await kitsunePromotionBanner.click();
-  const kitsunePromotionDialog = page.getByRole('dialog', {
-    name: 'Make your controller yours.'
-  });
-  await kitsunePromotionDialog.waitFor();
-  await page.waitForTimeout(250);
-  await screenshot('kitsune-input-promotion.png');
-  await kitsunePromotionDialog.getByRole('button', {
-    name: 'Close Kitsune Input promotion'
-  }).click();
-  await kitsunePromotionDialog.waitFor({ state: 'hidden' });
-  await kitsunePromotionBanner.waitFor({ state: 'visible' });
-  const promotionDismissedAfterClose = await page.evaluate(async () => {
-    const snapshot = await window.bridge.getStatus();
-    return snapshot.settings.kitsuneInputPromotionDismissed;
-  });
-  if (promotionDismissedAfterClose) {
-    throw new Error('Closing the Kitsune Input modal unexpectedly saved a permanent dismissal.');
+  // Settings that hid promotions in an earlier version keep them hidden for
+  // good, so there is no banner to capture.
+  if (originalSettings.kitsuneInputPromotionDismissed) {
+    console.log('Kitsune Input promotions are hidden in these settings; skipping the banner captures.');
+  } else {
+    // The promotion banner sits in the center of the window bar.
+    const kitsunePromotionBanner = page.locator('.window-bar-center').getByRole('button', {
+      name: 'Explore Kitsune Input'
+    });
+    await kitsunePromotionBanner.hover();
+    await page.waitForTimeout(420);
+    await screenshot('kitsune-input-banner-hover.png');
+    await kitsunePromotionBanner.click();
+    const kitsunePromotionDialog = page.getByRole('dialog', {
+      name: 'Make your controller yours.'
+    });
+    await kitsunePromotionDialog.waitFor();
+    await page.waitForTimeout(250);
+    await screenshot('kitsune-input-promotion.png');
+    await kitsunePromotionDialog.getByRole('button', {
+      name: 'Close Kitsune Input promotion'
+    }).click();
+    await kitsunePromotionDialog.waitFor({ state: 'hidden' });
+    await kitsunePromotionBanner.waitFor({ state: 'visible' });
   }
 
   await page.getByRole('button', { name: 'Open Devices' }).click();
@@ -155,9 +149,6 @@ try {
     }
     if (originalUiScalePercent && originalUiScalePercent !== 100) {
       await page.evaluate((scale) => window.bridge.setUiScalePercent(scale), originalUiScalePercent).catch(() => {});
-    }
-    if (originalKitsuneInputPromotionDismissed) {
-      await page.evaluate(() => window.bridge.setKitsuneInputPromotionDismissed(true)).catch(() => {});
     }
     await page.waitForTimeout(100).catch(() => {});
   }

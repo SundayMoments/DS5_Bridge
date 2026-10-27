@@ -3140,14 +3140,6 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
-  setKitsuneInputPromotionDismissed(dismissed: boolean): BridgeSnapshot {
-    this.snapshot.settings = this.settingsStore.update({
-      kitsuneInputPromotionDismissed: dismissed
-    });
-    this.emitSnapshot();
-    return this.getSnapshot();
-  }
-
   /** Records that the one-time Kitsune Input offer was shown; there is no way to clear it. */
   markKitsuneInputLaunchOfferShown(): BridgeSnapshot {
     this.snapshot.settings = this.settingsStore.update({

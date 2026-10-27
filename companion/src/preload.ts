@@ -172,9 +172,6 @@ const api = {
   setShowBatteryPercentTrayIcon: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setShowBatteryPercentTrayIcon', value)
   ),
-  setKitsuneInputPromotionDismissed: (value: boolean): Promise<BridgeSnapshot> => (
-    ipcRenderer.invoke('bridge:setKitsuneInputPromotionDismissed', value)
-  ),
   markKitsuneInputLaunchOfferShown: (): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:markKitsuneInputLaunchOfferShown')
   ),

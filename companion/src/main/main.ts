@@ -1267,9 +1267,6 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setShowBatteryPercentTrayIcon', (_event, value: boolean) => (
     service.setShowBatteryPercentTrayIcon(Boolean(value))
   ));
-  ipcMain.handle('bridge:setKitsuneInputPromotionDismissed', (_event, value: boolean) => (
-    service.setKitsuneInputPromotionDismissed(Boolean(value))
-  ));
   ipcMain.handle('bridge:markKitsuneInputLaunchOfferShown', () => service.markKitsuneInputLaunchOfferShown());
   ipcMain.handle('bridge:setPollingRateMode', (_event, value: PollingRateMode) => (
     service.setPollingRateMode(value)

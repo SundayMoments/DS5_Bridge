@@ -1,23 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { IconEyeOff, IconX as X } from '@tabler/icons-react';
+import { IconX as X } from '@tabler/icons-react';
 import { KitsuneInputOfferContent } from './KitsuneInputOfferContent';
 
 export interface KitsuneInputPromotionDialogProps {
-  readonly dismissing: boolean;
   onClose(): void;
-  onDismissForever(): void;
   onLearnMore(): void;
   onPurchase(): void;
 }
 
 /**
  * Opened from the window-bar banner: the launch offer's content, closable at
- * once with Escape or the backdrop, plus a way to hide the banner for good.
+ * once with Escape or the backdrop.
  */
 export function KitsuneInputPromotionDialog({
-  dismissing,
   onClose,
-  onDismissForever,
   onLearnMore,
   onPurchase
 }: KitsuneInputPromotionDialogProps) {
@@ -63,15 +59,6 @@ export function KitsuneInputPromotionDialog({
           onGet={onPurchase}
           onLearnMore={onLearnMore}
         />
-        <button
-          type="button"
-          className="kitsune-promotion-dismiss"
-          disabled={dismissing}
-          onClick={onDismissForever}
-        >
-          <IconEyeOff size={15} aria-hidden="true" />
-          {dismissing ? 'Dismissing…' : "Don't show Kitsune Input promotions again"}
-        </button>
       </section>
     </div>
   );
