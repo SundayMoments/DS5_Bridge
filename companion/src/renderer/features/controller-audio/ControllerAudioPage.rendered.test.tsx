@@ -67,8 +67,11 @@ describe('Audio page', () => {
     const bridge = installBridgeMock(fixtureSnapshot({ settings: { ...audioOn.settings, duplexMicEnabled: false } }));
     const host = await renderApp();
     const page = await openPage(host, 'audio');
+    const speakerSwitch = page.querySelector('.studio-feature-heading [role="switch"]')!;
     await click(buttonByText(page.querySelector('.audio-mode-selector')!, 'Mic'));
     const headerSwitch = page.querySelector('.studio-feature-heading [role="switch"]')!;
+    // A new switch for the new feature, so its knob does not slide across on the tab change.
+    expect(headerSwitch).not.toBe(speakerSwitch);
     const headerIcon = page.querySelector('.studio-heading-copy .feature-icon')!;
     expect(headerSwitch.parentElement?.textContent).toBe('Mic Enabled');
     expect(headerSwitch.getAttribute('aria-checked')).toBe('false');

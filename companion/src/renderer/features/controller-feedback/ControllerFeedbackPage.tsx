@@ -158,7 +158,9 @@ export function ControllerFeedbackPage({
             ) : null}
             <div className="inline-switch">
               <span>{audioHapticsOpen ? 'Enabled' : showClassicRumbleControl ? 'Rumble Enabled' : 'Haptics Enabled'}</span>
+              {/* Keyed by its feature: changing tab shows the other feature's switch instead of sliding this one. */}
               <button
+                key={audioHapticsOpen ? 'audio-haptics' : showClassicRumbleControl ? 'rumble' : 'haptics'}
                 type="button"
                 role="switch"
                 aria-label={audioHapticsOpen

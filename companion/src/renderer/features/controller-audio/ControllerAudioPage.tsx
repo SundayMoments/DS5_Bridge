@@ -147,7 +147,9 @@ export function ControllerAudioPage({
             <div className="audio-heading-controls">
               <div className="inline-switch">
                 <span>{activeEnabledLabel}</span>
+                {/* Keyed by its feature: changing tab shows the other feature's switch instead of sliding this one. */}
                 <button
+                  key={showMicrophoneControl ? 'mic' : 'speaker'}
                   type="button"
                   role="switch"
                   aria-checked={activeEnabled}

@@ -126,7 +126,9 @@ export function AdaptiveTriggersPage({
             ) : null}
             <div className="inline-switch">
               <span>Enabled</span>
+              {/* Keyed by its feature: changing tab shows the other feature's switch instead of sliding this one. */}
               <button
+                key={triggerLabOpen ? 'trigger-lab' : 'adaptive-triggers'}
                 type="button"
                 role="switch"
                 aria-checked={triggerPageEnabled}
