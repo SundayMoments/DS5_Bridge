@@ -171,7 +171,7 @@ export function App() {
     setActiveControlTab(tab);
   }
 
-  /** Opens Settings with one setting highlighted, for links from Overview and the feature tips. */
+  /** Opens Settings with one setting highlighted, for links from Overview. */
   function focusBridgeSettings(target: SettingsFocusTarget) {
     notifications.close();
     notifications.clearFocus();
@@ -323,7 +323,6 @@ export function App() {
               connected={connected}
               controllerControlsAvailable={controllerControlsAvailable}
               pendingAction={pendingAction}
-              onSettingsFocusRequest={focusBridgeSettings}
             />
           </DeferredPage>
 
@@ -348,7 +347,6 @@ export function App() {
               connected={connected}
               controllerControlsAvailable={controllerControlsAvailable}
               pendingAction={pendingAction}
-              onSettingsFocusRequest={focusBridgeSettings}
             />
           </DeferredPage>
 
@@ -360,7 +358,6 @@ export function App() {
               connected={connected}
               controllerControlsAvailable={controllerControlsAvailable}
               pendingAction={pendingAction}
-              onSettingsFocusRequest={focusBridgeSettings}
             />
           </DeferredPage>
 

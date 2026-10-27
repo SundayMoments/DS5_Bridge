@@ -10,10 +10,8 @@ import {
 } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
 import { AudioHapticsConfigLabel } from '../../common/AudioHapticsConfigLabel';
-import { FeatureTipsPanel } from '../../common/FeatureTipsPanel';
 import { sliderTickClass } from '../../common/slider-ticks';
 import { InlineSelect as CustomSelect } from '../../components/InlineSelect';
-import type { SettingsFocusTarget } from '../settings/settings-navigation';
 import { AudioHapticsSourceOption } from '../audio-haptics-lab/AudioHapticsSourceOption';
 import {
   AUDIO_REACTIVE_HAPTICS_ATTACK_OPTIONS,
@@ -37,7 +35,6 @@ export interface ControllerFeedbackPageProps {
   readonly connected: boolean;
   readonly controllerControlsAvailable: boolean;
   readonly pendingAction: string | null;
-  readonly onSettingsFocusRequest: (target: SettingsFocusTarget) => void;
 }
 
 /** Haptics strength, rumble, boost, and the feedback test; with Audio Haptics open, the audio haptics lab. */
@@ -49,8 +46,7 @@ export function ControllerFeedbackPage({
   snapshot,
   connected,
   controllerControlsAvailable,
-  pendingAction,
-  onSettingsFocusRequest
+  pendingAction
 }: ControllerFeedbackPageProps) {
   const {
     hapticsValue,
@@ -581,7 +577,6 @@ export function ControllerFeedbackPage({
           </section>
         </div>
         )}
-        <FeatureTipsPanel tab="haptics" onSettingsFocusRequest={onSettingsFocusRequest} audioHapticsOpen={audioHapticsOpen} />
     </div>
   );
 }

@@ -422,7 +422,7 @@ export function SystemPage({
             )}
           </section>
         </div>
-        <section className="feature-help-panel system-profile-panel" aria-label="System profiles and tips">
+        <section className="system-profile-panel" aria-label="System profiles">
           <div className="system-profile-strip">
             <ProfileSaveStatus />
             <div className="remapping-profile-actions">

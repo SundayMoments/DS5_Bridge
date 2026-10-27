@@ -126,7 +126,7 @@ describe('companion layout CSS', () => {
     expect(cssBlock('.light-color-meta', 'grid-row: 3;')).toContain('grid-row: 3;');
   });
 
-  it('keeps feature cards visually aligned with the darker tips surface', () => {
+  it('keeps feature cards on the darker card surface', () => {
     expect(cssBlock('.feature-card', 'background: var(--surface-card);')).toContain(
       'background: var(--surface-card);'
     );
@@ -301,7 +301,7 @@ describe('companion layout CSS', () => {
     expect(profileButtonBlock).toContain('font-weight: var(--font-weight-strong);');
     expect(profileButtonBlock).toContain('box-shadow: none;');
     expect(cssBlock('.system-profile-save-status', 'min-width: 0;')).not.toContain('background:');
-    // The markup is rendered in common/FeatureTipsPanel.rendered.test.tsx.
+    // The markup is rendered in common/ProfileSaveStatus.rendered.test.tsx.
     expect(cssBlock('.autosave-check-outline', 'color: #ffffff;')).toContain('stroke-width: 5;');
     expect(cssBlock('.autosave-check-fill', 'color: var(--success);')).toContain('stroke-width: 2.5;');
   });
@@ -330,16 +330,8 @@ describe('companion layout CSS', () => {
     }
   });
 
-  it('renders the Power Saving Green Icon tip as the filled success tile with a white glyph', () => {
-    // The tip renders with the success class in common/FeatureTipsPanel.rendered.test.tsx.
-    const successTip = cssBlock('.feature-help-icon.success', 'background: var(--success-selected);');
-    expect(successTip).toContain('color: #ffffff;');
-    expect(successTip).toContain('border-color: var(--success-border-strong);');
-    expect(successTip).toContain('background: var(--success-selected);');
-    expect(successTip).toContain('inset 0 -2px 0 var(--success-border-strong);');
-    const successTipHover = cssBlock('.feature-help-icon-button.success:hover,', 'background: var(--success-selected);');
-    expect(successTipHover).toContain('color: #ffffff;');
-    expect(successTipHover).toContain('background: var(--success-selected);');
+  it('has no Tips panel under the feature pages', () => {
+    expect(styles).not.toContain('.feature-help-');
   });
 
   it('uses theme text tokens for trigger lab meter labels and values', () => {

@@ -28,8 +28,7 @@ describe('Stick Deadzones page', () => {
     expect([...page.querySelectorAll('input')].map((input) => input.getAttribute('aria-label')))
       .toEqual(['Left Stick radial deadzone', 'Right Stick radial deadzone']);
     expect(page.querySelector('.system-profile-save-status')).toBeNull();
-    expect([...page.querySelectorAll('.feature-help-copy strong')].map((title) => title.textContent))
-      .toEqual(['Tune Each Stick', 'Keep It Low']);
+    expect(page.textContent).not.toContain('Tips');
     expect(page.textContent).not.toContain('How Radial Deadzones Work');
     expect(page.textContent).not.toContain('All Personas');
   });

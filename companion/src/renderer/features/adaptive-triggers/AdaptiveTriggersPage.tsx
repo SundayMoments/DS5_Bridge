@@ -6,10 +6,8 @@ import {
   IconTestPipe
 } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
-import { FeatureTipsPanel } from '../../common/FeatureTipsPanel';
 import { PERCENT_SLIDER_TICKS, sliderTickClass } from '../../common/slider-ticks';
 import { InlineSelect as CustomSelect } from '../../components/InlineSelect';
-import type { SettingsFocusTarget } from '../settings/settings-navigation';
 import { TriggerLabCard } from '../trigger-lab/TriggerLabCard';
 import type { TriggerLabController } from '../trigger-lab/use-trigger-lab-controller';
 import {
@@ -31,7 +29,6 @@ export interface AdaptiveTriggersPageProps {
   readonly connected: boolean;
   readonly controllerControlsAvailable: boolean;
   readonly pendingAction: string | null;
-  readonly onSettingsFocusRequest: (target: SettingsFocusTarget) => void;
 }
 
 export function AdaptiveTriggersPage({
@@ -42,8 +39,7 @@ export function AdaptiveTriggersPage({
   snapshot,
   connected,
   controllerControlsAvailable,
-  pendingAction,
-  onSettingsFocusRequest
+  pendingAction
 }: AdaptiveTriggersPageProps) {
   const {
     adaptiveTriggersSupported,
@@ -264,11 +260,6 @@ export function AdaptiveTriggersPage({
           </section>
         </div>
         )}
-        <FeatureTipsPanel
-          tab="triggers"
-          triggerLabOpen={triggerLabOpen}
-          onSettingsFocusRequest={onSettingsFocusRequest}
-        />
     </div>
   );
 }

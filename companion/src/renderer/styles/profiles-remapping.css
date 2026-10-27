@@ -70,11 +70,17 @@
 }
 
 .system-profile-panel {
-  align-content: start;
+  min-width: 0;
   min-height: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--card-radius);
+  display: grid;
+  align-content: start;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   padding: 10px 14px;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-panel);
 }
 
 .system-profile-strip {

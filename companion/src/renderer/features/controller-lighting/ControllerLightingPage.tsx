@@ -1,9 +1,7 @@
 import type { CSSProperties } from 'react';
 import { IconBulb, IconPalette as Palette } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
-import { FeatureTipsPanel } from '../../common/FeatureTipsPanel';
 import { PERCENT_SLIDER_TICKS, sliderTickClass } from '../../common/slider-ticks';
-import type { SettingsFocusTarget } from '../settings/settings-navigation';
 import {
   LIGHTBAR_BRIGHTNESS_STEP,
   LIGHTBAR_CUSTOM_PALETTE,
@@ -22,7 +20,6 @@ export interface ControllerLightingPageProps {
   readonly connected: boolean;
   readonly controllerControlsAvailable: boolean;
   readonly pendingAction: string | null;
-  readonly onSettingsFocusRequest: (target: SettingsFocusTarget) => void;
 }
 
 export function ControllerLightingPage({
@@ -31,8 +28,7 @@ export function ControllerLightingPage({
   snapshot,
   connected,
   controllerControlsAvailable,
-  pendingAction,
-  onSettingsFocusRequest
+  pendingAction
 }: ControllerLightingPageProps) {
   const {
     lightbarSupported,
@@ -273,7 +269,6 @@ export function ControllerLightingPage({
             </div>
           </section>
         </div>
-        <FeatureTipsPanel tab="lighting" onSettingsFocusRequest={onSettingsFocusRequest} />
     </div>
   );
 }

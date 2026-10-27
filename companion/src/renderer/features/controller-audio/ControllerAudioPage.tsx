@@ -10,7 +10,6 @@ import {
   IconVolumeOff as VolumeX
 } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
-import { FeatureTipsPanel } from '../../common/FeatureTipsPanel';
 import { PERCENT_SLIDER_TICKS, sliderTickClass } from '../../common/slider-ticks';
 import { InlineSelect as CustomSelect } from '../../components/InlineSelect';
 import { AudioHapticsConfigLabel } from '../../common/AudioHapticsConfigLabel';
@@ -434,7 +433,6 @@ export function ControllerAudioPage({
             </div>
           </section>
         </div>
-        <FeatureTipsPanel tab="audio" />
     </div>
   );
 }

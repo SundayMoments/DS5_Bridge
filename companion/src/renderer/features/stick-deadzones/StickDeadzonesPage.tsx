@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react';
 import { IconViewfinder } from '@tabler/icons-react';
 import { RADIAL_DEADZONE_MAX_PERCENT } from '@shared/protocol';
 import type { BridgeSnapshot } from '@shared/types';
-import { FeatureTipsPanel } from '../../common/FeatureTipsPanel';
 import { sliderTickClass } from '../../common/slider-ticks';
 import { radialDeadzonePreview, stickPositionPercent } from './radial-deadzone-preview';
 import type { StickDeadzonesController } from './use-stick-deadzones-controller';
@@ -140,8 +139,6 @@ export function StickDeadzonesPage({ active, controller, stickInputPreview, lock
           );
         })}
       </div>
-
-      <FeatureTipsPanel tab="deadzones" />
     </div>
   );
 }

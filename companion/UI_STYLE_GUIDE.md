@@ -33,7 +33,7 @@ The shared grid values live in `styles/theme-tokens.css` under `:root, .shell`.
 - `--card-padding: 16px` is the standard card interior padding.
 - `--feature-left-column: minmax(0, 1fr)` and `--feature-right-column: minmax(0, 1fr)` keep the main paired cards equal width.
 - `--feature-card-min-height: 250px` keeps feature cards aligned tab to tab.
-- `--feature-card-height: 370px` is the generic control-page minimum. Haptics, Audio, Adaptive Triggers, Lighting, and System pin their paired-card row to 326px in `styles/page-layouts.css` (`auto minmax(0, 326px) minmax(132px, 1fr)`); System gives the rest to its profile panel (`minmax(148px, 1fr)`). `layout-check --fixture` fails when a tab's cards differ from that height.
+- `--feature-card-height: 370px` is the generic control-page minimum. Haptics, Audio, Adaptive Triggers, Lighting, and System pin their paired-card row to 326px in `styles/page-layouts.css` (`auto minmax(0, 326px)`); System gives the rest to its profile panel (`minmax(148px, 1fr)`). Feature pages have no Tips panel; explain a control with its label or a `HelpTooltip`. `layout-check --fixture` fails when a tab's cards differ from that height.
 - `--action-height: 48px` is the standard full-width action button height.
 - `--control-height: 36px` is the standard compact control height.
 

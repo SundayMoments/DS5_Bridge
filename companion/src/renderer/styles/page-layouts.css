@@ -15,11 +15,11 @@
   height: 100%;
   min-height: 0;
   gap: 12px;
-  grid-template-rows: auto minmax(0, 326px) minmax(132px, 1fr);
+  grid-template-rows: auto minmax(0, 326px);
 }
 
 .deadzones-page {
-  grid-template-rows: auto minmax(0, 400px) minmax(132px, 1fr);
+  grid-template-rows: auto minmax(0, 400px);
 }
 
 .system-page {
