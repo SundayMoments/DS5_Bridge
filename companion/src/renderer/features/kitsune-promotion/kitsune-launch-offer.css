@@ -173,8 +173,78 @@
   line-height: 1.35;
 }
 
+/* The controllers Kitsune Input adds, as logo chips beside their label. */
+.kitsune-launch-offer-compat {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.kitsune-launch-offer-compat h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-subtitle);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.kitsune-launch-offer-controllers {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+}
+
+.kitsune-launch-offer-controllers li {
+  min-height: 42px;
+  padding: 0 14px 0 8px;
+  border: 1px solid var(--surface-border-strong);
+  border-radius: var(--card-radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-control);
+}
+
+.kitsune-launch-offer-controller-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--control-radius);
+  display: grid;
+  place-items: center;
+  color: var(--text-strong);
+}
+
+.kitsune-launch-offer-controller-logo.playstation::before {
+  content: "";
+  width: 24px;
+  height: 24px;
+  background: currentColor;
+  -webkit-mask: var(--controller-logo-mask) center / contain no-repeat;
+  mask: var(--controller-logo-mask) center / contain no-repeat;
+}
+
+.kitsune-launch-offer-controllers strong {
+  color: var(--text-strong);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+}
+
+.kitsune-launch-offer-controllers li > span:last-child:not(.kitsune-launch-offer-controller-logo) {
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+  white-space: nowrap;
+}
+
 .kitsune-launch-offer-facts {
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   padding: 0;
   display: grid;
   gap: 6px;

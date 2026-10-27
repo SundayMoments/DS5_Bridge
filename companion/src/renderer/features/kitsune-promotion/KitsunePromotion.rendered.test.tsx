@@ -77,7 +77,13 @@ describe('KitsuneInputLaunchOffer', () => {
     expect(document.querySelector('#kitsune-launch-offer-title')?.textContent).toBe('Make your controller yours.');
     expect(text).toContain('A separate Windows app from the developer of DS5 Bridge');
     expect(text).toContain('Same Pico 2 W or Waveshare RP2350B-Plus-W bridge. Nothing else to buy.');
-    expect(text).toContain('Also works with DualShock 4 and the original Switch Pro Controller.');
+    // The extra controllers stand out as logo chips: PlayStation for the
+    // DualShock 4, the Nintendo device mark for the Switch Pro Controller.
+    const controllers = [...document.querySelectorAll('.kitsune-launch-offer-controllers li')];
+    expect(controllers.map((item) => item.querySelector('strong')?.textContent)).toEqual(['DualShock 4', 'Switch Pro Controller']);
+    expect(controllers[0]?.querySelector('.kitsune-launch-offer-controller-logo.playstation')).not.toBeNull();
+    expect(controllers[1]?.textContent).toContain('Original model');
+    expect(controllers.every((item) => item.querySelector('strong')?.getAttribute('data-l10n') === 'off')).toBe(true);
     expect(text).toContain('One-time purchase on Ko-fi');
     expect(text).toContain('DS5 Bridge stays free and open source.');
     // kitsuneinput.com: DS5 Bridge is a separate project, not a free tier.

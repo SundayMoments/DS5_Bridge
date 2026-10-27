@@ -1,10 +1,10 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, CSSProperties } from 'react';
 import {
   IconAdjustmentsHorizontal,
   IconArrowRight as ArrowRight,
   IconBrandXbox,
   IconCpu,
-  IconDeviceGamepad2,
+  IconDeviceNintendo,
   IconExternalLink,
   IconHandFinger,
   IconLayersSubtract,
@@ -13,6 +13,7 @@ import {
   IconStack2,
   IconSwitchHorizontal
 } from '@tabler/icons-react';
+import playStationLogoUrl from '@product-assets/brand/playstation-logo.svg';
 import kitsuneInputLogoUrl from '../../assets/kitsune-input-logo.svg';
 import { KitsuneInputWordmark } from './KitsuneInputWordmark';
 import './kitsune-launch-offer.css';
@@ -113,14 +114,31 @@ export function KitsuneInputOfferContent({ idPrefix, onGet, onLearnMore }: Kitsu
         </ul>
       </section>
 
+      <section className="kitsune-launch-offer-compat" aria-labelledby={`${idPrefix}-compat-title`}>
+        <h3 id={`${idPrefix}-compat-title`}>Also works with</h3>
+        <ul className="kitsune-launch-offer-controllers">
+          <li>
+            <span
+              className="kitsune-launch-offer-controller-logo playstation"
+              style={{ '--controller-logo-mask': `url("${playStationLogoUrl}")` } as CSSProperties}
+              aria-hidden="true"
+            />
+            <strong data-l10n="off">DualShock 4</strong>
+          </li>
+          <li>
+            <span className="kitsune-launch-offer-controller-logo" aria-hidden="true">
+              <IconDeviceNintendo size={22} />
+            </span>
+            <strong data-l10n="off">Switch Pro Controller</strong>
+            <span>Original model</span>
+          </li>
+        </ul>
+      </section>
+
       <ul className="kitsune-launch-offer-facts">
         <li>
           <IconCpu size={16} aria-hidden="true" />
           <span>Same Pico 2 W or Waveshare RP2350B-Plus-W bridge. Nothing else to buy.</span>
-        </li>
-        <li>
-          <IconDeviceGamepad2 size={16} aria-hidden="true" />
-          <span>Also works with DualShock 4 and the original Switch Pro Controller.</span>
         </li>
       </ul>
 
