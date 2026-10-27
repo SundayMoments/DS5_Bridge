@@ -21,7 +21,6 @@
   overflow-x: hidden;
   overflow-y: auto;
   border: 1px solid var(--surface-border-strong);
-  border-top: 3px solid var(--kitsune-orange);
   background: var(--surface-menu);
   box-shadow: var(--shadow-menu);
   outline: none;
@@ -107,6 +106,7 @@
   color: var(--text-secondary);
   font-size: var(--font-size-body);
   line-height: 1.45;
+  text-wrap: pretty;
 }
 
 .kitsune-launch-offer-adds {
@@ -288,6 +288,97 @@
 
 .kitsune-launch-offer-learn svg {
   color: var(--kitsune-orange);
+}
+
+/*
+ * "Considering Getting Kitsune Input?": the first-run tutorial's last step and
+ * the monthly ask. A shorter launch offer on the same panel; Continue is a
+ * quiet link under the actions.
+ */
+.kitsune-ask-panel {
+  --kitsune-orange: #ff6a18;
+  --kitsune-orange-hover: #ff7f3a;
+  --kitsune-orange-soft: color-mix(in srgb, var(--kitsune-orange) 14%, var(--surface-menu));
+
+  position: relative;
+  top: auto;
+  right: auto;
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--surface-border-strong);
+  background: var(--surface-menu);
+  box-shadow: var(--shadow-menu);
+}
+
+/* The tutorial's fixed step size fits the feature tile step, not the ask. */
+.startup-tutorial-modal.kitsune-ask-panel {
+  width: min(760px, calc(100vw - 48px));
+  height: auto;
+  padding: 24px;
+}
+
+.kitsune-ask-modal {
+  animation: modal-panel-in 160ms ease-out;
+}
+
+.kitsune-ask-hero {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: start;
+  padding-right: 0;
+}
+
+.kitsune-ask-hero .kitsune-launch-offer-logo {
+  width: 64px;
+  height: auto;
+}
+
+.kitsune-ask-hero h2 {
+  font-size: calc(var(--font-size-title) * 1.4);
+}
+
+.kitsune-ask-features {
+  margin-top: 16px;
+}
+
+.kitsune-ask-continue {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.kitsune-ask-continue-button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--control-radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.kitsune-ask-continue-button:not(:disabled):hover {
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
+}
+
+.kitsune-ask-continue-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.kitsune-ask-continue-button:disabled {
+  cursor: default;
+  color: var(--text-muted);
 }
 
 /* The banner's dialog can hide the banner for good; a quiet link, not a third button. */

@@ -11,7 +11,7 @@ This file is the layout contract for the Electron companion app. Treat it as par
 - `styles/theme-ds5.css` is the frozen DS5 brand reference: the default dark theme's blue tokens and command-chip recipe. Change it only for a deliberate brand change.
 - Cards are flat in every theme, like Kitsune Input's: one solid `--surface-card` (the workspace color in dark), framed by `--section-border`, with the header row on the same surface as the body (only its divider line separates them). There are no card shadows (`--shadow-card`, `--shadow-panel`, and `--shadow-control` are `none`) and no glow gradients on cards. Floating menus and dialogs keep `--shadow-menu`.
 - Area files (`base.css`, `app-shell.css`, `overview.css`, `audio.css`, and so on) hold page and surface rules. Components that own their markup import their own CSS from TSX (`features/shell/shell-sidebar.css`, `features/settings/settings-page.css`, `features/settings/wake-pc-settings.css`, `features/bootloader-confirmation/bootloader-confirmation.css`, `features/kitsune-promotion/kitsune-launch-offer.css`); `main.tsx` imports the fonts and `styles.css` before `App` so those files cascade after the base.
-- `base.css` holds `.visually-hidden` for text that only screen readers need, such as the reason behind a Failed quick action.
+- `base.css` holds `.visually-hidden` for text that only screen readers need.
 - No per-theme patches in area files. If a theme reads badly, fix its palette or add a semantic token.
 
 Tests read styles through `src/renderer/test-support/renderer-styles.ts` (`rendererStyles()` follows the manifest, `rendererStyleModule(path)` reads one file, `cssBlockIn` finds a rule).
@@ -66,6 +66,8 @@ Modal dialogs use `modal-backdrop` with a `role="dialog"` form or panel, a label
 
 - The controller confirmation for UF2 mode (`features/bootloader-confirmation`) sits above everything (z-index 200), on any page, and can only be cancelled.
 - The one-time Kitsune Input offer opens shortly after the first snapshot, never over the first-run tutorial, the controller confirmation, or the promotion dialog. Its close button and Escape stay locked for 5 seconds; `kitsuneInputLaunchOfferShown` records that it was shown.
+- "Considering Getting Kitsune Input?" (`KitsuneInputAsk`) is the first-run tutorial's second step and comes back on its own at most once a month (`KitsuneInputMonthlyAsk`): a shorter launch offer with four of its features, its price and buttons, and a quiet Continue that unlocks after 5 seconds. A run shows at most one Kitsune Input prompt: the tutorial's ask, else the launch offer, else the monthly ask; each restarts the month (`kitsune-ask-schedule.ts`). The monthly ask follows the launch offer and never appears after "Don't show Kitsune Input promotions again".
+- Kitsune Input panels are flat like the app: no orange top strip; the orange marks the icons and the Get Kitsune Input button only.
 - The window-bar banner opens the same offer (`KitsuneInputOfferContent`) without the countdown, plus a quiet "Don't show Kitsune Input promotions again" link. Keep the two in step: change the shared content, not one dialog.
 - A row that another page links to (Overview's chips, Settings search) is framed briefly in `--focus-ring` (`settings-menu-row-highlight`), never tinted.
 - System's emergency device repair asks first and refuses while a controller is connected; its profile dialogs save, rename, and delete.
@@ -125,7 +127,8 @@ System may use `system-card` for semantic naming, but it still follows the same 
 - Percent sliders should use the shared `slider-row`, `range-control`, and `range-ticks` geometry. If a slider is intentionally notched, its native range `step` must match visible tick positions and it must not add tab-specific grid sizing.
 - Testing buttons use `primary-action` and `secondary-action`.
 - Testing cards are slotted, not free-flowing. The primary and secondary action rows must stay in the same vertical grid rows across Haptics, Audio, and Triggers, even when the setup content above them differs. The row above the actions holds test options (Triggers) or the reason a test failed (`feedback-test-error`, `role="alert"`, linked to the test button with `aria-describedby`).
-- Status copy at the bottom of test cards uses `feature-status`. A test the bridge refused reads Failed in the warn tone, keeps its button enabled for a retry, and clears on the next test or a mode switch; the Overview quick action turns into a Failed warning with the reason as its tooltip.
+- Status copy at the bottom of test cards uses `feature-status`. A test the bridge refused reads Failed in the warn tone, keeps its button enabled for a retry, and clears on the next test or a mode switch.
+- Overview's Quick Actions match Kitsune Input: the host persona tiles, then one full-width Sleep Controller row (`overview-sleep-row`). Tests run from their own pages.
 - Preset rows sit at the same offset in every preset card (`layout-check` compares them). Switches under the presets, such as Boost and v1 Rumble on Haptics, follow them on the 16px rhythm in one row instead of pinning to the card's bottom edge.
 - Preset or level buttons use `segmented-row`.
 - Dropdowns must use `CustomSelect`; do not use native `select` elements in the app surface.

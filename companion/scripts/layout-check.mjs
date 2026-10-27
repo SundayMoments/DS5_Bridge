@@ -56,9 +56,9 @@ try {
     await assertNoModalOverflow(startupTutorial, 'Feature tile tutorial');
     await page.getByLabel('Toggle example effect').click();
     await page.getByRole('button', { name: /Next/ }).click();
-    const supportTutorial = page.getByRole('dialog', { name: 'Support DS5 Bridge' });
-    await assertNoModalOverflow(supportTutorial, 'Support tutorial');
-    await assertNaturalImageRatio(supportTutorial.locator('.startup-tutorial-kofi-button img'), 'Support tutorial Ko-fi badge');
+    const kitsuneAsk = page.getByRole('dialog', { name: 'Considering Getting Kitsune Input?' });
+    await assertNoModalOverflow(kitsuneAsk, 'Kitsune Input ask');
+    await assertNaturalImageRatio(kitsuneAsk.locator('.kitsune-launch-offer-logo'), 'Kitsune Input ask logo');
     await page.getByRole('button', { name: 'Continue' }).click({ timeout: 7000 });
     await page.waitForTimeout(150);
   }
@@ -121,29 +121,28 @@ try {
   await openControlTab(page, 'Overview');
   await page.waitForTimeout(150);
 
+  // Quick Actions is the persona grid with the Sleep Controller row under it;
+  // the Quick Controls frame spans the same height beside it.
   const overviewControlAlignment = await page.evaluate(() => {
-    const actionButtons = [
-      ...(document.querySelectorAll('.overview-quick-actions .overview-action-grid button') ?? [])
-    ];
     const personaGrid = document.querySelector('.overview-quick-actions .overview-persona-grid');
+    const sleepRow = document.querySelector('.overview-quick-actions .overview-sleep-row');
     const sliderList = document.querySelector('.overview-sliders .overview-slider-list');
 
-    if (actionButtons.length < 2 || !personaGrid || !sliderList) {
+    if (!personaGrid || !sleepRow || !sliderList) {
       return null;
     }
 
-    const actionButtonRects = actionButtons.slice(0, 2).map((button) => button.getBoundingClientRect());
     const personaRect = personaGrid.getBoundingClientRect();
+    const sleepRect = sleepRow.getBoundingClientRect();
     const sliderRect = sliderList.getBoundingClientRect();
-    const actionTop = Math.min(...actionButtonRects.map((rect) => rect.top));
 
     return {
-      actionTop,
+      actionTop: personaRect.top,
       sliderTop: sliderRect.top,
-      personaBottom: personaRect.bottom,
+      personaBottom: sleepRect.bottom,
       sliderBottom: sliderRect.bottom,
-      topDelta: sliderRect.top - actionTop,
-      bottomDelta: sliderRect.bottom - personaRect.bottom,
+      topDelta: sliderRect.top - personaRect.top,
+      bottomDelta: sliderRect.bottom - sleepRect.bottom,
       sliderHeight: sliderRect.height
     };
   });
@@ -162,11 +161,11 @@ try {
     });
 
     if (Math.abs(overviewControlAlignment.topDelta) > tolerancePx) {
-      failures.push(`Overview: quick controls frame top differs from action buttons by ${overviewControlAlignment.topDelta.toFixed(2)}px`);
+      failures.push(`Overview: quick controls frame top differs from the persona grid by ${overviewControlAlignment.topDelta.toFixed(2)}px`);
     }
 
     if (Math.abs(overviewControlAlignment.bottomDelta) > tolerancePx) {
-      failures.push(`Overview: quick controls frame bottom differs from persona row by ${overviewControlAlignment.bottomDelta.toFixed(2)}px`);
+      failures.push(`Overview: quick controls frame bottom differs from the Sleep Controller row by ${overviewControlAlignment.bottomDelta.toFixed(2)}px`);
     }
   }
 

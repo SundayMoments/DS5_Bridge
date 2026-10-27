@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react';
 import {
   IconActivity as Activity,
   IconAdjustmentsSpark,
-  IconAlertTriangle,
   IconBatteryEco,
   IconBell as Bell,
   IconBinary,
@@ -10,10 +9,8 @@ import {
   IconBolt as Zap,
   IconBrandXbox,
   IconDeviceGamepad2,
-  IconMicrophone as Mic,
-  IconMoon as Moon,
-  IconPlayerPlay as Play,
-  IconVolume as Volume2
+  IconVolume as Volume2,
+  IconZzz
 } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
 import playStationLogoUrl from '@product-assets/brand/playstation-logo.svg';
@@ -68,7 +65,7 @@ export function OverviewPage({
   onSettingsFocusRequest,
   onNotificationFocusRequest
 }: OverviewPageProps) {
-  const { controllerPowerSavingActive, feedbackTestError } = feedback;
+  const { controllerPowerSavingActive } = feedback;
   const status = overviewStatus(snapshot, { controllerPowerSavingActive });
   const speakerVolumeSupported = Boolean(snapshot.status?.firmwareFlags.speakerVolumeControl);
   const lightbarSupported = Boolean(snapshot.status?.firmwareFlags.lightbarControl);
@@ -175,41 +172,6 @@ export function OverviewPage({
               <h3>Quick Actions</h3>
             </div>
           </div>
-          <div className="overview-action-grid">
-            <button
-              type="button"
-              className={feedbackTestError ? 'failed' : undefined}
-              disabled={feedback.activeFeedbackTestUnavailable}
-              title={feedbackTestError ?? undefined}
-              aria-describedby={feedbackTestError ? 'overview-feedback-test-error' : undefined}
-              onClick={feedback.runFeedbackTest}
-            >
-              {feedbackTestError ? <IconAlertTriangle size={15} /> : <Play size={15} />}
-              {feedbackTestError ? 'Failed' : 'Test Haptics'}
-            </button>
-            {feedbackTestError ? (
-              <span id="overview-feedback-test-error" className="visually-hidden" role="alert">
-                {feedbackTestError}
-              </span>
-            ) : null}
-            <button type="button" disabled={audio.testSpeakerUnavailable} onClick={audio.runTestSpeaker}>
-              <Volume2 size={15} />
-              Test Speaker
-            </button>
-            <button type="button" disabled={audio.testMicUnavailable} onClick={audio.runTestMic}>
-              <Mic size={15} />
-              Listen Mic
-            </button>
-            <button
-              type="button"
-              className={overview.sleepConfirmVisible ? 'confirm' : undefined}
-              disabled={overview.sleepUnavailable}
-              onClick={overview.sleepController}
-            >
-              <Moon size={15} />
-              {overview.sleepConfirmVisible ? 'Confirm Sleep' : 'Sleep Controller'}
-            </button>
-          </div>
           <div className="overview-persona-grid" aria-label="Host controller persona">
             {HOST_PERSONA_OPTIONS.map(([label, mode]) => {
               const selected = status.hostPersonaMode === mode;
@@ -246,6 +208,18 @@ export function OverviewPage({
                 </button>
               );
             })}
+          </div>
+          {/* Kitsune Input's layout: the personas, then one Sleep Controller row. */}
+          <div className="overview-action-grid overview-sleep-row">
+            <button
+              type="button"
+              className={overview.sleepConfirmVisible ? 'confirm' : undefined}
+              disabled={overview.sleepUnavailable}
+              onClick={overview.sleepController}
+            >
+              <IconZzz size={15} />
+              {overview.sleepConfirmVisible ? 'Confirm Sleep' : 'Sleep Controller'}
+            </button>
           </div>
         </section>
 

@@ -141,9 +141,11 @@ describe('renderer behavior guards', () => {
     }
   });
 
-  it('keeps all four abbreviated personas on the overview quick-actions row', () => {
+  it('lays the four abbreviated personas out two by two in Quick Actions', () => {
     // The buttons are rendered in features/overview/OverviewPage.rendered.test.tsx.
-    expect(stylesSource).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(stylesSource.replace(/\s+/g, ' ')).toContain(
+      '.overview-persona-grid { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr));'
+    );
   });
 
   it('advertises Kitsune Input with a dismissible titlebar promotion', () => {

@@ -7,7 +7,7 @@ export {
   type StartupTutorialStep
 } from './startup-tutorial-storage';
 export {
-  STARTUP_SUPPORT_COUNTDOWN_SECONDS,
+  STARTUP_KITSUNE_ASK_COUNTDOWN_SECONDS,
   useStartupTutorial,
   type StartupTutorialController
 } from './use-startup-tutorial';

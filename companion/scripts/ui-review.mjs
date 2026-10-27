@@ -92,7 +92,7 @@ try {
   await offerClose.and(page.locator(':enabled')).waitFor({ timeout: 10000 });
   await offerClose.click();
 
-  // A haptics test the bridge refused: the Haptics Testing card, then the Overview quick action.
+  // A haptics test the bridge refused, on the Haptics Testing card.
   const refusal = 'The controller audio endpoint is unavailable. Close any games using the controller and try again.';
   for (const theme of ['dark', 'light']) {
     await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
@@ -105,12 +105,6 @@ try {
     await captureWindow(app, path.join(outputDir, file));
     shots.push(file);
   }
-  await openControlTab(page, 'Overview');
-  await page.locator('.overview-action-grid button.failed').waitFor();
-  await settle();
-  await captureWindow(app, path.join(outputDir, 'light-100-overview-test-failed.png'));
-  shots.push('light-100-overview-test-failed.png');
-
   // Settings > Wake PC with the controller off: a saved network, a new setup, and a running test.
   await page.evaluate(() => {
     const current = window.__uiReview.snapshot();

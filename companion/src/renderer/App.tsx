@@ -56,9 +56,12 @@ import {
   KITSUNE_INPUT_PURCHASE_URL,
   KITSUNE_INPUT_URL,
   KitsuneInputLaunchOffer,
+  KitsuneInputMonthlyAsk,
   KitsuneInputPromotionDialog,
   KitsunePromotionBanner,
-  useKitsuneLaunchOffer
+  recordKitsuneAskShown,
+  useKitsuneLaunchOffer,
+  useKitsuneMonthlyAsk
 } from './features/kitsune-promotion';
 import type { BridgeSnapshot } from '../shared/types';
 
@@ -140,12 +143,28 @@ export function App() {
   const settingsPage = useSettingsPage(runtime, { notifications });
   const settingsNavigation = useSettingsNavigation({ focusTarget: settingsPage.focusTarget });
   const { windowDragging, beginWindowDrag } = useBridgeSnapshots(applySnapshot);
+  // At most one Kitsune Input prompt per run: the first-run ask, else the
+  // one-time launch offer, else the monthly ask. Each restarts the month.
   const kitsuneLaunchOffer = useKitsuneLaunchOffer({
     eligible: Boolean(snapshot) && !snapshot?.settings.kitsuneInputLaunchOfferShown,
     blocked: startupTutorial.step !== 'done'
+      || startupTutorial.kitsuneAskShownThisRun
       || Boolean(snapshot?.bootloaderConfirmation)
       || showKitsuneInputPromotion,
-    markShown: () => void runQuietAction(() => window.bridge.markKitsuneInputLaunchOfferShown())
+    markShown: () => {
+      recordKitsuneAskShown();
+      void runQuietAction(() => window.bridge.markKitsuneInputLaunchOfferShown());
+    }
+  });
+  const kitsuneMonthlyAsk = useKitsuneMonthlyAsk({
+    // Never after "Don't show Kitsune Input promotions again".
+    eligible: Boolean(snapshot?.settings.kitsuneInputLaunchOfferShown)
+      && !snapshot?.settings.kitsuneInputPromotionDismissed,
+    blocked: startupTutorial.step !== 'done'
+      || startupTutorial.kitsuneAskShownThisRun
+      || kitsuneLaunchOffer.visible
+      || Boolean(snapshot?.bootloaderConfirmation)
+      || showKitsuneInputPromotion
   });
 
   function applySnapshot(next: BridgeSnapshot) {
@@ -434,15 +453,24 @@ export function App() {
             />
           )}
 
+          {kitsuneMonthlyAsk.visible && (
+            <KitsuneInputMonthlyAsk
+              countdown={kitsuneMonthlyAsk.countdown}
+              onGet={() => void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
+              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
+              onClose={kitsuneMonthlyAsk.close}
+            />
+          )}
+
           {startupTutorial.step !== 'done' && (
             <StartupTutorial
               step={startupTutorial.step}
               featureExampleActive={startupTutorial.featureExampleActive}
-              supportCountdown={startupTutorial.supportCountdown}
-              kofiBadgeUrl={kofiBadgeUrl}
+              askCountdown={startupTutorial.askCountdown}
               onFeatureExampleToggle={startupTutorial.toggleFeatureExample}
               onFeatureStepComplete={startupTutorial.completeFeatureStep}
-              onSupport={() => void window.bridge.openExternal(SUPPORT_URL)}
+              onGetKitsuneInput={() => void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
+              onLearnAboutKitsuneInput={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
               onFinish={startupTutorial.finish}
             />
           )}

@@ -101,21 +101,6 @@ describe('Haptics page', () => {
     expect(statusLabel(page)).toBe('Ready');
   });
 
-  it('marks the Overview quick action when a test fails', async () => {
-    const reason = 'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.';
-    const bridge = installBridgeMock(fixtureSnapshot({ settings: { hapticsEnabled: true } }));
-    bridge.fn('testHaptics').mockRejectedValueOnce(new Error(reason));
-    const host = await renderApp();
-    const quickAction = () => buttonByText(host.querySelector('.overview-action-grid')!, /Test Haptics|Failed/)!;
-
-    await click(quickAction());
-    expect(quickAction().textContent).toBe('Failed');
-    expect(quickAction().classList.contains('failed')).toBe(true);
-    expect(quickAction().title).toBe(reason);
-    expect(quickAction().disabled).toBe(false);
-    expect(document.getElementById(quickAction().getAttribute('aria-describedby')!)?.textContent?.trim()).toBe(reason);
-  });
-
   it('commits the test strength before running a test', async () => {
     const bridge = installBridgeMock(fixtureSnapshot({ settings: { hapticsEnabled: true, hapticsGainPercent: 100 } }));
     const host = await renderApp();

@@ -4,6 +4,15 @@ export {
   type KitsuneInputLaunchOfferProps
 } from './KitsuneInputLaunchOffer';
 export { KITSUNE_INPUT_PRICE, LAUNCH_OFFER_FEATURES, KitsuneInputOfferContent } from './KitsuneInputOfferContent';
+export { KitsuneInputAsk, KitsuneInputMonthlyAsk, type KitsuneInputAskProps } from './KitsuneInputAsk';
+export {
+  KITSUNE_ASK_INTERVAL_MS,
+  KITSUNE_ASK_SHOWN_AT_STORAGE_KEY,
+  kitsuneAskDue,
+  kitsuneAskShownAt,
+  recordKitsuneAskShown
+} from './kitsune-ask-schedule';
+export { KITSUNE_ASK_COUNTDOWN_SECONDS, useKitsuneMonthlyAsk, type KitsuneMonthlyAskInput } from './use-kitsune-monthly-ask';
 export { KitsuneInputPromotionDialog, type KitsuneInputPromotionDialogProps } from './KitsuneInputPromotionDialog';
 export { KitsuneInputWordmark } from './KitsuneInputWordmark';
 export { KitsunePromotionBanner } from './KitsunePromotionBanner';

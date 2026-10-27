@@ -1,34 +1,35 @@
-import { IconArrowRight as ArrowRight, IconHeart as Heart, IconSparkleHighlight } from '@tabler/icons-react';
+import { IconArrowRight as ArrowRight, IconSparkleHighlight } from '@tabler/icons-react';
+import { KitsuneInputAsk } from '../kitsune-promotion/KitsuneInputAsk';
 import type { StartupTutorialStep } from './startup-tutorial-storage';
 
 export interface StartupTutorialProps {
   readonly step: Exclude<StartupTutorialStep, 'done'>;
   readonly featureExampleActive: boolean;
-  readonly supportCountdown: number;
-  readonly kofiBadgeUrl: string;
+  readonly askCountdown: number;
   readonly onFeatureExampleToggle: () => void;
   readonly onFeatureStepComplete: () => void;
-  readonly onSupport: () => void;
+  readonly onGetKitsuneInput: () => void;
+  readonly onLearnAboutKitsuneInput: () => void;
   readonly onFinish: () => void;
 }
 
 export function StartupTutorial({
   step,
   featureExampleActive,
-  supportCountdown,
-  kofiBadgeUrl,
+  askCountdown,
   onFeatureExampleToggle,
   onFeatureStepComplete,
-  onSupport,
+  onGetKitsuneInput,
+  onLearnAboutKitsuneInput,
   onFinish
 }: StartupTutorialProps) {
   return (
     <div className="modal-backdrop startup-tutorial-backdrop" role="presentation">
       <section
-        className="settings-menu bridge-settings-modal startup-tutorial-modal"
+        className={`settings-menu bridge-settings-modal startup-tutorial-modal ${step === 'kitsune-ask' ? 'kitsune-ask-panel' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label={step === 'feature-toggle' ? 'Feature tile tutorial' : 'Support DS5 Bridge'}
+        aria-label={step === 'feature-toggle' ? 'Feature tile tutorial' : 'Considering Getting Kitsune Input?'}
       >
         {step === 'feature-toggle' ? (
           <>
@@ -70,37 +71,13 @@ export function StartupTutorial({
             </div>
           </>
         ) : (
-          <>
-            <div className="settings-menu-heading bridge-settings-modal-heading">
-              <div className="modal-heading-copy">
-                <Heart size={16} />
-                <span>One Tiny Ask</span>
-              </div>
-              <span className="startup-tutorial-step">2 / 2</span>
-            </div>
-            <div className="startup-tutorial-copy">
-              <h2>Enjoying DS5 Bridge?</h2>
-              <p>If this app makes your setup better, please consider supporting the work on Ko-fi.</p>
-            </div>
-            <button
-              className="startup-tutorial-kofi-button"
-              type="button"
-              aria-label="Support SundayMoments on Ko-fi"
-              onClick={onSupport}
-            >
-              <img src={kofiBadgeUrl} alt="" />
-            </button>
-            <div className="startup-tutorial-actions">
-              <button
-                type="button"
-                className="primary-action"
-                disabled={supportCountdown > 0}
-                onClick={onFinish}
-              >
-                {supportCountdown > 0 ? `Continue In ${supportCountdown}` : 'Continue'}
-              </button>
-            </div>
-          </>
+          <KitsuneInputAsk
+            countdown={askCountdown}
+            headingAside={<span className="startup-tutorial-step">2 / 2</span>}
+            onGet={onGetKitsuneInput}
+            onLearnMore={onLearnAboutKitsuneInput}
+            onContinue={onFinish}
+          />
         )}
       </section>
     </div>

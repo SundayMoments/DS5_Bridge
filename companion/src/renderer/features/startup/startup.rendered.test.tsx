@@ -6,6 +6,7 @@ import type { BridgeSnapshot } from '@shared/types';
 import { App } from '../../App';
 import { RendererLocalization } from '../../composition/RendererLocalization';
 import { buttonByText, click, fixtureSnapshot, installBridgeMock, installDomStubs } from '../../test-support/app-harness';
+import { KITSUNE_ASK_SHOWN_AT_STORAGE_KEY } from '../kitsune-promotion/kitsune-ask-schedule';
 import { STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY } from './startup-tutorial-storage';
 import { UI_THEME_PRESET_STORAGE_KEY } from '../../ui-theme-preferences';
 
@@ -74,9 +75,9 @@ describe('startup', () => {
     expect(window.localStorage.getItem(UI_THEME_PRESET_STORAGE_KEY)).toBe('dark');
   });
 
-  it('walks a first-time user through the feature tile and support steps once', async () => {
+  it('walks a first-time user through the feature tile and the Kitsune Input ask once', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    installBridgeMock(fixtureSnapshot());
+    const bridge = installBridgeMock(fixtureSnapshot());
     await mount();
 
     const featureStep = document.querySelector('[role="dialog"][aria-label="Feature tile tutorial"]');
@@ -87,8 +88,17 @@ describe('startup', () => {
     expect(next?.disabled).toBe(false);
     await click(next);
 
-    const supportStep = document.querySelector('[role="dialog"][aria-label="Support DS5 Bridge"]');
-    const continueButton = supportStep?.querySelector<HTMLButtonElement>('.startup-tutorial-actions .primary-action');
+    const askStep = document.querySelector('[role="dialog"][aria-label="Considering Getting Kitsune Input?"]');
+    expect(askStep?.querySelector('h2')?.textContent).toBe('Considering Getting Kitsune Input?');
+    expect(askStep?.textContent).not.toContain('Enjoying DS5 Bridge?');
+    // Showing the ask starts the month before the next one.
+    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(0);
+    await click(askStep!.querySelector('.kitsune-launch-offer-get'));
+    expect(bridge.fn('openExternal')).toHaveBeenCalledWith('https://ko-fi.com/s/d1f0a3b26f');
+    // A shorter launch offer: four of its features, its price, and its buttons.
+    expect(askStep?.querySelectorAll('.kitsune-ask-features li')).toHaveLength(4);
+    expect(askStep?.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
+    const continueButton = askStep?.querySelector<HTMLButtonElement>('.kitsune-ask-continue-button');
     expect(continueButton?.textContent).toBe('Continue In 5');
     expect(continueButton?.disabled).toBe(true);
     for (const remaining of [4, 3, 2, 1]) {

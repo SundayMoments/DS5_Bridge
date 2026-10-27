@@ -63,7 +63,10 @@ describe('Overview page', () => {
   it('asks for a second press before putting the controller to sleep', async () => {
     const bridge = installBridgeMock(fixtureSnapshot());
     const page = overviewPage(await renderApp());
-    const actions = page.querySelector('.overview-action-grid')!;
+    // As in Kitsune Input, Sleep Controller is the one action under the personas.
+    const actions = page.querySelector('.overview-quick-actions .overview-persona-grid + .overview-sleep-row')!;
+    expect([...actions.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Sleep Controller']);
+    expect(page.textContent).not.toMatch(/Test Haptics|Test Speaker|Listen Mic/);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
     await click(buttonByText(actions, 'Sleep Controller'));
