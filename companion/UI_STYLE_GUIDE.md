@@ -28,8 +28,9 @@ The shared grid values live in `styles/theme-tokens.css` under `:root, .shell`.
 - `--window-bar-height: 40px` and `--top-chrome-height: 56px` size the frameless window bar and the page heading clearance.
 - `--sidebar-width: 244px` is the navigation column. `--workspace-top-inset` and `--workspace-corner-radius: 12px` shape the workspace panel drawn by `.app-content::before`.
 - `--card-gap: 12px` is the gap between sibling cards.
-- `--card-radius: 4px` is the standard card radius for the flatter desktop style. The Settings page uses 12px grouped rows like Kitsune Input.
-- `--control-radius: 3px` is the standard radius for buttons, selects, toggles, and framed controls.
+- `--card-radius: 12px` is the card and panel radius, the same rounded panel system as Kitsune Input. Card headers use `calc(var(--card-radius) - 1px)` on their top corners.
+- `--control-radius: 6px` is the radius for buttons, selects, toggles, chips, feature icon tiles, and panels nested inside a card (framed sliders, the Overview slider list, the stick preview). Elements inset inside a control use `calc(var(--control-radius) - <inset>)` so their corners stay concentric.
+- Weights follow Kitsune Input too: page and card headings are `--font-weight-semibold`, buttons and preset rows `--font-weight-medium`.
 - `--card-padding: 16px` is the standard card interior padding.
 - `--feature-left-column: minmax(0, 1fr)` and `--feature-right-column: minmax(0, 1fr)` keep the main paired cards equal width.
 - `--feature-card-min-height: 250px` keeps feature cards aligned tab to tab.

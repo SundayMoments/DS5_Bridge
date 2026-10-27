@@ -330,6 +330,16 @@ describe('companion layout CSS', () => {
     }
   });
 
+  it('uses Kitsune Input rounded panels app-wide', () => {
+    const tokens = cssBlockIn(tokensSource, ':root {', '--card-radius:');
+    expect(tokens).toContain('--card-radius: 12px;');
+    expect(tokens).toContain('--control-radius: 6px;');
+    // One scale everywhere; Settings no longer carries its own radii.
+    expect(settingsPageStyles).not.toContain('--card-radius:');
+    expect(settingsSidebarStyles).not.toContain('--control-radius:');
+    expect(cssBlock('.remapping-pill', 'border-radius:')).toContain('border-radius: var(--control-radius);');
+  });
+
   it('has no Tips panel under the feature pages', () => {
     expect(styles).not.toContain('.feature-help-');
   });
@@ -483,7 +493,8 @@ describe('companion layout CSS', () => {
       'grid-template-rows: auto minmax(0, 1fr);'
     );
     expect(overviewSliderList).toContain('border: 1px solid var(--surface-border);');
-    expect(overviewSliderList).toContain('border-radius: var(--card-radius);');
+    expect(overviewSliderList).toContain('border-radius: var(--control-radius);');
+    expect(cssBlock('.framed-slider', 'border-radius:')).toContain('border-radius: var(--control-radius);');
     expect(overviewSliderList).toContain('padding: 16px 18px 12px;');
     expect(overviewSliderList).toContain('align-self: stretch;');
     expect(overviewSliderList).toContain('background: var(--surface-control-soft);');

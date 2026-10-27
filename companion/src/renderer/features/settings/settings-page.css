@@ -1,9 +1,3 @@
-/* Settings uses rounded, grouped rows like the shared panels. */
-.settings-page {
-  --card-radius: 12px;
-  --control-radius: 6px;
-}
-
 .control-page.settings-page {
   width: 100%;
   height: 100%;

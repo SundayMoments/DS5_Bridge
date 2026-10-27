@@ -61,7 +61,7 @@
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--surface-border);
-  border-radius: var(--card-radius);
+  border-radius: var(--control-radius);
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);

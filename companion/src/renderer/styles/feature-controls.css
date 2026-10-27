@@ -114,7 +114,7 @@
 .framed-slider {
   margin: 16px 0 16px;
   border: 1px solid var(--surface-border);
-  border-radius: var(--card-radius);
+  border-radius: var(--control-radius);
   padding: 16px 18px 12px;
   background: var(--surface-control-soft);
 }
@@ -182,7 +182,7 @@
   gap: 10px;
   color: var(--text-control);
   background: var(--surface-control-soft);
-  font-weight: var(--font-weight-strong);
+  font-weight: var(--font-weight-medium);
 }
 
 .segmented-row button {

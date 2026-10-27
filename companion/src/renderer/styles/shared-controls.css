@@ -195,7 +195,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
 .switch span {
   width: 18px;
   height: 18px;
-  border-radius: 2px;
+  border-radius: calc(var(--control-radius) - 3px);
   background: var(--text-control);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
   transform: translateX(0);

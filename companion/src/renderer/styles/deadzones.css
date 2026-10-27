@@ -15,7 +15,7 @@
 .deadzone-stick-preview {
   min-height: 128px;
   border: 1px solid var(--surface-border);
-  border-radius: var(--card-radius);
+  border-radius: var(--control-radius);
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;

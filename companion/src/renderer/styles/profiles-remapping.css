@@ -273,7 +273,7 @@
   min-height: 36px;
   padding: 3px;
   border: 1px solid var(--surface-border);
-  border-radius: 999px;
+  border-radius: var(--control-radius);
   display: grid;
   grid-template-columns: 36px 22px minmax(46px, 1fr);
   align-items: stretch;
@@ -331,7 +331,7 @@
 
 .remapping-pill-edge-compact .remapping-select .custom-select-button {
   border-left-color: transparent;
-  border-radius: 999px;
+  border-radius: calc(var(--control-radius) - 3px);
   grid-template-columns: minmax(0, 1fr) 14px;
   padding: 0 6px 0 7px;
 }
@@ -372,7 +372,7 @@
   height: 100%;
   min-height: 100%;
   padding-left: 0;
-  border-radius: 999px 0 0 999px;
+  border-radius: calc(var(--control-radius) - 3px) 0 0 calc(var(--control-radius) - 3px);
   background: var(--accent-muted);
 }
 
@@ -422,7 +422,7 @@
   padding: 0 6px 0 6px;
   border-width: 0 0 0 1px;
   border-color: var(--surface-divider);
-  border-radius: 0 999px 999px 0;
+  border-radius: 0 calc(var(--control-radius) - 3px) calc(var(--control-radius) - 3px) 0;
   grid-template-columns: minmax(0, 1fr) 12px;
   gap: 2px;
   background: var(--surface-control);

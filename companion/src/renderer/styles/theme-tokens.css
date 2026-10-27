@@ -30,8 +30,9 @@
   --workspace-corner-radius: 12px;
   --layout-gap: 0px;
   --card-gap: 12px;
-  --card-radius: 4px;
-  --control-radius: 3px;
+  /* Kitsune Input's rounded panel system: 12px cards, 6px controls and inner panels. */
+  --card-radius: 12px;
+  --control-radius: 6px;
   --card-padding: 16px;
   --feature-left-column: minmax(0, 1fr);
   --feature-right-column: minmax(0, 1fr);

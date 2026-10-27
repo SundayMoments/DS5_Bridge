@@ -160,7 +160,7 @@
   margin: 16px 0 12px;
   padding: 12px;
   border: 1px solid var(--surface-border);
-  border-radius: var(--card-radius);
+  border-radius: var(--control-radius);
   background: var(--surface-control-soft);
 }
 
@@ -519,7 +519,7 @@
   color: var(--text-control);
   background: transparent;
   font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-strong);
+  font-weight: var(--font-weight-medium);
   transition:
     color 160ms ease,
     background 180ms ease,
