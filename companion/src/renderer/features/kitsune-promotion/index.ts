@@ -14,6 +14,7 @@ export {
 } from './kitsune-ask-schedule';
 export { KITSUNE_ASK_COUNTDOWN_SECONDS, useKitsuneMonthlyAsk, type KitsuneMonthlyAskInput } from './use-kitsune-monthly-ask';
 export { KitsuneInputPromotionDialog, type KitsuneInputPromotionDialogProps } from './KitsuneInputPromotionDialog';
+export { KitsuneInputSupportCard, type KitsuneInputSupportCardProps } from './KitsuneInputSupportCard';
 export { KitsuneInputWordmark } from './KitsuneInputWordmark';
 export { KitsunePromotionBanner } from './KitsunePromotionBanner';
 export { KITSUNE_INPUT_PURCHASE_URL, KITSUNE_INPUT_URL } from './links';

@@ -6,6 +6,7 @@ import {
   IconUpload,
   IconUsb
 } from '@tabler/icons-react';
+import { KITSUNE_INPUT_PURCHASE_URL, KITSUNE_INPUT_URL, KitsuneInputSupportCard } from '../kitsune-promotion';
 import { SearchableSetting, type SettingsCategoryProps } from './SettingsCategoryContentSupport';
 import { LastRestartRow } from './LastRestartRow';
 
@@ -59,6 +60,12 @@ export function FirmwareSettings({ model, actions, matchingSettingIds }: Setting
 export function AboutSettings({ actions, matchingSettingIds }: SettingsCategoryProps) {
   return <>
     <h3 className="settings-menu-section-label">Help &amp; About</h3>
+    <SearchableSetting id="kitsune-input" matchingSettingIds={matchingSettingIds}>
+      <KitsuneInputSupportCard
+        onGet={() => actions.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
+        onLearnMore={() => actions.openExternal(KITSUNE_INPUT_URL)}
+      />
+    </SearchableSetting>
     <SearchableSetting id="discord" matchingSettingIds={matchingSettingIds}>
       <button type="button" className="settings-menu-link-row" onClick={() => actions.openExternal(DS5_BRIDGE_DISCORD_URL)}>
         <span className="settings-menu-link-icon" aria-hidden="true"><IconBrandDiscord size={18} /></span>

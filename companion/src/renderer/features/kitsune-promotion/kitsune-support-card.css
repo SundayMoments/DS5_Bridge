@@ -1,0 +1,144 @@
+/*
+ * The permanent Kitsune Input card in Help & About: the banner's fox and
+ * wordmark on a flat card, with Kitsune's orange only on the call to action.
+ */
+.kitsune-support-card {
+  --kitsune-orange: #ff6a18;
+  --kitsune-orange-hover: #ff7f3a;
+
+  margin-bottom: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--section-border);
+  border-radius: var(--card-radius);
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface-section);
+}
+
+.kitsune-support-logo {
+  width: 56px;
+  height: auto;
+}
+
+.kitsune-support-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.kitsune-support-copy .kitsune-promotion-wordmark {
+  font-size: var(--font-size-subtitle);
+}
+
+.kitsune-support-copy h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-strong);
+  line-height: 1.2;
+}
+
+.kitsune-support-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.kitsune-support-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.kitsune-support-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.kitsune-support-buttons button {
+  width: auto;
+  min-height: 40px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+}
+
+.kitsune-support-get {
+  border: 1px solid var(--kitsune-orange);
+  color: #fff;
+  background: var(--kitsune-orange);
+  box-shadow: none;
+}
+
+.kitsune-support-get:hover {
+  border-color: var(--kitsune-orange-hover);
+  background: var(--kitsune-orange-hover);
+}
+
+.kitsune-support-learn {
+  border-color: var(--surface-border-strong);
+  color: var(--text-primary);
+  background: var(--surface-control);
+  box-shadow: none;
+}
+
+.kitsune-support-learn:hover {
+  border-color: var(--kitsune-orange);
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
+}
+
+.kitsune-support-learn svg {
+  color: var(--kitsune-orange);
+}
+
+.kitsune-support-buttons button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.kitsune-support-price {
+  color: var(--text-muted);
+  font-size: var(--font-size-subtitle);
+}
+
+.kitsune-support-price strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The links under the card start their own rounded group. */
+.settings-page .kitsune-support-card + .settings-menu-link-row {
+  border-top-left-radius: var(--card-radius);
+  border-top-right-radius: var(--card-radius);
+}
+
+@media (max-width: 760px) {
+  .kitsune-support-card {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .kitsune-support-logo {
+    width: 48px;
+  }
+
+  .kitsune-support-actions {
+    grid-column: 1 / -1;
+    justify-items: start;
+  }
+
+  .kitsune-support-buttons {
+    justify-content: flex-start;
+  }
+}

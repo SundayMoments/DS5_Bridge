@@ -8,6 +8,7 @@ import { useSettingsNavigation } from './use-settings-navigation';
 import type { SettingsFocusTarget } from './settings-navigation';
 import type { SettingsPageActions, SettingsPageModel } from './types';
 import { DS5_BRIDGE_DISCORD_URL, DS5_BRIDGE_GITHUB_URL } from './SystemSettings';
+import { KITSUNE_INPUT_PURCHASE_URL, KITSUNE_INPUT_URL } from '../kitsune-promotion';
 
 let root: Root | null = null;
 
@@ -222,6 +223,18 @@ describe('Settings page', () => {
     expect(links[0]?.textContent).toContain('Official DS5 Bridge Discord');
     links.forEach((link) => act(() => link.click()));
     expect(vi.mocked(actions.openExternal).mock.calls).toEqual([[DS5_BRIDGE_DISCORD_URL], [DS5_BRIDGE_GITHUB_URL]]);
+  });
+
+  it('keeps a Kitsune Input card above the links in Help & About', () => {
+    const actions = createActions();
+    const host = render(<Harness model={baseModel()} actions={actions} />);
+    act(() => sectionButton(host, 'Help & About').click());
+    const card = host.querySelector<HTMLElement>('.kitsune-support-card')!;
+    expect(card.querySelector('h4')?.textContent).toBe('Consider supporting Kitsune Input');
+    expect(card.compareDocumentPosition(host.querySelector('.settings-menu-link-row')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    act(() => card.querySelector<HTMLButtonElement>('.kitsune-support-get')!.click());
+    act(() => card.querySelector<HTMLButtonElement>('.kitsune-support-learn')!.click());
+    expect(vi.mocked(actions.openExternal).mock.calls).toEqual([[KITSUNE_INPUT_PURCHASE_URL], [KITSUNE_INPUT_URL]]);
   });
 
   it('explains a missing bridge once and keeps bridge settings locked', () => {

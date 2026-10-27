@@ -70,6 +70,7 @@ export type SettingsSearchEntryId =
   | 'wake-on-lan'
   | 'pico-tools'
   | 'last-restart'
+  | 'kitsune-input'
   | 'github'
   | 'discord';
 
@@ -107,6 +108,7 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'wake-on-lan', label: 'Wake-on-LAN', category: 'pc-wake', keywords: 'wifi wi-fi network ethernet magic packet lan sleep shutdown router' },
   { id: 'pico-tools', label: 'Bridge Firmware', category: 'maintenance', keywords: 'pico bridge firmware update recovery erase mount flash nuke uf2' },
   { id: 'last-restart', label: 'Last Restart', category: 'maintenance', keywords: 'reset crash freeze watchdog reboot diagnostics bug report' },
+  { id: 'kitsune-input', label: 'Kitsune Input', category: 'about', keywords: 'support purchase fox ko-fi' },
   { id: 'github', label: 'GitHub', category: 'about', keywords: 'sunday moments profile developer source' },
   { id: 'discord', label: 'Support & Community', category: 'about', keywords: 'discord invite help server' }
 ];
