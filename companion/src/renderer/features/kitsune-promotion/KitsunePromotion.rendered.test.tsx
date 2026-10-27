@@ -75,17 +75,18 @@ describe('KitsuneInputLaunchOffer', () => {
     const text = offer()?.textContent ?? '';
     expect(offer()?.getAttribute('aria-modal')).toBe('true');
     expect(document.querySelector('#kitsune-launch-offer-title')?.textContent).toBe('Make your controller yours.');
-    expect(text).toContain('A separate Windows app from the developer of DS5 Bridge');
-    expect(text).toContain('Same Pico 2 W or Waveshare RP2350B-Plus-W bridge. Nothing else to buy.');
-    // The extra controllers stand out as logo chips: PlayStation for the
-    // DualShock 4, the Nintendo device mark for the Switch Pro Controller.
+    expect(text).toContain('A separate Windows app from the developer of DS5 Bridge, for the bridge you already own.');
+    // The extra controllers show their logos: PlayStation for the DualShock 4,
+    // the Nintendo device mark for the original Switch Pro Controller.
     const controllers = [...document.querySelectorAll('.kitsune-launch-offer-controllers li')];
     expect(controllers.map((item) => item.querySelector('strong')?.textContent)).toEqual(['DualShock 4', 'Switch Pro Controller']);
     expect(controllers[0]?.querySelector('.kitsune-launch-offer-controller-logo.playstation')).not.toBeNull();
-    expect(controllers[1]?.textContent).toContain('Original model');
+    expect(controllers[1]?.getAttribute('title')).toBe('Original model');
     expect(controllers.every((item) => item.querySelector('strong')?.getAttribute('data-l10n') === 'off')).toBe(true);
     expect(text).toContain('One-time purchase on Ko-fi');
-    expect(text).toContain('DS5 Bridge stays free and open source.');
+    // Compact: titles only, and no line that the summary already says.
+    expect(text).not.toContain('Nothing else to buy');
+    expect(document.querySelectorAll('.kitsune-launch-offer-features li > span:not(.kitsune-launch-offer-feature-icon)')).toHaveLength(0);
     // kitsuneinput.com: DS5 Bridge is a separate project, not a free tier.
     expect(text).not.toMatch(/trial|lite|upgrade|full version|free version/i);
     const features = [...document.querySelectorAll('.kitsune-launch-offer-features li')];
@@ -99,10 +100,12 @@ describe('KitsuneInputLaunchOffer', () => {
       'Xbox Series X Mode',
       'Kitsune Bar and Keyboard'
     ]);
-    expect(features.length % 2).toBe(0);
+    expect(features.length % 4).toBe(0);
+    // Kitsune Input's own icons, down to its Kitsune Bar fox mark.
+    expect(features.at(-1)?.querySelector('.kitsune-launch-offer-feature-mark')).not.toBeNull();
+    expect(features.slice(0, -1).every((item) => item.querySelector('.kitsune-launch-offer-feature-icon svg'))).toBe(true);
     // Never list what DS5 Bridge already does.
     expect(text).not.toMatch(/Audio Haptics|Adaptive Triggers|Button Remapping|PC Wake|Wake PC|Themes/);
-    expect(features.every((item) => item.querySelector('.kitsune-launch-offer-feature-copy span')?.textContent)).toBe(true);
     expect(document.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
     expect(document.querySelector('.kitsune-launch-offer-amount')?.getAttribute('data-l10n')).toBe('off');
     expect(document.querySelector('.kitsune-launch-offer-get')?.textContent).toBe('Get Kitsune Input');

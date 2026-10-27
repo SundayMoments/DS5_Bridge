@@ -1,118 +1,103 @@
-import type { ComponentType, CSSProperties } from 'react';
+import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import {
-  IconAdjustmentsHorizontal,
   IconArrowRight as ArrowRight,
+  IconBolt,
   IconBrandXbox,
-  IconCpu,
+  IconCards,
   IconDeviceNintendo,
   IconExternalLink,
   IconHandFinger,
-  IconLayersSubtract,
-  IconLayoutNavbar,
-  IconRotate360,
   IconStack2,
-  IconSwitchHorizontal
+  IconView360,
+  IconViewfinder
 } from '@tabler/icons-react';
 import playStationLogoUrl from '@product-assets/brand/playstation-logo.svg';
 import kitsuneInputLogoUrl from '../../assets/kitsune-input-logo.svg';
+import kitsuneBarMarkUrl from '../../assets/kitsune-persona.svg';
 import { KitsuneInputWordmark } from './KitsuneInputWordmark';
 import './kitsune-launch-offer.css';
 
 /** Kitsune Input's Ko-fi price; currency text stays out of the catalogs. */
 export const KITSUNE_INPUT_PRICE = '$7.99';
 
+type FeatureIcon = ComponentType<{ size?: number }>;
+
 interface LaunchOfferFeature {
   readonly title: string;
-  readonly detail: string;
-  readonly Icon: ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' }>;
+  readonly Icon: FeatureIcon;
+}
+
+/** Kitsune Input's own Kitsune Bar mark, drawn in the tile's color. */
+function KitsuneBarMark({ size = 24 }: { readonly size?: number }) {
+  return (
+    <span
+      className="kitsune-launch-offer-feature-mark"
+      style={{ '--feature-mark': `url("${kitsuneBarMarkUrl}")`, '--feature-mark-size': `${size}px` } as CSSProperties}
+    />
+  );
 }
 
 // Only what Kitsune Input adds: DS5 Bridge already has Audio Haptics,
 // adaptive triggers, button remapping, chords, Wake PC and themes. Wording
-// follows kitsuneinput.com. Keep an even count for the two-column grid.
+// follows kitsuneinput.com, and each icon is the one Kitsune Input uses for
+// that feature. Titles only, so the offer scans at a glance; keep a multiple
+// of four for the four-across tiles.
 export const LAUNCH_OFFER_FEATURES: readonly LaunchOfferFeature[] = [
-  {
-    title: 'Auto-Switching Per-Game Profiles',
-    detail: 'Your setup changes with the game you launch.',
-    Icon: IconSwitchHorizontal
-  },
-  {
-    title: 'Shift Layers',
-    detail: 'Hold a button for a second set of controls.',
-    Icon: IconLayersSubtract
-  },
-  {
-    title: 'Gyro Aim and Flick Stick',
-    detail: 'Motion aiming, activation and quick turns.',
-    Icon: IconRotate360
-  },
-  {
-    title: 'Touchpad Gestures',
-    detail: 'Swipe sequences that trigger any action.',
-    Icon: IconHandFinger
-  },
-  {
-    title: 'Multi-Actions',
-    detail: 'Actions built from button states, thresholds and repeats.',
-    Icon: IconStack2
-  },
-  {
-    title: 'Stick and Trigger Tuning',
-    detail: 'Deadzones, range and response curves.',
-    Icon: IconAdjustmentsHorizontal
-  },
-  {
-    // DS5 Bridge's Xbox persona is an Xbox 360 controller.
-    title: 'Xbox Series X Mode',
-    detail: 'Games see an Xbox Series X controller.',
-    Icon: IconBrandXbox
-  },
-  {
-    title: 'Kitsune Bar and Keyboard',
-    detail: 'An in-game overlay, and typing with your controller.',
-    Icon: IconLayoutNavbar
-  }
+  { title: 'Auto-Switching Per-Game Profiles', Icon: IconCards },
+  { title: 'Shift Layers', Icon: IconStack2 },
+  { title: 'Gyro Aim and Flick Stick', Icon: IconView360 },
+  { title: 'Touchpad Gestures', Icon: IconHandFinger },
+  { title: 'Multi-Actions', Icon: IconBolt },
+  { title: 'Stick and Trigger Tuning', Icon: IconViewfinder },
+  // DS5 Bridge's Xbox persona is an Xbox 360 controller.
+  { title: 'Xbox Series X Mode', Icon: IconBrandXbox },
+  { title: 'Kitsune Bar and Keyboard', Icon: KitsuneBarMark }
 ];
 
 export interface KitsuneInputOfferContentProps {
   /** Prefixes the title, summary and list ids, which label the dialog. */
   readonly idPrefix: string;
+  /** The headline; the ask asks its own question over the same offer. Passed as JSX so it is cataloged. */
+  readonly title: string;
+  /** Shown beside the headline in place of a close button, such as the tutorial's step count. */
+  readonly heroAside?: ReactNode;
   onGet(): void;
   onLearnMore(): void;
 }
 
 /**
  * The body of both Kitsune Input offers, the one-time launch offer and the
- * window-bar banner's dialog: what Kitsune adds, the bridge facts, and the price.
+ * window-bar banner's dialog: what Kitsune adds, the extra controllers, and the price.
  */
-export function KitsuneInputOfferContent({ idPrefix, onGet, onLearnMore }: KitsuneInputOfferContentProps) {
+export function KitsuneInputOfferContent({
+  idPrefix,
+  title,
+  heroAside,
+  onGet,
+  onLearnMore
+}: KitsuneInputOfferContentProps) {
   return (
     <>
-      <header className="kitsune-launch-offer-hero">
+      <header className={`kitsune-launch-offer-hero ${heroAside ? 'with-aside' : ''}`}>
         <img className="kitsune-launch-offer-logo" src={kitsuneInputLogoUrl} alt="" />
         <div className="kitsune-launch-offer-hero-copy">
           <KitsuneInputWordmark />
-          <h2 id={`${idPrefix}-title`}>Make your controller yours.</h2>
+          <h2 id={`${idPrefix}-title`}>{title}</h2>
           <p id={`${idPrefix}-summary`}>
             A separate Windows app from the developer of DS5 Bridge, for the bridge you already own.
           </p>
         </div>
+        {heroAside}
       </header>
 
-      <section className="kitsune-launch-offer-adds" aria-labelledby={`${idPrefix}-adds-title`}>
-        <h3 id={`${idPrefix}-adds-title`}>What Kitsune Input adds</h3>
-        <ul className="kitsune-launch-offer-features">
-          {LAUNCH_OFFER_FEATURES.map(({ title, detail, Icon }) => (
-            <li key={title}>
-              <span className="kitsune-launch-offer-feature-icon" aria-hidden="true"><Icon size={18} /></span>
-              <span className="kitsune-launch-offer-feature-copy">
-                <strong>{title}</strong>
-                <span>{detail}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <ul className="kitsune-launch-offer-features" aria-label="What Kitsune Input adds">
+        {LAUNCH_OFFER_FEATURES.map(({ title, Icon }) => (
+          <li key={title}>
+            <span className="kitsune-launch-offer-feature-icon" aria-hidden="true"><Icon size={24} /></span>
+            <strong>{title}</strong>
+          </li>
+        ))}
+      </ul>
 
       <section className="kitsune-launch-offer-compat" aria-labelledby={`${idPrefix}-compat-title`}>
         <h3 id={`${idPrefix}-compat-title`}>Also works with</h3>
@@ -125,22 +110,14 @@ export function KitsuneInputOfferContent({ idPrefix, onGet, onLearnMore }: Kitsu
             />
             <strong data-l10n="off">DualShock 4</strong>
           </li>
-          <li>
+          <li title="Original model">
             <span className="kitsune-launch-offer-controller-logo" aria-hidden="true">
               <IconDeviceNintendo size={22} />
             </span>
             <strong data-l10n="off">Switch Pro Controller</strong>
-            <span>Original model</span>
           </li>
         </ul>
       </section>
-
-      <ul className="kitsune-launch-offer-facts">
-        <li>
-          <IconCpu size={16} aria-hidden="true" />
-          <span>Same Pico 2 W or Waveshare RP2350B-Plus-W bridge. Nothing else to buy.</span>
-        </li>
-      </ul>
 
       <footer className="kitsune-launch-offer-footer">
         <div className="kitsune-launch-offer-price">
@@ -148,7 +125,6 @@ export function KitsuneInputOfferContent({ idPrefix, onGet, onLearnMore }: Kitsu
           <span className="kitsune-launch-offer-terms">
             <strong>One-time purchase on Ko-fi</strong>
             <span>Your purchase supports the developer of DS5 Bridge.</span>
-            <span>DS5 Bridge stays free and open source.</span>
           </span>
         </div>
         <div className="kitsune-launch-offer-actions">

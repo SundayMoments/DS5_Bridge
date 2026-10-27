@@ -632,8 +632,10 @@ describe('companion layout CSS', () => {
     // The banner's dialog reuses the launch offer's panel; its hide-for-good
     // option is a quiet link under the actions.
     const offerStyles = rendererStyleModule('features/kitsune-promotion/kitsune-launch-offer.css');
+    // Features are four-across tiles: a plain orange glyph over each title.
     expect(cssBlockIn(offerStyles, '.kitsune-launch-offer-features {', 'grid-template-columns:'))
-      .toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+      .toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(cssBlockIn(offerStyles, '.kitsune-launch-offer-feature-icon {', 'color:')).not.toContain('background');
     const dismiss = cssBlockIn(offerStyles, '.kitsune-promotion-dismiss {', 'background:');
     expect(dismiss).toContain('background: transparent;');
     expect(dismiss).toContain('color: var(--text-muted);');

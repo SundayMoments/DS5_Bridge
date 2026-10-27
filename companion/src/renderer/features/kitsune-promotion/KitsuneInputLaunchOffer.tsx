@@ -71,7 +71,12 @@ export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: Kitsune
         >
           {closeLocked ? <span>{closeLabel}</span> : <X size={18} aria-hidden="true" />}
         </button>
-        <KitsuneInputOfferContent idPrefix="kitsune-launch-offer" onGet={onGet} onLearnMore={onLearnMore} />
+        <KitsuneInputOfferContent
+          idPrefix="kitsune-launch-offer"
+          title="Make your controller yours."
+          onGet={onGet}
+          onLearnMore={onLearnMore}
+        />
       </section>
     </div>
   );

@@ -40,8 +40,8 @@ try {
   if (await featureTutorial.isVisible()) {
     await featureTutorial.getByRole('button', { name: 'Toggle example effect' }).click();
     await featureTutorial.getByRole('button', { name: 'Next' }).click();
-    const supportTutorial = page.getByRole('dialog', { name: 'Support DS5 Bridge' });
-    await supportTutorial.getByRole('button', { name: 'Continue' }).click({ timeout: 7000 });
+    const kitsuneAsk = page.getByRole('dialog', { name: 'Considering Getting Kitsune Input?' });
+    await kitsuneAsk.getByRole('button', { name: 'Continue' }).click({ timeout: 7000 });
   }
 
   const originalSettings = await page.evaluate(async () => {

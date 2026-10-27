@@ -57,7 +57,12 @@ export function KitsuneInputPromotionDialog({
         >
           <X size={18} aria-hidden="true" />
         </button>
-        <KitsuneInputOfferContent idPrefix="kitsune-promotion" onGet={onPurchase} onLearnMore={onLearnMore} />
+        <KitsuneInputOfferContent
+          idPrefix="kitsune-promotion"
+          title="Make your controller yours."
+          onGet={onPurchase}
+          onLearnMore={onLearnMore}
+        />
         <button
           type="button"
           className="kitsune-promotion-dismiss"

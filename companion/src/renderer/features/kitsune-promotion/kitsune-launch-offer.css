@@ -10,7 +10,6 @@
 .kitsune-launch-offer-modal {
   --kitsune-orange: #ff6a18;
   --kitsune-orange-hover: #ff7f3a;
-  --kitsune-orange-soft: color-mix(in srgb, var(--kitsune-orange) 14%, var(--surface-menu));
 
   position: relative;
   top: auto;
@@ -81,8 +80,7 @@
 
 .kitsune-launch-offer-logo {
   width: 72px;
-  height: 72px;
-  object-fit: contain;
+  height: auto;
 }
 
 .kitsune-launch-offer-hero-copy {
@@ -109,73 +107,67 @@
   text-wrap: pretty;
 }
 
-.kitsune-launch-offer-adds {
-  margin-top: 16px;
-}
-
-.kitsune-launch-offer-adds h3 {
-  margin: 0 0 10px;
-  color: var(--text-secondary);
-  font-size: var(--font-size-subtitle);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  line-height: 1.1;
-  text-transform: uppercase;
-}
-
+/*
+ * What Kitsune Input adds: four-across tiles, each a plain orange glyph over
+ * its title. No tinted icon square, so the tiles stay clean on any theme.
+ */
 .kitsune-launch-offer-features {
-  margin: 0;
+  margin: 18px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   list-style: none;
 }
 
 .kitsune-launch-offer-features li {
   min-width: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--surface-border-strong);
+  min-height: 92px;
+  padding: 14px 10px 12px;
+  border: 1px solid var(--surface-border);
   border-radius: var(--card-radius);
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
+  grid-template-rows: 24px auto;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  text-align: center;
   background: var(--surface-control);
 }
 
 .kitsune-launch-offer-feature-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--control-radius);
   display: grid;
   place-items: center;
   color: var(--kitsune-orange);
-  background: var(--kitsune-orange-soft);
 }
 
-.kitsune-launch-offer-feature-copy {
+.kitsune-launch-offer-feature-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Kitsune Input's Kitsune Bar fox, masked so it takes the glyph color. */
+.kitsune-launch-offer-feature-mark {
+  width: var(--feature-mark-size, 24px);
+  height: var(--feature-mark-size, 24px);
+  display: block;
+  background: currentColor;
+  -webkit-mask: var(--feature-mark) center / contain no-repeat;
+  mask: var(--feature-mark) center / contain no-repeat;
+}
+
+.kitsune-launch-offer-features strong {
   min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.kitsune-launch-offer-feature-copy strong {
   color: var(--text-strong);
   font-size: var(--font-size-body);
-  font-weight: var(--font-weight-strong);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.25;
-}
-
-.kitsune-launch-offer-feature-copy span {
-  color: var(--text-secondary);
-  font-size: var(--font-size-subtitle);
-  line-height: 1.35;
+  text-wrap: balance;
 }
 
 /* The controllers Kitsune Input adds: each logo beside its name, unframed. */
 .kitsune-launch-offer-compat {
-  margin-top: 14px;
+  margin-top: 18px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -236,28 +228,6 @@
   color: var(--text-muted);
   font-size: var(--font-size-subtitle);
   white-space: nowrap;
-}
-
-.kitsune-launch-offer-facts {
-  margin: 12px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-  list-style: none;
-}
-
-.kitsune-launch-offer-facts li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--text-primary);
-  font-size: var(--font-size-subtitle);
-  line-height: 1.35;
-}
-
-.kitsune-launch-offer-facts svg {
-  flex: 0 0 auto;
-  color: var(--kitsune-orange);
 }
 
 .kitsune-launch-offer-footer {
@@ -363,7 +333,6 @@
 .kitsune-ask-panel {
   --kitsune-orange: #ff6a18;
   --kitsune-orange-hover: #ff7f3a;
-  --kitsune-orange-soft: color-mix(in srgb, var(--kitsune-orange) 14%, var(--surface-menu));
 
   position: relative;
   top: auto;
@@ -389,23 +358,14 @@
   animation: modal-panel-in 160ms ease-out;
 }
 
-.kitsune-ask-hero {
-  grid-template-columns: 64px minmax(0, 1fr) auto;
-  align-items: start;
+/* With no close button, the tutorial's step count sits where the close button would. */
+.kitsune-launch-offer-hero.with-aside {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
   padding-right: 0;
 }
 
-.kitsune-ask-hero .kitsune-launch-offer-logo {
-  width: 64px;
-  height: auto;
-}
-
-.kitsune-ask-hero h2 {
-  font-size: calc(var(--font-size-title) * 1.4);
-}
-
-.kitsune-ask-features {
-  margin-top: 16px;
+.kitsune-launch-offer-hero.with-aside > :last-child {
+  align-self: start;
 }
 
 .kitsune-ask-continue {
@@ -478,6 +438,6 @@
 
 @media (max-width: 620px) {
   .kitsune-launch-offer-features {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

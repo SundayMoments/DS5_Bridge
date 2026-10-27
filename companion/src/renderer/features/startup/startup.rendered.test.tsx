@@ -96,7 +96,9 @@ describe('startup', () => {
     await click(askStep!.querySelector('.kitsune-launch-offer-get'));
     expect(bridge.fn('openExternal')).toHaveBeenCalledWith('https://ko-fi.com/s/d1f0a3b26f');
     // A shorter launch offer: four of its features, its price, and its buttons.
-    expect(askStep?.querySelectorAll('.kitsune-ask-features li')).toHaveLength(4);
+    // The banner's offer under its own question: all features and the extra controllers.
+    expect(askStep?.querySelectorAll('.kitsune-launch-offer-features li')).toHaveLength(8);
+    expect(askStep?.querySelectorAll('.kitsune-launch-offer-controllers li')).toHaveLength(2);
     expect(askStep?.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
     const continueButton = askStep?.querySelector<HTMLButtonElement>('.kitsune-ask-continue-button');
     expect(continueButton?.textContent).toBe('Continue In 5');
