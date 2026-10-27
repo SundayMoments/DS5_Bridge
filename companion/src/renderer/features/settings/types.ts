@@ -42,9 +42,11 @@ export interface SettingsPageModel {
     readonly error: string | null;
   };
   readonly wakeOnLan: {
-    /** Changes when the bridge connects or disconnects or the controller comes and goes. */
+    /** Changes when the bridge connects, disconnects or reconnects; the controller is tracked separately. */
     readonly connectionKey: string;
     readonly controllerConnected: boolean;
+    /** A bridge is attached but its firmware is too old for the app. */
+    readonly firmwareUpdateRequired: boolean;
   };
   readonly bridgeHealth: {
     readonly firmwareVersion: string | null;

@@ -118,9 +118,11 @@ import {
 import { WinUsbCompanionTransport } from './winusb-companion-transport';
 import { WakeOnLanService, wakeOnLanAckError, type WakeOnLanBridgeSession } from './wake-on-lan-service';
 import { WindowsWakeOnLanTargets, type WakeOnLanTargetsPort } from './wake-on-lan-targets';
+import { WakeOnLanReadinessService } from './wake-on-lan-readiness';
 import type {
   WakeOnLanConfigurationInput,
   WakeOnLanMetadata,
+  WakeOnLanReadiness,
   WakeOnLanTarget
 } from '../shared/wake-on-lan-types';
 
@@ -1362,6 +1364,7 @@ export class BridgeService extends EventEmitter {
   };
 
   private readonly wakeOnLan: WakeOnLanService;
+  private readonly wakeOnLanReadiness = new WakeOnLanReadinessService();
 
   constructor(
     private readonly settingsStore: SettingsStore,
@@ -3267,6 +3270,11 @@ export class BridgeService extends EventEmitter {
 
   getWakeOnLanTargets(refresh = false): Promise<WakeOnLanTarget[]> {
     return this.wakeOnLan.listTargets(refresh);
+  }
+
+  /** Read-only Windows checks for the adapter being set up; never needs the bridge. */
+  getWakeOnLanReadiness(targetMac: unknown, refresh = false): Promise<WakeOnLanReadiness> {
+    return this.wakeOnLanReadiness.get(targetMac, refresh);
   }
 
   configureWakeOnLan(input: WakeOnLanConfigurationInput): Promise<WakeOnLanMetadata> {

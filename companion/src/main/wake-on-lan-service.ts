@@ -21,6 +21,12 @@ import {
   wakeOnLanSupported,
   type WakeOnLanWireStatus
 } from '../shared/wake-on-lan-protocol';
+import {
+  WAKE_ON_LAN_CONNECTION_LOST_MESSAGE,
+  WAKE_ON_LAN_DISCOVERY_FAILED_MESSAGE,
+  WAKE_ON_LAN_RADIO_RESTART_MESSAGE,
+  WAKE_ON_LAN_RETIRED_REGION_MESSAGE
+} from '../shared/wake-on-lan-result';
 import type { WakeOnLanTargetsPort } from './wake-on-lan-targets';
 
 // Ported from Kitsune Input's Wake-on-LAN service, for the one bridge the app
@@ -72,11 +78,12 @@ export function wakeOnLanAckError(resultCode: number): WakeOperationError {
   }
 }
 
-export const WAKE_ON_LAN_CONNECTION_LOST_MESSAGE = 'The bridge connection was lost. Reconnect it, then try again.';
-export const WAKE_ON_LAN_DISCOVERY_FAILED_MESSAGE = 'Couldn’t read this PC’s Ethernet adapters. Refresh to try again.';
-export const WAKE_ON_LAN_RETIRED_REGION_MESSAGE = 'The saved Wi-Fi region isn’t available on this bridge’s radio. Choose another country, then test again.';
-/** Firmware reboots the bridge when Wi-Fi teardown fails, then reports Failed/RadioTeardown with the radio off. */
-export const WAKE_ON_LAN_RADIO_RESTART_MESSAGE = 'The bridge restarted because Wi-Fi could not stop safely.';
+export {
+  WAKE_ON_LAN_CONNECTION_LOST_MESSAGE,
+  WAKE_ON_LAN_DISCOVERY_FAILED_MESSAGE,
+  WAKE_ON_LAN_RADIO_RESTART_MESSAGE,
+  WAKE_ON_LAN_RETIRED_REGION_MESSAGE
+};
 
 type Operation = { transaction: number; started: number; stage: WakeOnLanStage; cancelled: boolean };
 

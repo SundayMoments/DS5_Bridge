@@ -136,8 +136,9 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
     focusTarget,
     picoFirmware: { message: picoFirmwareMessage, error: picoFirmwareError },
     wakeOnLan: {
-      connectionKey: `${snapshot.state}:${snapshot.settings.selectedBridgePath ?? ''}:${snapshot.status?.protocolVersion ?? ''}:${controllerConnected}`,
-      controllerConnected
+      connectionKey: `${snapshot.state}:${snapshot.settings.selectedBridgePath ?? ''}:${snapshot.status?.protocolVersion ?? ''}`,
+      controllerConnected,
+      firmwareUpdateRequired: snapshot.state === 'incompatible'
     },
     bridgeHealth: {
       firmwareVersion: snapshot.status?.firmwareVersion ?? null,

@@ -110,17 +110,27 @@ try {
     const current = window.__uiReview.snapshot();
     window.__uiReview.update({ status: { ...current.status, controllerConnected: false } });
   });
+  // Opens Settings > Wake PC with the Wake-on-LAN section expanded.
   async function openWakePc() {
     await openControlTab(page, 'Overview');
     await openControlTab(page, 'Settings');
     await page.locator('.settings-section-button', { hasText: 'Wake PC' }).click();
-    await page.locator('.wake-pc-panel').waitFor();
+    await page.locator('.wake-on-lan-settings').waitFor();
+    // Settings keeps the section's state between visits; expand it only when collapsed.
+    const collapsed = page.locator('.wake-on-lan-heading[aria-expanded="false"]');
+    if (await collapsed.count()) await collapsed.click();
+    await page.locator('.wake-on-lan-form').waitFor();
     await settle();
   }
   for (const theme of ['dark', 'light']) {
     await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
     await openWakePc();
-    await page.locator('.wake-pc-summary').waitFor();
+    // The saved network with the readiness checklist open.
+    const checklist = page.locator('.wake-on-lan-readiness-trigger[aria-expanded="false"]');
+    if (await checklist.count()) await checklist.click();
+    await page.locator('.wake-on-lan-readiness-row').first().waitFor();
+    await page.locator('.wake-on-lan-readiness').scrollIntoViewIfNeeded();
+    await settle();
     const file = `${theme}-100-wake-pc-saved.png`;
     await captureWindow(app, path.join(outputDir, file));
     shots.push(file);
@@ -131,15 +141,14 @@ try {
   for (const theme of ['light', 'dark']) {
     await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
     await openWakePc();
-    await page.locator('.wake-pc-form').waitFor();
     const file = `${theme}-100-wake-pc-setup.png`;
     await captureWindow(app, path.join(outputDir, file));
     shots.push(file);
   }
-  await page.getByLabel('Network name').fill('Home Network');
-  await page.getByLabel('Password', { exact: true }).fill('correct horse');
-  await page.getByRole('button', { name: 'Test and Save' }).click();
-  await page.locator('.wake-pc-progress li.current', { hasText: 'Testing Wi-Fi' }).waitFor({ timeout: 5000 });
+  await page.getByLabel('Wi-Fi name (SSID)').fill('Home Network');
+  await page.getByLabel('Wi-Fi password', { exact: true }).fill('correct horse');
+  await page.getByRole('button', { name: 'Test and save' }).click();
+  await page.locator('.wake-on-lan-operation', { hasText: 'Testing network settings' }).waitFor({ timeout: 5000 });
   await settle();
   await captureWindow(app, path.join(outputDir, 'dark-100-wake-pc-testing.png'));
   shots.push('dark-100-wake-pc-testing.png');

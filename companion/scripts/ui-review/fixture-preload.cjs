@@ -35,9 +35,22 @@ const settingSetters = {
 const statusDelayMs = Number(process.env.DS5_UI_REVIEW_STATUS_DELAY_MS ?? 0);
 // A bridge with Wake-on-LAN saved for this PC's onboard Ethernet adapter.
 const WAKE_TARGETS = [
-  { id: 'onboard', name: 'Realtek PCIe GbE Family Controller', mac: 'A8:A1:59:00:11:22', connected: true },
-  { id: 'dock', name: 'USB 3.0 to Gigabit Ethernet Adapter', mac: '00:E0:4C:68:01:23', connected: false }
+  { id: 'onboard', name: 'Realtek PCIe GbE Family Controller', mac: 'A8:A1:59:00:11:22', connected: true,
+    bus: 'pci', internal: true, defaultRoute: true },
+  { id: 'dock', name: 'USB 3.0 to Gigabit Ethernet Adapter', mac: '00:E0:4C:68:01:23', connected: false,
+    bus: 'usb', internal: false, defaultRoute: false }
 ];
+// The onboard adapter is ready; Fast Startup is on, so the checklist has one row to check.
+function wakeReadiness(targetMac) {
+  return {
+    available: true, targetMac, checkedAt: Date.now(), modernStandby: false, sleepS3: true, hibernate: true,
+    fastStartup: 'on', adapterPresent: true, adapterConnected: true, adapterBus: 'pci', adapterInternal: true,
+    adapterDefaultRoute: true, magicPacket: 'on', shutdownWake: 'on', modernStandbyMagicPacket: 'not-exposed',
+    energyEfficientEthernet: 'off', windowsWakeArmed: true, driverProvider: 'Realtek', driverVersion: '10.68.815.2023',
+    lastWakeSource: 'none', lastWakeBootType: 'full', lastWakeAt: null,
+    lastBootAt: new Date(Date.now() - 3_600_000).toISOString()
+  };
+}
 let wakeOnLan = {
   bridgeId: 'e6614c311b7d3a2f', supported: true,
   availableCountries: ['XX', 'AU', 'CA', 'DE', 'ES', 'FR', 'GB', 'IT', 'JP', 'KR', 'NL', 'PL', 'BR', 'SE', 'US'],
@@ -69,6 +82,7 @@ const handlers = {
   markKitsuneInputLaunchOfferShown: async () => updateSettings({ kitsuneInputLaunchOfferShown: true }),
   getWakeOnLan: async () => ({ ...wakeOnLan, controllerConnected: Boolean(snapshot.status?.controllerConnected) }),
   getWakeOnLanTargets: async () => WAKE_TARGETS,
+  getWakeOnLanReadiness: async (targetMac) => wakeReadiness(targetMac),
   setWakeOnLanEnabled: async (enabled) => setWakeOnLan({ enabled, stage: enabled ? 'waiting-for-sleep' : 'disabled' }),
   forgetWakeOnLan: async () => setWakeOnLan({
     configured: false, enabled: false, credentialPresent: false, ssid: '', country: '', targetMac: '', stage: 'not-configured'

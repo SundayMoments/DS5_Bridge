@@ -27,6 +27,7 @@ import type {
 import type {
   WakeOnLanConfigurationInput,
   WakeOnLanMetadata,
+  WakeOnLanReadiness,
   WakeOnLanTarget
 } from './shared/wake-on-lan-types';
 import type { WakeOnLanResult } from './shared/wake-on-lan-result';
@@ -208,6 +209,9 @@ const api = {
   ),
   getWakeOnLanTargets: async (refresh = false): Promise<WakeOnLanTarget[]> => unwrapWakeOnLanResult(
     await ipcRenderer.invoke('bridge:getWakeOnLanTargets', refresh)
+  ),
+  getWakeOnLanReadiness: async (targetMac: string, refresh = false): Promise<WakeOnLanReadiness> => unwrapWakeOnLanResult(
+    await ipcRenderer.invoke('bridge:getWakeOnLanReadiness', targetMac, refresh)
   ),
   configureWakeOnLan: async (input: WakeOnLanConfigurationInput): Promise<WakeOnLanMetadata> => unwrapWakeOnLanResult(
     await ipcRenderer.invoke('bridge:configureWakeOnLan', input)

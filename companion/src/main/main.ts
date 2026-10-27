@@ -1292,6 +1292,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:getWakeOnLanTargets', (_event, refresh: unknown) => wakeOnLanResult(
     () => service.getWakeOnLanTargets(refresh === true)
   ));
+  ipcMain.handle('bridge:getWakeOnLanReadiness', (_event, targetMac: unknown, refresh: unknown) => wakeOnLanResult(
+    () => service.getWakeOnLanReadiness(targetMac, refresh === true)
+  ));
   ipcMain.handle('bridge:configureWakeOnLan', (_event, input: unknown) => wakeOnLanResult(
     () => service.configureWakeOnLan(input as WakeOnLanConfigurationInput)
   ));

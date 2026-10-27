@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process';
 import { networkInterfaces } from 'node:os';
-import type { WakeOnLanTarget } from '../shared/wake-on-lan-types';
+import type { WakeOnLanAdapterBus, WakeOnLanTarget } from '../shared/wake-on-lan-types';
 import { normalizeWakeOnLanMac } from '../shared/wake-on-lan-protocol';
+import { AudioHelperUnavailableError, runAudioHelperOneShot } from './audio-helper-one-shot';
 
-// Ported from Kitsune Input's adapter discovery (its PowerShell path).
+// Ported from Kitsune Input's adapter discovery: the audio helper's
+// physical-Ethernet query, with PowerShell only when the helper cannot answer.
 
 export interface WakeOnLanTargetsPort {
   /** Rejects when discovery fails; the last good list is kept for ownership. */
@@ -17,6 +19,11 @@ export interface WakeOnLanTargetsPort {
 /** Discovery reruns at least this often, so a removed link-down adapter is noticed. */
 export const WAKE_ON_LAN_OWNERSHIP_TTL_MS = 60_000;
 
+function adapterBus(value: unknown): WakeOnLanAdapterBus {
+  const enumerator = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return !enumerator ? 'unknown' : enumerator === 'PCI' ? 'pci' : enumerator === 'USB' ? 'usb' : 'other';
+}
+
 export function parseWakeOnLanTargets(json: string): WakeOnLanTarget[] {
   const value: unknown = JSON.parse(json || '[]');
   const rows = Array.isArray(value) ? value : value ? [value] : [];
@@ -27,9 +34,12 @@ export function parseWakeOnLanTargets(json: string): WakeOnLanTarget[] {
     if (typeof item.InterfaceGuid !== 'string' || typeof item.Name !== 'string') continue;
     try {
       const mac = normalizeWakeOnLanMac(item.MacAddress);
-      if (!targets.some((target) => target.mac === mac)) {
-        targets.push({ id: item.InterfaceGuid, name: item.Name, mac, connected: item.Status === 'Up' });
-      }
+      // The helper adds bus, enclosure and route; the PowerShell fallback omits them.
+      if (!targets.some((target) => target.mac === mac)) targets.push({
+        id: item.InterfaceGuid, name: item.Name, mac, connected: item.Status === 'Up', bus: adapterBus(item.EnumeratorName),
+        internal: typeof item.InLocalMachineContainer === 'boolean' ? item.InLocalMachineContainer : null,
+        defaultRoute: typeof item.DefaultRoute === 'boolean' ? item.DefaultRoute : null
+      });
     } catch { /* Adapters without a usable hardware address are not wake targets. */ }
   }
   return targets.sort((a, b) => Number(b.connected) - Number(a.connected) || a.name.localeCompare(b.name));
@@ -114,7 +124,20 @@ export class WindowsWakeOnLanTargets implements WakeOnLanTargetsPort {
 const DISCOVERY_TIMEOUT_MS = 5000;
 const DISCOVERY_MAX_BUFFER = 64 * 1024;
 
-function readPhysicalEthernetAdapters(): Promise<string> {
+/**
+ * The audio helper reads GetIfTable2 with a physical-Ethernet filter that
+ * ignores link state and prints Get-NetAdapter-shaped JSON, plus
+ * EnumeratorName, InLocalMachineContainer and DefaultRoute. PowerShell remains
+ * only for a missing or older helper.
+ */
+async function readPhysicalEthernetAdapters(): Promise<string> {
+  try {
+    return await runAudioHelperOneShot(['--list-physical-ethernet-adapters'], {
+      timeoutMs: DISCOVERY_TIMEOUT_MS, maxBuffer: DISCOVERY_MAX_BUFFER
+    });
+  } catch (error) {
+    if (!(error instanceof AudioHelperUnavailableError)) throw error;
+  }
   // IANA interface type 6 is Ethernet; -Physical excludes virtual/VPN adapters.
   const script = "$ErrorActionPreference='Stop'; @(Get-NetAdapter -Physical | Where-Object { $_.InterfaceType -eq 6 } | Select-Object InterfaceGuid,Name,MacAddress,Status) | ConvertTo-Json -Compress";
   return new Promise((resolve, reject) => {

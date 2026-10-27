@@ -49,7 +49,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
     support: { usbSuspendDisconnect: true, wakeOnConnect: true, sleepController: true },
     focusTarget: null,
     picoFirmware: { message: null, error: null },
-    wakeOnLan: { connectionKey: 'connected', controllerConnected: false },
+    wakeOnLan: { connectionKey: 'connected', controllerConnected: false, firmwareUpdateRequired: false },
     bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null },
     ...overrides
   };
@@ -66,6 +66,7 @@ function createActions(): SettingsPageActions & Record<string, ReturnType<typeof
   const wakeOnLan = {
     getWakeOnLan: vi.fn(async () => ({ supported: false, availableCountries: [], configured: false } as never)),
     getWakeOnLanTargets: vi.fn(async () => []),
+    getWakeOnLanReadiness: vi.fn(),
     configureWakeOnLan: vi.fn(),
     setWakeOnLanEnabled: vi.fn(),
     forgetWakeOnLan: vi.fn(),

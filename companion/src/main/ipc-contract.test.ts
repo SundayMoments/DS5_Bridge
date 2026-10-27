@@ -92,7 +92,7 @@ describe('IPC contract', () => {
 
   it('exposes Wake-on-LAN through result-wrapped channels', () => {
     for (const channel of [
-      'getWakeOnLan', 'getWakeOnLanTargets', 'configureWakeOnLan',
+      'getWakeOnLan', 'getWakeOnLanTargets', 'getWakeOnLanReadiness', 'configureWakeOnLan',
       'setWakeOnLanEnabled', 'forgetWakeOnLan', 'cancelWakeOnLan'
     ]) {
       expect(preloadSource).toContain(`ipcRenderer.invoke('bridge:${channel}'`);
