@@ -20,8 +20,7 @@ afterEach(() => {
 
 const notifications = {
   toggleControllerNotifications: vi.fn(),
-  toggleLowBatteryNotifications: vi.fn(),
-  testNotification: vi.fn()
+  toggleLowBatteryNotifications: vi.fn()
 };
 
 function runtimeFor(snapshot: BridgeSnapshot, overrides: Partial<AppRuntime> = {}): AppRuntime {

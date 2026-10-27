@@ -58,7 +58,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
 function createActions(): SettingsPageActions & Record<string, ReturnType<typeof vi.fn>> {
   const names = [
     'setTheme', 'setUiScale', 'setTextScale', 'setLocale', 'toggleLaunchAtStartup', 'toggleBatteryTrayIcon',
-    'toggleControllerNotifications', 'toggleLowBatteryNotifications', 'testNotification', 'setIdleDisconnectTimeout',
+    'toggleControllerNotifications', 'toggleLowBatteryNotifications', 'setIdleDisconnectTimeout',
     'toggleIdleDisconnect', 'toggleUsbSuspendDisconnect', 'toggleControllerPowerSaving', 'toggleLed', 'togglePlayerLed',
     'toggleLightbarRestore', 'toggleEdgeProfileSwitching', 'toggleSleepShortcut', 'toggleVolumeShortcut',
     'toggleWakeOnConnect', 'mountPicoBootloader', 'flashPicoFirmware', 'nukePicoFlash', 'openExternal'
@@ -168,8 +168,8 @@ describe('Settings page', () => {
     expect(host.querySelector('[aria-label="Idle disconnect timeout"]')?.textContent).toContain('15 min');
 
     act(() => sectionButton(host, 'Notifications').click());
-    act(() => host.querySelector<HTMLButtonElement>('.settings-row-action')!.click());
-    expect(actions.testNotification).toHaveBeenCalledOnce();
+    expect([...host.querySelectorAll('.settings-page .settings-menu-row strong')].map((element) => element.textContent))
+      .toEqual(['Controller Status', 'Low Battery']);
 
     act(() => sectionButton(host, 'Appearance').click());
     expect([...host.querySelectorAll('.settings-page [aria-label]')].map((element) => element.getAttribute('aria-label')))

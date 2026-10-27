@@ -153,16 +153,5 @@ export function NotificationSettings({ model, actions, matchingSettingIds }: Set
         onToggle={actions.toggleLowBatteryNotifications}
       />
     </SearchableSetting>
-    <SearchableSetting id="test-notification" matchingSettingIds={matchingSettingIds}>
-      <div className="settings-menu-row">
-        <div className="settings-menu-copy">
-          <strong>Test Notification</strong>
-          <span>Show a sample Windows notification</span>
-        </div>
-        <button className="secondary-action settings-row-action" type="button" disabled={model.busy} onClick={actions.testNotification}>
-          Send Test
-        </button>
-      </div>
-    </SearchableSetting>
   </>;
 }

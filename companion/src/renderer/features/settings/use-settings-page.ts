@@ -14,7 +14,7 @@ type PicoFirmwareResult = { ok: boolean; cancelled?: boolean; message: string };
 
 export interface SettingsPageInput {
   /** Notification toggles are shared with the window bar's notifications menu. */
-  readonly notifications: Pick<SettingsPageActions, 'toggleControllerNotifications' | 'toggleLowBatteryNotifications' | 'testNotification'>;
+  readonly notifications: Pick<SettingsPageActions, 'toggleControllerNotifications' | 'toggleLowBatteryNotifications'>;
 }
 
 /**
@@ -94,7 +94,6 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
     )),
     toggleControllerNotifications: notifications.toggleControllerNotifications,
     toggleLowBatteryNotifications: notifications.toggleLowBatteryNotifications,
-    testNotification: notifications.testNotification,
     setIdleDisconnectTimeout: (minutes) => void runAction('idle-timeout', () => window.bridge.setIdleDisconnectTimeoutMinutes(minutes)),
     toggleIdleDisconnect: toggle('idle', (settings) => window.bridge.setIdleDisconnectEnabled(!settings.idleDisconnectEnabled)),
     toggleUsbSuspendDisconnect: toggle('usb-suspend', (settings) => (

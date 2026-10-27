@@ -65,7 +65,6 @@ export interface SettingsPageActions {
   toggleBatteryTrayIcon(): void;
   toggleControllerNotifications(): void;
   toggleLowBatteryNotifications(): void;
-  testNotification(): void;
   setIdleDisconnectTimeout(minutes: number): void;
   toggleIdleDisconnect(): void;
   toggleUsbSuspendDisconnect(): void;

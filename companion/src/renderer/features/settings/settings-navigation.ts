@@ -57,7 +57,6 @@ export type SettingsSearchEntryId =
   | 'theme'
   | 'controller-notifications'
   | 'low-battery-notifications'
-  | 'test-notification'
   | 'idle-disconnect'
   | 'pc-sleep-disconnect'
   | 'controller-power-saving'
@@ -95,7 +94,6 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'theme', label: 'Theme', category: 'appearance', keywords: 'appearance color dark light' },
   { id: 'controller-notifications', label: 'Controller Status', category: 'notifications', keywords: 'Notify when the controller connects or disconnects' },
   { id: 'low-battery-notifications', label: 'Low Battery', category: 'notifications', keywords: 'Notify when the battery reaches 20% or below' },
-  { id: 'test-notification', label: 'Test Notification', category: 'notifications', keywords: 'toast preview windows' },
   { id: 'idle-disconnect', label: 'Idle Disconnect', category: 'connection-power', keywords: 'controller timeout sleep minutes' },
   { id: 'pc-sleep-disconnect', label: 'PC Sleep Disconnect', category: 'connection-power', keywords: 'usb suspend windows' },
   { id: 'controller-power-saving', label: 'Controller Power Saving', category: 'connection-power', keywords: 'headphones haptics triggers light bar lightbar' },
