@@ -377,19 +377,18 @@ export function buildDevicesModel(input: {
       ? 'good'
       : input.bridgeConnected ? 'warn' : 'idle',
     pairingActive,
+    // Kitsune's wording: the label names the action, disabled while offline.
     pairingAction: {
       label: pairingActive || pairingPending
         ? 'Pairing...'
-        : !input.bridgeConnected
-          ? 'Bridge Not Connected'
-          : controllerConnected ? 'Disconnect & Pair New' : 'Enter Pairing Mode',
+        : controllerConnected ? 'Disconnect & Pair' : 'Pair Controller',
       title: !input.bridgeConnected
         ? 'Connect the bridge to manage controller pairing'
         : pairingActive
           ? 'Controller pairing is already active'
           : controllerConnected
-            ? 'Disconnect the current controller and enter pairing mode'
-            : 'Enter controller pairing mode',
+            ? 'Disconnect the current controller and start pairing'
+            : 'Start controller pairing',
       disabled: !input.bridgeConnected || pairingActive || input.pendingAction !== null,
       pending: pairingPending
     },

@@ -6,7 +6,7 @@ import {
   IconTrash as Trash2,
   IconX as X
 } from '@tabler/icons-react';
-import controllerImage from '@product-assets/controllers/dualsense-edge-front.svg';
+import { playStationControllerArt } from '../../common/playstation-controller-art';
 import type { DevicesModel } from './controller-devices';
 
 export interface ControllerDeviceRenameDialog {
@@ -176,7 +176,11 @@ export function ControllerDevicesPage({
                     </div>
                   </div>
                   <div className="trusted-device-art" aria-hidden="true">
-                    <img src={controllerImage} alt="" />
+                    <img
+                      className={`playstation-controller-art ${playStationControllerArt(device.controllerType).variant}`}
+                      src={playStationControllerArt(device.controllerType).source}
+                      alt=""
+                    />
                   </div>
                 </section>
               ))
@@ -187,6 +191,7 @@ export function ControllerDevicesPage({
               </div>
             )}
           </div>
+          <span className="trusted-device-scroll-fade" aria-hidden="true" />
         </div>
       </div>
 

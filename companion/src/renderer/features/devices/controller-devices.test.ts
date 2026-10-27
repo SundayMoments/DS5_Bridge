@@ -178,7 +178,7 @@ describe('Devices model', () => {
     });
 
     expect(model.healthLabel).toBe('Connected');
-    expect(model.pairingAction.label).toBe('Disconnect & Pair New');
+    expect(model.pairingAction.label).toBe('Disconnect & Pair');
     expect(model.cards.map((card) => card.label)).toEqual([
       'Current controller',
       'Last controller',
@@ -238,8 +238,8 @@ describe('Devices model', () => {
       pendingAction: null
     });
     expect(waiting.pairingAction).toMatchObject({
-      label: 'Enter Pairing Mode',
-      title: 'Enter controller pairing mode',
+      label: 'Pair Controller',
+      title: 'Start controller pairing',
       disabled: false
     });
 
@@ -251,7 +251,7 @@ describe('Devices model', () => {
       pendingAction: null
     });
     expect(offline.pairingAction).toMatchObject({
-      label: 'Bridge Not Connected',
+      label: 'Pair Controller',
       title: 'Connect the bridge to manage controller pairing',
       disabled: true
     });

@@ -42,7 +42,7 @@ describe('Devices page', () => {
     const bridge = installBridgeMock(fixtureSnapshot({ status: { controllerConnected: false } }));
     const host = await renderApp();
     const page = await openPage(host, 'devices');
-    await click(buttonByText(page, 'Enter Pairing Mode'));
+    await click(buttonByText(page, 'Pair Controller'));
     expect(bridge.fn('requestControllerScan')).toHaveBeenCalledOnce();
   });
 
@@ -51,7 +51,7 @@ describe('Devices page', () => {
     bridge.fn('requestControllerScan').mockRejectedValue(new Error('Bridge busy'));
     const host = await renderApp();
     const page = await openPage(host, 'devices');
-    await click(buttonByText(page, 'Enter Pairing Mode'));
+    await click(buttonByText(page, 'Pair Controller'));
     expect(page.querySelector('.devices-action-error')?.textContent).toBe('Bridge busy');
   });
 

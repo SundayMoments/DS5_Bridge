@@ -1,3 +1,9 @@
+/*
+ * Devices, aligned with Kitsune Input's page: a section heading, side-by-side
+ * pairing actions, and a two-column list of controller cards with official
+ * controller art. Kitsune's per-card profile, persona and appearance controls
+ * are not part of DS5 Bridge, so the cards end after their details.
+ */
 .devices-page {
   width: 100%;
   height: 100%;
@@ -10,14 +16,14 @@
 .feature-heading.devices-heading {
   min-height: 70px;
   margin-bottom: 0;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--card-radius);
+  border: 1px solid var(--section-border);
+  border-radius: 12px;
   padding: 14px 16px;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
-  background: var(--surface-card);
-  box-shadow: var(--shadow-panel);
+  background: var(--surface-section);
+  box-shadow: none;
 }
 
 .devices-heading-copy {
@@ -26,19 +32,20 @@
   text-align: left;
 }
 
-.devices-heading-icon {
+.devices-heading .devices-heading-icon {
   margin: 0;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  box-shadow: none;
 }
 
-.devices-heading .health-label {
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--surface-divider);
-  border-radius: var(--control-radius);
-  color: var(--text-control);
-  background: var(--surface-control-soft);
-  font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-strong);
+.devices-heading .devices-heading-icon > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.devices-heading h2 {
+  font-weight: var(--font-weight-semibold);
 }
 
 .devices-actions {
@@ -48,7 +55,7 @@
 
 .devices-action-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
   gap: 10px;
   min-height: 36px;
@@ -59,7 +66,10 @@
   width: 100%;
   min-height: 36px;
   padding: 0 12px;
+  border-radius: 6px;
+  box-shadow: none;
   font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
 
@@ -83,7 +93,7 @@
 .devices-action-error {
   min-height: 32px;
   border: 1px solid var(--danger-border);
-  border-radius: var(--control-radius);
+  border-radius: 6px;
   padding: 7px 10px;
   color: var(--danger);
   background: var(--danger-bg);
@@ -91,13 +101,53 @@
   line-height: 1.35;
 }
 
+/*
+ * The card list scrolls through the panel's right and bottom padding, so cards
+ * keep the heading's width whether or not the list overflows and scroll off the
+ * window edge instead of stopping above an empty margin. The scrollbar has a
+ * fixed 10px width so its stable gutter fits inside that padding. The app
+ * shell's inherited scrollbar-color would replace it with a native scrollbar.
+ */
 .trusted-device-scroll {
   min-height: 0;
-  height: 100%;
+  margin: 0 calc(-1 * var(--control-panel-inline-padding)) calc(-1 * var(--control-panel-bottom-padding)) 0;
+  padding-right: calc(var(--control-panel-inline-padding) - 10px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
+  scrollbar-color: auto;
+  scrollbar-gutter: stable;
+}
+
+.trusted-device-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.trusted-device-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.trusted-device-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+/*
+ * The bottom margin after the cards is also the scroll shadow, using Settings'
+ * fade to the page background. It sticks over cards that continue below and
+ * rests on empty space at the end of the list or when the cards fit, so it
+ * follows every layout change in the same frame without scroll state.
+ */
+.trusted-device-scroll-fade {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: block;
+  height: var(--control-panel-bottom-padding);
+  pointer-events: none;
+  background: linear-gradient(0deg, var(--app-bg-flat), transparent);
 }
 
 .trusted-device-grid {
@@ -105,34 +155,26 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-flow: row;
-  grid-auto-rows: minmax(170px, auto);
+  grid-auto-rows: minmax(150px, 1fr);
   gap: 10px;
   align-content: start;
-  padding: 0 2px 4px 0;
 }
 
 .trusted-device-card {
   position: relative;
   min-width: 0;
-  min-height: 170px;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--card-radius);
+  min-height: 150px;
+  border: 1px solid var(--section-border);
+  border-radius: 12px;
   padding: 12px 14px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(118px, 36%);
+  grid-template-columns: minmax(0, 1fr) minmax(138px, 39%);
+  grid-template-rows: minmax(min-content, 1fr);
   align-items: stretch;
-  gap: 10px;
+  gap: 12px;
   overflow: hidden;
-  background: var(--surface-card);
-  box-shadow: var(--shadow-panel);
-}
-
-.trusted-device-card.connected {
-  border-color: var(--success-border-strong);
-}
-
-.trusted-device-card.cached {
-  border-color: var(--surface-border-strong);
+  background: var(--surface-section);
+  box-shadow: none;
 }
 
 .trusted-device-menu-button {
@@ -143,41 +185,53 @@
   width: 32px;
   height: 32px;
   border: 1px solid var(--surface-border-strong);
-  border-radius: var(--control-radius);
+  border-radius: 6px;
   display: inline-grid;
   place-items: center;
   padding: 0;
   color: var(--text-control);
-  background: var(--surface-control);
-  box-shadow: var(--shadow-control);
+  background: var(--surface-section);
+  box-shadow: none;
   cursor: pointer;
+  opacity: 1;
 }
 
-.trusted-device-menu-button:hover {
+.trusted-device-menu-button:hover:not(:disabled) {
   border-color: var(--accent-border-strong);
-  color: var(--accent-text);
-  background: var(--accent-selected);
+  color: var(--text-strong);
+  background: var(--surface-control-opaque);
 }
 
-.trusted-device-menu {
+.trusted-device-card .trusted-device-menu-button:disabled {
+  color: var(--text-disabled);
+  border-color: var(--surface-border);
+  background-color: var(--surface-disabled);
+  background-image: none;
+  cursor: default;
+  opacity: 1;
+}
+
+.devices-page .trusted-device-menu {
   position: absolute;
   top: 46px;
   right: 12px;
   z-index: 2;
   width: 142px;
   border: 1px solid var(--surface-border-strong);
-  border-radius: var(--control-radius);
-  padding: 5px;
+  border-radius: 12px;
+  padding: 8px;
   display: grid;
-  gap: 3px;
-  background: var(--surface-menu);
+  gap: 4px;
+  background: var(--surface-popup);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-menu);
 }
 
 .trusted-device-menu button {
   min-height: 30px;
   border: 0;
-  border-radius: calc(var(--control-radius) - 1px);
+  border-radius: 6px;
   padding: 0 8px;
   display: inline-flex;
   align-items: center;
@@ -187,17 +241,28 @@
   background: transparent;
   font: inherit;
   font-size: var(--font-size-body);
-  font-weight: var(--font-weight-strong);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
 .trusted-device-menu button:hover:not(:disabled) {
-  color: var(--accent-text);
-  background: var(--accent-selected);
+  color: var(--text-strong);
+  background: var(--surface-control-hover);
 }
 
 .trusted-device-menu button.danger {
   color: var(--danger);
+}
+
+.trusted-device-menu button:disabled {
+  color: var(--text-disabled);
+  background-color: var(--surface-disabled-strong);
+  cursor: default;
+  opacity: 1;
+}
+
+.trusted-device-menu button.danger:disabled {
+  color: var(--text-disabled);
 }
 
 .trusted-device-menu button.danger:hover:not(:disabled) {
@@ -205,23 +270,22 @@
   background: var(--danger-selected);
 }
 
-.trusted-device-menu button:disabled {
-  color: var(--text-disabled);
-  background: var(--surface-disabled-strong);
-  cursor: default;
+.trusted-device-card.connected {
+  border-color: var(--success-border-strong);
+}
+
+.trusted-device-card.cached {
+  border-color: var(--surface-border-strong);
 }
 
 .trusted-device-empty {
   grid-column: 1 / -1;
-  min-height: 170px;
-  border: 1px dashed var(--surface-border-strong);
-  border-radius: var(--card-radius);
+  min-height: 150px;
   display: grid;
   align-content: center;
   gap: 6px;
   padding: 16px;
   color: var(--text-muted);
-  background: var(--surface-card);
 }
 
 .trusted-device-empty h3 {
@@ -242,6 +306,8 @@
 .trusted-device-copy {
   min-width: 0;
   height: 100%;
+  box-sizing: border-box;
+  padding-block: 0;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 3px;
@@ -249,21 +315,21 @@
 }
 
 .trusted-device-slot {
-  color: var(--accent);
+  color: var(--text-secondary);
   font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0;
 }
 
 .trusted-device-copy h3 {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  padding: 0 34px 2px 0;
   color: var(--text-primary);
   font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.22;
+  padding-bottom: 2px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -278,10 +344,11 @@
 .trusted-device-meta-list {
   align-self: end;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10em), 1fr));
+  gap: 4px 16px;
   min-width: 0;
-  margin-top: 6px;
+  margin-top: 4px;
+  font-size: var(--font-size-subtitle);
 }
 
 .trusted-device-meta-row {
@@ -293,21 +360,20 @@
 }
 
 .trusted-device-meta-row span {
-  color: var(--accent);
+  color: var(--text-secondary);
   font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0;
 }
 
 .trusted-device-meta-row strong {
   min-width: 0;
   overflow: hidden;
-  padding-bottom: 2px;
-  color: var(--text-secondary);
+  color: var(--text-control);
+  font-weight: var(--font-weight-medium);
   font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-strong);
   line-height: 1.24;
+  padding-bottom: 2px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -315,17 +381,25 @@
 .trusted-device-art {
   min-width: 0;
   min-height: 105px;
-  height: 100%;
+  padding-top: 36px;
   display: grid;
   align-items: end;
   justify-items: center;
 }
 
 .trusted-device-art img {
-  width: min(180px, 100%);
-  max-height: 124px;
+  width: min(207px, 100%);
+  height: auto;
+  aspect-ratio: 3 / 2;
   object-fit: contain;
+  image-rendering: auto;
   opacity: 0.9;
+}
+
+@media (max-width: 1020px) {
+  .trusted-device-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
@@ -334,10 +408,6 @@
   }
 
   .trusted-device-card {
-    grid-template-columns: minmax(0, 1fr) minmax(118px, 34%);
-  }
-
-  .trusted-device-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(128px, 34%);
   }
 }

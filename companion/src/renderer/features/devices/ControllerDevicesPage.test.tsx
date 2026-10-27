@@ -14,8 +14,8 @@ function devicesModel(): DevicesModel {
     healthTone: 'good',
     pairingActive: false,
     pairingAction: {
-      label: 'Disconnect & Pair New',
-      title: 'Disconnect the current controller and enter pairing mode',
+      label: 'Disconnect & Pair',
+      title: 'Disconnect the current controller and start pairing',
       disabled: false,
       pending: false
     },
@@ -82,7 +82,11 @@ describe('ControllerDevicesPage', () => {
     expect(html).toContain('AA:BB:CC:DD:EE:FF');
     expect(html).toContain('Standard key');
     expect(html).toContain('0x054C / 0x0DF2');
-    expect(html).toContain('Disconnect &amp; Pair New');
+    expect(html).toContain('Disconnect &amp; Pair');
+    // Sony's official art, picked by controller model, as in Kitsune Input.
+    expect(html).toContain('class="playstation-controller-art dualsense-edge"');
+    expect(html).toContain('dualsense-edge-official-color-front.svg');
+    expect(html).toContain('class="trusted-device-scroll-fade"');
     expect(html).toContain('trusted-device-menu');
     expect(html).toContain('Rename');
     expect(html).toContain('Delete');
