@@ -499,6 +499,51 @@ relocate_to_ram(
         "Relocating Opus double floor and acos to SRAM"
 )
 
+# Tier 5: whole objects whose code runs during play, so the main loop, the
+# Bluetooth stack, the radio driver, TinyUSB and their SDK helpers no longer
+# depend on the XIP cache. Boot, pairing, flash storage, bootloader
+# maintenance and the Wake-on-LAN engine stay in flash. Registered after the
+# per-function relocations above, which expect their original section names.
+function(relocate_objects_to_ram _suffixes _comment)
+    add_custom_command(TARGET ds5-bridge PRE_LINK
+            COMMAND ${CMAKE_COMMAND}
+                    "-DOBJROOT=${CMAKE_BINARY_DIR}/CMakeFiles/ds5-bridge.dir"
+                    "-DOBJCOPY=${CMAKE_OBJCOPY}"
+                    "-DOBJDUMP=${CMAKE_OBJDUMP}"
+                    "-DSUFFIXES=${_suffixes}"
+                    -P "${CMAKE_SOURCE_DIR}/cmake/relocate_objects_to_ram.cmake"
+            COMMENT "${_comment}"
+            VERBATIM
+    )
+endfunction()
+
+relocate_objects_to_ram(
+        "src/main.cpp.o@src/bt.cpp.o@src/usb.cpp.o@src/audio.cpp.o@src/watchdog_telemetry.cpp.o@src/wake_on_lan.cpp.o@src/button_functions.cpp.o@src/kitsune_button_gesture.cpp.o@src/persona/host_persona.cpp.o@src/persona/dualsense_persona.cpp.o@src/persona/ds4_persona.cpp.o@src/persona/xusb360_persona.cpp.o@src/persona/xusb360_usb.cpp.o@src/controller_packet_compositor.cpp.o@src/controller_output_policy.cpp.o@src/controller_output_rumble_state.cpp.o@src/controller_output_state.cpp.o@src/haptics_test_signal.cpp.o@src/firmware_log.cpp.o"
+        "Relocating the firmware's runtime objects to SRAM"
+)
+if(ENABLE_COMPANION)
+    relocate_objects_to_ram(
+            "src/companion.cpp.o@src/keyboard_tap_sequencer.cpp.o@src/host_bridge.cpp.o"
+            "Relocating the companion runtime objects to SRAM"
+    )
+endif()
+relocate_objects_to_ram(
+        "lib/btstack/src/hci.c.o@lib/btstack/src/hci_cmd.c.o@lib/btstack/src/l2cap.c.o@lib/btstack/src/l2cap_signaling.c.o@lib/btstack/src/btstack_util.c.o@lib/btstack/src/btstack_run_loop.c.o@lib/btstack/src/btstack_linked_list.c.o@lib/btstack/src/btstack_memory.c.o@lib/btstack/src/btstack_memory_pool.c.o@src/rp2_common/pico_btstack/btstack_run_loop_async_context.c.o"
+        "Relocating the BTstack HCI, L2CAP and run loop to SRAM"
+)
+relocate_objects_to_ram(
+        "generated/ds5-cyw43/cyw43_ll.c.o@${DS5_CYW43_CTRL_OBJECT}@generated/ds5-cyw43/cybt_shared_bus_driver.c.o@generated/ds5-cyw43/cybt_shared_bus.c.o@generated/ds5-cyw43/cyw43_bus_pio_spi.c.o@generated/ds5-cyw43/btstack_hci_transport_cyw43.c.o@src/rp2_common/pico_cyw43_driver/cyw43_driver.c.o@src/rp2_common/pico_cyw43_arch/cyw43_arch.c.o@src/rp2_common/pico_cyw43_arch/cyw43_arch_poll.c.o"
+        "Relocating the CYW43 radio driver to SRAM"
+)
+relocate_objects_to_ram(
+        "lib/tinyusb/src/tusb.c.o@lib/tinyusb/src/common/tusb_fifo.c.o@lib/tinyusb/src/device/usbd.c.o@lib/tinyusb/src/class/audio/audio_device.c.o@lib/tinyusb/src/class/hid/hid_device.c.o@lib/tinyusb/src/class/vendor/vendor_device.c.o@lib/tinyusb/src/portable/raspberrypi/rp2040/dcd_rp2040.c.o@lib/tinyusb/src/portable/raspberrypi/rp2040/rp2040_usb.c.o"
+        "Relocating the TinyUSB device stack to SRAM"
+)
+relocate_objects_to_ram(
+        "src/common/pico_time/time.c.o@src/rp2_common/hardware_timer/timer.c.o@src/rp2_common/hardware_gpio/gpio.c.o@src/rp2_common/hardware_pio/pio.c.o@src/rp2_common/hardware_watchdog/watchdog.c.o@src/rp2_common/pico_async_context/async_context_base.c.o@src/rp2_common/pico_async_context/async_context_poll.c.o@src/common/pico_sync/mutex.c.o@src/common/pico_sync/sem.c.o@src/common/pico_sync/critical_section.c.o@src/common/pico_sync/lock_core.c.o"
+        "Relocating SDK timing, GPIO, PIO, watchdog and sync helpers to SRAM"
+)
+
 # These strong RAM-resident definitions replace newlib's flash-backed memory
 # operations. Prevent the compiler from lowering their loops back into recursive
 # calls to the functions being defined.

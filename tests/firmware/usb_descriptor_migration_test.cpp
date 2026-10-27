@@ -2480,6 +2480,33 @@ void assert_bluetooth_input_is_handed_off_after_the_poll(std::filesystem::path c
     }
 }
 
+void assert_runtime_objects_run_from_sram(std::filesystem::path const &root) {
+    const auto cmake = read_text(root / "CMakeLists.txt");
+    const auto relocate_cmake = read_text(root / "cmake" / "relocate_objects_to_ram.cmake");
+    const auto verify_cmake = read_text(root / "cmake" / "verify_core1_sram.cmake");
+    const auto per_function = cmake.find("src/rp2_common/pico_double/double_math.c.o");
+    const auto whole_object = cmake.find("relocate_objects_to_ram(\n        \"src/main.cpp.o@src/bt.cpp.o@");
+    if (
+        per_function == std::string::npos
+        || whole_object == std::string::npos
+        || whole_object < per_function
+        || cmake.find("src/companion.cpp.o@") == std::string::npos
+        || cmake.find("\"lib/btstack/src/hci.c.o@") == std::string::npos
+        || cmake.find("\"generated/ds5-cyw43/cyw43_ll.c.o@${DS5_CYW43_CTRL_OBJECT}@") == std::string::npos
+        || cmake.find("lib/tinyusb/src/device/usbd.c.o@") == std::string::npos
+        || cmake.find("src/rp2_common/hardware_pio/pio.c.o@") == std::string::npos
+        || relocate_cmake.find("still has flash code") == std::string::npos
+        || relocate_cmake.find("\"@${response_file}\"") == std::string::npos
+        || verify_cmake.find("        \"main\"\n") == std::string::npos
+        || verify_cmake.find("\"cyw43_ll_has_work\"") == std::string::npos
+        || verify_cmake.find("\"pio_sm_set_pindirs_with_mask64\"") == std::string::npos
+    ) {
+        throw std::runtime_error(
+            "The main loop, Bluetooth stack, radio driver and USB stack must be relocated whole to SRAM after the per-function relocations"
+        );
+    }
+}
+
 } // namespace
 
 int main() {
@@ -2517,6 +2544,7 @@ int main() {
         assert_lightbar_restore_can_be_disabled(source_root);
         assert_dualsense_battery_buckets_preserve_power_state(source_root);
         assert_bluetooth_input_is_handed_off_after_the_poll(source_root);
+        assert_runtime_objects_run_from_sram(source_root);
 
         if (bcd_device != kExpectedUsbDeviceRevision) {
             std::cerr << "USB bcdDevice changed unexpectedly. Expected 0x" << std::hex

@@ -87,8 +87,10 @@ foreach(section_rename ${section_renames})
 endforeach()
 
 if(objcopy_arguments)
+    # -p keeps the compile timestamp, so ninja does not treat the rewritten
+    # object as stale and recompile it on every build.
     execute_process(
-            COMMAND "${OBJCOPY}" ${objcopy_arguments} "${matching_object}"
+            COMMAND "${OBJCOPY}" -p ${objcopy_arguments} "${matching_object}"
             RESULT_VARIABLE objcopy_result
             ERROR_VARIABLE objcopy_error
     )
