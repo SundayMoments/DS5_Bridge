@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_BUTTON_REMAP_PROFILE_ID, type RemapButtonId } from '@shared/protocol';
 import type { BridgeSnapshot } from '@shared/types';
 import type { AppRuntime } from '../../composition/app-runtime';
@@ -45,7 +45,10 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
   const [lastRemapControllerType, setLastRemapControllerType] = useState<KnownControllerType>(storedRemapControllerType);
   const [lastCustomRemapProfileId, setLastCustomRemapProfileId] = useState(() => readLastCustomRemapProfileId());
 
-  const remappingLayoutRef = useRef<HTMLDivElement>(null);
+  // The page loads as a separate chunk, so on the first visit it mounts after
+  // this hook already sees it active. Holding the layout element in state
+  // measures the callouts when the page actually arrives.
+  const [remappingLayoutElement, setRemappingLayoutElement] = useState<HTMLDivElement | null>(null);
   const remappingLeftSideRef = useRef<HTMLDivElement>(null);
   const remappingRightSideRef = useRef<HTMLDivElement>(null);
   const remappingArtRef = useRef<HTMLImageElement>(null);
@@ -89,14 +92,15 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
     }
   }, [liveControllerType, snapshot?.status?.controllerConnected]);
 
-  useEffect(() => {
+  // Measured before paint, so the lines never trail the artwork by a frame.
+  useLayoutEffect(() => {
     if (!active) {
       return undefined;
     }
 
     const leftSide = remappingLeftSideRef.current;
     const rightSide = remappingRightSideRef.current;
-    const layout = remappingLayoutRef.current;
+    const layout = remappingLayoutElement;
     const art = remappingArtRef.current;
     if (!leftSide || !rightSide || !layout || !art) {
       return undefined;
@@ -111,6 +115,14 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
       const leftRect = leftSideElement.getBoundingClientRect();
       const rightRect = rightSideElement.getBoundingClientRect();
       const layoutRect = layoutElement.getBoundingClientRect();
+      // A page without size (hidden or still laying out) would collapse every
+      // line onto one point; keep the last layout until a resize reports one.
+      if (
+        layoutElement.offsetWidth <= 0 || layoutElement.offsetHeight <= 0
+        || artRect.width <= 0 || artRect.height <= 0
+      ) {
+        return;
+      }
       const layoutScaleX = layoutRect.width / layoutElement.offsetWidth || 1;
       const layoutScaleY = layoutRect.height / layoutElement.offsetHeight || 1;
       const toLocalX = (clientX: number) => (clientX - layoutRect.left) / layoutScaleX;
@@ -201,19 +213,34 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
       }
     }
 
+    // Several observed elements resize together; measure once per frame.
+    let updateFrame: number | null = null;
+    const scheduleUpdate = () => {
+      if (updateFrame !== null) {
+        window.cancelAnimationFrame(updateFrame);
+      }
+      updateFrame = window.requestAnimationFrame(() => {
+        updateFrame = null;
+        updateRemapCalloutPositions();
+      });
+    };
+
     updateRemapCalloutPositions();
-    const resizeObserver = new ResizeObserver(updateRemapCalloutPositions);
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
     resizeObserver.observe(leftSideElement);
     resizeObserver.observe(rightSideElement);
     resizeObserver.observe(layoutElement);
     resizeObserver.observe(artElement);
-    window.addEventListener('resize', updateRemapCalloutPositions);
+    window.addEventListener('resize', scheduleUpdate);
 
     return () => {
+      if (updateFrame !== null) {
+        window.cancelAnimationFrame(updateFrame);
+      }
       resizeObserver.disconnect();
-      window.removeEventListener('resize', updateRemapCalloutPositions);
+      window.removeEventListener('resize', scheduleUpdate);
     };
-  }, [active, remappingLayoutAsset, showDualSenseEdgeRemapButtons]);
+  }, [active, remappingLayoutAsset, remappingLayoutElement, showDualSenseEdgeRemapButtons]);
 
   function selectButtonRemappingProfile(profileId: string) {
     void runAction('remap-profile', () => window.bridge.selectButtonRemappingProfile(profileId));
@@ -304,7 +331,7 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
     edgeRemapControlLayout,
     hoveredRemapButton,
     setHoveredRemapButton,
-    remappingLayoutRef,
+    remappingLayoutRef: setRemappingLayoutElement,
     remappingLeftSideRef,
     remappingRightSideRef,
     remappingArtRef,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BUTTON_REMAP_PROFILE } from '@shared/protocol';
 import {
   buttonByText,
@@ -26,6 +26,28 @@ async function submitDialog(host: HTMLElement) {
 }
 
 describe('Button Remapping page', () => {
+  it('draws the callout lines on the first visit, when the page chunk mounts after activation', async () => {
+    // jsdom has no layout; give every element a size so the page can measure.
+    const rect = { x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 430, width: 600, height: 430, toJSON: () => ({}) };
+    const restore = [
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect as DOMRect),
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(600),
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(430)
+    ];
+    try {
+      installBridgeMock(fixtureSnapshot());
+      const host = await renderApp();
+      const page = await openPage(host, 'remapping');
+
+      // 16 standard buttons plus the four DualSense Edge back and function buttons.
+      const lines = [...page.querySelectorAll('.remapping-callout-line')];
+      expect(lines).toHaveLength(20);
+      expect(lines[0].getAttribute('points')?.split(' ').length).toBeGreaterThan(2);
+    } finally {
+      restore.forEach((spy) => spy.mockRestore());
+    }
+  });
+
   it('lays out every DualSense Edge slot around the controller art', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();
