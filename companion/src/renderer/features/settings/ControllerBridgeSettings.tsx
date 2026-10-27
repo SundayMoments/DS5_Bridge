@@ -165,7 +165,7 @@ export function ShortcutSettings({ model, actions, matchingSettingIds }: Setting
         checked={settings.sleepKeybindEnabled}
         disabled={!model.connected || !model.support.sleepController || model.busy}
         unavailableReason={settingsUnsupportedMessage(model, model.support.sleepController)}
-        highlighted={model.focusTarget === 'sleep-shortcut'}
+        highlighted={model.focusTarget === 'sleep-shortcut' || model.focusTarget === 'shortcuts'}
         onToggle={actions.toggleSleepShortcut}
       />
     </SearchableSetting>
@@ -184,7 +184,7 @@ export function ShortcutSettings({ model, actions, matchingSettingIds }: Setting
         )}
         checked={settings.speakerVolumeShortcutEnabled}
         disabled={!model.connected || model.busy}
-        highlighted={model.focusTarget === 'volume-shortcut'}
+        highlighted={model.focusTarget === 'volume-shortcut' || model.focusTarget === 'shortcuts'}
         onToggle={actions.toggleVolumeShortcut}
       />
     </SearchableSetting>

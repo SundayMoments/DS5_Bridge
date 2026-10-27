@@ -1,4 +1,5 @@
-export type SettingsFocusTarget = 'controller-power-saving' | 'sleep-shortcut' | 'volume-shortcut' | 'language';
+/** A setting another page links to; 'shortcuts' frames every controller shortcut. */
+export type SettingsFocusTarget = 'controller-power-saving' | 'sleep-shortcut' | 'volume-shortcut' | 'shortcuts' | 'language';
 
 export const SETTINGS_CATEGORIES = [
   { id: 'app', label: 'App' },
@@ -137,6 +138,6 @@ export function searchSettings(
 export function settingsCategoryForFocusTarget(target: SettingsFocusTarget | null): SettingsCategoryId | null {
   if (target === 'language') return 'app';
   if (target === 'controller-power-saving') return 'connection-power';
-  if (target === 'sleep-shortcut' || target === 'volume-shortcut') return 'input';
+  if (target === 'sleep-shortcut' || target === 'volume-shortcut' || target === 'shortcuts') return 'input';
   return null;
 }

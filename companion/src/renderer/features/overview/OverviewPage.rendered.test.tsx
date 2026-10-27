@@ -131,4 +131,19 @@ describe('Overview page', () => {
     });
     expect(host.querySelector('#control-panel-settings.active')).not.toBeNull();
   });
+
+  it('opens Settings › Shortcuts with every shortcut framed when none are on', async () => {
+    installBridgeMock(fixtureSnapshot({
+      settings: { sleepKeybindEnabled: false, speakerVolumeShortcutEnabled: false }
+    }));
+    const host = await renderApp();
+    const summary = overviewPage(host).querySelector('.overview-status-panel')!;
+    await click(buttonByText(summary, 'None enabled'));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    expect(host.querySelector('#control-panel-settings.active')).not.toBeNull();
+    expect([...host.querySelectorAll('.settings-page .settings-menu-row-highlight strong')].map((label) => label.textContent))
+      .toEqual(['Sleep Shortcut', 'Volume Shortcut']);
+  });
 });

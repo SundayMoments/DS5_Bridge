@@ -173,23 +173,22 @@
   line-height: 1.35;
 }
 
-/* The controllers Kitsune Input adds, as logo chips beside their label. */
+/* The controllers Kitsune Input adds: each logo beside its name, unframed. */
 .kitsune-launch-offer-compat {
   margin-top: 14px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 8px 18px;
 }
 
+/* Reads as the start of a sentence, not a section heading. */
 .kitsune-launch-offer-compat h3 {
   margin: 0;
   color: var(--text-secondary);
-  font-size: var(--font-size-subtitle);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  line-height: 1.1;
-  text-transform: uppercase;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
 }
 
 .kitsune-launch-offer-controllers {
@@ -197,19 +196,15 @@
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 26px;
   list-style: none;
 }
 
 .kitsune-launch-offer-controllers li {
-  min-height: 42px;
-  padding: 0 14px 0 8px;
-  border: 1px solid var(--surface-border-strong);
-  border-radius: var(--card-radius);
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  background: var(--surface-control);
+  gap: 9px;
 }
 
 .kitsune-launch-offer-controller-logo {

@@ -334,7 +334,9 @@ export function OverviewPage({
                 </button>
               ))
             ) : (
-              <span className="overview-chip muted">None enabled</span>
+              <button className="overview-chip muted" type="button" onClick={() => onSettingsFocusRequest('shortcuts')}>
+                None enabled
+              </button>
             )}
           </div>
         </div>
