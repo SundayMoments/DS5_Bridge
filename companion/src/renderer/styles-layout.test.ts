@@ -577,12 +577,26 @@ describe('companion layout CSS', () => {
       .toContain('color: var(--kitsune-banner-copy);');
     expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: var(--font-size-subtitle);'))
       .toContain('color: var(--kitsune-banner-wordmark);');
-    expect(cssBlock('.kitsune-promotion-banner:hover', 'background: var(--kitsune-banner-bg-hover);'))
-      .not.toContain('transform');
-    expect(cssBlock('.kitsune-promotion-banner::before', 'rgba(255, 245, 236, 0.24)'))
-      .toContain('transform: translateX(-240%) skewX(-18deg);');
+    const hover = cssBlock('.kitsune-promotion-banner:hover', 'background: var(--kitsune-banner-bg-hover);');
+    expect(hover).not.toContain('transform');
+    // A warm underglow and outer glow on hover.
+    expect(hover).toContain('inset 0 -10px 16px -12px rgba(255, 106, 24, 0.75)');
+    // The glint: a white core inside a warm halo, screened over the banner.
+    const glint = cssBlock('.kitsune-promotion-banner::before', 'rgba(255, 255, 255, 0.78) 50%');
+    expect(glint).toContain('transform: translateX(-160%) skewX(-20deg);');
+    expect(glint).toContain('mix-blend-mode: screen;');
     expect(cssBlock('.kitsune-promotion-banner:hover::before,', 'animation: kitsune-promotion-gloss-wipe'))
-      .toContain('animation: kitsune-promotion-gloss-wipe 760ms cubic-bezier(0.22, 0.65, 0.32, 1) 1;');
+      .toContain('animation: kitsune-promotion-gloss-wipe 1200ms cubic-bezier(0.45, 0.05, 0.25, 1) 1;');
+    // The edge light traces the inner rim once.
+    expect(cssBlock('.kitsune-promotion-banner::after', 'from var(--kitsune-edge-angle)'))
+      .toContain('mask-composite: exclude;');
+    expect(cssBlock('.kitsune-promotion-banner:hover::after,', 'animation: kitsune-promotion-edge-run'))
+      .toContain('animation: kitsune-promotion-edge-run 1300ms');
+    // Reduced motion keeps the glow but drops every movement.
+    const reducedMotion = rendererStyleModule('styles/app-shell.css')
+      .slice(rendererStyleModule('styles/app-shell.css').indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reducedMotion).toContain('.kitsune-promotion-banner:hover::after');
+    expect(reducedMotion).toContain('animation: none;');
     expect(cssBlock('.kitsune-promotion-feature-grid', 'grid-template-columns: repeat(2, minmax(0, 1fr));'))
       .toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
     expect(cssBlock('.kitsune-promotion-actions', 'grid-template-columns: repeat(2, minmax(0, 1fr));'))

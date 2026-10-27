@@ -26,7 +26,8 @@
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
     "layout:check": "npm run build && node scripts/layout-check.mjs",
     "ui:review": "npm run build:app && node scripts/ui-review.mjs",
-    "perf:renderer": "npm run build:app && node scripts/renderer-perf.mjs"
+    "perf:renderer": "npm run build:app && node scripts/renderer-perf.mjs",
+    "ui:banner": "npm run build:app && node scripts/ui-review/banner-frames.mjs"
   },
   "build": {
     "appId": "io.github.sundaymoments.ds5bridge",

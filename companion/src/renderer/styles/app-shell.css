@@ -53,19 +53,55 @@
   filter: none !important;
 }
 
-/* The Kitsune Input promotion keeps its own dark banner and orange edge in every theme. */
+/*
+ * The Kitsune Input promotion keeps its own dark banner and orange edge in
+ * every theme. Hover (or keyboard focus) plays one premium pass: a crisp glint
+ * with a warm halo sweeps across, a light runs once around the inner edge, the
+ * banner picks up a warm underglow, and the fox tilts. Only transform, opacity
+ * and a registered angle animate, so the pass stays on the compositor.
+ */
+@property --kitsune-edge-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
 @keyframes kitsune-promotion-gloss-wipe {
   0% {
-    transform: translateX(-240%) skewX(-18deg);
+    transform: translateX(-160%) skewX(-20deg);
     opacity: 0;
   }
 
-  18% {
-    opacity: 0.72;
+  12% {
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 1;
   }
 
   100% {
-    transform: translateX(520%) skewX(-18deg);
+    transform: translateX(320%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes kitsune-promotion-edge-run {
+  0% {
+    --kitsune-edge-angle: 200deg;
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 1;
+  }
+
+  100% {
+    --kitsune-edge-angle: 560deg;
     opacity: 0;
   }
 }
@@ -83,39 +119,100 @@
   gap: 7px;
   color: var(--kitsune-banner-wordmark);
   background: var(--kitsune-banner-bg);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  /* A glassy top bevel over a faint inner rim. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025);
   overflow: hidden;
+  isolation: isolate;
   white-space: nowrap;
   -webkit-app-region: no-drag;
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease,
+    box-shadow 320ms ease;
 }
 
+/* The sweeping glint: a crisp white core inside a warm orange halo. */
 .kitsune-promotion-banner::before {
   content: "";
   position: absolute;
-  top: -55%;
-  bottom: -55%;
+  z-index: 1;
+  top: -60%;
+  bottom: -60%;
   left: 0;
-  width: 22%;
+  width: 34%;
   pointer-events: none;
   background: linear-gradient(
     90deg,
-    transparent,
-    rgba(255, 245, 236, 0.24),
-    transparent
+    transparent 0%,
+    rgba(255, 140, 64, 0.1) 22%,
+    rgba(255, 196, 150, 0.28) 40%,
+    rgba(255, 245, 236, 0.24) 46%,
+    rgba(255, 255, 255, 0.78) 50%,
+    rgba(255, 245, 236, 0.24) 54%,
+    rgba(255, 196, 150, 0.28) 60%,
+    rgba(255, 140, 64, 0.1) 78%,
+    transparent 100%
   );
+  mix-blend-mode: screen;
   opacity: 0;
-  transform: translateX(-240%) skewX(-18deg);
+  transform: translateX(-160%) skewX(-20deg);
+}
+
+/* The edge light: a bright arc traced once around the inner rim. */
+.kitsune-promotion-banner::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: 5px;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--kitsune-edge-angle),
+    transparent 0deg,
+    transparent 236deg,
+    rgba(255, 128, 48, 0.55) 276deg,
+    rgba(255, 236, 220, 0.95) 300deg,
+    rgba(255, 128, 48, 0.55) 324deg,
+    transparent 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
 }
 
 .kitsune-promotion-banner:hover {
-  border-color: #ff5c00;
+  border-color: #ff6a18;
   background: var(--kitsune-banner-bg-hover);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -10px 16px -12px rgba(255, 106, 24, 0.75),
+    0 0 0 1px rgba(255, 92, 0, 0.22),
+    0 6px 18px -6px rgba(255, 92, 0, 0.55);
 }
 
 .kitsune-promotion-banner:hover::before,
 .kitsune-promotion-banner:focus-visible::before {
-  animation: kitsune-promotion-gloss-wipe 760ms cubic-bezier(0.22, 0.65, 0.32, 1) 1;
+  animation: kitsune-promotion-gloss-wipe 1200ms cubic-bezier(0.45, 0.05, 0.25, 1) 1;
+}
+
+.kitsune-promotion-banner:hover::after,
+.kitsune-promotion-banner:focus-visible::after {
+  animation: kitsune-promotion-edge-run 1300ms cubic-bezier(0.45, 0.1, 0.25, 1) 1;
+}
+
+.kitsune-promotion-banner:active {
+  transform: translateY(1px) scale(0.99);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -8px 14px -12px rgba(255, 106, 24, 0.8),
+    0 0 0 1px rgba(255, 92, 0, 0.2),
+    0 3px 10px -6px rgba(255, 92, 0, 0.5);
+  transition-duration: 80ms;
 }
 
 .kitsune-promotion-banner:focus-visible {
@@ -129,6 +226,15 @@
   flex: 0 0 auto;
   object-fit: contain;
   filter: drop-shadow(0 2px 5px rgba(255, 92, 0, 0.24));
+  transition:
+    transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 320ms ease;
+}
+
+.kitsune-promotion-banner:hover > img,
+.kitsune-promotion-banner:focus-visible > img {
+  transform: translateY(-1px) rotate(-8deg) scale(1.1);
+  filter: drop-shadow(0 3px 7px rgba(255, 92, 0, 0.5));
 }
 
 .kitsune-promotion-banner-copy {
@@ -137,6 +243,32 @@
   font-weight: var(--font-weight-strong);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  transition: color 220ms ease;
+}
+
+.kitsune-promotion-banner:hover .kitsune-promotion-banner-copy,
+.kitsune-promotion-banner:focus-visible .kitsune-promotion-banner-copy {
+  color: var(--kitsune-banner-wordmark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kitsune-promotion-banner,
+  .kitsune-promotion-banner > img {
+    transition: none;
+  }
+
+  .kitsune-promotion-banner:hover::before,
+  .kitsune-promotion-banner:focus-visible::before,
+  .kitsune-promotion-banner:hover::after,
+  .kitsune-promotion-banner:focus-visible::after {
+    animation: none;
+  }
+
+  .kitsune-promotion-banner:hover > img,
+  .kitsune-promotion-banner:focus-visible > img,
+  .kitsune-promotion-banner:active {
+    transform: none;
+  }
 }
 
 .kitsune-promotion-wordmark {
