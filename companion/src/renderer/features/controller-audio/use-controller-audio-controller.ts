@@ -77,7 +77,6 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
   const outputControlLower = headsetOutputDetected ? 'headphones' : 'speaker';
   const outputPresetLower = headsetOutputDetected ? 'headphones' : 'speaker';
   const duplexMicEnabled = Boolean(snapshot?.settings.duplexMicEnabled);
-  const audioEnabled = speakerEnabled || duplexMicEnabled;
   const audioPathLabel = personaTransitionActive
     ? 'Switching Mode'
     : !connected
@@ -373,21 +372,6 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
     void runAction('speaker-enabled', () => window.bridge.setSpeakerEnabled(!snapshot.settings.speakerEnabled));
   }
 
-  function toggleAudioEnabled() {
-    if (!snapshot) return;
-    const enabled = !(snapshot.settings.speakerEnabled || snapshot.settings.duplexMicEnabled);
-    void runAction('audio-enabled', async () => {
-      let next = snapshot;
-      if (next.settings.speakerEnabled !== enabled) {
-        next = await window.bridge.setSpeakerEnabled(enabled);
-      }
-      if (!enabled && next.settings.duplexMicEnabled) {
-        next = await window.bridge.setDuplexMicEnabled(false);
-      }
-      return next;
-    });
-  }
-
   function toggleDuplexMicEnabled() {
     if (!snapshot) return;
     void runAction('duplex-mic-enabled', () => (
@@ -453,7 +437,6 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
     outputControlLower,
     outputPresetLower,
     duplexMicEnabled,
-    audioEnabled,
     audioPathLabel,
     audioPathTooltip,
     audioPathTone,
@@ -481,7 +464,6 @@ export function useControllerAudioController(runtime: AppRuntime, { lightbarComm
     runTestSpeaker,
     runTestMic,
     toggleSpeakerEnabled,
-    toggleAudioEnabled,
     toggleDuplexMicEnabled,
     toggleMicMute,
     syncSnapshot

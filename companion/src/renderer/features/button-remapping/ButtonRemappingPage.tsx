@@ -43,8 +43,10 @@ export function ButtonRemappingPage({ active, controller, pendingAction }: Butto
     selectedRemapProfileId,
     remapProfileOptions,
     selectedRemapProfileIsDefault,
+    remapProfileToggle,
     remappingLayoutAsset,
     selectButtonRemappingProfile,
+    toggleButtonRemappingProfile,
     setButtonRemap,
     restoreButtonRemappingDefaults,
     renameButtonRemappingProfile,
@@ -62,7 +64,18 @@ export function ButtonRemappingPage({ active, controller, pendingAction }: Butto
     >
         <div className="feature-heading studio-feature-heading remapping-heading">
           <div className="studio-heading-copy">
-            <span className="feature-icon"><IconDeviceGamepad3 size={20} /></span>
+            {/* Lit while a custom profile is active: a click switches to Default, the next restores it. */}
+            <button
+              type="button"
+              className={`feature-icon remapping-enable-button icon-compact ${selectedRemapProfileIsDefault ? '' : 'active'}`}
+              aria-pressed={!selectedRemapProfileIsDefault}
+              aria-label={remapProfileToggle.label}
+              title={remapProfileToggle.label}
+              disabled={remapProfileToggle.disabled}
+              onClick={toggleButtonRemappingProfile}
+            >
+              <IconDeviceGamepad3 size={20} />
+            </button>
             <div>
               <h2>Button Remapping</h2>
               <p>Choose replacement targets for controller button slots.</p>

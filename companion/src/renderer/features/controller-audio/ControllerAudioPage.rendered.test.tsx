@@ -32,8 +32,30 @@ describe('Audio page', () => {
     await chooseOption(page, 'Speaker gain', '3');
     expect(bridge.fn('setSpeakerGainLevel')).toHaveBeenCalledWith(3);
 
-    await click(page.querySelector('[role="switch"][aria-label="Enable audio"]'));
+    const headerSwitch = page.querySelector('.studio-feature-heading [role="switch"]')!;
+    expect(headerSwitch.parentElement?.textContent).toBe('Speaker Enabled');
+    expect(headerSwitch.getAttribute('aria-label')).toBe('Disable speaker');
+    await click(headerSwitch);
     expect(bridge.fn('setSpeakerEnabled')).toHaveBeenCalledWith(false);
+    expect(bridge.fn('setDuplexMicEnabled')).not.toHaveBeenCalled();
+  });
+
+  it('turns the selected tab’s feature on and off from both header controls', async () => {
+    // The speaker is on and the mic off: on the Mic tab, the header follows the mic, not the speaker.
+    const bridge = installBridgeMock(fixtureSnapshot({ settings: { ...audioOn.settings, duplexMicEnabled: false } }));
+    const host = await renderApp();
+    const page = await openPage(host, 'audio');
+    await click(buttonByText(page.querySelector('.audio-mode-selector')!, 'Mic'));
+    const headerSwitch = page.querySelector('.studio-feature-heading [role="switch"]')!;
+    const headerIcon = page.querySelector('.studio-heading-copy .feature-icon')!;
+    expect(headerSwitch.parentElement?.textContent).toBe('Mic Enabled');
+    expect(headerSwitch.getAttribute('aria-checked')).toBe('false');
+    expect(headerIcon.getAttribute('aria-pressed')).toBe('false');
+    await click(headerSwitch);
+    expect(bridge.fn('setDuplexMicEnabled')).toHaveBeenLastCalledWith(true);
+    await click(headerIcon);
+    expect(bridge.fn('setDuplexMicEnabled')).toHaveBeenCalledTimes(2);
+    expect(bridge.fn('setSpeakerEnabled')).not.toHaveBeenCalled();
   });
 
   it('keeps the firmware-gated buffer length under the speaker presets only', async () => {

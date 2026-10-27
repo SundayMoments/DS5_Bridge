@@ -60,7 +60,6 @@ export function ControllerAudioPage({
     outputControlLabel,
     outputControlLower,
     duplexMicEnabled,
-    audioEnabled,
     audioPathLabel,
     audioPathTooltip,
     audioPathTone,
@@ -80,12 +79,23 @@ export function ControllerAudioPage({
     runTestSpeaker,
     runTestMic,
     toggleSpeakerEnabled,
-    toggleAudioEnabled,
     toggleDuplexMicEnabled,
     toggleMicMute
   } = controller;
   // Whole sentences per output so each language can phrase them naturally.
   const headphones = outputControlLower === 'headphones';
+  // As in Kitsune Input, the header icon and switch both turn the selected tab's feature on or off.
+  const activeEnabled = showMicrophoneControl ? duplexMicEnabled : snapshot.settings.speakerEnabled;
+  const activeToggleDisabled = showMicrophoneControl
+    ? !controllerControlsAvailable || pendingAction !== null
+    : !controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null;
+  const toggleActiveFeature = showMicrophoneControl ? toggleDuplexMicEnabled : toggleSpeakerEnabled;
+  const activeEnabledLabel = showMicrophoneControl ? 'Mic Enabled' : headphones ? 'Headphones Enabled' : 'Speaker Enabled';
+  const activeSwitchLabel = showMicrophoneControl
+    ? activeEnabled ? 'Disable microphone' : 'Enable microphone'
+    : headphones
+      ? activeEnabled ? 'Disable headphones' : 'Enable headphones'
+      : activeEnabled ? 'Disable speaker' : 'Enable speaker';
 
   return (
     <div
@@ -99,24 +109,12 @@ export function ControllerAudioPage({
           <div className="studio-heading-copy">
             <button
               type="button"
-              className={`feature-icon audio-enable-button icon-medium ${
-                showMicrophoneControl
-                  ? duplexMicEnabled
-                    ? 'active'
-                    : ''
-                  : snapshot.settings.speakerEnabled
-                    ? 'active'
-                    : ''
-              }`}
-              aria-pressed={showMicrophoneControl ? duplexMicEnabled : snapshot.settings.speakerEnabled}
+              className={`feature-icon audio-enable-button icon-medium ${activeEnabled ? 'active' : ''}`}
+              aria-pressed={activeEnabled}
               aria-label={showMicrophoneControl ? duplexMicLabel : headphones ? 'Enable controller headphones' : 'Enable controller speaker'}
               title={showMicrophoneControl ? duplexMicLabel : headphones ? 'Enable controller headphones' : 'Enable controller speaker'}
-              disabled={
-                showMicrophoneControl
-                  ? !controllerControlsAvailable || pendingAction !== null
-                  : !controllerControlsAvailable || !speakerVolumeSupported || pendingAction !== null
-              }
-              onClick={showMicrophoneControl ? toggleDuplexMicEnabled : toggleSpeakerEnabled}
+              disabled={activeToggleDisabled}
+              onClick={toggleActiveFeature}
             >
               {showMicrophoneControl ? <Mic size={20} /> : <OutputIcon size={20} />}
             </button>
@@ -148,15 +146,15 @@ export function ControllerAudioPage({
             </div>
             <div className="audio-heading-controls">
               <div className="inline-switch">
-                <span>Enabled</span>
+                <span>{activeEnabledLabel}</span>
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={audioEnabled}
-                  aria-label="Enable audio"
-                  className={`switch ${audioEnabled ? 'on' : ''}`}
-                  disabled={!controllerControlsAvailable || pendingAction !== null}
-                  onClick={toggleAudioEnabled}
+                  aria-checked={activeEnabled}
+                  aria-label={activeSwitchLabel}
+                  className={`switch ${activeEnabled ? 'on' : ''}`}
+                  disabled={activeToggleDisabled}
+                  onClick={toggleActiveFeature}
                 >
                   <span />
                 </button>

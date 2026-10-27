@@ -109,4 +109,36 @@ describe('Button Remapping page', () => {
     await submitDialog(host);
     expect(bridge.fn('deleteButtonRemappingProfile')).toHaveBeenCalledWith('custom-1');
   });
+
+  it('turns remapping off and back on from the header icon', async () => {
+    window.localStorage.clear();
+    const settings = { buttonRemappingProfiles: [DEFAULT_BUTTON_REMAP_PROFILE, customProfile] };
+    const bridge = installBridgeMock(fixtureSnapshot({ settings: { ...settings, selectedButtonRemappingProfileId: 'custom-1' } }));
+    bridge.fn('selectButtonRemappingProfile').mockImplementation(async (id: string) => fixtureSnapshot({
+      settings: { ...settings, selectedButtonRemappingProfileId: id }
+    }));
+    const host = await renderApp();
+    const page = await openPage(host, 'remapping');
+    const icon = () => page.querySelector<HTMLButtonElement>('.studio-heading-copy .remapping-enable-button')!;
+
+    expect(icon().getAttribute('aria-pressed')).toBe('true');
+    expect(icon().title).toBe('Racing button mapping profile active. Switch to Default.');
+    await click(icon());
+    expect(bridge.fn('selectButtonRemappingProfile')).toHaveBeenLastCalledWith('default');
+    expect(icon().getAttribute('aria-pressed')).toBe('false');
+    expect(icon().title).toBe('Default button mapping profile active. Restore Racing.');
+    await click(icon());
+    expect(bridge.fn('selectButtonRemappingProfile')).toHaveBeenLastCalledWith('custom-1');
+    expect(icon().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps the header icon off with nothing to restore', async () => {
+    window.localStorage.clear();
+    installBridgeMock(fixtureSnapshot());
+    const host = await renderApp();
+    const page = await openPage(host, 'remapping');
+    const icon = page.querySelector<HTMLButtonElement>('.studio-heading-copy .remapping-enable-button')!;
+    expect(icon.disabled).toBe(true);
+    expect(icon.title).toBe('Default button mapping profile active. No previous custom profile available.');
+  });
 });

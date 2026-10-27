@@ -118,7 +118,7 @@ export function ControllerFeedbackPage({
             {audioHapticsOpen ? (
               <button
                 type="button"
-                className={`feature-icon audio-haptics-enable-button icon-compact ${audioReactiveHapticsEnabled ? 'active' : ''}`}
+                className={`feature-icon audio-haptics-enable-button icon-compact ${audioReactiveHapticsEnabled ? 'active' : ''} ${controllerPowerSavingActive && audioReactiveHapticsEnabled ? 'power-saving-active' : ''}`}
                 aria-pressed={audioReactiveHapticsEnabled}
                 aria-label={audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'}
                 title={audioReactiveHapticsStatusLabel}
@@ -157,10 +157,15 @@ export function ControllerFeedbackPage({
               </div>
             ) : null}
             <div className="inline-switch">
-              <span>Enabled</span>
+              <span>{audioHapticsOpen ? 'Enabled' : showClassicRumbleControl ? 'Rumble Enabled' : 'Haptics Enabled'}</span>
               <button
                 type="button"
                 role="switch"
+                aria-label={audioHapticsOpen
+                  ? audioReactiveHapticsEnabled ? 'Disable audio haptics' : 'Enable audio haptics'
+                  : showClassicRumbleControl
+                    ? activeHapticsFeatureEnabled ? 'Disable rumble' : 'Enable rumble'
+                    : activeHapticsFeatureEnabled ? 'Disable haptics' : 'Enable haptics'}
                 aria-checked={audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled}
                 className={`switch ${(audioHapticsOpen ? audioReactiveHapticsEnabled : activeHapticsFeatureEnabled) ? 'on' : ''}`}
                 disabled={audioHapticsOpen

@@ -23,6 +23,7 @@ import {
   type EdgeRemapControlLayout,
   type RemapCalloutLayout
 } from './remap-layout';
+import { readLastCustomRemapProfileId, remapProfileToggle, writeLastCustomRemapProfileId } from './remap-profile-toggle';
 
 type RemapProfileDialogMode = 'save' | 'rename' | 'delete';
 
@@ -42,6 +43,7 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
   const [hoveredRemapButton, setHoveredRemapButton] = useState<RemapButtonId | null>(null);
 
   const [lastRemapControllerType, setLastRemapControllerType] = useState<KnownControllerType>(storedRemapControllerType);
+  const [lastCustomRemapProfileId, setLastCustomRemapProfileId] = useState(() => readLastCustomRemapProfileId());
 
   const remappingLayoutRef = useRef<HTMLDivElement>(null);
   const remappingLeftSideRef = useRef<HTMLDivElement>(null);
@@ -65,7 +67,20 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
     snapshot?.settings.buttonRemappingProfiles.map((profile) => [profile.name, profile.id]) ?? [['Default', DEFAULT_BUTTON_REMAP_PROFILE_ID]]
   ), [snapshot?.settings.buttonRemappingProfiles]);
   const selectedRemapProfileIsDefault = selectedRemapProfileId === DEFAULT_BUTTON_REMAP_PROFILE_ID;
+  const remapProfileToggleState = remapProfileToggle(
+    snapshot?.settings.buttonRemappingProfiles ?? [],
+    selectedRemapProfileId,
+    lastCustomRemapProfileId,
+    runtime.pendingAction !== null
+  );
   const remappingLayoutAsset = showDualSenseEdgeRemapButtons ? REMAP_EDGE_LAYOUT_ASSET : REMAP_STANDARD_LAYOUT_ASSET;
+
+  // Whatever picks a custom profile (this page, a chord or a saved profile), the header can restore it later.
+  useEffect(() => {
+    if (selectedRemapProfileIsDefault) return;
+    setLastCustomRemapProfileId(selectedRemapProfileId);
+    writeLastCustomRemapProfileId(selectedRemapProfileId);
+  }, [selectedRemapProfileId, selectedRemapProfileIsDefault]);
 
   useEffect(() => {
     if (snapshot?.status?.controllerConnected && liveControllerType && liveControllerType !== 'unknown') {
@@ -204,6 +219,13 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
     void runAction('remap-profile', () => window.bridge.selectButtonRemappingProfile(profileId));
   }
 
+  /** The header icon: Default when a custom profile is active, otherwise the last custom profile. */
+  function toggleButtonRemappingProfile() {
+    const { targetId, disabled } = remapProfileToggleState;
+    if (disabled || !targetId || targetId === selectedRemapProfileId) return;
+    selectButtonRemappingProfile(targetId);
+  }
+
   function setButtonRemap(buttonId: RemapButtonId, targetId: RemapButtonId) {
     setRemapDraft((draft) => ({ ...draft, [buttonId]: targetId }));
     void runAction(`remap-${buttonId}`, () => window.bridge.setButtonRemap(buttonId, targetId));
@@ -292,8 +314,10 @@ export function useButtonRemappingController(runtime: AppRuntime, active: boolea
     selectedRemapProfileId,
     remapProfileOptions,
     selectedRemapProfileIsDefault,
+    remapProfileToggle: remapProfileToggleState,
     remappingLayoutAsset,
     selectButtonRemappingProfile,
+    toggleButtonRemappingProfile,
     setButtonRemap,
     restoreButtonRemappingDefaults,
     renameButtonRemappingProfile,

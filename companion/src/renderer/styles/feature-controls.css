@@ -2,16 +2,23 @@
 .audio-haptics-enable-button svg,
 .haptics-enable-button svg,
 .triggers-enable-button svg,
-.lighting-enable-button svg {
+.lighting-enable-button svg,
+.remapping-enable-button svg {
   width: 18px;
   height: 18px;
+}
+
+/* Default mapping reads as remapping off. */
+.remapping-enable-button {
+  color: var(--text-disabled);
 }
 
 .audio-enable-button.active,
 .audio-haptics-enable-button.active,
 .haptics-enable-button.active,
 .triggers-enable-button.active,
-.lighting-enable-button.active {
+.lighting-enable-button.active,
+.remapping-enable-button.active {
   color: var(--accent-text);
   border-color: var(--accent-border-strong);
   background: var(--accent-selected);
@@ -21,6 +28,7 @@
     0 0 18px var(--accent-soft);
 }
 
+.audio-haptics-enable-button.active.power-saving-active,
 .haptics-enable-button.active.power-saving-active,
 .triggers-enable-button.active.power-saving-active,
 .lighting-enable-button.active.power-saving-active {
