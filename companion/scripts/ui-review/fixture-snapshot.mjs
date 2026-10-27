@@ -76,7 +76,7 @@ export function createFixtureSnapshot(companionRoot) {
         wakeOnConnectControl: true
       },
       hostPersonaMode: 'dualsense',
-      supportedHostPersonaModes: ['dualsense', 'dualsense-edge', 'dualshock4', 'xbox'],
+      supportedHostPersonaModes: ['dualsense', 'dualsense-edge', 'ds4', 'xbox'],
       protocolVersion: '1.19'
     },
     diagnostics: {
