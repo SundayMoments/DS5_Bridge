@@ -1,4 +1,4 @@
-import type { ComponentType, CSSProperties, ReactNode } from 'react';
+import type { ComponentType, CSSProperties } from 'react';
 import {
   IconArrowRight as ArrowRight,
   IconBolt,
@@ -39,9 +39,10 @@ function KitsuneBarMark({ size = 24 }: { readonly size?: number }) {
 
 // Only what Kitsune Input adds: DS5 Bridge already has Audio Haptics,
 // adaptive triggers, button remapping, chords, Wake PC and themes. Wording
-// follows kitsuneinput.com, and each icon is the one Kitsune Input uses for
-// that feature. Titles only, so the offer scans at a glance; keep a multiple
-// of four for the four-across tiles.
+// follows kitsuneinput.com, except that the Kitsune Bar tile says what it is
+// for someone who has never seen it; each icon is the one Kitsune Input uses
+// for that feature. Titles only, so the offer scans at a glance; keep a
+// multiple of four for the four-across tiles.
 export const LAUNCH_OFFER_FEATURES: readonly LaunchOfferFeature[] = [
   { title: 'Auto-Switching Per-Game Profiles', Icon: IconCards },
   { title: 'Shift Layers', Icon: IconStack2 },
@@ -51,7 +52,7 @@ export const LAUNCH_OFFER_FEATURES: readonly LaunchOfferFeature[] = [
   { title: 'Stick and Trigger Tuning', Icon: IconViewfinder },
   // DS5 Bridge's Xbox persona is an Xbox 360 controller.
   { title: 'Xbox Series X Mode', Icon: IconBrandXbox },
-  { title: 'Kitsune Bar and Keyboard', Icon: KitsuneBarMark }
+  { title: 'Game Bar Overlay and Keyboard', Icon: KitsuneBarMark }
 ];
 
 export interface KitsuneInputOfferContentProps {
@@ -59,26 +60,24 @@ export interface KitsuneInputOfferContentProps {
   readonly idPrefix: string;
   /** The headline; the ask asks its own question over the same offer. Passed as JSX so it is cataloged. */
   readonly title: string;
-  /** Shown beside the headline in place of a close button, such as the tutorial's step count. */
-  readonly heroAside?: ReactNode;
   onGet(): void;
   onLearnMore(): void;
 }
 
 /**
- * The body of both Kitsune Input offers, the one-time launch offer and the
- * window-bar banner's dialog: what Kitsune adds, the extra controllers, and the price.
+ * The body of every Kitsune Input offer, the one-time launch offer, the
+ * monthly ask and the window-bar banner's dialog: what Kitsune adds, the extra
+ * controllers, and the price.
  */
 export function KitsuneInputOfferContent({
   idPrefix,
   title,
-  heroAside,
   onGet,
   onLearnMore
 }: KitsuneInputOfferContentProps) {
   return (
     <>
-      <header className={`kitsune-launch-offer-hero ${heroAside ? 'with-aside' : ''}`}>
+      <header className="kitsune-launch-offer-hero">
         <img className="kitsune-launch-offer-logo" src={kitsuneInputLogoUrl} alt="" />
         <div className="kitsune-launch-offer-hero-copy">
           <KitsuneInputWordmark />
@@ -87,7 +86,6 @@ export function KitsuneInputOfferContent({
             A separate Windows app from the developer of DS5 Bridge, for the bridge you already own.
           </p>
         </div>
-        {heroAside}
       </header>
 
       <ul className="kitsune-launch-offer-features" aria-label="What Kitsune Input adds">

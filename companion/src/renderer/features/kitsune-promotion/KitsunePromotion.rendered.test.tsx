@@ -15,6 +15,7 @@ import {
   type BridgeMock
 } from '../../test-support/app-harness';
 import { STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY } from '../startup';
+import { KitsuneInputMonthlyAsk } from './KitsuneInputAsk';
 import { KitsuneInputLaunchOffer } from './KitsuneInputLaunchOffer';
 import { LAUNCH_OFFER_FEATURES } from './KitsuneInputOfferContent';
 import { KitsuneInputPromotionDialog } from './KitsuneInputPromotionDialog';
@@ -98,7 +99,7 @@ describe('KitsuneInputLaunchOffer', () => {
       'Multi-Actions',
       'Stick and Trigger Tuning',
       'Xbox Series X Mode',
-      'Kitsune Bar and Keyboard'
+      'Game Bar Overlay and Keyboard'
     ]);
     expect(features.length % 4).toBe(0);
     // Kitsune Input's own icons, down to its Kitsune Bar fox mark.
@@ -130,25 +131,15 @@ describe('KitsuneInputLaunchOffer', () => {
     }
   });
 
-  it('keeps the close button, Escape, and the backdrop inert for five seconds', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  it('closes at once from the X, Escape, or the backdrop', async () => {
     const onClose = vi.fn();
     mountElement(<KitsuneInputLaunchOffer onGet={vi.fn()} onLearnMore={vi.fn()} onClose={onClose} />);
     const close = document.querySelector<HTMLButtonElement>('.kitsune-launch-offer-close')!;
 
-    for (const remaining of [5, 4, 3, 2, 1]) {
-      expect(close.textContent).toBe(`Close in ${remaining}`);
-      expect(close.disabled).toBe(true);
-      pressEscape();
-      act(() => {
-        document.querySelector('.kitsune-launch-offer-backdrop')!
-          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      });
-      await advance(1000);
-    }
-    expect(onClose).not.toHaveBeenCalled();
-
+    // No countdown: the X shows and works from the first frame.
     expect(close.disabled).toBe(false);
+    expect(close.textContent).toBe('');
+    expect(close.querySelector('svg')).not.toBeNull();
     expect(close.getAttribute('aria-label')).toBe('Close');
     await click(close);
     pressEscape();
@@ -190,7 +181,6 @@ describe('KitsuneInputPromotionDialog', () => {
       .toEqual(LAUNCH_OFFER_FEATURES.map(({ title }) => title));
     expect(dialog.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
     expect(dialog.querySelector('.kitsune-promotion-wordmark')?.getAttribute('data-l10n')).toBe('off');
-    // No countdown: the banner's dialog was asked for.
     expect(dialog.querySelector<HTMLButtonElement>('.kitsune-launch-offer-close')?.disabled).toBe(false);
 
     expect(dialog.textContent).not.toContain("Don't show");
@@ -199,6 +189,19 @@ describe('KitsuneInputPromotionDialog', () => {
     expect(onPurchase).toHaveBeenCalledOnce();
     pressEscape();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe('KitsuneInputMonthlyAsk', () => {
+  it('closes at once from Continue or Escape', async () => {
+    const onClose = vi.fn();
+    mountElement(<KitsuneInputMonthlyAsk onGet={vi.fn()} onLearnMore={vi.fn()} onClose={onClose} />);
+    const continueButton = monthlyAsk()!.querySelector<HTMLButtonElement>('.kitsune-ask-continue-button')!;
+    expect(continueButton.disabled).toBe(false);
+    expect(continueButton.textContent).toBe('Continue');
+    await click(continueButton);
+    pressEscape();
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -218,8 +221,22 @@ describe('Kitsune Input offers in the app', () => {
     });
   }
 
-  it('shows the launch offer once after startup, even after the promotion was hidden', async () => {
+  /** Starts the month before the next prompt just over a month ago, so a prompt is due. */
+  function startMonthJustOverAMonthAgo() {
+    const startedAt = Date.now() - KITSUNE_ASK_INTERVAL_MS - 1000;
+    window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(startedAt));
+    return startedAt;
+  }
+
+  function unmountApp() {
+    act(() => root!.unmount());
+    root = null;
+    document.body.innerHTML = '';
+  }
+
+  it('shows the launch offer once a month after setup, even after the promotion was hidden', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const monthStartedAt = startMonthJustOverAMonthAgo();
     const bridge = installBridgeMock(offerSnapshot());
     trackLaunchOfferShown(bridge);
     await mountApp();
@@ -229,9 +246,14 @@ describe('Kitsune Input offers in the app', () => {
     await advance(LAUNCH_OFFER_DELAY_MS);
     expect(offer()).not.toBeNull();
     expect(bridge.fn('markKitsuneInputLaunchOfferShown')).toHaveBeenCalledOnce();
+    // The launch offer restarts the month before the monthly ask.
+    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(monthStartedAt);
 
+    // Both buttons carry the source tag the website counts.
+    await click(buttonByText(offer()!, 'Learn More'));
+    expect(bridge.fn('openExternal')).toHaveBeenLastCalledWith('https://kitsuneinput.com/?src=ds5-popup');
     await click(document.querySelector('.kitsune-launch-offer-get'));
-    expect(bridge.fn('openExternal')).toHaveBeenCalledWith('https://ko-fi.com/s/d1f0a3b26f');
+    expect(bridge.fn('openExternal')).toHaveBeenLastCalledWith('https://kitsuneinput.com/buy?src=ds5-popup');
     expect(offer()).toBeNull();
     await advance(LAUNCH_OFFER_DELAY_MS * 4);
     expect(offer()).toBeNull();
@@ -240,34 +262,61 @@ describe('Kitsune Input offers in the app', () => {
 
   it('never shows the launch offer again once it has been shown', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    startMonthJustOverAMonthAgo();
     installBridgeMock(fixtureSnapshot());
     await mountApp();
     await advance(LAUNCH_OFFER_DELAY_MS * 4);
     expect(offer()).toBeNull();
   });
 
-  it('leaves the launch offer for a later run when the first-run tutorial already asked', async () => {
+  it('shows no Kitsune Input prompt during first-run setup and starts the month when setup finishes', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const bridge = installBridgeMock(offerSnapshot());
     trackLaunchOfferShown(bridge);
     await mountApp({ tutorialDone: false });
     await advance(LAUNCH_OFFER_DELAY_MS * 2);
-    expect(document.querySelector('.startup-tutorial-modal')).not.toBeNull();
+    const tutorial = document.querySelector('.startup-tutorial-modal')!;
+    expect(tutorial.textContent).not.toContain('Kitsune');
     expect(offer()).toBeNull();
+    expect(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY)).toBeNull();
 
-    await click(document.querySelector('[aria-label="Toggle example effect"]'));
-    await click(buttonByText(document.querySelector('.startup-tutorial-modal')!, /Next/));
-    for (let second = 0; second < 5; second += 1) await advance(1000);
-    await click(document.querySelector('.kitsune-ask-continue-button'));
+    const finishedAt = Date.now();
+    await click(tutorial.querySelector('[aria-label="Toggle example effect"]'));
+    await click(buttonByText(tutorial, /Next/));
+    expect(document.querySelector('.startup-tutorial-modal')).toBeNull();
+    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThanOrEqual(finishedAt);
+
     await advance(LAUNCH_OFFER_DELAY_MS * 4);
-    // One Kitsune Input prompt per run: the tutorial's ask was this run's.
     expect(offer()).toBeNull();
     expect(monthlyAsk()).toBeNull();
     expect(bridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
   });
 
+  it('waits a month before the launch offer, starting it on the first run after 1.x', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    // Setup finished in 1.x, which never started the month: this first run starts it.
+    const bridge = installBridgeMock(offerSnapshot());
+    trackLaunchOfferShown(bridge);
+    const firstRunAt = Date.now();
+    await mountApp();
+    await advance(LAUNCH_OFFER_DELAY_MS * 4);
+    expect(offer()).toBeNull();
+    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThanOrEqual(firstRunAt);
+    unmountApp();
+
+    // Halfway through the month: still nothing.
+    window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(Date.now() - KITSUNE_ASK_INTERVAL_MS / 2));
+    const laterBridge = installBridgeMock(offerSnapshot());
+    trackLaunchOfferShown(laterBridge);
+    await mountApp();
+    await advance(LAUNCH_OFFER_DELAY_MS * 4);
+    expect(offer()).toBeNull();
+    expect(laterBridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
+  });
+
   it('waits for a bootloader confirmation before the launch offer', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    startMonthJustOverAMonthAgo();
     const bridge = installBridgeMock(offerSnapshot({
       bootloaderConfirmation: {
         purpose: 'enrollment',
@@ -286,14 +335,11 @@ describe('Kitsune Input offers in the app', () => {
     bridge.emit(offerSnapshot({ bootloaderConfirmation: null }));
     await advance(LAUNCH_OFFER_DELAY_MS);
     expect(offer()).not.toBeNull();
-    // The launch offer starts the month before the monthly ask.
-    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(0);
   });
 
   it('asks "Considering Getting Kitsune Input?" at most once a month after the launch offer', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    const lastAsked = Date.now() - KITSUNE_ASK_INTERVAL_MS - 1000;
-    window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(lastAsked));
+    const lastAsked = startMonthJustOverAMonthAgo();
     const bridge = installBridgeMock(fixtureSnapshot({ settings: { kitsuneInputLaunchOfferShown: true } }));
     await mountApp();
     await advance(LAUNCH_OFFER_DELAY_MS);
@@ -301,12 +347,12 @@ describe('Kitsune Input offers in the app', () => {
     expect(ask.querySelector('h2')?.textContent).toBe('Considering Getting Kitsune Input?');
     expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(lastAsked);
 
-    const continueButton = ask.querySelector<HTMLButtonElement>('.kitsune-ask-continue-button')!;
-    expect(continueButton.disabled).toBe(true);
     await click(ask.querySelector('.kitsune-launch-offer-learn'));
-    expect(bridge.fn('openExternal')).toHaveBeenCalledWith('https://kitsuneinput.com/');
-    for (let second = 0; second < 5; second += 1) await advance(1000);
-    await click(continueButton);
+    expect(bridge.fn('openExternal')).toHaveBeenLastCalledWith('https://kitsuneinput.com/?src=ds5-popup');
+    await click(ask.querySelector('.kitsune-launch-offer-get'));
+    expect(bridge.fn('openExternal')).toHaveBeenLastCalledWith('https://kitsuneinput.com/buy?src=ds5-popup');
+    // No countdown: Escape closes it at once.
+    pressEscape();
     expect(monthlyAsk()).toBeNull();
   });
 
@@ -317,9 +363,7 @@ describe('Kitsune Input offers in the app', () => {
     await mountApp();
     await advance(LAUNCH_OFFER_DELAY_MS * 4);
     expect(monthlyAsk()).toBeNull();
-    act(() => root!.unmount());
-    root = null;
-    document.body.innerHTML = '';
+    unmountApp();
 
     window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(Date.now() - KITSUNE_ASK_INTERVAL_MS * 2));
     installBridgeMock(fixtureSnapshot({
@@ -334,9 +378,7 @@ describe('Kitsune Input offers in the app', () => {
     installBridgeMock(fixtureSnapshot());
     await mountApp();
     expect(host.querySelector('.kitsune-promotion-banner')).not.toBeNull();
-    act(() => root!.unmount());
-    root = null;
-    document.body.innerHTML = '';
+    unmountApp();
 
     installBridgeMock(fixtureSnapshot({ settings: { kitsuneInputPromotionDismissed: true } }));
     await mountApp();

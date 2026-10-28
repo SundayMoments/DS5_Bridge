@@ -78,8 +78,13 @@ try {
     await page.evaluate(() => window.__uiReview.update({ bootloaderConfirmation: null }));
   }
 
-  // The one-time Kitsune Input offer opens shortly after its setting reads as not shown.
-  await page.evaluate(() => window.__uiReview.updateSettings({ kitsuneInputLaunchOfferShown: false }));
+  // The one-time Kitsune Input offer opens shortly after its setting reads as
+  // not shown, once a month has passed since setup.
+  await page.evaluate(() => {
+    const monthAgo = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    window.localStorage.setItem('ds5bridge.kitsuneInputAskShownAt.v1', String(monthAgo));
+    window.__uiReview.updateSettings({ kitsuneInputLaunchOfferShown: false });
+  });
   await page.locator('.kitsune-launch-offer-modal').waitFor({ timeout: 10000 });
   for (const theme of ['light', 'dark']) {
     await page.evaluate((theme) => window.__uiReview.updateSettings({ uiThemePreset: theme }), theme);
@@ -88,9 +93,7 @@ try {
     await captureWindow(app, path.join(outputDir, file));
     shots.push(file);
   }
-  const offerClose = page.locator('.kitsune-launch-offer-close');
-  await offerClose.and(page.locator(':enabled')).waitFor({ timeout: 10000 });
-  await offerClose.click();
+  await page.locator('.kitsune-launch-offer-close').click();
 
   // A haptics test the bridge refused, on the Haptics Testing card.
   const refusal = 'The controller audio endpoint is unavailable. Close any games using the controller and try again.';

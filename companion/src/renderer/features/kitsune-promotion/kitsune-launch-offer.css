@@ -1,7 +1,7 @@
 /*
- * Both Kitsune Input offers: the one-time launch offer and the window-bar
- * banner's dialog. Flat surfaces only: no gradients or glows. Kitsune's
- * orange marks the call to action in every theme.
+ * Every Kitsune Input offer: the one-time launch offer, the monthly ask and
+ * the window-bar banner's dialog. Flat surfaces only: no gradients or glows.
+ * Kitsune's orange marks the call to action in every theme.
  */
 .kitsune-launch-offer-backdrop {
   z-index: 140;
@@ -31,10 +31,10 @@
   top: 16px;
   right: 16px;
   z-index: 2;
-  width: auto;
+  width: 32px;
   min-width: 32px;
   height: 32px;
-  padding: 0 12px;
+  padding: 0;
   border: 1px solid var(--surface-border-strong);
   border-radius: 999px;
   display: inline-flex;
@@ -42,25 +42,10 @@
   justify-content: center;
   color: var(--text-secondary);
   background: var(--surface-control);
-  font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
-.kitsune-launch-offer-close:not(.locked) {
-  width: 32px;
-  padding: 0;
-}
-
-.kitsune-launch-offer-close:disabled {
-  cursor: default;
-  opacity: 1;
-  color: var(--text-muted);
-  background: var(--surface-control-soft);
-}
-
-.kitsune-launch-offer-close:not(:disabled):hover {
+.kitsune-launch-offer-close:hover {
   color: var(--text-strong);
   background: var(--surface-control-hover);
 }
@@ -326,9 +311,8 @@
 }
 
 /*
- * "Considering Getting Kitsune Input?": the first-run tutorial's last step and
- * the monthly ask. A shorter launch offer on the same panel; Continue is a
- * quiet link under the actions.
+ * "Considering Getting Kitsune Input?": the monthly ask. The launch offer's
+ * content on the same panel; Continue is a quiet link under the actions.
  */
 .kitsune-ask-panel {
   --kitsune-orange: #ff6a18;
@@ -347,25 +331,8 @@
   box-shadow: var(--shadow-menu);
 }
 
-/* The tutorial's fixed step size fits the feature tile step, not the ask. */
-.startup-tutorial-modal.kitsune-ask-panel {
-  width: min(760px, calc(100vw - 48px));
-  height: auto;
-  padding: 24px;
-}
-
 .kitsune-ask-modal {
   animation: modal-panel-in 160ms ease-out;
-}
-
-/* With no close button, the tutorial's step count sits where the close button would. */
-.kitsune-launch-offer-hero.with-aside {
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  padding-right: 0;
-}
-
-.kitsune-launch-offer-hero.with-aside > :last-child {
-  align-self: start;
 }
 
 .kitsune-ask-continue {
@@ -387,11 +354,10 @@
   font: inherit;
   font-size: var(--font-size-subtitle);
   font-weight: var(--font-weight-medium);
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
-.kitsune-ask-continue-button:not(:disabled):hover {
+.kitsune-ask-continue-button:hover {
   color: var(--text-strong);
   background: var(--surface-control-hover);
 }
@@ -399,11 +365,6 @@
 .kitsune-ask-continue-button:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-}
-
-.kitsune-ask-continue-button:disabled {
-  cursor: default;
-  color: var(--text-muted);
 }
 
 @media (max-width: 620px) {

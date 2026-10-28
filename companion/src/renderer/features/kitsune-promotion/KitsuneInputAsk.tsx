@@ -1,36 +1,30 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { IconArrowRight as ArrowRight } from '@tabler/icons-react';
 import { KitsuneInputOfferContent } from './KitsuneInputOfferContent';
 
 export interface KitsuneInputAskProps {
-  /** Seconds until Continue unlocks. */
-  readonly countdown: number;
-  /** Shown beside the title, such as the tutorial's step count. */
-  readonly headingAside?: ReactNode;
   onGet(): void;
   onLearnMore(): void;
   onContinue(): void;
 }
 
 /**
- * "Considering Getting Kitsune Input?": the last step of the first-run
- * tutorial, and the monthly ask. The banner's offer under its own question,
- * with a quiet Continue that unlocks after a countdown instead of a close button.
+ * "Considering Getting Kitsune Input?": the banner's offer under its own
+ * question, with a quiet Continue instead of a close button.
  */
-export function KitsuneInputAsk({ countdown, headingAside, onGet, onLearnMore, onContinue }: KitsuneInputAskProps) {
+export function KitsuneInputAsk({ onGet, onLearnMore, onContinue }: KitsuneInputAskProps) {
   return (
     <>
       <KitsuneInputOfferContent
         idPrefix="kitsune-ask"
         title="Considering Getting Kitsune Input?"
-        heroAside={headingAside}
         onGet={onGet}
         onLearnMore={onLearnMore}
       />
       <div className="kitsune-ask-continue">
-        <button type="button" className="kitsune-ask-continue-button" disabled={countdown > 0} onClick={onContinue}>
-          {countdown > 0 ? `Continue In ${countdown}` : 'Continue'}
-          {countdown > 0 ? null : <ArrowRight size={14} aria-hidden="true" />}
+        <button type="button" className="kitsune-ask-continue-button" onClick={onContinue}>
+          Continue
+          <ArrowRight size={14} aria-hidden="true" />
         </button>
       </div>
     </>
@@ -38,14 +32,26 @@ export function KitsuneInputAsk({ countdown, headingAside, onGet, onLearnMore, o
 }
 
 export interface KitsuneInputMonthlyAskProps {
-  readonly countdown: number;
   onGet(): void;
   onLearnMore(): void;
   onClose(): void;
 }
 
-/** The ask on its own, at most once a month after the launch offer. */
-export function KitsuneInputMonthlyAsk({ countdown, onGet, onLearnMore, onClose }: KitsuneInputMonthlyAskProps) {
+/** The ask on its own, at most once a month after the launch offer. Continue or Escape closes it. */
+export function KitsuneInputMonthlyAsk({ onGet, onLearnMore, onClose }: KitsuneInputMonthlyAskProps) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeRef.current();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, []);
+
   return (
     <div className="modal-backdrop kitsune-promotion-backdrop" role="presentation">
       <section
@@ -55,7 +61,7 @@ export function KitsuneInputMonthlyAsk({ countdown, onGet, onLearnMore, onClose 
         aria-labelledby="kitsune-ask-title"
         aria-describedby="kitsune-ask-summary"
       >
-        <KitsuneInputAsk countdown={countdown} onGet={onGet} onLearnMore={onLearnMore} onContinue={onClose} />
+        <KitsuneInputAsk onGet={onGet} onLearnMore={onLearnMore} onContinue={onClose} />
       </section>
     </div>
   );

@@ -2,9 +2,6 @@ import { useEffect, useState } from 'react';
 import { kitsuneAskDue, kitsuneAskShownAt, recordKitsuneAskShown } from './kitsune-ask-schedule';
 import { LAUNCH_OFFER_DELAY_MS } from './use-kitsune-launch-offer';
 
-/** Seconds before the ask's Continue button unlocks. */
-export const KITSUNE_ASK_COUNTDOWN_SECONDS = 5;
-
 export interface KitsuneMonthlyAskInput {
   /** The launch offer has been shown and the user has not hidden Kitsune Input promotions. */
   readonly eligible: boolean;
@@ -18,7 +15,6 @@ export interface KitsuneMonthlyAskInput {
  */
 export function useKitsuneMonthlyAsk({ eligible, blocked }: KitsuneMonthlyAskInput) {
   const [phase, setPhase] = useState<'waiting' | 'open' | 'closed'>('waiting');
-  const [countdown, setCountdown] = useState(KITSUNE_ASK_COUNTDOWN_SECONDS);
 
   useEffect(() => {
     if (phase !== 'waiting' || !eligible || blocked) return undefined;
@@ -36,15 +32,8 @@ export function useKitsuneMonthlyAsk({ eligible, blocked }: KitsuneMonthlyAskInp
     return () => window.clearTimeout(timer);
   }, [phase, eligible, blocked]);
 
-  useEffect(() => {
-    if (phase !== 'open' || countdown <= 0) return undefined;
-    const timer = window.setTimeout(() => setCountdown((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [phase, countdown]);
-
   return {
     visible: phase === 'open' && !blocked,
-    countdown,
     close: () => setPhase('closed')
   };
 }

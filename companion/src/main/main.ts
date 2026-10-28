@@ -438,7 +438,9 @@ function isAllowedExternalUrl(url: string): boolean {
     || /^https:\/\/ko-fi\.com\/s\/d1f0a3b26f\/?$/i.test(url)
     || /^https:\/\/github\.com\/SundayMoments\/?$/i.test(url)
     || /^https:\/\/discord\.gg\/By5jhh73wr\/?$/i.test(url)
-    || /^https:\/\/kitsuneinput\.com\/?$/i.test(url);
+    || /^https:\/\/kitsuneinput\.com\/?$/i.test(url)
+    || /^https:\/\/kitsuneinput\.com\/\?src=ds5-popup$/i.test(url)
+    || /^https:\/\/kitsuneinput\.com\/buy\?src=ds5-popup$/i.test(url);
 }
 
 function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {

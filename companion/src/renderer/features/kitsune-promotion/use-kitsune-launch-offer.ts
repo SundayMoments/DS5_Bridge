@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { kitsuneAskDue, kitsuneAskShownAt, recordKitsuneAskShown } from './kitsune-ask-schedule';
 
 /** How long the app has been up, showing its page, before the offer appears. */
 export const LAUNCH_OFFER_DELAY_MS = 1500;
@@ -13,9 +14,10 @@ export interface KitsuneLaunchOfferInput {
 }
 
 /**
- * Opens the one-time Kitsune Input offer shortly after startup, once nothing
- * else needs the user's attention, and records it as shown when it opens.
- * It opens at most once per run even if saving that it was shown fails.
+ * Opens the one-time Kitsune Input offer shortly after startup, once a month
+ * has passed since first-run setup finished and nothing else needs the user's
+ * attention, and records it as shown when it opens. It opens at most once per
+ * run even if saving that it was shown fails.
  */
 export function useKitsuneLaunchOffer({ eligible, blocked, markShown }: KitsuneLaunchOfferInput) {
   const [phase, setPhase] = useState<'waiting' | 'open' | 'closed'>('waiting');
@@ -24,6 +26,13 @@ export function useKitsuneLaunchOffer({ eligible, blocked, markShown }: KitsuneL
 
   useEffect(() => {
     if (phase !== 'waiting' || !eligible || blocked) return undefined;
+    const monthStartedAt = kitsuneAskShownAt();
+    if (monthStartedAt === null) {
+      // Setup finished in 1.x, before the month was tracked; this first run starts it.
+      recordKitsuneAskShown();
+      return undefined;
+    }
+    if (!kitsuneAskDue(monthStartedAt)) return undefined;
     const timer = window.setTimeout(() => {
       setPhase('open');
       markShownRef.current();

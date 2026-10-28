@@ -1,12 +1,12 @@
-/** When a Kitsune Input prompt was last shown on this PC, in epoch milliseconds. */
+/** When the month before the next Kitsune Input prompt started on this PC, in epoch milliseconds. */
 export const KITSUNE_ASK_SHOWN_AT_STORAGE_KEY = 'ds5bridge.kitsuneInputAskShownAt.v1';
 
-/** The "Considering Getting Kitsune Input?" ask comes back at most once a month. */
+/** Kitsune Input prompts come at most once a month, the first a month after first-run setup. */
 export const KITSUNE_ASK_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Records that a Kitsune Input prompt was shown: the first-run ask, the launch
- * offer, or the monthly ask. Each one restarts the month.
+ * Starts the month before the next Kitsune Input prompt. Finishing first-run
+ * setup starts the first month; the launch offer and each monthly ask restart it.
  */
 export function recordKitsuneAskShown(now = Date.now()): void {
   try {
@@ -16,7 +16,7 @@ export function recordKitsuneAskShown(now = Date.now()): void {
   }
 }
 
-/** When a Kitsune Input prompt was last shown, or null when none was recorded. */
+/** When the current month started, or null when none was recorded. */
 export function kitsuneAskShownAt(): number | null {
   try {
     const shownAt = Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY));
@@ -26,7 +26,7 @@ export function kitsuneAskShownAt(): number | null {
   }
 }
 
-/** True when the last Kitsune Input prompt was at least a month ago. */
+/** True when the current month started at least a month ago. */
 export function kitsuneAskDue(shownAt: number, now = Date.now()): boolean {
   return now - shownAt >= KITSUNE_ASK_INTERVAL_MS;
 }

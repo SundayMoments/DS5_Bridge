@@ -36,30 +36,11 @@ try {
       failures.push(`${label}: modal overflowed by ${overflow.horizontal}px horizontal and ${overflow.vertical}px vertical`);
     }
   };
-  const assertNaturalImageRatio = async (locator, label) => {
-    const ratio = await locator.evaluate((element) => {
-      const image = element;
-      const rect = image.getBoundingClientRect();
-      return {
-        natural: image.naturalWidth / image.naturalHeight,
-        rendered: rect.width / rect.height
-      };
-    });
-
-    if (Math.abs(ratio.natural - ratio.rendered) > 0.02) {
-      failures.push(`${label}: rendered ratio ${ratio.rendered.toFixed(2)} differs from natural ratio ${ratio.natural.toFixed(2)}`);
-    }
-  };
-
   const startupTutorial = page.getByRole('dialog', { name: 'Feature tile tutorial' });
   if (await startupTutorial.count()) {
     await assertNoModalOverflow(startupTutorial, 'Feature tile tutorial');
     await page.getByLabel('Toggle example effect').click();
     await page.getByRole('button', { name: /Next/ }).click();
-    const kitsuneAsk = page.getByRole('dialog', { name: 'Considering Getting Kitsune Input?' });
-    await assertNoModalOverflow(kitsuneAsk, 'Kitsune Input ask');
-    await assertNaturalImageRatio(kitsuneAsk.locator('.kitsune-launch-offer-logo'), 'Kitsune Input ask logo');
-    await page.getByRole('button', { name: 'Continue' }).click({ timeout: 7000 });
     await page.waitForTimeout(150);
   }
 

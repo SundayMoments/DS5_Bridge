@@ -56,6 +56,9 @@ describe('IPC contract', () => {
     expect(mainSource).toContain('/^https:\\/\\/github\\.com\\/SundayMoments\\/?$/i.test(url)');
     expect(mainSource).toContain('/^https:\\/\\/discord\\.gg\\/By5jhh73wr\\/?$/i.test(url)');
     expect(mainSource).toContain('/^https:\\/\\/kitsuneinput\\.com\\/?$/i.test(url)');
+    // The Kitsune Input prompts' tagged links.
+    expect(mainSource).toContain('/^https:\\/\\/kitsuneinput\\.com\\/\\?src=ds5-popup$/i.test(url)');
+    expect(mainSource).toContain('/^https:\\/\\/kitsuneinput\\.com\\/buy\\?src=ds5-popup$/i.test(url)');
   });
 
   it('maps chord keyboard shortcuts to Windows virtual-key codes', () => {

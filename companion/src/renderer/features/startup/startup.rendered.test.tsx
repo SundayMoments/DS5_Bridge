@@ -75,44 +75,25 @@ describe('startup', () => {
     expect(window.localStorage.getItem(UI_THEME_PRESET_STORAGE_KEY)).toBe('dark');
   });
 
-  it('walks a first-time user through the feature tile and the Kitsune Input ask once', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    const bridge = installBridgeMock(fixtureSnapshot());
+  it('walks a first-time user through the feature tile once, with no Kitsune Input ask', async () => {
+    installBridgeMock(fixtureSnapshot());
     await mount();
 
     const featureStep = document.querySelector('[role="dialog"][aria-label="Feature tile tutorial"]');
     expect(featureStep).not.toBeNull();
+    // A single step, so no step count.
+    expect(featureStep!.textContent).not.toMatch(/\d \/ \d/);
     const next = buttonByText(featureStep!, 'Next');
     expect(next?.disabled).toBe(true);
     await click(featureStep!.querySelector('[aria-label="Toggle example effect"]'));
     expect(next?.disabled).toBe(false);
+    const finishedAt = Date.now();
     await click(next);
 
-    const askStep = document.querySelector('[role="dialog"][aria-label="Considering Getting Kitsune Input?"]');
-    expect(askStep?.querySelector('h2')?.textContent).toBe('Considering Getting Kitsune Input?');
-    expect(askStep?.textContent).not.toContain('Enjoying DS5 Bridge?');
-    // Showing the ask starts the month before the next one.
-    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(0);
-    await click(askStep!.querySelector('.kitsune-launch-offer-get'));
-    expect(bridge.fn('openExternal')).toHaveBeenCalledWith('https://ko-fi.com/s/d1f0a3b26f');
-    // A shorter launch offer: four of its features, its price, and its buttons.
-    // The banner's offer under its own question: all features and the extra controllers.
-    expect(askStep?.querySelectorAll('.kitsune-launch-offer-features li')).toHaveLength(8);
-    expect(askStep?.querySelectorAll('.kitsune-launch-offer-controllers li')).toHaveLength(2);
-    expect(askStep?.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
-    const continueButton = askStep?.querySelector<HTMLButtonElement>('.kitsune-ask-continue-button');
-    expect(continueButton?.textContent).toBe('Continue In 5');
-    expect(continueButton?.disabled).toBe(true);
-    for (const remaining of [4, 3, 2, 1]) {
-      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-      expect(continueButton?.textContent).toBe(`Continue In ${remaining}`);
-    }
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-    expect(continueButton?.textContent).toBe('Continue');
-    expect(continueButton?.disabled).toBe(false);
-
-    await click(continueButton);
     expect(document.querySelector('.startup-tutorial-modal')).toBeNull();
+    expect(document.querySelector('[role="dialog"][aria-label="Considering Getting Kitsune Input?"]')).toBeNull();
     expect(window.localStorage.getItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY)).toBe('1');
+    // Finishing setup starts the month before the first Kitsune Input prompt.
+    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThanOrEqual(finishedAt);
   });
 });

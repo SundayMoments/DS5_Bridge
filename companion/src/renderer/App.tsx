@@ -61,8 +61,8 @@ import { ControllerFeedbackPage, useControllerFeedbackController } from './featu
 import { useAudioHapticsLabController } from './features/audio-haptics-lab';
 import { useSystemController } from './features/system-controls/use-system-controller';
 import {
-  KITSUNE_INPUT_PURCHASE_URL,
-  KITSUNE_INPUT_URL,
+  KITSUNE_INPUT_POPUP_PURCHASE_URL,
+  KITSUNE_INPUT_POPUP_URL,
   KitsuneInputLaunchOffer,
   KitsuneInputMonthlyAsk,
   KitsuneInputPromotionDialog,
@@ -152,12 +152,12 @@ export function App() {
   const settingsPage = useSettingsPage(runtime, { notifications });
   const settingsNavigation = useSettingsNavigation({ focusTarget: settingsPage.focusTarget });
   const { windowDragging, beginWindowDrag } = useBridgeSnapshots(applySnapshot);
-  // At most one Kitsune Input prompt per run: the first-run ask, else the
-  // one-time launch offer, else the monthly ask. Each restarts the month.
+  // No Kitsune Input prompt until a month after first-run setup finishes; then
+  // at most one per run: the one-time launch offer, else the monthly ask. Each
+  // restarts the month.
   const kitsuneLaunchOffer = useKitsuneLaunchOffer({
     eligible: Boolean(snapshot) && !snapshot?.settings.kitsuneInputLaunchOfferShown,
     blocked: startupTutorial.step !== 'done'
-      || startupTutorial.kitsuneAskShownThisRun
       || Boolean(snapshot?.bootloaderConfirmation)
       || showKitsuneInputPromotion,
     markShown: () => {
@@ -171,7 +171,6 @@ export function App() {
     eligible: Boolean(snapshot?.settings.kitsuneInputLaunchOfferShown)
       && !snapshot?.settings.kitsuneInputPromotionDismissed,
     blocked: startupTutorial.step !== 'done'
-      || startupTutorial.kitsuneAskShownThisRun
       || kitsuneLaunchOffer.visible
       || Boolean(snapshot?.bootloaderConfirmation)
       || showKitsuneInputPromotion
@@ -462,40 +461,34 @@ export function App() {
           {showKitsuneInputPromotion && !snapshot.settings.kitsuneInputPromotionDismissed && (
             <KitsuneInputPromotionDialog
               onClose={() => setShowKitsuneInputPromotion(false)}
-              onPurchase={() => void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
-              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
+              onPurchase={() => void window.bridge.openExternal(KITSUNE_INPUT_POPUP_PURCHASE_URL)}
+              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_POPUP_URL)}
             />
           )}
 
           {kitsuneLaunchOffer.visible && (
             <KitsuneInputLaunchOffer
               onGet={() => {
-                void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL);
+                void window.bridge.openExternal(KITSUNE_INPUT_POPUP_PURCHASE_URL);
                 kitsuneLaunchOffer.close();
               }}
-              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
+              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_POPUP_URL)}
               onClose={kitsuneLaunchOffer.close}
             />
           )}
 
           {kitsuneMonthlyAsk.visible && (
             <KitsuneInputMonthlyAsk
-              countdown={kitsuneMonthlyAsk.countdown}
-              onGet={() => void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
-              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
+              onGet={() => void window.bridge.openExternal(KITSUNE_INPUT_POPUP_PURCHASE_URL)}
+              onLearnMore={() => void window.bridge.openExternal(KITSUNE_INPUT_POPUP_URL)}
               onClose={kitsuneMonthlyAsk.close}
             />
           )}
 
           {startupTutorial.step !== 'done' && (
             <StartupTutorial
-              step={startupTutorial.step}
               featureExampleActive={startupTutorial.featureExampleActive}
-              askCountdown={startupTutorial.askCountdown}
               onFeatureExampleToggle={startupTutorial.toggleFeatureExample}
-              onFeatureStepComplete={startupTutorial.completeFeatureStep}
-              onGetKitsuneInput={() => void window.bridge.openExternal(KITSUNE_INPUT_PURCHASE_URL)}
-              onLearnAboutKitsuneInput={() => void window.bridge.openExternal(KITSUNE_INPUT_URL)}
               onFinish={startupTutorial.finish}
             />
           )}

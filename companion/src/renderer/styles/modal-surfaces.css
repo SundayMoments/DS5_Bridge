@@ -112,13 +112,6 @@
   overflow: hidden;
 }
 
-.startup-tutorial-step {
-  color: var(--text-muted);
-  font-size: var(--font-size-subtitle);
-  font-weight: 800;
-  line-height: 1;
-}
-
 .startup-tutorial-copy {
   display: grid;
   gap: 8px;

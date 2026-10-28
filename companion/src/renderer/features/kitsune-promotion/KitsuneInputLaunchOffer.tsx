@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { IconX as X } from '@tabler/icons-react';
 import { KitsuneInputOfferContent } from './KitsuneInputOfferContent';
-
-/** Seconds before the offer can be closed. */
-export const LAUNCH_OFFER_CLOSE_DELAY_SECONDS = 5;
 
 export interface KitsuneInputLaunchOfferProps {
   onGet(): void;
@@ -11,45 +8,28 @@ export interface KitsuneInputLaunchOfferProps {
   onClose(): void;
 }
 
-/**
- * The one-time Kitsune Input offer. It can only be closed after a short
- * countdown; the close button, Escape, and the backdrop are inert until then.
- */
+/** The one-time Kitsune Input offer, closable at once with its close button, Escape, or the backdrop. */
 export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: KitsuneInputLaunchOfferProps) {
-  const [closeCountdown, setCloseCountdown] = useState(LAUNCH_OFFER_CLOSE_DELAY_SECONDS);
-  const closeLocked = closeCountdown > 0;
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const lockedRef = useRef(closeLocked);
-  lockedRef.current = closeLocked;
-
-  useEffect(() => {
-    if (!closeLocked) return undefined;
-    const timer = window.setTimeout(() => setCloseCountdown((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [closeCountdown]);
 
   useEffect(() => {
     dialogRef.current?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      if (!lockedRef.current) closeRef.current();
+      closeRef.current();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, []);
 
-  const closeLabel = closeLocked ? `Close in ${closeCountdown}` : 'Close';
-
   return (
     <div
       className="modal-backdrop kitsune-promotion-backdrop kitsune-launch-offer-backdrop"
       role="presentation"
-      onMouseDown={() => {
-        if (!lockedRef.current) closeRef.current();
-      }}
+      onMouseDown={onClose}
     >
       <section
         ref={dialogRef}
@@ -61,15 +41,8 @@ export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: Kitsune
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button
-          className={`kitsune-launch-offer-close ${closeLocked ? 'locked' : ''}`}
-          type="button"
-          disabled={closeLocked}
-          aria-label={closeLabel}
-          title={closeLabel}
-          onClick={onClose}
-        >
-          {closeLocked ? <span>{closeLabel}</span> : <X size={18} aria-hidden="true" />}
+        <button className="kitsune-launch-offer-close" type="button" aria-label="Close" title="Close" onClick={onClose}>
+          <X size={18} aria-hidden="true" />
         </button>
         <KitsuneInputOfferContent
           idPrefix="kitsune-launch-offer"

@@ -155,8 +155,11 @@ describe('renderer behavior guards', () => {
     for (const retiredCopy of ['Shape every movement.', 'Ready when you play.', 'Features exclusive to Kitsune Input', '<span>01</span>']) {
       expect(promotionSource).not.toContain(retiredCopy);
     }
-    expect(featureSource('kitsune-promotion/links.ts')).toContain("KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';");
-    expect(featureSource('kitsune-promotion/links.ts')).toContain("KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';");
+    const links = featureSource('kitsune-promotion/links.ts');
+    expect(links).toContain("KITSUNE_INPUT_URL = 'https://kitsuneinput.com/';");
+    expect(links).toContain("KITSUNE_INPUT_PURCHASE_URL = 'https://ko-fi.com/s/d1f0a3b26f';");
+    expect(links).toContain("KITSUNE_INPUT_POPUP_URL = 'https://kitsuneinput.com/?src=ds5-popup';");
+    expect(links).toContain("KITSUNE_INPUT_POPUP_PURCHASE_URL = 'https://kitsuneinput.com/buy?src=ds5-popup';");
   });
 
   // Trigger Lab enablement and restore are rendered in

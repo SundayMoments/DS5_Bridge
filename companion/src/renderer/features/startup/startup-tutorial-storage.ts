@@ -1,4 +1,4 @@
-export type StartupTutorialStep = 'feature-toggle' | 'kitsune-ask' | 'done';
+export type StartupTutorialStep = 'feature-toggle' | 'done';
 
 export const STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY = 'ds5bridge.startupTutorialCompleted.v1';
 
