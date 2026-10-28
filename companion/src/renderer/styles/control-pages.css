@@ -115,6 +115,22 @@
   white-space: nowrap;
 }
 
+/* The DualSense strip is one more row above the header; the cards keep the tall row. */
+.control-page:has(> .studio-tab-strip) {
+  grid-template-rows: auto auto minmax(var(--feature-card-height), auto);
+}
+
+/* On the DualSense pages, as in Kitsune Input's Controller Studio, the strip sits flat on the page. */
+.control-page:is(.audio-page, .haptics-page, .triggers-page, .lighting-page) .studio-tab-strip {
+  border-radius: 6px;
+  background: var(--surface-section);
+  box-shadow: none;
+}
+
+.control-page:is(.audio-page, .haptics-page, .triggers-page, .lighting-page) .studio-tab-strip button {
+  font-weight: var(--font-weight-medium);
+}
+
 .overview-page {
   height: 100%;
   min-height: 0;

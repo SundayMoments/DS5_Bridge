@@ -6,6 +6,7 @@ import type { BridgeSnapshot, CompanionSettings } from '../../shared/types';
 import type { BridgeStatusPayload } from '../../shared/protocol';
 import { App } from '../App';
 import { RendererLocalization } from '../composition/RendererLocalization';
+import { isDualSenseSection, type ControlTab } from '../features/shell/control-tabs';
 
 export const FIXTURE_BRIDGE_PATH = '\\\\?\\HID#VID_2E8A&PID_10F4&MI_03#fixture';
 
@@ -251,6 +252,19 @@ export function installDomStubs(): void {
 
 /** Opens a page through the sidebar, as a person would. */
 export async function openPage(host: HTMLElement, tabId: string): Promise<HTMLElement> {
+  // Audio, Haptics, Triggers and Lighting are sections of the DualSense tab:
+  // open it, then pick the section from the strip at the top of the page.
+  if (isDualSenseSection(tabId as ControlTab)) {
+    await openPage(host, 'dualsense');
+    const sectionTab = host.querySelector<HTMLButtonElement>(
+      `.control-page.active .studio-tab-strip [data-dualsense-section="${tabId}"]`
+    );
+    if (!sectionTab) throw new Error(`No DualSense section tab for ${tabId}`);
+    await act(async () => sectionTab.click());
+    const panel = host.querySelector<HTMLElement>(`#control-panel-${tabId}.active`);
+    if (!panel) throw new Error(`No active page after opening ${tabId}`);
+    return panel;
+  }
   const button = host.querySelector<HTMLButtonElement>(`#control-tab-${tabId}`);
   if (!button) throw new Error(`No sidebar entry for ${tabId}`);
   await act(async () => button.click());

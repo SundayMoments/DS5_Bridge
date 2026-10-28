@@ -5,6 +5,7 @@ import {
   CONTROL_TAB_DEFINITIONS,
   CONTROL_TAB_GROUPS,
   controlTabGroupFor,
+  sidebarTabFor,
   type ControlTab,
   type ControlTabDefinition,
   type ControlTabGroupId
@@ -27,6 +28,8 @@ export function ShellSidebar({
   onSelectTab,
   panelIdForTab
 }: ShellSidebarProps) {
+  // Audio, Haptics, Triggers and Lighting all show the DualSense entry as current.
+  const currentTab = sidebarTabFor(activeTab);
   const activeGroupId = controlTabGroupFor(activeTab)?.id ?? null;
   const [openGroupId, setOpenGroupId] = useState<ControlTabGroupId | null>(activeGroupId ?? 'controller');
 
@@ -45,7 +48,7 @@ export function ShellSidebar({
     options: { nested?: boolean; groupExpanded?: boolean; utility?: boolean } = {}
   ) {
     const { id, label, Icon } = definition;
-    const active = activeTab === id;
+    const active = currentTab === id;
     const nested = Boolean(options.nested);
     const className = [
       'control-tab-button',
@@ -82,7 +85,7 @@ export function ShellSidebar({
             {renderTabButton(CONTROL_TAB_DEFINITIONS.overview)}
             {CONTROL_TAB_GROUPS.map(({ id, label, Icon, tabs }) => {
               const expanded = openGroupId === id;
-              const containsActiveTab = tabs.some(({ id: tabId }) => tabId === activeTab);
+              const containsActiveTab = tabs.some(({ id: tabId }) => tabId === currentTab);
               const triggerId = `control-group-${id}`;
               const panelId = `control-group-panel-${id}`;
               return (

@@ -649,3 +649,13 @@ describe('companion layout CSS', () => {
     expect(offerStyles).not.toContain('.kitsune-promotion-dismiss');
   });
 });
+
+describe('DualSense section strip', () => {
+  it('adds a row for the strip so the header never takes the tall card row', () => {
+    expect(cssBlock('.control-page:has(> .studio-tab-strip) {'))
+      .toContain('grid-template-rows: auto auto minmax(var(--feature-card-height), auto);');
+    const flat = cssBlock('.control-page:is(.audio-page, .haptics-page, .triggers-page, .lighting-page) .studio-tab-strip {');
+    expect(flat).toContain('background: var(--surface-section);');
+    expect(flat).toContain('box-shadow: none;');
+  });
+});

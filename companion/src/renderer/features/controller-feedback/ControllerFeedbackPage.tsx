@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   IconBrandDeezer,
   IconDeviceAudioTape,
@@ -29,6 +29,8 @@ export interface ControllerFeedbackPageProps {
   /** Haptics or Audio Haptics is open; both share this panel. */
   readonly active: boolean;
   readonly audioHapticsOpen: boolean;
+  /** The DualSense section strip, above the page header; Audio Haptics has none. */
+  readonly navigation?: ReactNode;
   readonly feedback: ControllerFeedbackController;
   readonly lab: AudioHapticsLabController;
   readonly snapshot: BridgeSnapshot;
@@ -41,6 +43,7 @@ export interface ControllerFeedbackPageProps {
 export function ControllerFeedbackPage({
   active,
   audioHapticsOpen,
+  navigation,
   feedback,
   lab,
   snapshot,
@@ -110,9 +113,10 @@ export function ControllerFeedbackPage({
       className={`control-page haptics-page ${active ? 'active' : ''}`}
       role="tabpanel"
       id="control-panel-haptics"
-      aria-labelledby={audioHapticsOpen ? 'control-tab-audio-haptics' : 'control-tab-haptics'}
+      aria-labelledby={audioHapticsOpen ? 'control-tab-audio-haptics' : 'control-tab-dualsense'}
       aria-hidden={!active}
     >
+        {!audioHapticsOpen && navigation}
         <div className="feature-heading studio-feature-heading">
           <div className="studio-heading-copy">
             {audioHapticsOpen ? (

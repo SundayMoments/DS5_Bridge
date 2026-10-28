@@ -63,10 +63,7 @@ export async function captureWindow(app, file) {
 
 const TAB_GROUPS = {
   Devices: 'Controller',
-  Audio: 'Controller',
-  Haptics: 'Controller',
-  'Adaptive Triggers': 'Controller',
-  Lighting: 'Controller',
+  DualSense: 'Controller',
   'Stick Deadzones': 'Input',
   'Button Remapping': 'Input',
   Chords: 'Input',
@@ -75,8 +72,23 @@ const TAB_GROUPS = {
   System: 'Tools'
 };
 
+// Pages that are sections of the DualSense tab, by their strip label.
+const DUALSENSE_SECTIONS = {
+  Audio: 'audio',
+  Haptics: 'haptics',
+  'Adaptive Triggers': 'triggers',
+  Lighting: 'lighting'
+};
+
 /** Opens a sidebar page by its label, expanding its group or leaving Settings first. */
 export async function openControlTab(page, label) {
+  const section = DUALSENSE_SECTIONS[label];
+  if (section) {
+    await openControlTab(page, 'DualSense');
+    await page.locator(`.control-page.active .studio-tab-strip [data-dualsense-section="${section}"]`).click();
+    await page.locator(`#control-panel-${section}.active`).waitFor();
+    return;
+  }
   const back = page.getByRole('button', { name: 'Back to app' });
   if (label !== 'Settings' && await back.isVisible()) {
     await back.click();

@@ -19,6 +19,7 @@ import {
 export type ControlTab =
   | 'overview'
   | 'devices'
+  | 'dualsense'
   | 'audio'
   | 'haptics'
   | 'audio-haptics'
@@ -49,6 +50,7 @@ export type ControlTabGroupDefinition = Readonly<{
 export const CONTROL_TAB_DEFINITIONS = {
   overview: { id: 'overview', label: 'Overview', Icon: IconLayoutDashboard },
   devices: { id: 'devices', label: 'Devices', Icon: IconBluetooth },
+  dualsense: { id: 'dualsense', label: 'DualSense', Icon: IconDeviceGamepad2 },
   audio: { id: 'audio', label: 'Audio', Icon: IconVolume },
   haptics: { id: 'haptics', label: 'Haptics', Icon: IconSparkles },
   'audio-haptics': { id: 'audio-haptics', label: 'Audio Haptics', Icon: IconDeviceAudioTape },
@@ -69,10 +71,7 @@ export const CONTROL_TAB_GROUPS: readonly ControlTabGroupDefinition[] = [
     Icon: IconDeviceGamepad3,
     tabs: [
       CONTROL_TAB_DEFINITIONS.devices,
-      CONTROL_TAB_DEFINITIONS.audio,
-      CONTROL_TAB_DEFINITIONS.haptics,
-      CONTROL_TAB_DEFINITIONS.triggers,
-      CONTROL_TAB_DEFINITIONS.lighting
+      CONTROL_TAB_DEFINITIONS.dualsense
     ]
   },
   {
@@ -104,8 +103,26 @@ export const CONTROL_TABS: readonly ControlTabDefinition[] = [
   CONTROL_TAB_DEFINITIONS.settings
 ];
 
+/**
+ * The sections of the DualSense tab, like Kitsune Input's Controller Studio:
+ * one sidebar entry, with a strip above each page to move between them. Each
+ * section keeps its own tab ID, so links into Audio or Haptics still work.
+ */
+export const DUALSENSE_SECTIONS = ['audio', 'haptics', 'triggers', 'lighting'] as const satisfies readonly ControlTab[];
+export type DualSenseSection = typeof DUALSENSE_SECTIONS[number];
+
+export function isDualSenseSection(tab: ControlTab): tab is DualSenseSection {
+  return (DUALSENSE_SECTIONS as readonly ControlTab[]).includes(tab);
+}
+
+/** The sidebar entry that shows as current for a page: DualSense for its sections. */
+export function sidebarTabFor(tab: ControlTab): ControlTab {
+  return isDualSenseSection(tab) ? 'dualsense' : tab;
+}
+
 export function controlTabGroupFor(tab: ControlTab): ControlTabGroupDefinition | null {
-  return CONTROL_TAB_GROUPS.find(({ tabs }) => tabs.some(({ id }) => id === tab)) ?? null;
+  const sidebarTab = sidebarTabFor(tab);
+  return CONTROL_TAB_GROUPS.find(({ tabs }) => tabs.some(({ id }) => id === sidebarTab)) ?? null;
 }
 
 /** Audio Haptics and Trigger Lab reuse the Haptics and Triggers panels. */

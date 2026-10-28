@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   IconDeviceGamepad2,
   IconFlask2,
@@ -24,6 +24,8 @@ export interface AdaptiveTriggersPageProps {
   /** Adaptive Triggers or Trigger Lab is the open page; both share this panel. */
   readonly active: boolean;
   readonly triggerLabOpen: boolean;
+  /** The DualSense section strip, above the page header; Trigger Lab has none. */
+  readonly navigation?: ReactNode;
   readonly triggers: AdaptiveTriggersController;
   readonly lab: TriggerLabController;
   readonly snapshot: BridgeSnapshot;
@@ -35,6 +37,7 @@ export interface AdaptiveTriggersPageProps {
 export function AdaptiveTriggersPage({
   active,
   triggerLabOpen,
+  navigation,
   triggers,
   lab,
   snapshot,
@@ -80,9 +83,10 @@ export function AdaptiveTriggersPage({
       className={`control-page triggers-page ${active ? 'active' : ''}`}
       role="tabpanel"
       id="control-panel-triggers"
-      aria-labelledby={triggerLabOpen ? 'control-tab-trigger-lab' : 'control-tab-triggers'}
+      aria-labelledby={triggerLabOpen ? 'control-tab-trigger-lab' : 'control-tab-dualsense'}
       aria-hidden={!active}
     >
+        {!triggerLabOpen && navigation}
         <div className="feature-heading studio-feature-heading">
           <div className="studio-heading-copy">
             {triggerLabOpen ? (

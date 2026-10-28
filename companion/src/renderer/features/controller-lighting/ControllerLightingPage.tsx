@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { IconBulb, IconPalette as Palette } from '@tabler/icons-react';
 import type { BridgeSnapshot } from '@shared/types';
 import { PERCENT_SLIDER_TICKS, sliderTickClass } from '../../common/slider-ticks';
@@ -15,6 +15,8 @@ import type { ControllerLightingController } from './use-controller-lighting-con
 
 export interface ControllerLightingPageProps {
   readonly active: boolean;
+  /** The DualSense section strip, above the page header. */
+  readonly navigation?: ReactNode;
   readonly controller: ControllerLightingController;
   readonly snapshot: BridgeSnapshot;
   readonly connected: boolean;
@@ -24,6 +26,7 @@ export interface ControllerLightingPageProps {
 
 export function ControllerLightingPage({
   active,
+  navigation,
   controller,
   snapshot,
   connected,
@@ -66,9 +69,10 @@ export function ControllerLightingPage({
       className={`control-page lighting-page ${active ? 'active' : ''}`}
       role="tabpanel"
       id="control-panel-lighting"
-      aria-labelledby="control-tab-lighting"
+      aria-labelledby="control-tab-dualsense"
       aria-hidden={!active}
     >
+        {navigation}
         <div className="feature-heading studio-feature-heading">
           <div className="studio-heading-copy">
             <button

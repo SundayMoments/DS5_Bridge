@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   IconAlertHexagon,
   IconAlertTriangle,
@@ -19,6 +19,8 @@ import { AUDIO_BUFFER_LENGTH_MAX, AUDIO_BUFFER_LENGTH_MIN, MIC_VOLUME_PRESETS, M
 
 export interface ControllerAudioPageProps {
   readonly active: boolean;
+  /** The DualSense section strip, above the page header. */
+  readonly navigation?: ReactNode;
   readonly controller: ControllerAudioController;
   readonly snapshot: BridgeSnapshot;
   readonly connected: boolean;
@@ -28,6 +30,7 @@ export interface ControllerAudioPageProps {
 
 export function ControllerAudioPage({
   active,
+  navigation,
   controller,
   snapshot,
   connected,
@@ -102,9 +105,10 @@ export function ControllerAudioPage({
       className={`control-page audio-page ${active ? 'active' : ''}`}
       role="tabpanel"
       id="control-panel-audio"
-      aria-labelledby="control-tab-audio"
+      aria-labelledby="control-tab-dualsense"
       aria-hidden={!active}
     >
+        {navigation}
         <div className="feature-heading studio-feature-heading">
           <div className="studio-heading-copy">
             <button

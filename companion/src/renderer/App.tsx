@@ -24,7 +24,14 @@ import { ShellNotifications, type ShellNotificationFocusTarget } from './feature
 import { ShellSidebarDevice } from './features/shell/ShellSidebarDevice';
 import { ShellSidebarHeader } from './features/shell/ShellSidebarHeader';
 import { ShellSupportBadge } from './features/shell/ShellSupportBadge';
-import { CONTROL_TAB_DEFINITIONS, controlPanelIdFor, type ControlTab } from './features/shell/control-tabs';
+import { DualSenseSectionTabs } from './features/shell/DualSenseSectionTabs';
+import {
+  CONTROL_TAB_DEFINITIONS,
+  controlPanelIdFor,
+  isDualSenseSection,
+  type ControlTab,
+  type DualSenseSection
+} from './features/shell/control-tabs';
 import { bridgeSelectorModel, sidebarDevicePresentation } from './features/shell/sidebar-device';
 import { useNotificationsMenu } from './features/shell/use-notifications-menu';
 import { SettingsSidebar } from './features/settings/SettingsSidebar';
@@ -71,6 +78,8 @@ const SUPPORT_URL = 'https://ko-fi.com/sundaymoments';
 export function App() {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
   const [activeControlTab, setActiveControlTab] = useState<ControlTab>('overview');
+  // The DualSense sidebar entry reopens the section last used, like Kitsune Input's Controller Studio.
+  const [dualSenseSection, setDualSenseSection] = useState<DualSenseSection>('audio');
   const [settingsReturnTab, setSettingsReturnTab] = useState<ControlTab>('overview');
   const { pendingAction, setPendingAction, beginAppAction, endAppAction } = useAppActionLock(snapshot !== null);
   const [showKitsuneInputPromotion, setShowKitsuneInputPromotion] = useState(false);
@@ -178,7 +187,11 @@ export function App() {
     triggers.syncSnapshot(next);
   }
 
-  function selectControlTab(tab: ControlTab) {
+  function selectControlTab(requestedTab: ControlTab) {
+    const tab = requestedTab === 'dualsense' ? dualSenseSection : requestedTab;
+    if (isDualSenseSection(tab)) {
+      setDualSenseSection(tab);
+    }
     if (tab === activeControlTab) {
       return;
     }
@@ -189,6 +202,11 @@ export function App() {
     notifications.close();
     devices.closeMenu();
     setActiveControlTab(tab);
+  }
+
+  /** The DualSense entry controls whichever section it would open. */
+  function panelIdForSidebarTab(tab: ControlTab): string {
+    return controlPanelIdFor(tab === 'dualsense' ? dualSenseSection : tab);
   }
 
   /** Opens Settings with one setting highlighted, for links from Overview. */
@@ -213,7 +231,7 @@ export function App() {
         theme={appearance.theme}
         textScale={appearance.textScale}
         activeTab={activeControlTab}
-        panelIdForTab={controlPanelIdFor}
+        panelIdForTab={panelIdForSidebarTab}
         onSelectTab={selectControlTab}
         onWindowChromeMouseDown={() => undefined}
         onBeginWindowDrag={beginWindowDrag}
@@ -244,6 +262,12 @@ export function App() {
   }
 
   const kofiBadgeUrl = UI_THEME_KOFI_BADGES[appearance.theme] ?? UI_THEME_KOFI_BADGES[DEFAULT_UI_THEME_PRESET];
+  const dualSenseNavigation = (
+    <DualSenseSectionTabs
+      activeSection={isDualSenseSection(activeControlTab) ? activeControlTab : dualSenseSection}
+      onSelect={selectControlTab}
+    />
+  );
   const sidebarDeviceNode = (
     <ShellSidebarDevice
       device={sidebarDevicePresentation(snapshot, devices.model.cards, controllerImage)}
@@ -272,7 +296,7 @@ export function App() {
       theme={appearance.theme}
       textScale={appearance.textScale}
       activeTab={activeControlTab}
-      panelIdForTab={controlPanelIdFor}
+      panelIdForTab={panelIdForSidebarTab}
       onSelectTab={selectControlTab}
       onWindowChromeMouseDown={notifications.close}
       onBeginWindowDrag={beginWindowDrag}
@@ -338,6 +362,7 @@ export function App() {
             <ControllerFeedbackPage
               active={activeControlTab === 'haptics' || audioHapticsOpen}
               audioHapticsOpen={audioHapticsOpen}
+              navigation={dualSenseNavigation}
               feedback={feedback}
               lab={audioHapticsLab}
               snapshot={snapshot}
@@ -350,6 +375,7 @@ export function App() {
           <DeferredPage active={activeControlTab === 'audio'}>
             <ControllerAudioPage
               active={activeControlTab === 'audio'}
+              navigation={dualSenseNavigation}
               controller={audio}
               snapshot={snapshot}
               connected={connected}
@@ -362,6 +388,7 @@ export function App() {
             <AdaptiveTriggersPage
               active={activeControlTab === 'triggers' || triggerLabOpen}
               triggerLabOpen={triggerLabOpen}
+              navigation={dualSenseNavigation}
               triggers={triggers}
               lab={triggerLab}
               snapshot={snapshot}
@@ -374,6 +401,7 @@ export function App() {
           <DeferredPage active={activeControlTab === 'lighting'}>
             <ControllerLightingPage
               active={activeControlTab === 'lighting'}
+              navigation={dualSenseNavigation}
               controller={lighting}
               snapshot={snapshot}
               connected={connected}
