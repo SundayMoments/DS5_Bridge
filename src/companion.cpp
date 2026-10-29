@@ -3458,7 +3458,12 @@ void companion_process_controller_report(uint8_t *report, uint16_t len) {
         report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
     }
 
-    report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
+    // In Normal mode the PC sees the mute button too, as with a wired
+    // controller (Steam Input, DS4Windows, Discord). Every other mode gives
+    // the button a bridge-side job, so the host never sees it.
+    if (mute_button_mode != MuteButtonNormal) {
+        report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
+    }
 
     if (mute_pressed && !mute_button_last_pressed) {
         if (mute_button_mode == MuteButtonNormal) {

@@ -1025,6 +1025,23 @@ void assert_mute_keyboard_chord_starter_is_deferred(std::filesystem::path const 
     }
 }
 
+void assert_mute_button_reaches_host_only_in_normal_mode(std::filesystem::path const &root) {
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const std::string process_block = extract_between(
+        companion_cpp,
+        "void companion_process_controller_report(uint8_t *report, uint16_t len) {",
+        "\n}\n\nvoid companion_update_controller_report"
+    );
+    const auto guard_pos = process_block.find("if (mute_button_mode != MuteButtonNormal) {\n        report[9] &= static_cast<uint8_t>(~kMuteButtonBit);\n    }");
+    const auto toggle_pos = process_block.find("toggle_companion_mic_mute();");
+    if (guard_pos == std::string::npos || toggle_pos == std::string::npos || toggle_pos < guard_pos) {
+        throw std::runtime_error("Normal mute mode must pass the mute button to the host and still toggle the bridge mic (GitHub #140)");
+    }
+    if (process_block.find("\n    report[9] &= static_cast<uint8_t>(~kMuteButtonBit);") != std::string::npos) {
+        throw std::runtime_error("The mute button must not be stripped from host reports unconditionally (GitHub #140)");
+    }
+}
+
 void assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(std::filesystem::path const &root) {
     const auto companion_cpp = read_text(root / "src" / "companion.cpp");
     const auto gate_h = read_text(root / "src" / "home_chord_gate.h");
@@ -2572,6 +2589,7 @@ int main() {
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_mute_keyboard_shortcut_is_typed_in_stages(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
+        assert_mute_button_reaches_host_only_in_normal_mode(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);
         assert_bluetooth_pairing_and_reconnect_policy(source_root);
         assert_firmware_version_has_one_canonical_source(source_root);
