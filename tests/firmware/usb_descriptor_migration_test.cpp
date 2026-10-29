@@ -1027,18 +1027,20 @@ void assert_mute_keyboard_chord_starter_is_deferred(std::filesystem::path const 
 
 void assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(std::filesystem::path const &root) {
     const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const auto gate_h = read_text(root / "src" / "home_chord_gate.h");
 
-    if (companion_cpp.find("constexpr uint32_t kHomeChordSuppressUs = 250000;") == std::string::npos) {
+    // Timing behavior itself is covered by home_chord_gate_test.
+    if (gate_h.find("inline constexpr uint32_t kSuppressUs = 250000;") == std::string::npos) {
         throw std::runtime_error("PS/Home chord starter must be swallowed for the full 250ms chord window");
     }
-    if (companion_cpp.find("constexpr uint32_t kHomeChordFallbackReplayUs = 80000;") == std::string::npos) {
+    if (gate_h.find("inline constexpr uint32_t kFallbackReplayUs = 80000;") == std::string::npos) {
         throw std::runtime_error("Unconsumed PS/Home taps must replay as a host-visible 80ms press");
     }
 
     const std::string gate_enabled_block = extract_between(
         companion_cpp,
         "bool home_chord_gate_enabled() {",
-        "\n}\n\nvoid clear_home_chord_gate"
+        "\n}\n\nvoid apply_home_chord_gate"
     );
     if (
         gate_enabled_block.find("sleep_keybind_enabled || speaker_volume_shortcut_enabled") == std::string::npos
@@ -1053,14 +1055,13 @@ void assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(std::files
         "\n}\n\nbool dpad_direction_has"
     );
     if (
-        gate_block.find("if (home_chord_consumed)") == std::string::npos
+        gate_block.find("ds5::home_chord_gate::step(") == std::string::npos
+        || gate_block.find("home_chord_gate_enabled(),") == std::string::npos
+        || gate_block.find("home_chord_consumed,") == std::string::npos
+        || gate_block.find("report[9] |= kHomeButtonBit;") == std::string::npos
         || gate_block.find("report[9] &= static_cast<uint8_t>(~kHomeButtonBit);") == std::string::npos
-        || gate_block.find("home_chord_gate_until_us = now + kHomeChordSuppressUs;") == std::string::npos
-        || gate_block.find("if (!time_us_reached(now, home_chord_gate_until_us))") == std::string::npos
-        || gate_block.find("home_chord_replay_until_us = now + kHomeChordFallbackReplayUs;") == std::string::npos
-        || gate_block.find("if (home_chord_replay_until_us != 0 && !time_us_reached(now, home_chord_replay_until_us))") == std::string::npos
     ) {
-        throw std::runtime_error("PS/Home chord gate must mask PS/Home during the chord window and replay unconsumed taps by duration");
+        throw std::runtime_error("PS/Home chord gate must decide the host's PS/Home bit from the shared gate state machine");
     }
 
     const std::string dynamic_block = extract_between(
