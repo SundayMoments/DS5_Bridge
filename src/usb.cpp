@@ -18,6 +18,7 @@
 #include "persona/host_persona.h"
 #include "usb.h"
 #include "usb_descriptor_mode.h"
+#include "utils.h"
 #include "wake_on_lan.h"
 
 uint8_t mute[2]; // 0: speaker/LED fallback, 1: mic/idle-disconnect fallback
@@ -85,6 +86,27 @@ uint8_t usb_hid_polling_interval_ms_value = 1;
 #define USB_EXPECTED_DISCONNECT_GRACE_US 1500000
 #define USB_BUS_IDLE_US                 20000
 #define USB_SOF_SAMPLE_STALE_US         1000000
+
+// Re-attach timing for the logging build; DS5_LOG is empty in the others.
+static inline unsigned long usb_log_ms() {
+    return static_cast<unsigned long>(time_us_32() / 1000);
+}
+
+#if DS5_DEBUG_LOGS_ENABLED
+// Why usb_pm_poll is holding back a requested re-attach, logged when it changes.
+static const char *usb_reattach_hold_reason = nullptr;
+static void usb_note_reattach_hold(const char *reason) {
+    if (reason == usb_reattach_hold_reason) {
+        return;
+    }
+    usb_reattach_hold_reason = reason;
+    if (reason != nullptr) {
+        DS5_LOG("[USB] re-attach held: %s at %lu ms\n", reason, usb_log_ms());
+    }
+}
+#else
+static inline void usb_note_reattach_hold(const char *) {}
+#endif
 
 enum UsbAudioDebugKind : uint8_t {
     UsbAudioDebugSetInterface = 1,
@@ -200,6 +222,8 @@ static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
 static void usb_note_reconnect_disconnect(uint32_t now);
 
 static void usb_begin_descriptor_reconnect(uint32_t now, bool bridge_only) {
+    DS5_LOG("[USB] detach (bridge-only=%d) at %lu ms\n", bridge_only ? 1 : 0, usb_log_ms());
+    usb_note_reattach_hold(nullptr);
     // Keep callbacks on the mounted descriptor topology until the new attach.
     usb_reconnect_target_bridge_only = bridge_only;
     usb_reconnect_requested = false;
@@ -218,12 +242,15 @@ static void usb_begin_descriptor_reconnect(uint32_t now, bool bridge_only) {
 
 static void usb_schedule_reconnect() {
     if (usb_reconnect_connect_pending) {
+        DS5_LOG("[USB] re-attach request ignored: attach pending at %lu ms\n", usb_log_ms());
         return;
     }
     usb_reconnect_target_bridge_only = usb_attached_bridge_only;
     usb_reconnect_requested = true;
     usb_reconnect_at_us = time_us_32() + USB_RECONNECT_DELAY_US;
     usb_reconnect_wait_pending = true;
+    DS5_LOG("[USB] re-attach requested (bridge-only=%d) at %lu ms\n",
+            usb_reconnect_target_bridge_only ? 1 : 0, usb_log_ms());
 }
 
 static void usb_schedule_topology_reconnect(uint32_t now, bool bridge_only) {
@@ -491,6 +518,7 @@ extern "C" void tud_mount_cb(void) {
     usb_suspend_at_us = 0;
     usb_reconnect_grace_until_us = 0;
     host_input_note_usb_mounted();
+    DS5_LOG("[USB] mounted at %lu ms\n", usb_log_ms());
 }
 
 extern "C" void tud_umount_cb(void) {
@@ -498,6 +526,7 @@ extern "C" void tud_umount_cb(void) {
     usb_external_unmount = !reconnect_grace_active(now)
         && !usb_reconnect_requested
         && !usb_reconnect_connect_pending;
+    DS5_LOG("[USB] unmounted (external=%d) at %lu ms\n", usb_external_unmount ? 1 : 0, usb_log_ms());
     usb_mounted = false;
     // Windows may report a durable unmount instead of suspend. Treat it as a
     // debounced power transition, excluding our own descriptor reconnects.
@@ -534,6 +563,7 @@ extern "C" bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t cons
 
 extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
     const uint32_t now = time_us_32();
+    DS5_LOG("[USB] suspend (in re-attach grace=%d) at %lu ms\n", reconnect_grace_active(now) ? 1 : 0, usb_log_ms());
     if (reconnect_grace_active(now)) {
         usb_suspend_at_us = 0;
         return;
@@ -547,6 +577,7 @@ extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
 }
 
 extern "C" void tud_resume_cb(void) {
+    DS5_LOG("[USB] resume at %lu ms\n", usb_log_ms());
     usb_host_suspended = false;
     usb_remote_wakeup_armed = false;
     usb_remote_wakeup_pending = false;
@@ -649,7 +680,11 @@ void usb_pm_poll() {
         }
     }
 
+    const bool reattach_pending = usb_reconnect_requested || usb_reconnect_connect_pending;
     if (usb_host_suspended) {
+        if (reattach_pending) {
+            usb_note_reattach_hold("host suspended");
+        }
         return;
     }
     // No topology change while Wi-Fi owns the radio, or while an armed bridge
@@ -658,6 +693,9 @@ void usb_pm_poll() {
         wake_on_lan_quiet_gate()
         || ((wake_on_lan_preparing() || wake_on_lan_armed()) && usb_wake_external_suspended())
     ) {
+        if (reattach_pending) {
+            usb_note_reattach_hold("wake-on-lan");
+        }
         return;
     }
 
@@ -703,8 +741,17 @@ void usb_pm_poll() {
             !usb_controller_transport_ready
             && usb_controller_transport_disconnect_grace_pending
         ) {
+            if (reattach_pending) {
+                usb_note_reattach_hold("controller disconnect grace");
+            }
             return;
         }
+        DS5_LOG("[USB] controller transport %s (attached=%d bridge-only=%d pending=%d) at %lu ms\n",
+                usb_controller_transport_ready ? "ready" : "lost",
+                usb_controller_transport_attached ? 1 : 0,
+                usb_attached_bridge_only ? 1 : 0,
+                reattach_pending ? 1 : 0,
+                usb_log_ms());
         usb_controller_transport_transition_pending = false;
         usb_controller_transport_disconnect_grace_pending = false;
         if (usb_reconnect_connect_pending) {
@@ -757,6 +804,7 @@ void usb_pm_poll() {
         usb_attached_bridge_only = usb_reconnect_target_bridge_only;
         usb_latch_mic_endpoint_channels();
         tud_connect();
+        DS5_LOG("[USB] attach (bridge-only=%d) at %lu ms\n", usb_reconnect_target_bridge_only ? 1 : 0, usb_log_ms());
     }
     if (usb_reconnect_requested && !usb_reconnect_wait_pending) {
         // Polling and persona changes alter descriptor state too. Use the same

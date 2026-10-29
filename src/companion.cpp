@@ -2774,6 +2774,11 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
             {
                 const HostPersonaMode next_persona = static_cast<HostPersonaMode>(value);
                 const bool changed = host_persona_active() != next_persona;
+                firmware_log_printf("[PERSONA] %u -> %u (changed=%d) at %lu ms\n",
+                                    static_cast<unsigned>(host_persona_active()),
+                                    static_cast<unsigned>(next_persona),
+                                    changed ? 1 : 0,
+                                    static_cast<unsigned long>(time_us_32() / 1000));
                 if (changed) {
                     host_input_prepare_persona_switch();
                 }
