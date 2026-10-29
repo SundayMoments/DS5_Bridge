@@ -3887,12 +3887,53 @@ describe('BridgeService', () => {
 
     device.status = statusReport({ controllerConnected: true, uptimeSeconds: 11 });
     await poll(service);
-    expect(toasts.at(-1)?.body).toBe('Controller connected');
+    // The status fixture reports a charging controller.
+    expect(toasts.at(-1)?.body).toBe('Controller connected — battery 78% (charging)');
 
     device.status = statusReport({ controllerConnected: false, uptimeSeconds: 12 });
     await poll(service);
     expect(toasts.at(-1)?.body).toBe('Controller disconnected');
     expect(toasts).toHaveLength(2);
+  });
+
+  it('holds the connect toast briefly for the first battery level', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    const toasts: Array<{ title: string; body: string }> = [];
+    service.on('toast', (toast) => toasts.push(toast));
+    await service.setNotifyControllerConnection(true);
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      device.status = statusReport({ controllerConnected: true, batteryPercent: 255, uptimeSeconds: 11 });
+      await poll(service);
+      expect(toasts).toEqual([]);
+
+      device.status = statusReport({ controllerConnected: true, batteryPercent: 64, uptimeSeconds: 12 });
+      nowSpy.mockReturnValue(1_001_000);
+      await poll(service);
+      expect(toasts.map((toast) => toast.body)).toEqual(['Controller connected — battery 64% (charging)']);
+
+      // A battery level that never arrives does not hold the toast back for good.
+      device.status = statusReport({ controllerConnected: false, uptimeSeconds: 13 });
+      await poll(service);
+      device.status = statusReport({ controllerConnected: true, batteryPercent: 255, uptimeSeconds: 14 });
+      await poll(service);
+      expect(toasts).toHaveLength(2);
+      nowSpy.mockReturnValue(1_004_001);
+      await poll(service);
+      expect(toasts.map((toast) => toast.body)).toEqual([
+        'Controller connected — battery 64% (charging)',
+        'Controller disconnected',
+        'Controller connected'
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('emits controller toasts when the companion interface disappears and returns', async () => {
@@ -3915,7 +3956,7 @@ describe('BridgeService', () => {
     device.status = statusReport({ controllerConnected: true, uptimeSeconds: 1 });
     hidMock.state.devicesList = [companionDeviceInfo()];
     await poll(service);
-    expect(toasts.at(-1)?.body).toBe('Controller connected');
+    expect(toasts.at(-1)?.body).toBe('Controller connected — battery 78% (charging)');
     expect(toasts).toHaveLength(2);
   });
 

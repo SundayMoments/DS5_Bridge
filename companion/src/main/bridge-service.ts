@@ -171,6 +171,9 @@ const TEST_HAPTICS_FAILED_MESSAGE =
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
+// The battery level arrives a moment after the controller connects; the
+// connect toast waits this long for it before going out without it.
+const CONNECT_TOAST_BATTERY_WAIT_MS = 3000;
 const BUNDLED_FIRMWARE_VERSION = '2.0.0';
 const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
@@ -839,6 +842,11 @@ function pathShowsOtherHostPersona(path: string | null, mode: HostPersonaMode): 
     .some(([persona, usbIds]) => persona !== mode && lowered.includes(usbIds));
 }
 
+/** "80%", or "80% (charging)" while the controller charges. */
+function controllerBatteryText(batteryPercent: number, rawPowerState: number): string {
+  return rawPowerState === 0x01 ? `${batteryPercent}% (charging)` : `${batteryPercent}%`;
+}
+
 function hostPersonaModeLabel(mode: HostPersonaMode): string {
   if (mode === 'dualsense-edge') return 'DualSense Edge';
   if (mode === 'ds4') return 'DualShock 4';
@@ -1353,6 +1361,8 @@ export class BridgeService extends EventEmitter {
   private lastDefaultRenderEndpointStatusAt = 0;
   private controllerPowerSavingActive: boolean | null = null;
   private previousControllerConnected: boolean | null = null;
+  /** Set while the connect toast waits for the first battery level. */
+  private connectToastDeadline: number | null = null;
   private lowBatteryToastActive = false;
   private shortcutFeaturePollRetryAt = 0;
   private resetEvidence: ResetEvidencePayload | null = null;
@@ -4360,12 +4370,32 @@ export class BridgeService extends EventEmitter {
       && this.previousControllerConnected !== null
       && this.previousControllerConnected !== controllerConnected
     ) {
-      this.emit('toast', {
-        title: 'DS5 Bridge',
-        body: controllerConnected ? 'Controller connected' : 'Controller disconnected'
-      } satisfies BridgeToast);
+      if (controllerConnected) {
+        this.connectToastDeadline = Date.now() + CONNECT_TOAST_BATTERY_WAIT_MS;
+      } else {
+        this.connectToastDeadline = null;
+        this.emit('toast', {
+          title: 'DS5 Bridge',
+          body: 'Controller disconnected'
+        } satisfies BridgeToast);
+      }
     }
     this.previousControllerConnected = controllerConnected;
+
+    if (
+      this.connectToastDeadline !== null
+      && (status.batteryPercent !== null || Date.now() >= this.connectToastDeadline)
+    ) {
+      this.connectToastDeadline = null;
+      if (settings.notifyControllerConnection && controllerConnected) {
+        this.emit('toast', {
+          title: 'DS5 Bridge',
+          body: status.batteryPercent === null
+            ? 'Controller connected'
+            : `Controller connected — battery ${controllerBatteryText(status.batteryPercent, status.rawPowerState)}`
+        } satisfies BridgeToast);
+      }
+    }
 
     const lowBattery = controllerConnected
       && status.batteryPercent !== null
@@ -4388,6 +4418,7 @@ export class BridgeService extends EventEmitter {
       } satisfies BridgeToast);
     }
     this.previousControllerConnected = false;
+    this.connectToastDeadline = null;
     this.lowBatteryToastActive = false;
   }
 
