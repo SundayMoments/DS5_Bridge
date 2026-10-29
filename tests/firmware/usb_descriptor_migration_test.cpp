@@ -649,6 +649,16 @@ void assert_persona_switch_quiets_input_only(std::filesystem::path const &root) 
     ) {
         throw std::runtime_error("DS4 native probes must be able to GET_REPORT the current input report");
     }
+
+    // TinyUSB strips the ID from a control SET_REPORT(Output); the DualSense
+    // personas dropped those reports until 2.0.1.
+    if (
+        set_report_callback.find("report_type == HID_REPORT_TYPE_OUTPUT && report_id == 0x02") == std::string::npos
+        || set_report_callback.find("control_output_report[0] = report_id;") == std::string::npos
+        || set_report_callback.find("controller_output_submit_usb_payload(output_data + 1") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense personas must submit output report 0x02 sent as a control SET_REPORT");
+    }
 }
 
 // A bus already idle stays idle across a main-loop stall (Wi-Fi start during a
