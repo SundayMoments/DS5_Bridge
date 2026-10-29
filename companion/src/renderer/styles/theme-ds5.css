@@ -49,7 +49,8 @@
   --surface-section: var(--surface-card);
   --section-border: var(--surface-border-strong);
   --surface-column: rgba(3, 9, 16, 0.22);
-  --surface-menu: rgba(8, 17, 28, 0.98);
+  /* Opaque, like every other theme's menus: nothing behind a menu shows through. */
+  --surface-menu: rgb(8, 17, 28);
   --surface-control: rgba(6, 14, 23, 0.78);
   --surface-control-soft: rgba(4, 10, 17, 0.16);
   --surface-control-hover: rgba(255, 255, 255, 0.04);
