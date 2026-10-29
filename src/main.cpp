@@ -806,22 +806,30 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         return;
     }
 
-    // INTERRUPT OUT
-    if (report_id == 0) {
-        if (buffer == nullptr || bufsize == 0) {
-            return;
-        }
-        switch (buffer[0]) {
-            case 0x02: {
-                usb_note_hid_output();
+    // Output report 0x02 arrives on INTERRUPT OUT with its ID in the buffer,
+    // or as a control SET_REPORT(Output) with the ID stripped by TinyUSB.
+    // Apps that use HidD_SetOutputReport send it the second way.
+    uint8_t const *output_data = nullptr;
+    uint16_t output_len = 0;
+    uint8_t control_output_report[64]{};
+    if (report_id == 0 && buffer != nullptr && bufsize > 0 && buffer[0] == 0x02) {
+        output_data = buffer;
+        output_len = bufsize;
+    } else if (report_type == HID_REPORT_TYPE_OUTPUT && report_id == 0x02 && buffer != nullptr && bufsize > 0) {
+        control_output_report[0] = report_id;
+        const uint16_t copy_len = static_cast<uint16_t>(std::min<uint16_t>(bufsize, sizeof(control_output_report) - 1));
+        memcpy(control_output_report + 1, buffer, copy_len);
+        output_data = control_output_report;
+        output_len = static_cast<uint16_t>(copy_len + 1);
+    }
+    if (output_data != nullptr) {
+        usb_note_hid_output();
 #ifdef ENABLE_COMPANION
-                companion_note_trigger_trace_report(CompanionTriggerTraceHost, buffer, bufsize);
-                companion_note_feedback_trace_report(CompanionFeedbackTraceHost, buffer, bufsize);
+        companion_note_trigger_trace_report(CompanionTriggerTraceHost, output_data, output_len);
+        companion_note_feedback_trace_report(CompanionFeedbackTraceHost, output_data, output_len);
 #endif
-                controller_output_submit_usb_payload(buffer + 1, static_cast<uint16_t>(bufsize - 1));
-                break;
-            }
-        }
+        controller_output_submit_usb_payload(output_data + 1, static_cast<uint16_t>(output_len - 1));
+        return;
     }
     if (
         report_id == 0x80
