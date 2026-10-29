@@ -3415,6 +3415,9 @@ void companion_loop() {
         // A bootloader confirmation belongs to the controller that entered it.
         ds5::bootloader_maintenance::cancel_physical_confirmation(bootloader_maintenance_context());
         bootloader_confirmation_state = {};
+        // A PS press cut off by the disconnect must not replay, or skip the
+        // chord window, on the next controller session.
+        home_chord_gate = {};
     }
     controller_was_connected = controller_connected;
     audio_test_haptics_loop();

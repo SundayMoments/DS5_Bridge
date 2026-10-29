@@ -100,11 +100,13 @@ void cache_player_leds_from_payload(uint8_t const *payload, uint8_t len) {
         host_released_player_leds = true;
         return;
     }
-    if (len <= kPlayerLedsOffset || (flag1 & kFlag1PlayerIndicatorControlEnable) == 0) {
+    if ((flag1 & kFlag1PlayerIndicatorControlEnable) == 0) {
         return;
     }
 
-    cached_player_leds = payload[kPlayerLedsOffset];
+    // A short report reaches the controller zero-padded, so a pattern byte
+    // past its end is 0 there too.
+    cached_player_leds = len > kPlayerLedsOffset ? payload[kPlayerLedsOffset] : 0;
     cached_player_leds_valid = true;
     host_released_player_leds = false;
 }
@@ -288,7 +290,15 @@ void __not_in_flash_func(controller_output_state_strip_zero_classic_rumble)(uint
 }
 
 void controller_output_state_apply_host_payload(uint8_t const *data, uint8_t len) {
-    if (data == nullptr || len < kCommonPayloadSize) {
+    if (data == nullptr) {
+        return;
+    }
+    // Cache from the host's own report, short or not: hidapi hosts on Linux
+    // and macOS send short reports, which still set the controller's player
+    // LEDs. state_data also holds the bridge's player 1 fallback, which must
+    // never count as a host pattern.
+    cache_player_leds_from_payload(data, len);
+    if (len < kCommonPayloadSize) {
         return;
     }
 
@@ -439,9 +449,6 @@ void controller_output_state_apply_host_payload(uint8_t const *data, uint8_t len
         3
     );
 
-    // Cache from the host's own report: state_data also holds the bridge's
-    // player 1 fallback, which must never count as a host pattern.
-    cache_player_leds_from_payload(update, copy_len);
     clear_mic_control(state_data);
     clamp_speaker_volume();
     apply_current_player_led_policy(state_data);

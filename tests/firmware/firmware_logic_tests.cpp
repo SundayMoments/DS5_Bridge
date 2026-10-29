@@ -801,6 +801,19 @@ void output_state_player_led_falls_back_to_player_one_until_host_sets_it() {
     controller_output_state_copy_audio_snapshot(snapshot.data(), false);
     EXPECT_EQ(snapshot[kPlayerLedsOffset], kPlayerLed1Instant);
 
+    // Short host reports (hidapi on Linux and macOS) reach the controller
+    // zero-padded, so they set the pattern too and the bridge must follow.
+    Payload short_report = empty_payload();
+    short_report[kValidFlag1Offset] = kFlag1PlayerIndicatorControlEnable;
+    short_report[kPlayerLedsOffset] = 0x0a;
+    controller_output_state_apply_host_payload(short_report.data(), static_cast<uint8_t>(kPlayerLedsOffset + 1));
+    EXPECT_TRUE(controller_output_state_copy_player_led_report(report.data(), static_cast<uint16_t>(report.size())));
+    EXPECT_EQ(report[kPlayerLedsOffset], 0x0a);
+    controller_output_state_apply_host_payload(short_report.data(), static_cast<uint8_t>(kPlayerLedsOffset));
+    EXPECT_TRUE(controller_output_state_copy_player_led_report(report.data(), static_cast<uint16_t>(report.size())));
+    EXPECT_EQ(report[kPlayerLedsOffset], 0);
+    controller_output_state_reset_cached_player_leds();
+
     // Player LEDs off still forces them dark.
     controller_output_state_set_player_led_enabled(false);
     controller_output_state_copy_audio_snapshot(snapshot.data(), false);
@@ -1545,6 +1558,12 @@ void ds4_persona_motion_timestamp_uses_ds4_ticks() {
     ds4_motion_timestamp_for(0xFFFFF000u, false);
     const uint16_t wrap_start = ds4_motion_timestamp_for(0xFFFFF000u);
     EXPECT_EQ(static_cast<uint16_t>(ds4_motion_timestamp_for(0x00000400u) - wrap_start), 0x1400 / 16);
+
+    // A gap longer than the 16-bit DS4 clock can show (~349.5 ms) resyncs
+    // instead of wrapping into a short step.
+    const uint16_t before_stall = ds4_motion_timestamp_for(0x20000000u);
+    EXPECT_EQ(ds4_motion_timestamp_for(0x20000000u + 1500000u), before_stall);
+    EXPECT_EQ(static_cast<uint16_t>(ds4_motion_timestamp_for(0x20000000u + 1500000u + 12000u) - before_stall), 750);
 
     // A reconnected controller restarts its clock: resync without a jump.
     const uint16_t before_restart = ds4_motion_timestamp_for(0x50000000u);

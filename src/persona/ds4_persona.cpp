@@ -55,8 +55,10 @@ uint16_t ds4_timestamp = 188;
 // Copying the DualSense value made DS4 motion time run 16x fast and wrap
 // every 21.8 ms, which breaks gyro integration in SDL and Steam.
 constexpr uint32_t kDualSenseTicksPerDs4Tick = 16;
-// A larger gap means the controller's clock restarted (reconnect).
-constexpr uint32_t kDs4MotionClockMaxGapTicks = 3000000; // 1 s
+// The longest step a 16-bit DS4 clock can show (~349.5 ms). A larger gap
+// would wrap into a short one, or means the controller's clock restarted
+// (reconnect), so the DS4 clock resyncs instead.
+constexpr uint32_t kDs4MotionClockMaxGapTicks = 0xffffu * kDualSenseTicksPerDs4Tick;
 bool ds4_motion_clock_started = false;
 uint32_t ds4_motion_last_sensor_timestamp = 0;
 uint32_t ds4_motion_tick_remainder = 0;
