@@ -5,7 +5,7 @@ import { LAUNCH_OFFER_DELAY_MS } from './use-kitsune-launch-offer';
 export interface KitsuneMonthlyAskInput {
   /** The launch offer has been shown and the user has not hidden Kitsune Input promotions. */
   readonly eligible: boolean;
-  /** Something else is up, or another Kitsune prompt already showed this run. */
+  /** The window is hidden, something else is up, or another Kitsune prompt already showed this run. */
   readonly blocked: boolean;
 }
 

@@ -529,6 +529,7 @@
     "Mount": "Monta",
     "Mount reboots the Pico into UF2 mode. Flash copies a selected firmware UF2. Nuke wipes flash with Pico Universal Flash Nuke.": "Monta riavvia il Pico in modalità UF2. Scrivi copia il firmware UF2 selezionato. Cancella tutto svuota la memoria flash con Pico Universal Flash Nuke.",
     "Mounting…": "Montaggio…",
+    "Multi-Actions": "Azioni multiple",
     "Mute": "Mute",
     "Mute Button": "Tasto mute",
     "Mute button behavior": "Comportamento del tasto mute",

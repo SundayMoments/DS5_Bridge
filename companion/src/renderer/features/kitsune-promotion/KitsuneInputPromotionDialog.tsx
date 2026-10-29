@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { IconX as X } from '@tabler/icons-react';
 import { KitsuneInputOfferContent } from './KitsuneInputOfferContent';
+import { useOfferDialogKeyboard } from './use-offer-dialog-keyboard';
 
 export interface KitsuneInputPromotionDialogProps {
   onClose(): void;
@@ -18,19 +19,7 @@ export function KitsuneInputPromotionDialog({
   onPurchase
 }: KitsuneInputPromotionDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeRef.current();
-      }
-    };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, []);
+  useOfferDialogKeyboard(dialogRef, onClose);
 
   return (
     <div className="modal-backdrop kitsune-promotion-backdrop" role="presentation" onMouseDown={onClose}>

@@ -7,7 +7,7 @@ export const LAUNCH_OFFER_DELAY_MS = 1500;
 export interface KitsuneLaunchOfferInput {
   /** True while the offer has never been shown on this PC. */
   readonly eligible: boolean;
-  /** The first-run tutorial or the bootloader confirmation is up; the offer waits for it. */
+  /** The window is hidden, or the tutorial or a bootloader confirmation is up; the offer waits. */
   readonly blocked: boolean;
   /** Persists that the offer was shown, so it never appears again. */
   readonly markShown: () => void;
@@ -41,8 +41,10 @@ export function useKitsuneLaunchOffer({ eligible, blocked, markShown }: KitsuneL
   }, [phase, eligible, blocked]);
 
   return {
-    /** Hidden again while the tutorial or a bootloader confirmation is up. */
+    /** Hidden again while anything blocks it. */
     visible: phase === 'open' && !blocked,
+    /** The offer opened this run, so the monthly ask waits for a later run. */
+    shownThisRun: phase !== 'waiting',
     close: () => setPhase('closed')
   };
 }

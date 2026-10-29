@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { IconX as X } from '@tabler/icons-react';
 import { KitsuneInputOfferContent } from './KitsuneInputOfferContent';
+import { useOfferDialogKeyboard } from './use-offer-dialog-keyboard';
 
 export interface KitsuneInputLaunchOfferProps {
   onGet(): void;
@@ -11,19 +12,7 @@ export interface KitsuneInputLaunchOfferProps {
 /** The one-time Kitsune Input offer, closable at once with its close button, Escape, or the backdrop. */
 export function KitsuneInputLaunchOffer({ onGet, onLearnMore, onClose }: KitsuneInputLaunchOfferProps) {
   const dialogRef = useRef<HTMLElement>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      closeRef.current();
-    };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, []);
+  useOfferDialogKeyboard(dialogRef, onClose);
 
   return (
     <div

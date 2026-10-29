@@ -61,10 +61,13 @@ const ignoredReturnValues = new Set([
   'visibilitychange', 'waiting'
 ]);
 const visibleCall = /^(alert|confirm|notify|showToast|set\w*(Error|Message|Status|Text|Title))$/;
-// Messages composed at runtime that the extractor cannot see in source.
+// Messages composed at runtime that the extractor cannot see in source, and
+// copy it would take for an identifier.
 const seededMessages = [
   'AI-translated',
   'Use system language',
+  // A Kitsune Input offer tile; one hyphenated word reads like a class name.
+  'Multi-Actions',
   // Why the bridge refused a haptics test; main sends these and the Haptics page shows them.
   'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.',
   'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.',

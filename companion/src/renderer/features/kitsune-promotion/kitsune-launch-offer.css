@@ -17,13 +17,25 @@
   width: min(760px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   padding: 24px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--surface-border-strong);
   background: var(--surface-menu);
   box-shadow: var(--shadow-menu);
   outline: none;
   animation: modal-panel-in 160ms ease-out;
+}
+
+/*
+ * The headline, tiles and controllers. When a long language or large text
+ * makes the panel too tall, this part scrolls and the price, actions and the
+ * ask's Continue stay in view below it.
+ */
+.kitsune-launch-offer-body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .kitsune-launch-offer-close {
@@ -82,6 +94,7 @@
   font-size: calc(var(--font-size-title) * 1.6);
   font-weight: var(--font-weight-strong);
   line-height: 1.08;
+  text-wrap: balance;
 }
 
 .kitsune-launch-offer-hero p {
@@ -255,6 +268,7 @@
 .kitsune-launch-offer-terms span {
   color: var(--text-muted);
   font-size: var(--font-size-subtitle);
+  text-wrap: balance;
 }
 
 .kitsune-launch-offer-actions {
@@ -312,7 +326,7 @@
 
 /*
  * "Considering Getting Kitsune Input?": the monthly ask. The launch offer's
- * content on the same panel; Continue is a quiet link under the actions.
+ * content on the same panel; Continue is quiet text after the actions.
  */
 .kitsune-ask-panel {
   --kitsune-orange: #ff6a18;
@@ -324,8 +338,9 @@
   width: min(760px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   padding: 24px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--surface-border-strong);
   background: var(--surface-menu);
   box-shadow: var(--shadow-menu);
@@ -335,34 +350,62 @@
   animation: modal-panel-in 160ms ease-out;
 }
 
-.kitsune-ask-continue {
-  margin-top: 12px;
-  display: flex;
-  justify-content: center;
+/* No close button to clear, so the question can use the full width. */
+.kitsune-ask-panel .kitsune-launch-offer-hero {
+  padding-right: 0;
 }
 
-.kitsune-ask-continue-button {
-  min-height: 28px;
-  padding: 4px 8px;
+/*
+ * The price gives way before the actions do: its note wraps so Continue,
+ * Learn More and Get Kitsune Input stay on the price's row, and the actions
+ * only drop below it when the note would be squeezed under about 190px.
+ */
+.kitsune-ask-panel .kitsune-launch-offer-price {
+  flex: 1 1 300px;
+}
+
+/* Below the price, the actions stay right, so Continue is always bottom right. */
+.kitsune-ask-panel .kitsune-launch-offer-actions {
+  margin-left: auto;
+}
+
+/* Large text: a little less air, so long languages fit without a scrollbar. */
+.shell:is([data-text-scale="110"], [data-text-scale="120"]) .kitsune-ask-panel .kitsune-launch-offer-features {
+  margin-top: 14px;
+  gap: 8px;
+}
+
+.shell:is([data-text-scale="110"], [data-text-scale="120"]) .kitsune-ask-panel .kitsune-launch-offer-features li {
+  padding: 10px 10px 8px;
+}
+
+.shell:is([data-text-scale="110"], [data-text-scale="120"]) .kitsune-ask-panel .kitsune-launch-offer-compat {
+  margin-top: 12px;
+}
+
+.shell:is([data-text-scale="110"], [data-text-scale="120"]) .kitsune-ask-panel .kitsune-launch-offer-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+/* Continue ends the actions as quiet text, so it moves with the buttons. */
+.kitsune-launch-offer-actions .kitsune-ask-continue-button {
+  padding: 0 12px;
   border: 0;
   border-radius: var(--control-radius);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   color: var(--text-secondary);
   background: transparent;
-  font: inherit;
-  font-size: var(--font-size-subtitle);
+  box-shadow: none;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
-.kitsune-ask-continue-button:hover {
+.kitsune-launch-offer-actions .kitsune-ask-continue-button:hover {
   color: var(--text-strong);
   background: var(--surface-control-hover);
 }
 
-.kitsune-ask-continue-button:focus-visible {
+.kitsune-launch-offer-actions .kitsune-ask-continue-button:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }

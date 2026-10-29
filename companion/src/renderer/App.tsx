@@ -83,6 +83,8 @@ export function App() {
   const [settingsReturnTab, setSettingsReturnTab] = useState<ControlTab>('overview');
   const { pendingAction, setPendingAction, beginAppAction, endAppAction } = useAppActionLock(snapshot !== null);
   const [showKitsuneInputPromotion, setShowKitsuneInputPromotion] = useState(false);
+  // Opening the banner's dialog counts as this run's Kitsune Input prompt.
+  const [kitsunePromotionOpenedThisRun, setKitsunePromotionOpenedThisRun] = useState(false);
   const triggerLabOpen = activeControlTab === 'trigger-lab';
   const audioHapticsOpen = activeControlTab === 'audio-haptics';
   // Hidden or minimized, the app stops rendering snapshots and pauses its polling.
@@ -153,15 +155,17 @@ export function App() {
   const settingsNavigation = useSettingsNavigation({ focusTarget: settingsPage.focusTarget });
   const { windowDragging, beginWindowDrag } = useBridgeSnapshots(applySnapshot);
   // No Kitsune Input prompt until a day after first-run setup finishes; then at
-  // most one per run: the one-time launch offer, else the monthly ask. Each
+  // most one per run, while the window is showing: the one-time launch offer,
+  // else the monthly ask, and neither once the banner's dialog has opened. Each
   // starts a month before the next. Neither ever shows to anyone who chose
   // "Don't show Kitsune Input promotions again" in an earlier version.
   const kitsuneLaunchOffer = useKitsuneLaunchOffer({
     eligible: Boolean(snapshot) && !snapshot?.settings.kitsuneInputLaunchOfferShown
       && !snapshot?.settings.kitsuneInputPromotionDismissed,
     blocked: startupTutorial.step !== 'done'
+      || !windowVisible
       || Boolean(snapshot?.bootloaderConfirmation)
-      || showKitsuneInputPromotion,
+      || kitsunePromotionOpenedThisRun,
     markShown: () => {
       recordKitsuneAskShown();
       void runQuietAction(() => window.bridge.markKitsuneInputLaunchOfferShown());
@@ -172,9 +176,10 @@ export function App() {
     eligible: Boolean(snapshot?.settings.kitsuneInputLaunchOfferShown)
       && !snapshot?.settings.kitsuneInputPromotionDismissed,
     blocked: startupTutorial.step !== 'done'
-      || kitsuneLaunchOffer.visible
+      || !windowVisible
+      || kitsuneLaunchOffer.shownThisRun
       || Boolean(snapshot?.bootloaderConfirmation)
-      || showKitsuneInputPromotion
+      || kitsunePromotionOpenedThisRun
   });
 
   function applySnapshot(next: BridgeSnapshot) {
@@ -308,6 +313,7 @@ export function App() {
           onOpen={() => {
             notifications.close();
             setShowKitsuneInputPromotion(true);
+            setKitsunePromotionOpenedThisRun(true);
           }}
         />
       )}

@@ -36,6 +36,7 @@ afterEach(() => {
   root = null;
   document.body.innerHTML = '';
   window.localStorage.clear();
+  delete (document as { visibilityState?: unknown }).visibilityState;
   vi.useRealTimers();
 });
 
@@ -71,6 +72,20 @@ function monthlyAsk() {
 function pressEscape() {
   act(() => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+}
+
+function pressTab(shiftKey = false) {
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true }));
+  });
+}
+
+/** Overrides document.visibilityState the way a hidden or minimized window reports it. */
+function setDocumentVisibility(state: 'hidden' | 'visible') {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
   });
 }
 
@@ -114,6 +129,16 @@ describe('KitsuneInputLaunchOffer', () => {
     expect(document.querySelector('.kitsune-launch-offer-amount')?.textContent).toBe('$7.99');
     expect(document.querySelector('.kitsune-launch-offer-amount')?.getAttribute('data-l10n')).toBe('off');
     expect(document.querySelector('.kitsune-launch-offer-get')?.textContent).toBe('Get Kitsune Input');
+  });
+
+  it('has every feature tile in the localization catalog', () => {
+    const master = JSON.parse(readFileSync(
+      path.join(process.cwd(), 'src', 'renderer', 'common', 'localization', 'locales', 'master.en.json'),
+      'utf8'
+    )) as { translations: Record<string, string> };
+    for (const { title } of LAUNCH_OFFER_FEATURES) {
+      expect(master.translations, title).toHaveProperty([title]);
+    }
   });
 
   it('uses flat surfaces with no gradients or glows', () => {
@@ -203,9 +228,34 @@ describe('KitsuneInputMonthlyAsk', () => {
     const continueButton = monthlyAsk()!.querySelector<HTMLButtonElement>('.kitsune-ask-continue-button')!;
     expect(continueButton.disabled).toBe(false);
     expect(continueButton.textContent).toBe('Continue');
+    // Last in the actions, so it sits bottom right where moving on is expected.
+    expect(monthlyAsk()!.querySelector('.kitsune-launch-offer-actions')!.lastElementChild).toBe(continueButton);
     await click(continueButton);
     pressEscape();
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes focus, keeps Tab inside, and gives focus back when it closes', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    mountElement(<KitsuneInputMonthlyAsk onGet={vi.fn()} onLearnMore={vi.fn()} onClose={vi.fn()} />);
+    const ask = monthlyAsk()!;
+    expect(document.activeElement).toBe(ask);
+    const buttons = [...ask.querySelectorAll<HTMLButtonElement>('button')];
+    buttons.at(-1)!.focus();
+    pressTab();
+    expect(document.activeElement).toBe(buttons[0]);
+    pressTab(true);
+    expect(document.activeElement).toBe(buttons.at(-1));
+    // Focus that reached the page behind comes back into the dialog.
+    opener.focus();
+    pressTab();
+    expect(document.activeElement).toBe(buttons[0]);
+
+    act(() => root!.unmount());
+    root = null;
+    expect(document.activeElement).toBe(opener);
   });
 });
 
@@ -334,6 +384,65 @@ describe('Kitsune Input offers in the app', () => {
     await advance(LAUNCH_OFFER_DELAY_MS * 4);
     expect(offer()).toBeNull();
     expect(laterBridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
+  });
+
+  it('holds the launch offer while the window is hidden, so it is never used up unseen', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    finishSetupJustOverADayAgo();
+    const bridge = installBridgeMock(offerSnapshot());
+    trackLaunchOfferShown(bridge);
+    await mountApp();
+    setDocumentVisibility('hidden');
+    await advance(LAUNCH_OFFER_DELAY_MS * 4);
+    expect(offer()).toBeNull();
+    expect(bridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
+
+    setDocumentVisibility('visible');
+    await advance(LAUNCH_OFFER_DELAY_MS);
+    expect(offer()).not.toBeNull();
+    expect(bridge.fn('markKitsuneInputLaunchOfferShown')).toHaveBeenCalledOnce();
+  });
+
+  it('shows no prompt for the rest of a run once the banner opened the offer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    finishSetupJustOverADayAgo();
+    const bridge = installBridgeMock(offerSnapshot());
+    trackLaunchOfferShown(bridge);
+    await mountApp();
+    await click(host.querySelector('.kitsune-promotion-banner'));
+    expect(document.querySelector('.kitsune-promotion-modal')).not.toBeNull();
+    pressEscape();
+    expect(document.querySelector('.kitsune-promotion-modal')).toBeNull();
+
+    await advance(LAUNCH_OFFER_DELAY_MS * 4);
+    expect(offer()).toBeNull();
+    expect(monthlyAsk()).toBeNull();
+    // The one-time offer is left for a later run.
+    expect(bridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
+  });
+
+  it('shows one prompt per run even when the wait cannot be saved', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    // Both the launch offer and the monthly ask read as due.
+    startMonthJustOverAMonthAgo();
+    const bridge = installBridgeMock(offerSnapshot());
+    trackLaunchOfferShown(bridge);
+    await mountApp();
+    const setItem = Storage.prototype.setItem;
+    const failingSave = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === KITSUNE_ASK_SHOWN_AT_STORAGE_KEY) throw new Error('QuotaExceededError');
+      setItem.call(this, key, value);
+    });
+    try {
+      await advance(LAUNCH_OFFER_DELAY_MS);
+      expect(offer()).not.toBeNull();
+      pressEscape();
+      await advance(LAUNCH_OFFER_DELAY_MS * 4);
+      expect(offer()).toBeNull();
+      expect(monthlyAsk()).toBeNull();
+    } finally {
+      failingSave.mockRestore();
+    }
   });
 
   it('waits for a bootloader confirmation before the launch offer', async () => {

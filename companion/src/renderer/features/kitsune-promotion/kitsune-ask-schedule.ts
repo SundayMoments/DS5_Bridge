@@ -23,11 +23,20 @@ export function recordKitsuneAskShown(now = Date.now()): void {
   }
 }
 
-/** When the current wait started, or null when none was recorded. */
-export function kitsuneAskShownAt(): number | null {
+/**
+ * When the current wait started, or null when none was recorded. A start in
+ * the future was recorded while the PC clock ran ahead; the wait restarts now
+ * instead of holding every prompt until that date.
+ */
+export function kitsuneAskShownAt(now = Date.now()): number | null {
   try {
     const shownAt = Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY));
-    return Number.isFinite(shownAt) && shownAt > 0 ? shownAt : null;
+    if (!Number.isFinite(shownAt) || shownAt <= 0) return null;
+    if (shownAt > now) {
+      recordKitsuneAskShown(now);
+      return now;
+    }
+    return shownAt;
   } catch {
     return null;
   }

@@ -99,7 +99,7 @@ describe('SettingsStore', () => {
     expect(store.restoreDefaults().kitsuneInputPromotionDismissed).toBe(true);
   });
 
-  it('shows the one-time Kitsune Input offer to existing users, including those who hid the promotion', () => {
+  it('keeps an earlier promotion dismissal and starts existing users with the offer unshown', () => {
     const userDataPath = tempUserDataPath();
     writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({
       settingsSchemaVersion: 5,

@@ -32,4 +32,12 @@ describe('Kitsune Input ask schedule', () => {
     window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, 'soon');
     expect(kitsuneAskShownAt()).toBeNull();
   });
+
+  it('restarts a wait recorded while the PC clock ran ahead', () => {
+    // Recorded a year ahead; otherwise no prompt would show until that date.
+    recordKitsuneAskShown(1_000 + 365 * 24 * 60 * 60 * 1000);
+    expect(kitsuneAskShownAt(1_000)).toBe(1_000);
+    expect(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY)).toBe('1000');
+    expect(kitsuneLaunchOfferDue(kitsuneAskShownAt(2_000)!, 1_000 + KITSUNE_LAUNCH_OFFER_WAIT_MS)).toBe(true);
+  });
 });

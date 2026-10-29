@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { IconArrowRight as ArrowRight } from '@tabler/icons-react';
+import { useRef } from 'react';
 import { KitsuneInputOfferContent } from './KitsuneInputOfferContent';
+import { useOfferDialogKeyboard } from './use-offer-dialog-keyboard';
 
 export interface KitsuneInputAskProps {
   onGet(): void;
@@ -10,24 +10,17 @@ export interface KitsuneInputAskProps {
 
 /**
  * "Considering Getting Kitsune Input?": the banner's offer under its own
- * question, with a quiet Continue instead of a close button.
+ * question, with a quiet Continue after its actions instead of a close button.
  */
 export function KitsuneInputAsk({ onGet, onLearnMore, onContinue }: KitsuneInputAskProps) {
   return (
-    <>
-      <KitsuneInputOfferContent
-        idPrefix="kitsune-ask"
-        title="Considering Getting Kitsune Input?"
-        onGet={onGet}
-        onLearnMore={onLearnMore}
-      />
-      <div className="kitsune-ask-continue">
-        <button type="button" className="kitsune-ask-continue-button" onClick={onContinue}>
-          Continue
-          <ArrowRight size={14} aria-hidden="true" />
-        </button>
-      </div>
-    </>
+    <KitsuneInputOfferContent
+      idPrefix="kitsune-ask"
+      title="Considering Getting Kitsune Input?"
+      onGet={onGet}
+      onLearnMore={onLearnMore}
+      onContinue={onContinue}
+    />
   );
 }
 
@@ -39,27 +32,19 @@ export interface KitsuneInputMonthlyAskProps {
 
 /** The ask on its own, at most once a month after the launch offer. Continue or Escape closes it. */
 export function KitsuneInputMonthlyAsk({ onGet, onLearnMore, onClose }: KitsuneInputMonthlyAskProps) {
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      closeRef.current();
-    };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, []);
+  const dialogRef = useRef<HTMLElement>(null);
+  useOfferDialogKeyboard(dialogRef, onClose);
 
   return (
     <div className="modal-backdrop kitsune-promotion-backdrop" role="presentation">
       <section
+        ref={dialogRef}
         className="settings-menu kitsune-ask-panel kitsune-ask-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="kitsune-ask-title"
         aria-describedby="kitsune-ask-summary"
+        tabIndex={-1}
       >
         <KitsuneInputAsk onGet={onGet} onLearnMore={onLearnMore} onContinue={onClose} />
       </section>

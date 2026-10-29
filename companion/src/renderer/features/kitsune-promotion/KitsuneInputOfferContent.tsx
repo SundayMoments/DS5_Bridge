@@ -62,6 +62,8 @@ export interface KitsuneInputOfferContentProps {
   readonly title: string;
   onGet(): void;
   onLearnMore(): void;
+  /** The ask's quiet Continue, last in the actions so it sits bottom right. */
+  onContinue?(): void;
 }
 
 /**
@@ -73,49 +75,53 @@ export function KitsuneInputOfferContent({
   idPrefix,
   title,
   onGet,
-  onLearnMore
+  onLearnMore,
+  onContinue
 }: KitsuneInputOfferContentProps) {
   return (
     <>
-      <header className="kitsune-launch-offer-hero">
-        <img className="kitsune-launch-offer-logo" src={kitsuneInputLogoUrl} alt="" />
-        <div className="kitsune-launch-offer-hero-copy">
-          <KitsuneInputWordmark />
-          <h2 id={`${idPrefix}-title`}>{title}</h2>
-          <p id={`${idPrefix}-summary`}>
-            A separate Windows app from the developer of DS5 Bridge, for the bridge you already own.
-          </p>
-        </div>
-      </header>
+      {/* Scrolls on its own when a long language or large text needs it, so the footer stays in view. */}
+      <div className="kitsune-launch-offer-body">
+        <header className="kitsune-launch-offer-hero">
+          <img className="kitsune-launch-offer-logo" src={kitsuneInputLogoUrl} alt="" />
+          <div className="kitsune-launch-offer-hero-copy">
+            <KitsuneInputWordmark />
+            <h2 id={`${idPrefix}-title`}>{title}</h2>
+            <p id={`${idPrefix}-summary`}>
+              A separate Windows app from the developer of DS5 Bridge, for the bridge you already own.
+            </p>
+          </div>
+        </header>
 
-      <ul className="kitsune-launch-offer-features" aria-label="What Kitsune Input adds">
-        {LAUNCH_OFFER_FEATURES.map(({ title, Icon }) => (
-          <li key={title}>
-            <span className="kitsune-launch-offer-feature-icon" aria-hidden="true"><Icon size={24} /></span>
-            <strong>{title}</strong>
-          </li>
-        ))}
-      </ul>
-
-      <section className="kitsune-launch-offer-compat" aria-labelledby={`${idPrefix}-compat-title`}>
-        <h3 id={`${idPrefix}-compat-title`}>Also works with</h3>
-        <ul className="kitsune-launch-offer-controllers">
-          <li>
-            <span
-              className="kitsune-launch-offer-controller-logo playstation"
-              style={{ '--controller-logo-mask': `url("${playStationLogoUrl}")` } as CSSProperties}
-              aria-hidden="true"
-            />
-            <strong data-l10n="off">DualShock 4</strong>
-          </li>
-          <li title="Original model">
-            <span className="kitsune-launch-offer-controller-logo" aria-hidden="true">
-              <IconDeviceNintendo size={22} />
-            </span>
-            <strong data-l10n="off">Switch Pro Controller</strong>
-          </li>
+        <ul className="kitsune-launch-offer-features" aria-label="What Kitsune Input adds">
+          {LAUNCH_OFFER_FEATURES.map(({ title, Icon }) => (
+            <li key={title}>
+              <span className="kitsune-launch-offer-feature-icon" aria-hidden="true"><Icon size={24} /></span>
+              <strong>{title}</strong>
+            </li>
+          ))}
         </ul>
-      </section>
+
+        <section className="kitsune-launch-offer-compat" aria-labelledby={`${idPrefix}-compat-title`}>
+          <h3 id={`${idPrefix}-compat-title`}>Also works with</h3>
+          <ul className="kitsune-launch-offer-controllers">
+            <li>
+              <span
+                className="kitsune-launch-offer-controller-logo playstation"
+                style={{ '--controller-logo-mask': `url("${playStationLogoUrl}")` } as CSSProperties}
+                aria-hidden="true"
+              />
+              <strong data-l10n="off">DualShock 4</strong>
+            </li>
+            <li title="Original model">
+              <span className="kitsune-launch-offer-controller-logo" aria-hidden="true">
+                <IconDeviceNintendo size={22} />
+              </span>
+              <strong data-l10n="off">Switch Pro Controller</strong>
+            </li>
+          </ul>
+        </section>
+      </div>
 
       <footer className="kitsune-launch-offer-footer">
         <div className="kitsune-launch-offer-price">
@@ -134,6 +140,11 @@ export function KitsuneInputOfferContent({
             <IconExternalLink size={16} aria-hidden="true" />
             Get Kitsune Input
           </button>
+          {onContinue && (
+            <button type="button" className="kitsune-ask-continue-button" onClick={onContinue}>
+              Continue
+            </button>
+          )}
         </div>
       </footer>
     </>
