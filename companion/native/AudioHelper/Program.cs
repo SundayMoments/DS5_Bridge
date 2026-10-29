@@ -29,6 +29,14 @@ if (options.KeyboardInputServer)
     Environment.ExitCode = await KeyboardInputServer.RunAsync();
     return;
 }
+// Bridge census: a resident server that answers each "snapshot" line, like
+// Kitsune Input's, instead of a helper process per census. It opens no bridge
+// or audio endpoint.
+if (options.BridgeDeviceServer)
+{
+    await BridgeCensus.RunServerAsync();
+    return;
+}
 EndpointManager.TargetBridgeContainer = options.BridgeContainer;
 if (EndpointManager.TargetBridgeContainer is null
     && options.CompanionDevicePath is { Length: > 0 } targetPath
@@ -2850,6 +2858,7 @@ sealed record HelperOptions(
     public bool ListPhysicalEthernetAdapters { get; init; }
     public bool QueryWakeOnLanReadiness { get; init; }
     public bool KeyboardInputServer { get; init; }
+    public bool BridgeDeviceServer { get; init; }
 
     public string SourceArgument => Source switch
     {
@@ -2885,6 +2894,7 @@ sealed record HelperOptions(
         var listPhysicalEthernetAdapters = false;
         var queryWakeOnLanReadiness = false;
         var keyboardInputServer = false;
+        var bridgeDeviceServer = false;
         var micKeepaliveOnly = false;
         int? appProcessId = null;
         string? appProcessPath = null;
@@ -3044,6 +3054,9 @@ sealed record HelperOptions(
                 case "--keyboard-input-server":
                     keyboardInputServer = true;
                     break;
+                case "--bridge-device-server":
+                    bridgeDeviceServer = true;
+                    break;
                 case "--mic-keepalive-only":
                     micKeepaliveOnly = true;
                     break;
@@ -3119,7 +3132,8 @@ sealed record HelperOptions(
             BridgeContainer = bridgeContainer,
             ListPhysicalEthernetAdapters = listPhysicalEthernetAdapters,
             QueryWakeOnLanReadiness = queryWakeOnLanReadiness,
-            KeyboardInputServer = keyboardInputServer
+            KeyboardInputServer = keyboardInputServer,
+            BridgeDeviceServer = bridgeDeviceServer
         };
     }
 

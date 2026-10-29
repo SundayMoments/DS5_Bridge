@@ -8,6 +8,41 @@ static class BridgeCensus
 
     public static void PrintJson()
     {
+        Console.WriteLine(Snapshot());
+    }
+
+    /// <summary>
+    /// Answers each "snapshot" line on stdin with one census line on stdout, so
+    /// the app can take a census every couple of seconds without starting a
+    /// process each time. "stop" or end of input ends the server.
+    /// </summary>
+    public static async Task RunServerAsync(
+        TextReader? input = null,
+        TextWriter? output = null,
+        Func<string>? snapshot = null)
+    {
+        input ??= Console.In;
+        output ??= Console.Out;
+        snapshot ??= Snapshot;
+        while (true)
+        {
+            var line = await input.ReadLineAsync();
+            if (line is null || line.Trim().Equals("stop", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            await output.WriteLineAsync(snapshot());
+            await output.FlushAsync();
+        }
+    }
+
+    public static string Snapshot()
+    {
         var bridges = BridgeDeviceIdentity.ListBridges();
         var bridgeContainers = bridges
             .Select(bridge => bridge.ContainerId)
@@ -41,7 +76,7 @@ static class BridgeCensus
             });
         }
 
-        Console.WriteLine(JsonSerializer.Serialize(new
+        return JsonSerializer.Serialize(new
         {
             bridges = bridges.Select(bridge => new
             {
@@ -49,6 +84,6 @@ static class BridgeCensus
                 containerId = bridge.ContainerId == Guid.Empty ? null : bridge.ContainerId.ToString()
             }),
             hidDevices
-        }));
+        });
     }
 }

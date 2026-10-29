@@ -134,11 +134,40 @@ export interface BridgeCensus {
 
 export async function listBridges(): Promise<BridgeCensus> {
   const result = await runAudioHelperCommand(['--list-bridges']);
-  const parsed = JSON.parse(result.stdout) as Partial<BridgeCensus>;
-  return {
-    bridges: Array.isArray(parsed.bridges) ? parsed.bridges : [],
-    hidDevices: Array.isArray(parsed.hidDevices) ? parsed.hidDevices : []
-  };
+  return parseBridgeCensus(result.stdout);
+}
+
+/**
+ * Reads one census line from the audio helper. Bridge rows keep their exact
+ * path, once each, with a lower-case container ID. Throws unless the text is
+ * a census, so a helper that answers with anything else is noticed.
+ */
+export function parseBridgeCensus(text: string): BridgeCensus {
+  const parsed = JSON.parse(text) as { bridges?: unknown; hidDevices?: unknown } | null;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.bridges)) {
+    throw new Error('The audio helper did not return a bridge census.');
+  }
+  const seenPaths = new Set<string>();
+  const bridges: BridgeCensusEntry[] = [];
+  for (const entry of parsed.bridges as unknown[]) {
+    const candidate = entry as { path?: unknown; containerId?: unknown } | null;
+    if (!candidate || typeof candidate.path !== 'string' || !candidate.path.trim()) continue;
+    const path = candidate.path.trim();
+    if (seenPaths.has(path.toLowerCase())) continue;
+    seenPaths.add(path.toLowerCase());
+    bridges.push({
+      path,
+      containerId: typeof candidate.containerId === 'string' && candidate.containerId.trim()
+        ? candidate.containerId.trim().toLowerCase()
+        : null
+    });
+  }
+  const hidDevices = Array.isArray(parsed.hidDevices)
+    ? (parsed.hidDevices as unknown[]).filter((device): device is BridgeCensusHidDevice => (
+        Boolean(device) && typeof (device as BridgeCensusHidDevice).path === 'string'
+      ))
+    : [];
+  return { bridges, hidDevices };
 }
 
 export class SystemAudioHapticsEngine extends EventEmitter {
