@@ -2937,6 +2937,9 @@ export class BridgeService extends EventEmitter {
       case 'sleep-controller':
         await this.sleepController();
         return;
+      case 'show-battery':
+        this.emitBatteryLevelToast();
+        return;
       case 'persona-dualsense':
         await this.setHostPersonaMode('dualsense');
         return;
@@ -3056,6 +3059,20 @@ export class BridgeService extends EventEmitter {
     if (nextValue !== settings.lightbarBrightnessPercent) {
       await this.setLightbarColor(settings.lightbarColor, nextValue);
     }
+  }
+
+  /** Asked for with a chord, so it shows whatever the notification settings say. */
+  private emitBatteryLevelToast(): void {
+    const status = this.snapshot.status;
+    if (!status?.controllerConnected) {
+      return;
+    }
+    this.emit('toast', {
+      title: 'DS5 Bridge',
+      body: status.batteryPercent === null
+        ? 'Controller battery level is not available yet'
+        : `Controller battery: ${controllerBatteryText(status.batteryPercent, status.rawPowerState)}`
+    } satisfies BridgeToast);
   }
 
   private async applyControllerVolumeShortcut(deltaPercent: number): Promise<void> {

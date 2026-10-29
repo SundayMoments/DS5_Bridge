@@ -2519,6 +2519,39 @@ describe('BridgeService', () => {
     expect(personaCommand?.[9]).toBe(1);
   });
 
+  it('shows the battery level when a Show Battery chord fires', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: true, batteryPercent: 42 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    const toasts: Array<{ title: string; body: string }> = [];
+    service.on('toast', (toast) => toasts.push(toast));
+
+    await poll(service);
+    await service.setChordConfiguration([{
+      id: 'battery',
+      name: 'Battery',
+      type: 'controller-setting',
+      action: 'show-battery',
+      stepPercent: 10
+    }], [{
+      id: 'ps-create',
+      kind: 'chord',
+      starter: 'ps',
+      button: 'create',
+      functionId: 'battery'
+    }]);
+    expect(service.getSnapshot().settings.chordFunctions[0]).toMatchObject({ action: 'show-battery' });
+
+    device.queueShortcutEvent(CHORD_FUNCTION_EVENT_BASE);
+    await pollShortcut(service);
+    await flushShortcutActions(service);
+
+    // Notification settings are off; the chord asked for this one.
+    expect(toasts).toEqual([{ title: 'DS5 Bridge', body: 'Controller battery: 42% (charging)' }]);
+  });
+
   it('applies controller mic mute events without waiting for a status poll', async () => {
     const service = serviceFixture({
       duplexMicEnabled: true,

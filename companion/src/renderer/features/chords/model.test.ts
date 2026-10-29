@@ -41,6 +41,13 @@ describe('chord model', () => {
     ]));
   });
 
+  it('offers a chord that shows the battery level', () => {
+    expect(CHORD_CONTROLLER_SETTING_ACTION_OPTIONS).toContainEqual(['Show Battery', 'show-battery']);
+    expect(chordFunctionSummary({
+      id: 'battery', name: 'Battery', type: 'controller-setting', action: 'show-battery', stepPercent: 10
+    })).toBe('Show Battery Level');
+  });
+
   it('round-trips a keyboard function through its editor draft', () => {
     const draft = chordFunctionToDraft(null);
     const func = chordFunctionFromDraft({ ...draft, id: 'task-manager' });

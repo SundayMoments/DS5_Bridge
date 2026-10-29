@@ -122,6 +122,7 @@ export const CHORD_CONTROLLER_SETTING_ACTION_OPTIONS: Array<[string, ChordContro
   ['Lightbar Override', 'toggle-lightbar-override'],
   ['Mic Mute', 'toggle-mic-mute'],
   ['Sleep Controller', 'sleep-controller'],
+  ['Show Battery', 'show-battery'],
   ['DualSense', 'persona-dualsense'],
   ['DualSense Edge', 'persona-dualsense-edge'],
   ['DualShock 4', 'persona-ds4'],
@@ -248,6 +249,8 @@ export function chordControllerSettingSummary(action: ChordControllerSettingActi
       return 'Toggle Mic Mute';
     case 'sleep-controller':
       return 'Sleep Controller';
+    case 'show-battery':
+      return 'Show Battery Level';
     case 'persona-dualsense':
       return 'Set Persona: DualSense';
     case 'persona-dualsense-edge':

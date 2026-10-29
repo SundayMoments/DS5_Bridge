@@ -752,6 +752,8 @@
     "Shift": "Shift",
     "Shift Layers": "전환 레이어",
     "Shortcuts": "단축키",
+    "Show Battery": "배터리 표시",
+    "Show Battery Level": "배터리 잔량 표시",
     "Show controller battery percentage in the tray": "시스템 트레이에 컨트롤러 배터리 비율 표시",
     "Show the controller player indicator lights": "컨트롤러 플레이어 표시등 표시",
     "Signal": "신호",
