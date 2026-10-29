@@ -1425,8 +1425,7 @@ void ds4_persona_maps_standard_gamepad_fields() {
     EXPECT_EQ(encoded.bytes[6] & 0x03, 0x03); // PS + touchpad click.
     EXPECT_EQ(encoded.bytes[7], 0x22);
     EXPECT_EQ(encoded.bytes[8], 0xcc);
-    EXPECT_EQ(encoded.bytes[9], 0x44);
-    EXPECT_EQ(encoded.bytes[10], 0x33);
+    // Bytes 9-10 are the DS4 motion clock; see ds4_persona_motion_timestamp_uses_ds4_ticks.
     EXPECT_EQ(encoded.bytes[11], 0x09);
     EXPECT_EQ(encoded.bytes[12], 0x34);
     EXPECT_EQ(encoded.bytes[13], 0x12);
@@ -1451,6 +1450,52 @@ void ds4_persona_maps_standard_gamepad_fields() {
     EXPECT_EQ(encoded.bytes[39], 0x00);
     EXPECT_EQ(encoded.bytes[40], 0x00);
     EXPECT_EQ(encoded.bytes[41], 0x00);
+}
+
+uint16_t ds4_motion_timestamp_for(uint32_t sensor_timestamp, bool motion_valid = true) {
+    auto report = sample_dualsense_input_report();
+    report[27] = static_cast<uint8_t>(sensor_timestamp);
+    report[28] = static_cast<uint8_t>(sensor_timestamp >> 8);
+    report[29] = static_cast<uint8_t>(sensor_timestamp >> 16);
+    report[30] = static_cast<uint8_t>(sensor_timestamp >> 24);
+    BridgeControllerState state{};
+    HostPersonaInputReport encoded{};
+    EXPECT_TRUE(dualsense_decode_usb_input_report(report.data(), report.size(), state));
+    state.motion_valid = motion_valid;
+    EXPECT_TRUE(host_persona_encode_input(HostPersonaModeDs4, state, encoded));
+    return static_cast<uint16_t>(encoded.bytes[9] | (encoded.bytes[10] << 8));
+}
+
+// The DualSense motion clock ticks every 1/3 us and a DS4's every 16/3 us.
+// Copying the raw value ran DS4 time 16x fast and wrapped it every 21.8 ms.
+void ds4_persona_motion_timestamp_uses_ds4_ticks() {
+    ds4_motion_timestamp_for(0, false);
+    const uint16_t start = ds4_motion_timestamp_for(0x11223344u);
+
+    // 1 ms of DualSense ticks (3000) is 187.5 DS4 ticks; the half carries.
+    EXPECT_EQ(static_cast<uint16_t>(ds4_motion_timestamp_for(0x11223344u + 3000u) - start), 187);
+    EXPECT_EQ(static_cast<uint16_t>(ds4_motion_timestamp_for(0x11223344u + 6000u) - start), 375);
+
+    // Ten seconds of 4 ms reports stays exact, with no 16-bit truncation of
+    // the DualSense value.
+    uint32_t sensor = 0x11223344u + 6000u;
+    uint16_t last = static_cast<uint16_t>(start + 375);
+    for (int report = 0; report < 2500; ++report) {
+        sensor += 12000u;
+        const uint16_t now = ds4_motion_timestamp_for(sensor);
+        EXPECT_EQ(static_cast<uint16_t>(now - last), 750);
+        last = now;
+    }
+
+    // The DualSense clock wrapping its 32 bits is an ordinary step.
+    ds4_motion_timestamp_for(0xFFFFF000u, false);
+    const uint16_t wrap_start = ds4_motion_timestamp_for(0xFFFFF000u);
+    EXPECT_EQ(static_cast<uint16_t>(ds4_motion_timestamp_for(0x00000400u) - wrap_start), 0x1400 / 16);
+
+    // A reconnected controller restarts its clock: resync without a jump.
+    const uint16_t before_restart = ds4_motion_timestamp_for(0x50000000u);
+    EXPECT_EQ(ds4_motion_timestamp_for(0x00000010u), before_restart);
+    EXPECT_EQ(static_cast<uint16_t>(ds4_motion_timestamp_for(0x00000010u + 1600u) - before_restart), 100);
 }
 
 void ds4_output_decodes_to_ds5_rumble_and_lightbar_payload() {
@@ -1732,6 +1777,7 @@ std::vector<TestCase> tests{
     {"classic rumble renderer restores audio haptics on stop", classic_rumble_renderer_restores_audio_haptics_on_stop},
     {"host zero rumble stop only restores active audio haptics", host_zero_rumble_stop_only_restores_an_active_audio_haptics_session},
     {"ds4 persona maps standard gamepad fields", ds4_persona_maps_standard_gamepad_fields},
+    {"ds4 persona motion timestamp uses ds4 ticks", ds4_persona_motion_timestamp_uses_ds4_ticks},
     {"ds4 output decodes to ds5 rumble and lightbar payload", ds4_output_decodes_to_ds5_rumble_and_lightbar_payload},
     {"dualsense persona feature reports cover identity probe surface", dualsense_persona_feature_reports_cover_identity_probe_surface},
     {"ds4 feature reports cover native probe surface", ds4_feature_reports_cover_native_probe_surface},
