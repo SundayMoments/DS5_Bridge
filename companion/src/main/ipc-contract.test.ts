@@ -151,8 +151,8 @@ describe('IPC contract', () => {
     expect(bridgeServiceSource).toContain('setShowBatteryPercentTrayIcon(enabled: boolean): BridgeSnapshot');
     expect(mainSource).toContain('function batteryTrayIcon(');
     expect(mainSource).toContain('snapshot.settings.showBatteryPercentTrayIcon');
-    expect(mainSource).toContain('TRAY_BATTERY_ICON_DISCHARGING');
-    expect(mainSource).toContain('TRAY_BATTERY_ICON_EXTERNAL_POWER');
+    expect(mainSource).toContain("const powered = powerState !== 'battery';");
+    expect(mainSource).toContain('createTrayBatteryIconBuffer(clampedPercent, powered)');
     expect(mainSource).toContain("if (rawPowerState === 0x01) return 'charging';");
     expect(mainSource).toContain("if (rawPowerState === 0x02) return 'external-power';");
   });

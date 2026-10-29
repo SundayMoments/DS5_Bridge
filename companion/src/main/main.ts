@@ -16,6 +16,11 @@ import {
 } from './pico-firmware-updater';
 import { DEFAULT_SETTINGS, SettingsStore } from './settings-store';
 import { fitMainWindowToWorkArea, type MainWindowPresentation } from './main-window-sizing';
+import {
+  TRAY_BATTERY_ICON_SCALE_FACTOR,
+  TRAY_BATTERY_ICON_SIZE,
+  createTrayBatteryIconBuffer
+} from './tray-icon-bitmap';
 import type {
   AdaptiveTriggerPreviewEffect,
   AudioReactiveHapticsConfig,
@@ -76,11 +81,6 @@ let mainWindowBusyTasks = 0;
 let appSettingsStore: SettingsStore | null = null;
 const hasSingleInstanceLock = ALLOW_PARALLEL_AUTOMATION_INSTANCE || app.requestSingleInstanceLock();
 const audioHapticsIconCache = new Map<string, Promise<string | null> | string | null>();
-const TRAY_BATTERY_ICON_SIZE = 32;
-const TRAY_BATTERY_ICON_SCALE_FACTOR = 2;
-const TRAY_BATTERY_ICON_SHADOW = { red: 0, green: 0, blue: 0, alpha: 180 };
-const TRAY_BATTERY_ICON_DISCHARGING = { red: 245, green: 248, blue: 255, alpha: 255 };
-const TRAY_BATTERY_ICON_EXTERNAL_POWER = { red: 57, green: 215, blue: 125, alpha: 255 };
 const trayBatteryIconCache = new Map<string, Electron.NativeImage>();
 
 function windowsAppUserModelId(): string {
@@ -217,130 +217,19 @@ function trayTooltipWithBatteryPercent(
   return `${name} \u2014 ${batteryPercent}%`;
 }
 
-type TrayBatteryIconColor = {
-  red: number;
-  green: number;
-  blue: number;
-  alpha: number;
-};
-
-const TRAY_BATTERY_DIGIT_SEGMENTS: Record<string, string> = {
-  '0': 'abcdef',
-  '1': 'bc',
-  '2': 'abdeg',
-  '3': 'abcdg',
-  '4': 'bcfg',
-  '5': 'acdfg',
-  '6': 'acdefg',
-  '7': 'abc',
-  '8': 'abcdefg',
-  '9': 'abcdfg'
-};
-
-function setTrayIconPixel(buffer: Buffer, x: number, y: number, color: TrayBatteryIconColor): void {
-  if (x < 0 || y < 0 || x >= TRAY_BATTERY_ICON_SIZE || y >= TRAY_BATTERY_ICON_SIZE) {
-    return;
-  }
-  const offset = ((y * TRAY_BATTERY_ICON_SIZE) + x) * 4;
-  buffer[offset] = color.blue;
-  buffer[offset + 1] = color.green;
-  buffer[offset + 2] = color.red;
-  buffer[offset + 3] = color.alpha;
-}
-
-function drawTrayIconRect(
-  buffer: Buffer,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  color: TrayBatteryIconColor
-): void {
-  for (let row = y; row < y + height; row += 1) {
-    for (let column = x; column < x + width; column += 1) {
-      setTrayIconPixel(buffer, column, row, color);
-    }
-  }
-}
-
-function drawTrayIconDigit(
-  buffer: Buffer,
-  digit: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  thickness: number,
-  color: TrayBatteryIconColor
-): void {
-  const segments = TRAY_BATTERY_DIGIT_SEGMENTS[digit];
-  if (!segments) {
-    return;
-  }
-
-  const middleY = Math.floor((height - thickness) / 2);
-  const lowerHeight = height - middleY - (thickness * 2);
-  const rects: Record<string, [number, number, number, number]> = {
-    a: [x + thickness, y, width - (thickness * 2), thickness],
-    b: [x + width - thickness, y + thickness, thickness, middleY - thickness],
-    c: [x + width - thickness, y + middleY + thickness, thickness, lowerHeight],
-    d: [x + thickness, y + height - thickness, width - (thickness * 2), thickness],
-    e: [x, y + middleY + thickness, thickness, lowerHeight],
-    f: [x, y + thickness, thickness, middleY - thickness],
-    g: [x + thickness, y + middleY, width - (thickness * 2), thickness]
-  };
-
-  for (const segment of segments) {
-    const [segmentX, segmentY, segmentWidth, segmentHeight] = rects[segment];
-    drawTrayIconRect(buffer, segmentX, segmentY, segmentWidth, segmentHeight, color);
-  }
-}
-
-function drawTrayIconNumber(buffer: Buffer, text: string, color: TrayBatteryIconColor, offset = 0): void {
-  const digitCount = text.length;
-  const digitWidth = digitCount === 1 ? 14 : digitCount === 2 ? 12 : 9;
-  const digitHeight = digitCount === 1 ? 24 : digitCount === 2 ? 24 : 22;
-  const thickness = digitCount === 3 ? 2 : 3;
-  const spacing = digitCount === 1 ? 0 : digitCount === 2 ? 2 : 1;
-  const totalWidth = (digitCount * digitWidth) + ((digitCount - 1) * spacing);
-  const startX = Math.floor((TRAY_BATTERY_ICON_SIZE - totalWidth) / 2) + offset;
-  const startY = Math.floor((TRAY_BATTERY_ICON_SIZE - digitHeight) / 2) + offset;
-
-  for (let index = 0; index < text.length; index += 1) {
-    drawTrayIconDigit(
-      buffer,
-      text[index],
-      startX + (index * (digitWidth + spacing)),
-      startY,
-      digitWidth,
-      digitHeight,
-      thickness,
-      color
-    );
-  }
-}
-
 function batteryTrayIcon(
   percent: number,
   powerState: TrayBatteryPowerState
 ): Electron.NativeImage {
   const clampedPercent = Math.max(0, Math.min(100, Math.round(percent)));
-  const text = String(clampedPercent);
-  const key = `${text}:${powerState}`;
+  const powered = powerState !== 'battery';
+  const key = `${clampedPercent}:${powered}`;
   const cached = trayBatteryIconCache.get(key);
   if (cached) {
     return cached;
   }
 
-  const buffer = Buffer.alloc(TRAY_BATTERY_ICON_SIZE * TRAY_BATTERY_ICON_SIZE * 4);
-  drawTrayIconNumber(buffer, text, TRAY_BATTERY_ICON_SHADOW, 1);
-  drawTrayIconNumber(
-    buffer,
-    text,
-    powerState === 'battery'
-      ? TRAY_BATTERY_ICON_DISCHARGING
-      : TRAY_BATTERY_ICON_EXTERNAL_POWER
-  );
+  const buffer = createTrayBatteryIconBuffer(clampedPercent, powered);
   const image = nativeImage.createFromBitmap(buffer, {
     width: TRAY_BATTERY_ICON_SIZE,
     height: TRAY_BATTERY_ICON_SIZE,
