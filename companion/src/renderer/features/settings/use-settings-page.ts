@@ -162,6 +162,7 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
     appVersion,
     bridgeHealth: {
       firmwareVersion: snapshot.status?.firmwareVersion ?? null,
+      firmwareUpdateRequired: snapshot.state === 'incompatible',
       resetEvidence: connected ? snapshot.diagnostics.resetEvidence : null
     }
   } : null;

@@ -55,6 +55,8 @@ export interface SettingsPageModel {
   readonly appVersion: string | null;
   readonly bridgeHealth: {
     readonly firmwareVersion: string | null;
+    /** A bridge is attached but its firmware is too old to report a version to this app. */
+    readonly firmwareUpdateRequired?: boolean;
     /** Why the bridge last reset; null or missing when its firmware does not report it. */
     readonly resetEvidence: ResetEvidencePayload | null | undefined;
   };

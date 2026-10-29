@@ -401,8 +401,12 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
 }
 
 // The close button hides to the tray unless the user chose to quit there.
+// While a Pico firmware action or bootloader confirmation is running it only
+// hides, as retireHiddenMainWindow waits for them: quitting would cut a UF2
+// copy short and leave the bridge half flashed.
 function closeMainWindow(window: BrowserWindow | null): void {
-  if (bridgeService?.getSnapshot().settings.closeButtonQuits) {
+  const snapshot = bridgeService?.getSnapshot();
+  if (snapshot?.settings.closeButtonQuits && mainWindowBusyTasks === 0 && !snapshot.bootloaderConfirmation) {
     app.quit();
     return;
   }

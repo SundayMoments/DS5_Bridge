@@ -248,6 +248,15 @@ describe('Settings page', () => {
     />);
     act(() => sectionButton(noBridge, 'Help & About').click());
     expect(noBridge.textContent).toContain('App v2.0.1 · Firmware not connected');
+
+    act(() => root?.unmount());
+    root = null;
+    const oldFirmware = render(<Harness
+      model={baseModel({ bridgeHealth: { firmwareVersion: null, firmwareUpdateRequired: true, resetEvidence: null } })}
+      actions={createActions()}
+    />);
+    act(() => sectionButton(oldFirmware, 'Help & About').click());
+    expect(oldFirmware.textContent).toContain('App v2.0.1 · Firmware update required');
   });
 
   it('keeps a Kitsune Input card above the links in Help & About', () => {

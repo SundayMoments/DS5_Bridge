@@ -34,8 +34,12 @@ describe('main window behavior', () => {
 
   it('hides the window on close unless the user chose to quit there', () => {
     const closeMainWindow = extractFunction('closeMainWindow');
-    expect(closeMainWindow).toContain('bridgeService?.getSnapshot().settings.closeButtonQuits');
+    expect(closeMainWindow).toContain('snapshot?.settings.closeButtonQuits');
     expect(closeMainWindow.indexOf('app.quit();')).toBeLessThan(closeMainWindow.indexOf('window?.hide();'));
+    // A firmware action or bootloader confirmation in flight only hides, so a
+    // UF2 copy is never cut short.
+    expect(closeMainWindow).toContain('mainWindowBusyTasks === 0');
+    expect(closeMainWindow).toContain('!snapshot.bootloaderConfirmation');
     expect(extractFunction('createWindow')).toMatch(/window\.on\('close', \(event\) => \{\s*if \(!isQuitting\) \{\s*event\.preventDefault\(\);\s*closeMainWindow\(window\);/);
     expect(mainSource).toContain("ipcMain.handle('window:hide', () => closeMainWindow(mainWindow));");
     expect(mainSource).toContain("ipcMain.handle('bridge:setCloseButtonQuits'");

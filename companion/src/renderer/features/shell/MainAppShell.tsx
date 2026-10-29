@@ -25,6 +25,8 @@ export interface MainAppShellProps {
   readonly onBeginWindowDrag: () => void;
   readonly onMinimize: () => void;
   readonly onHide: () => void;
+  /** Quit on Close is on, so the X button quits instead of hiding to the tray. */
+  readonly closeButtonQuits?: boolean;
   /** An app-wide action holds the lock; its disabled look waits briefly (see shared-controls.css). */
   readonly appActionPending?: boolean;
 }
@@ -54,8 +56,10 @@ export function MainAppShell({
   onBeginWindowDrag,
   onMinimize,
   onHide,
+  closeButtonQuits = false,
   appActionPending = false
 }: MainAppShellProps) {
+  const closeLabel = closeButtonQuits ? 'Quit DS5 Bridge' : 'Hide to tray';
   function handleWindowChromeMouseDown(event: ReactMouseEvent<HTMLElement>): void {
     const target = event.target as HTMLElement;
     if (target.closest(INTERACTIVE_CHROME)) return;
@@ -77,7 +81,7 @@ export function MainAppShell({
             <button type="button" title="Minimize" aria-label="Minimize" onClick={onMinimize}>
               <Minus size={16} />
             </button>
-            <button type="button" title="Hide to tray" aria-label="Hide to tray" onClick={onHide}>
+            <button type="button" title={closeLabel} aria-label={closeLabel} onClick={onHide}>
               <X size={16} />
             </button>
           </div>
