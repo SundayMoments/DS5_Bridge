@@ -266,7 +266,14 @@ export interface DirectControllerInfo {
 
 export interface BridgeIdentityRecord {
   label: string | null;
+  /** The Windows container of the bridge's latest controller persona. */
   containerId: string | null;
+  /**
+   * Every container the bridge has been seen on, kept once there is more than
+   * one: it reattaches as a different device when a controller connects or
+   * disconnects.
+   */
+  containerIds?: string[];
 }
 
 export interface BridgeDeviceCensus {

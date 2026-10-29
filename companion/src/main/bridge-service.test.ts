@@ -94,6 +94,18 @@ vi.mock('./audio-helper', async (importOriginal) => {
   };
 });
 
+// The resident census helper is covered by bridge-census-client.test.ts; here
+// each census is the mocked one-shot list.
+vi.mock('./bridge-census-client', () => ({
+  BridgeCensusClient: class {
+    list() {
+      return audioHelperMock.listBridges();
+    }
+
+    stop() {}
+  }
+}));
+
 import { BridgeService } from './bridge-service';
 import { SettingsStore } from './settings-store';
 
@@ -3266,6 +3278,181 @@ describe('BridgeService', () => {
         uniqueId,
         name: 'Desk Bridge'
       })
+    ]);
+  });
+
+  it('lists a hot-plugged bridge within Kitsune Input’s two-second census', async () => {
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const service = serviceFixture();
+      await poll(service);
+      expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([]);
+
+      audioHelperMock.listBridges.mockResolvedValue({
+        bridges: [{ path: 'winusb://plugged-in', containerId: '11111111-1111-1111-1111-111111111111' }],
+        hidDevices: []
+      });
+      now += 1_500;
+      await poll(service);
+      expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([]);
+
+      now += 500;
+      await poll(service);
+      expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([
+        expect.objectContaining({ path: 'winusb://plugged-in', connected: false })
+      ]);
+
+      audioHelperMock.listBridges.mockResolvedValue({ bridges: [], hidDevices: [] });
+      now += 2_000;
+      await poll(service);
+      expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('lists a bridge with its name the moment its transport connects', async () => {
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const uniqueId = '0011223344556677';
+      const service = serviceFixture({
+        bridgeIdentities: { [uniqueId]: { label: 'Desk', containerId: '11111111-1111-1111-1111-111111111111' } }
+      });
+      await poll(service);
+      expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([]);
+
+      // The bridge attaches between censuses and the transport finds it first.
+      const device = new MockHidDevice();
+      device.path = 'winusb://desk';
+      device.deviceIdentity = deviceIdentityReport({ bridgeId: uniqueId });
+      hidMock.state.devicesList = [companionDeviceInfo(device.path)];
+      hidMock.state.openDevices.set(device.path, device);
+      audioHelperMock.listBridges.mockResolvedValue({
+        bridges: [{ path: device.path, containerId: '11111111-1111-1111-1111-111111111111' }],
+        hidDevices: []
+      });
+      now += 500;
+      await poll(service);
+
+      expect(service.getSnapshot().state).toBe('connected');
+      expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([
+        expect.objectContaining({ path: device.path, connected: true, selected: true, uniqueId, name: 'Desk' })
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('switches to a listed bridge without waiting for a new census', async () => {
+    const service = serviceFixture();
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [
+        { path: 'winusb://bridge-a', containerId: '11111111-1111-1111-1111-111111111111' },
+        { path: 'winusb://bridge-b', containerId: '22222222-2222-2222-2222-222222222222' }
+      ],
+      hidDevices: []
+    });
+    await service.refreshBridgeDevices();
+    audioHelperMock.listBridges.mockClear();
+
+    await service.selectBridge('winusb://bridge-b');
+    expect(audioHelperMock.listBridges).not.toHaveBeenCalled();
+    expect(service.getSnapshot().settings.selectedBridgePath).toBe('winusb://bridge-b');
+
+    await expect(service.selectBridge('winusb://bridge-c')).rejects.toThrow('no longer connected');
+    expect(audioHelperMock.listBridges).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows the selected bridge to its bridge-only path while another bridge is plugged in', async () => {
+    const desk = '0011223344556677';
+    const personaPath = 'winusb://vid_054c&pid_0ce6&mi_05#desk';
+    const bridgeOnlyPath = 'winusb://vid_1209&pid_db08&mi_01#desk';
+    const service = serviceFixture({
+      selectedBridgePath: personaPath,
+      selectedBridgeUniqueId: desk,
+      bridgeIdentities: {
+        [desk]: {
+          label: 'Desk',
+          containerId: '11111111-1111-1111-1111-111111111111',
+          containerIds: ['11111111-1111-1111-1111-111111111111', '11111111-0000-0000-0000-000000000000']
+        },
+        bbbbbbbbbbbbbbbb: { label: 'Couch', containerId: '22222222-2222-2222-2222-222222222222' }
+      }
+    });
+    const device = new MockHidDevice();
+    device.path = bridgeOnlyPath;
+    device.status = statusReport({ controllerConnected: false });
+    device.deviceIdentity = deviceIdentityReport({ bridgeId: desk });
+    const couch = new MockHidDevice();
+    couch.path = 'winusb://couch';
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set(couch.path, couch);
+    hidMock.state.openDevices.set(bridgeOnlyPath, device);
+    // The controller disconnected, so the bridge reattached as its bridge-only receiver.
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [
+        { path: couch.path, containerId: '22222222-2222-2222-2222-222222222222' },
+        { path: bridgeOnlyPath, containerId: '11111111-0000-0000-0000-000000000000' }
+      ],
+      hidDevices: []
+    });
+
+    await poll(service);
+
+    expect(winUsbTransportMock.open).toHaveBeenLastCalledWith(expect.objectContaining({ devicePath: bridgeOnlyPath }));
+    expect(service.getSnapshot()).toMatchObject({
+      state: 'connected',
+      // The bridge-only path is not saved: the next controller moves the bridge again.
+      settings: { selectedBridgePath: personaPath, selectedBridgeUniqueId: desk }
+    });
+    expect(service.getSnapshot().bridgeDevices?.bridges.map((bridge) => [bridge.name, bridge.selected])).toEqual([
+      ['Desk', true],
+      ['Couch', false]
+    ]);
+  });
+
+  it('remembers a bridge’s bridge-only container, so it keeps its name and rank while idle', async () => {
+    const desk = '0011223344556677';
+    const bridgeOnlyPath = 'winusb://vid_1209&pid_db08&mi_01#desk';
+    const service = serviceFixture({
+      bridgeIdentities: {
+        [desk]: { label: 'Desk', containerId: '11111111-1111-1111-1111-111111111111' },
+        bbbbbbbbbbbbbbbb: { label: 'Couch', containerId: '22222222-2222-2222-2222-222222222222' }
+      }
+    });
+    const device = new MockHidDevice();
+    device.path = bridgeOnlyPath;
+    device.status = statusReport({ controllerConnected: false });
+    device.deviceIdentity = deviceIdentityReport({ bridgeId: desk });
+    const couch = new MockHidDevice();
+    couch.path = 'winusb://couch';
+    couch.deviceIdentity = deviceIdentityReport({ bridgeId: 'bbbbbbbbbbbbbbbb' });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set(bridgeOnlyPath, device);
+    hidMock.state.openDevices.set(couch.path, couch);
+    audioHelperMock.listBridges.mockResolvedValue({
+      bridges: [
+        { path: bridgeOnlyPath, containerId: '11111111-0000-0000-0000-000000000000' },
+        { path: couch.path, containerId: '22222222-2222-2222-2222-222222222222' }
+      ],
+      hidDevices: []
+    });
+
+    await service.selectBridge(bridgeOnlyPath);
+    await poll(service);
+    expect(service.getSnapshot().settings.bridgeIdentities[desk]).toEqual({
+      label: 'Desk',
+      containerId: '11111111-1111-1111-1111-111111111111',
+      containerIds: ['11111111-1111-1111-1111-111111111111', '11111111-0000-0000-0000-000000000000']
+    });
+
+    await service.selectBridge(couch.path);
+    await poll(service);
+    expect(service.getSnapshot().bridgeDevices?.bridges.map((bridge) => [bridge.name, bridge.connected])).toEqual([
+      ['Desk', false],
+      ['Couch', true]
     ]);
   });
 

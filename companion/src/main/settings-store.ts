@@ -862,7 +862,10 @@ function cloneSettings(settings: CompanionSettings): CompanionSettings {
   return {
     ...settings,
     bridgeIdentities: Object.fromEntries(
-      Object.entries(settings.bridgeIdentities).map(([uniqueId, identity]) => [uniqueId, { ...identity }])
+      Object.entries(settings.bridgeIdentities).map(([uniqueId, identity]) => [uniqueId, {
+        ...identity,
+        ...(identity.containerIds ? { containerIds: [...identity.containerIds] } : {})
+      }])
     ),
     bridgeWorkspaces: structuredClone(settings.bridgeWorkspaces),
     controllerBindings: { ...settings.controllerBindings },
@@ -1509,15 +1512,27 @@ function normalizeBridgeIdentities(value: unknown): CompanionSettings['bridgeIde
     if (!/^[0-9a-f]{16}$/.test(uniqueId) || !rawIdentity || typeof rawIdentity !== 'object' || Array.isArray(rawIdentity)) {
       continue;
     }
-    const identity = rawIdentity as { label?: unknown; containerId?: unknown };
+    const identity = rawIdentity as { label?: unknown; containerId?: unknown; containerIds?: unknown };
     const label = typeof identity.label === 'string' ? identity.label.trim().slice(0, 32) : '';
-    const containerId = typeof identity.containerId === 'string'
-      && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.containerId)
-      ? identity.containerId.toLowerCase()
-      : null;
-    result[uniqueId] = { label: label || null, containerId };
+    const containerId = normalizeContainerId(identity.containerId);
+    const containerIds = Array.from(new Set([
+      containerId,
+      ...(Array.isArray(identity.containerIds) ? identity.containerIds.map(normalizeContainerId) : [])
+    ].filter((candidate): candidate is string => candidate !== null)));
+    result[uniqueId] = {
+      label: label || null,
+      containerId,
+      ...(containerIds.length > (containerId ? 1 : 0) ? { containerIds } : {})
+    };
   }
   return result;
+}
+
+function normalizeContainerId(value: unknown): string | null {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase()
+    : null;
 }
 
 function normalizeControllerBindings(

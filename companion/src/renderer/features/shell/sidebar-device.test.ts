@@ -85,13 +85,20 @@ describe('bridge selector', () => {
     expect(model.directControllers).toEqual([{ path: 'usb', product: 'DualSense' }]);
   });
 
-  it('falls back to the connected bridge, then the first, then nothing', () => {
+  it('falls back to the connected bridge, then asks for one as Kitsune Input does', () => {
     const bridges = [
       { path: 'a', name: 'A', uniqueId: '1', selected: false, connected: false },
       { path: 'b', name: 'B', uniqueId: '2', selected: false, connected: true }
     ];
     expect(bridgeSelectorModel(snapshot({ bridgeDevices: { bridges, directControllers: [] } })).selectedPath).toBe('b');
-    expect(bridgeSelectorModel(snapshot({ bridgeDevices: { bridges: [bridges[0]], directControllers: [] } })).selectedPath).toBe('a');
-    expect(bridgeSelectorModel(snapshot())).toMatchObject({ bridges: [], selectedPath: '', directControllers: [] });
+    // The selected bridge was unplugged: the one left is listed, not shown as in use.
+    expect(bridgeSelectorModel(snapshot({ bridgeDevices: { bridges: [bridges[0]], directControllers: [] } })))
+      .toMatchObject({ selectedPath: '', selectedName: null, emptyLabel: 'Select bridge' });
+    expect(bridgeSelectorModel(snapshot())).toMatchObject({
+      bridges: [],
+      selectedPath: '',
+      directControllers: [],
+      emptyLabel: 'No bridge detected'
+    });
   });
 });

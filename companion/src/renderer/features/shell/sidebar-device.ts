@@ -46,16 +46,22 @@ export function sidebarDevicePresentation(
   };
 }
 
-/** The bridge picker under the device card: every bridge, the selected one, and USB-direct controllers. */
+/**
+ * The bridge picker under the device card: every bridge in the bridge
+ * service's rank order, the selected one, and USB-direct controllers. As in
+ * Kitsune Input, a list with no selected bridge asks for one instead of naming
+ * a bridge that is not in use.
+ */
 export function bridgeSelectorModel(
   snapshot: BridgeSnapshot
-): Pick<ShellBridgeSelectorProps, 'bridges' | 'selectedPath' | 'selectedName' | 'selectedUniqueId' | 'directControllers'> {
+): Pick<ShellBridgeSelectorProps,
+  'bridges' | 'selectedPath' | 'selectedName' | 'selectedUniqueId' | 'directControllers' | 'emptyLabel'> {
   const bridges = snapshot.bridgeDevices?.bridges ?? [];
   const selected = bridges.find((bridge) => bridge.selected)
     ?? bridges.find((bridge) => bridge.connected)
-    ?? bridges[0]
     ?? null;
   return {
+    emptyLabel: bridges.length > 0 ? 'Select bridge' : 'No bridge detected',
     bridges: bridges.map((bridge, index) => ({
       label: bridge.name ?? `Bridge ${index + 1}`,
       path: bridge.path
