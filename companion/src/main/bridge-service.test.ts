@@ -609,6 +609,12 @@ async function flushImmediate(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+/** A persona switch reattaches the bridge's USB: the transport closes and the next poll opens it again. */
+async function reattachAfterPersonaSwitch(device: MockHidDevice): Promise<void> {
+  device.emit('close');
+  await flushImmediate();
+}
+
 describe('BridgeService', () => {
   let tempDirs: string[] = [];
   let services: BridgeService[] = [];
@@ -2004,12 +2010,13 @@ describe('BridgeService', () => {
     await service.setHostPersonaMode('xbox');
     expect(stop).toHaveBeenCalledOnce();
 
-    stop.mockClear();
     device.status = statusReport({
       controllerConnected: true,
       hostPersonaMode: 'xbox',
       supportedHostPersonaModesMask: 0x07
     });
+    await reattachAfterPersonaSwitch(device);
+    stop.mockClear();
     await poll(service);
 
     expect(stop).toHaveBeenCalledOnce();
@@ -2737,6 +2744,7 @@ describe('BridgeService', () => {
         hostPersonaMode: 'ds4',
         supportedHostPersonaModesMask: 0x07
       });
+      await reattachAfterPersonaSwitch(device);
       nowSpy.mockReturnValue(1_000_050);
       await poll(service);
       expect(setDefaultRenderBridgeEndpoint).toHaveBeenCalledOnce();
@@ -2997,6 +3005,13 @@ describe('BridgeService', () => {
         hostPersonaMode: 'xbox',
         supportedHostPersonaModesMask: 0x07
       });
+      // The firmware reports the new persona before it reattaches USB: the
+      // switch is not over on the transport opened before it.
+      nowSpy.mockReturnValue(1_000_100);
+      await poll(service);
+      expect(service.getSnapshot().state).toBe('transitioning');
+
+      await reattachAfterPersonaSwitch(device);
       nowSpy.mockReturnValue(1_000_500);
       await poll(service);
 
@@ -3600,6 +3615,105 @@ describe('BridgeService', () => {
         ['Pico 2W', false],
         [null, false]
       ]);
+    });
+
+    describe('while it leaves USB for a moment', () => {
+      const xboxPersonaPath = 'winusb://vid_1209&pid_db05&mi_05#8&1fb63bb6&0&7';
+      const picoRow = { path: picoBridgeOnlyPath, containerId: '22222222-0000-0000-0000-000000000000', uniqueId: pico };
+      let clock = 1_000_000;
+
+      beforeEach(() => {
+        clock = 1_000_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      });
+
+      afterEach(() => {
+        vi.mocked(Date.now).mockRestore();
+      });
+
+      /** The WaveShare connected on its DualSense persona, the Pico 2W idle beside it. */
+      async function connectedWaveShare() {
+        const service = twoBridgeService();
+        const waveShareDevice = bridge(oldPersonaPath, waveShare);
+        waveShareDevice.status = statusReport({
+          controllerConnected: true,
+          hostPersonaMode: 'dualsense',
+          supportedHostPersonaModesMask: 0x0f
+        });
+        const picoDevice = bridge(picoBridgeOnlyPath, pico);
+        hidMock.state.devicesList = [companionDeviceInfo()];
+        audioHelperMock.listBridges.mockResolvedValue({
+          bridges: [picoRow, { path: oldPersonaPath, containerId: '11111111-1111-1111-1111-111111111111' }],
+          hidDevices: []
+        });
+        await poll(service);
+        expect(service.getSnapshot().state).toBe('connected');
+        return { service, waveShareDevice, picoDevice };
+      }
+
+      /** The WaveShare leaves USB; for a moment the census lists only the Pico 2W. */
+      async function waveShareLeaves(waveShareDevice: MockHidDevice) {
+        audioHelperMock.listBridges.mockResolvedValue({ bridges: [picoRow], hidDevices: [] });
+        hidMock.state.openDevices.delete(oldPersonaPath);
+        waveShareDevice.emit('close');
+        await flushImmediate();
+      }
+
+      it('keeps the selection through a persona switch and finds the bridge on its new path', async () => {
+        const { service, waveShareDevice, picoDevice } = await connectedWaveShare();
+        await service.setHostPersonaMode('xbox');
+        await waveShareLeaves(waveShareDevice);
+
+        clock += 3000;
+        await poll(service);
+
+        expect(service.getSnapshot().settings).toMatchObject({ selectedBridgeUniqueId: waveShare });
+        expect(picoDevice.featureReportIds).toEqual([]);
+
+        // It comes back as the Xbox persona, on a container no identity records.
+        const xboxDevice = bridge(xboxPersonaPath, waveShare);
+        xboxDevice.status = statusReport({
+          controllerConnected: true,
+          hostPersonaMode: 'xbox',
+          supportedHostPersonaModesMask: 0x0f
+        });
+        audioHelperMock.listBridges.mockResolvedValue({
+          bridges: [picoRow, { path: xboxPersonaPath, containerId: '55555555-5555-5555-5555-555555555555' }],
+          hidDevices: []
+        });
+        clock += 3000;
+        await poll(service);
+
+        expect(service.getSnapshot()).toMatchObject({
+          state: 'connected',
+          settings: { selectedBridgePath: xboxPersonaPath, selectedBridgeUniqueId: waveShare }
+        });
+        expect(service.getSnapshot().status?.hostPersonaMode).toBe('xbox');
+        expect(picoDevice.featureReportIds).toEqual([]);
+        expect(service.getSnapshot().bridgeDevices?.bridges.map((row) => [row.name, row.connected, row.selected])).toEqual([
+          ['WaveShare', true, true],
+          ['Pico 2W', false, false]
+        ]);
+      });
+
+      it('waits out a controller swap before letting the other bridge take the selection', async () => {
+        const { service, waveShareDevice } = await connectedWaveShare();
+        await waveShareLeaves(waveShareDevice);
+
+        clock += 3000;
+        await poll(service);
+        clock += 3000;
+        await poll(service);
+        expect(service.getSnapshot().settings.selectedBridgeUniqueId).toBe(waveShare);
+
+        // Gone for good: past the grace period, the only bridge left is selected.
+        clock += 10000;
+        await poll(service);
+        expect(service.getSnapshot().settings).toMatchObject({
+          selectedBridgePath: picoBridgeOnlyPath,
+          selectedBridgeUniqueId: pico
+        });
+      });
     });
   });
 
