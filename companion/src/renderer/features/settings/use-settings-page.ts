@@ -27,12 +27,23 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
   const [focusTarget, setFocusTarget] = useState<SettingsFocusTarget | null>(null);
   const [picoFirmwareMessage, setPicoFirmwareMessage] = useState<string | null>(null);
   const [picoFirmwareError, setPicoFirmwareError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const focusTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
     if (focusTimerRef.current !== null) {
       window.clearTimeout(focusTimerRef.current);
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    window.bridge.getAppVersion().then((version) => {
+      if (active) setAppVersion(version);
+    }, () => undefined);
+    return () => {
+      active = false;
+    };
   }, []);
 
   /** Highlights a setting for a moment; the caller opens the Settings page. */
@@ -148,6 +159,7 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
       controllerConnected,
       firmwareUpdateRequired: snapshot.state === 'incompatible'
     },
+    appVersion,
     bridgeHealth: {
       firmwareVersion: snapshot.status?.firmwareVersion ?? null,
       resetEvidence: connected ? snapshot.diagnostics.resetEvidence : null

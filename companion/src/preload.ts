@@ -301,6 +301,7 @@ const api = {
     ipcRenderer.invoke('bridge:clearFirmwareLogDirectory')
   ),
   getDiagnostics: (): Promise<BridgeDiagnostics> => ipcRenderer.invoke('bridge:getDiagnostics'),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke('window:toggleMaximize'),
   isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),

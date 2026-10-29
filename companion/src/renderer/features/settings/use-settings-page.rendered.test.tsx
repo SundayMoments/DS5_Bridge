@@ -105,6 +105,14 @@ describe('Settings page wiring', () => {
     expect(current.actions.wakeOnLan).toBe(window.bridge);
   });
 
+  it('asks the main process for the app version once', async () => {
+    const snapshot = fixtureSnapshot();
+    const bridge = installBridgeMock(snapshot);
+    await mount(runtimeFor(snapshot));
+    expect(current.model?.appVersion).toBe('2.0.0');
+    expect(bridge.fn('getAppVersion')).toHaveBeenCalledOnce();
+  });
+
   it('reports what the Pico firmware tools did', async () => {
     const snapshot = fixtureSnapshot();
     const bridge = installBridgeMock(snapshot);

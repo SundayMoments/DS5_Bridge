@@ -54,6 +54,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
     focusTarget: null,
     picoFirmware: { message: null, error: null },
     wakeOnLan: { connectionKey: 'connected', controllerConnected: false, firmwareUpdateRequired: false },
+    appVersion: '2.0.1',
     bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null },
     ...overrides
   };
@@ -230,6 +231,23 @@ describe('Settings page', () => {
     expect(links[0]?.textContent).toContain('Official DS5 Bridge Discord');
     links.forEach((link) => act(() => link.click()));
     expect(vi.mocked(actions.openExternal).mock.calls).toEqual([[DS5_BRIDGE_DISCORD_URL], [DS5_BRIDGE_GITHUB_URL]]);
+  });
+
+  it('shows the app and firmware versions in Help & About', () => {
+    const host = render(<Harness model={baseModel()} actions={createActions()} />);
+    act(() => sectionButton(host, 'Help & About').click());
+    const version = [...host.querySelectorAll('.settings-page .settings-menu-row')]
+      .find((row) => row.querySelector('strong')?.textContent === 'Version');
+    expect(version?.querySelector('span')?.textContent).toBe('App v2.0.1 · Firmware v2.0.0');
+
+    act(() => root?.unmount());
+    root = null;
+    const noBridge = render(<Harness
+      model={baseModel({ bridgeHealth: { firmwareVersion: null, resetEvidence: null } })}
+      actions={createActions()}
+    />);
+    act(() => sectionButton(noBridge, 'Help & About').click());
+    expect(noBridge.textContent).toContain('App v2.0.1 · Firmware not connected');
   });
 
   it('keeps a Kitsune Input card above the links in Help & About', () => {

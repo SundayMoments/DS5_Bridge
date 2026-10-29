@@ -72,6 +72,7 @@ function failNextHapticsTest(message) {
 const handlers = {
   getStatus: () => new Promise((resolve) => setTimeout(() => resolve(snapshot), statusDelayMs)),
   getDiagnostics: async () => snapshot.diagnostics,
+  getAppVersion: async () => '2.0.0',
   listAudioHapticsSessions: async () => [],
   listDevices: async () => [],
   isWindowMaximized: async () => false,

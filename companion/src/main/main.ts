@@ -1285,6 +1285,7 @@ function registerIpc(service: BridgeService): void {
   });
   ipcMain.handle('bridge:clearFirmwareLogDirectory', () => service.setFirmwareLogDirectory(null));
   ipcMain.handle('bridge:getDiagnostics', () => service.getSnapshot().diagnostics);
+  ipcMain.handle('app:getVersion', () => app.getVersion());
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:toggleMaximize', () => {
     if (!mainWindow || !mainWindow.isMaximizable()) return;
