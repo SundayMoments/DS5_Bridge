@@ -4806,9 +4806,16 @@ export class BridgeService extends EventEmitter {
     if (bridges.length === 0 || (!selectedPath && !selectedUniqueId)) {
       return selectedPath ?? undefined;
     }
+    // While a persona switch is in flight, a path with another persona's USB
+    // IDs is the attachment the bridge is leaving; opening it again only
+    // holds a handle Windows waits on.
+    const switchingTo = this.hostPersonaTransition && this.hostPersonaTransition.completedAt === null
+      ? this.hostPersonaTransition.to
+      : null;
+    const leaving = (path: string) => switchingTo !== null && pathShowsOtherHostPersona(path, switchingTo);
     const moved = this.selectedIdentityBridge(settings);
     if (moved) {
-      return moved.path;
+      return leaving(moved.path) ? null : moved.path;
     }
     if (!selectedUniqueId) {
       if (selectedPath && this.bridgeCensusHasPath(selectedPath)) {
@@ -4816,7 +4823,7 @@ export class BridgeService extends EventEmitter {
       }
       return bridges.length === 1 ? bridges[0].path : null;
     }
-    const candidates = this.uncheckedUnnamedBridges(settings);
+    const candidates = this.uncheckedUnnamedBridges(settings).filter((bridge) => !leaving(bridge.path));
     const candidate = candidates.find((bridge) => BridgeService.bridgePathsEqual(bridge.path, selectedPath))
       ?? candidates[0];
     if (!candidate) {

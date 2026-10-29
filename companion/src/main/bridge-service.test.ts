@@ -3696,6 +3696,21 @@ describe('BridgeService', () => {
         ]);
       });
 
+      it('does not reopen the persona the bridge is leaving while a switch is in flight', async () => {
+        const { service, waveShareDevice } = await connectedWaveShare();
+        await service.setHostPersonaMode('xbox');
+        // The transport drops, but this census still lists the old DualSense path.
+        waveShareDevice.emit('close');
+        await flushImmediate();
+        vi.mocked(winUsbTransportMock.open).mockClear();
+
+        clock += 300;
+        await poll(service);
+
+        expect(winUsbTransportMock.open).not.toHaveBeenCalledWith(expect.objectContaining({ devicePath: oldPersonaPath }));
+        expect(service.getSnapshot()).toMatchObject({ state: 'transitioning', settings: { selectedBridgeUniqueId: waveShare } });
+      });
+
       it('waits out a controller swap before letting the other bridge take the selection', async () => {
         const { service, waveShareDevice } = await connectedWaveShare();
         await waveShareLeaves(waveShareDevice);
