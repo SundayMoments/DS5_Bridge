@@ -61,6 +61,36 @@ public sealed class MultiBridgeOptionsTests
     }
 
     [Fact]
+    public void BridgeOnlyReceiverReportsItsBoardIdAsItsSerial()
+    {
+        Assert.Equal(
+            "c7a9c48819b4825a",
+            BridgeDeviceIdentity.SerialUniqueIdForInterface(
+                @"USB\VID_1209&PID_DB08&MI_01\9&2C29198E&0&0001",
+                @"USB\VID_1209&PID_DB08\C7A9C48819B4825A"));
+        Assert.Equal(
+            "b06621e46c7ecbd1",
+            BridgeDeviceIdentity.SerialUniqueIdForInterface(@"USB\VID_1209&PID_DB08\B06621E46C7ECBD1", null));
+    }
+
+    [Fact]
+    public void ControllerPersonasAndUnrelatedParentsGiveNoBoardId()
+    {
+        // Controller personas have no serial; Windows names them by port.
+        Assert.Null(BridgeDeviceIdentity.SerialUniqueIdForInterface(
+            @"USB\VID_054C&PID_0DF2&MI_05\9&1C2D3E4F&0&0005",
+            @"USB\VID_054C&PID_0DF2\8&1FB63BB6&0&7"));
+        // A parent that is not this device, such as a hub, is never read.
+        Assert.Null(BridgeDeviceIdentity.SerialUniqueIdForInterface(
+            @"USB\VID_1209&PID_DB08&MI_01\9&2C29198E&0&0001",
+            @"USB\VID_05E3&PID_0610\C7A9C48819B4825A"));
+        Assert.Null(BridgeDeviceIdentity.SerialUniqueIdForInterface(
+            @"USB\VID_1209&PID_DB08&MI_01\9&2C29198E&0&0001",
+            @"USB\VID_1209&PID_DB08\NOTAHEXSERIAL123"));
+        Assert.Null(BridgeDeviceIdentity.SerialUniqueIdForInterface("malformed", null));
+    }
+
+    [Fact]
     public void HelperOptionsIgnoreMalformedBridgeContainer()
     {
         var options = HelperOptions.Parse(["--bridge-container", "not-a-guid"]);

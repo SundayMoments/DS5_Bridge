@@ -8,7 +8,7 @@ static class BridgeDeviceIdentity
     private const uint MaxPropertyBytes = 64 * 1024;
     private static readonly Guid NullContainer = new("00000000-0000-0000-ffff-ffffffffffff");
 
-    public sealed record BridgeInfo(string DevicePath, Guid ContainerId);
+    public sealed record BridgeInfo(string DevicePath, Guid ContainerId, string? SerialUniqueId = null);
 
     public static HashSet<Guid> GetBridgeContainerIds()
     {
@@ -36,10 +36,84 @@ static class BridgeDeviceIdentity
                 {
                     continue;
                 }
-                bridges.Add(new BridgeInfo(path, IsUsableContainerId(containerId) ? containerId : Guid.Empty));
+                bridges.Add(new BridgeInfo(
+                    path,
+                    IsUsableContainerId(containerId) ? containerId : Guid.Empty,
+                    TryGetSerialUniqueIdForInterfacePath(path, out var serialUniqueId) ? serialUniqueId : null));
             }
         }
         return bridges;
+    }
+
+    /// <summary>
+    /// The bridge's board ID when its USB device reports one as its serial,
+    /// as the bridge-only receiver does. Controller personas have no serial,
+    /// so Windows names them by port location and this finds nothing.
+    /// </summary>
+    public static bool TryGetSerialUniqueIdForInterfacePath(string interfacePath, out string uniqueId)
+    {
+        uniqueId = string.Empty;
+        if (string.IsNullOrWhiteSpace(interfacePath)
+            || !TryGetInterfaceInstanceId(interfacePath, out var instanceId)
+            || CmNative.CM_Locate_DevNodeW(out var deviceInstance, instanceId, CmNative.LocateDevnodePhantom)
+                != CmNative.CrSuccess)
+        {
+            return false;
+        }
+        string? parentInstanceId = null;
+        if (CmNative.CM_Get_Parent(out var parentInstance, deviceInstance, 0) == CmNative.CrSuccess)
+        {
+            _ = TryGetDevNodeString(parentInstance, CmNative.DevpkeyDeviceInstanceId, out parentInstanceId);
+        }
+        uniqueId = SerialUniqueIdForInterface(instanceId, parentInstanceId) ?? string.Empty;
+        return uniqueId.Length > 0;
+    }
+
+    /// <summary>
+    /// Reads the serial from the USB device that owns a bridge interface: the
+    /// interface itself when the device has one function, else its composite
+    /// parent with the same VID and PID. Only a 16-digit hex serial is a board ID.
+    /// </summary>
+    public static string? SerialUniqueIdForInterface(string interfaceInstanceId, string? parentInstanceId)
+    {
+        var separator = interfaceInstanceId.LastIndexOf('\\');
+        if (separator <= 0)
+        {
+            return null;
+        }
+        var hardwareId = interfaceInstanceId[..separator];
+        var functionIndex = hardwareId.IndexOf("&MI_", StringComparison.OrdinalIgnoreCase);
+        string deviceInstanceId;
+        if (functionIndex < 0)
+        {
+            deviceInstanceId = interfaceInstanceId;
+        }
+        else if (parentInstanceId is not null
+            && parentInstanceId.StartsWith(hardwareId[..functionIndex] + "\\", StringComparison.OrdinalIgnoreCase))
+        {
+            deviceInstanceId = parentInstanceId;
+        }
+        else
+        {
+            return null;
+        }
+        var serial = deviceInstanceId[(deviceInstanceId.LastIndexOf('\\') + 1)..];
+        return serial.Length == 16 && serial.All(Uri.IsHexDigit) ? serial.ToLowerInvariant() : null;
+    }
+
+    private static bool TryGetDevNodeString(uint deviceInstance, CmNative.DevPropKey key, out string value)
+    {
+        value = string.Empty;
+        var buffer = new byte[1024];
+        var size = (uint)buffer.Length;
+        var result = CmNative.CM_Get_DevNode_PropertyW(
+            deviceInstance, ref key, out var propertyType, buffer, ref size, 0);
+        if (result != CmNative.CrSuccess || propertyType != CmNative.DevpropTypeString || size == 0)
+        {
+            return false;
+        }
+        value = System.Text.Encoding.Unicode.GetString(buffer, 0, (int)size).TrimEnd('\0');
+        return value.Length > 0;
     }
 
     public static bool TryGetContainerIdForInterfacePath(string interfacePath, out Guid containerId)
@@ -149,6 +223,9 @@ static class BridgeDeviceIdentity
             out uint deviceInstance,
             string deviceId,
             uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        public static extern int CM_Get_Parent(out uint parentInstance, uint deviceInstance, uint flags);
 
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
         public static extern int CM_Get_DevNode_PropertyW(

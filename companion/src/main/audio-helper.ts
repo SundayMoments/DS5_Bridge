@@ -117,6 +117,8 @@ function bridgeTargetArgs(): string[] {
 export interface BridgeCensusEntry {
   path: string;
   containerId: string | null;
+  /** The board ID a bridge-only receiver reports as its USB serial; controller personas have none. */
+  uniqueId?: string | null;
 }
 
 export interface BridgeCensusHidDevice {
@@ -150,16 +152,18 @@ export function parseBridgeCensus(text: string): BridgeCensus {
   const seenPaths = new Set<string>();
   const bridges: BridgeCensusEntry[] = [];
   for (const entry of parsed.bridges as unknown[]) {
-    const candidate = entry as { path?: unknown; containerId?: unknown } | null;
+    const candidate = entry as { path?: unknown; containerId?: unknown; uniqueId?: unknown } | null;
     if (!candidate || typeof candidate.path !== 'string' || !candidate.path.trim()) continue;
     const path = candidate.path.trim();
     if (seenPaths.has(path.toLowerCase())) continue;
     seenPaths.add(path.toLowerCase());
+    const uniqueId = typeof candidate.uniqueId === 'string' ? candidate.uniqueId.trim().toLowerCase() : '';
     bridges.push({
       path,
       containerId: typeof candidate.containerId === 'string' && candidate.containerId.trim()
         ? candidate.containerId.trim().toLowerCase()
-        : null
+        : null,
+      ...(/^[0-9a-f]{16}$/.test(uniqueId) ? { uniqueId } : {})
     });
   }
   const hidDevices = Array.isArray(parsed.hidDevices)

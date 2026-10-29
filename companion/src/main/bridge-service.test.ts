@@ -3483,6 +3483,126 @@ describe('BridgeService', () => {
     ]);
   });
 
+  describe('when a controller switch re-enumerates the selected bridge', () => {
+    const waveShare = 'c7a9c48819b4825a';
+    const pico = 'b06621e46c7ecbd1';
+    const oldPersonaPath = 'winusb://vid_054c&pid_0ce6&mi_05#8&1fb63bb6&0&7';
+    const newPersonaPath = 'winusb://vid_054c&pid_0df2&mi_05#8&1fb63bb6&0&7';
+    const picoBridgeOnlyPath = 'winusb://vid_1209&pid_db08&mi_01#9&2c29198e&0&0001';
+    const picoPersonaPath = 'winusb://vid_054c&pid_0ce6&mi_05#8&2aa0c1d2&0&3';
+
+    function twoBridgeService() {
+      return serviceFixture({
+        selectedBridgePath: oldPersonaPath,
+        selectedBridgeUniqueId: waveShare,
+        bridgeIdentities: {
+          [waveShare]: { label: 'WaveShare', containerId: '11111111-1111-1111-1111-111111111111' },
+          [pico]: { label: 'Pico 2W', containerId: '22222222-2222-2222-2222-222222222222' }
+        }
+      });
+    }
+
+    function bridge(path: string, bridgeId: string): MockHidDevice {
+      const device = new MockHidDevice();
+      device.path = path;
+      device.deviceIdentity = deviceIdentityReport({ bridgeId });
+      hidMock.state.openDevices.set(path, device);
+      return device;
+    }
+
+    it('reconnects to the same bridge under its new PID and keeps both names', async () => {
+      const service = twoBridgeService();
+      bridge(newPersonaPath, waveShare);
+      const picoDevice = bridge(picoBridgeOnlyPath, pico);
+      hidMock.state.devicesList = [companionDeviceInfo()];
+      // A DualSense Edge now: a container no identity has recorded. The Pico
+      // 2W idles as its bridge-only receiver, whose USB serial is its ID.
+      audioHelperMock.listBridges.mockResolvedValue({
+        bridges: [
+          { path: picoBridgeOnlyPath, containerId: '22222222-0000-0000-0000-000000000000', uniqueId: pico },
+          { path: newPersonaPath, containerId: '33333333-3333-3333-3333-333333333333' }
+        ],
+        hidDevices: []
+      });
+
+      await poll(service);
+
+      expect(winUsbTransportMock.open).toHaveBeenLastCalledWith(expect.objectContaining({ devicePath: newPersonaPath }));
+      expect(winUsbTransportMock.open).not.toHaveBeenCalledWith(expect.objectContaining({ devicePath: oldPersonaPath }));
+      expect(picoDevice.featureReportIds).toEqual([]);
+      const snapshot = service.getSnapshot();
+      expect(snapshot.state).toBe('connected');
+      expect(snapshot.settings).toMatchObject({ selectedBridgePath: newPersonaPath, selectedBridgeUniqueId: waveShare });
+      expect(snapshot.settings.bridgeIdentities[waveShare]?.containerIds)
+        .toContain('33333333-3333-3333-3333-333333333333');
+      expect(snapshot.bridgeDevices?.bridges.map((row) => [row.name, row.connected, row.selected])).toEqual([
+        ['WaveShare', true, true],
+        ['Pico 2W', false, false]
+      ]);
+    });
+
+    it('checks an unknown bridge’s ID before sending it anything, and names it if it is the other one', async () => {
+      const service = twoBridgeService();
+      const picoDevice = bridge(picoPersonaPath, pico);
+      bridge(newPersonaPath, waveShare);
+      hidMock.state.devicesList = [companionDeviceInfo()];
+      // Both bridges are on containers no identity has recorded yet.
+      audioHelperMock.listBridges.mockResolvedValue({
+        bridges: [
+          { path: picoPersonaPath, containerId: '44444444-4444-4444-4444-444444444444' },
+          { path: newPersonaPath, containerId: '33333333-3333-3333-3333-333333333333' }
+        ],
+        hidDevices: []
+      });
+
+      await poll(service);
+
+      // The Pico 2W was opened only to read its ID: no settings, then closed.
+      expect(picoDevice.featureReportIds).toEqual([REPORT_ID.STATUS, REPORT_ID.DEVICE_IDENTITY]);
+      expect(picoDevice.sentReports).toEqual([]);
+      expect(picoDevice.closeCount).toBe(1);
+      expect(service.getSnapshot().state).toBe('no-bridge');
+      expect(service.getSnapshot().settings.bridgeIdentities[pico]?.containerIds)
+        .toContain('44444444-4444-4444-4444-444444444444');
+
+      await poll(service);
+
+      expect(winUsbTransportMock.open).toHaveBeenLastCalledWith(expect.objectContaining({ devicePath: newPersonaPath }));
+      expect(service.getSnapshot().state).toBe('connected');
+      expect(service.getSnapshot().bridgeDevices?.bridges.map((row) => [row.name, row.connected])).toEqual([
+        ['WaveShare', true],
+        ['Pico 2W', false]
+      ]);
+    });
+
+    it('opens nothing, and does not report normal firmware, while the selected bridge is unplugged', async () => {
+      const service = twoBridgeService();
+      bridge(picoBridgeOnlyPath, pico);
+      const other = bridge('winusb://other', 'dddddddddddddddd');
+      hidMock.state.devicesList = [normalFirmwareDeviceInfo()];
+      audioHelperMock.listBridges.mockResolvedValue({
+        bridges: [
+          { path: picoBridgeOnlyPath, containerId: '22222222-0000-0000-0000-000000000000', uniqueId: pico },
+          { path: other.path, containerId: null, uniqueId: 'dddddddddddddddd' }
+        ],
+        hidDevices: []
+      });
+
+      await poll(service);
+      await poll(service);
+
+      expect(winUsbTransportMock.open).not.toHaveBeenCalled();
+      expect(service.getSnapshot()).toMatchObject({
+        state: 'no-bridge',
+        settings: { selectedBridgePath: oldPersonaPath, selectedBridgeUniqueId: waveShare }
+      });
+      expect(service.getSnapshot().bridgeDevices?.bridges.map((row) => [row.name, row.selected])).toEqual([
+        ['Pico 2W', false],
+        [null, false]
+      ]);
+    });
+  });
+
   it('rejects bridge paths and identities that were not enumerated', async () => {
     const service = serviceFixture();
 

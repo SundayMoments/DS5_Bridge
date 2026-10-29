@@ -63,6 +63,16 @@ describe('bridge ranking', () => {
     expect(asBridgeOnly[0]).toMatchObject({ uniqueId: DESK, name: 'Desk' });
   });
 
+  it('knows a bridge-only receiver by the board ID in its USB serial, even on a new container', () => {
+    const [bridge] = project({
+      census: [{ path: 'winusb://vid_1209&pid_db08&mi_01#new-port', containerId: C_NEW, uniqueId: COUCH }]
+    });
+
+    expect(bridge).toMatchObject({ uniqueId: COUCH, name: null });
+    expect(project({ census: [{ path: 'winusb://x', containerId: C_COUCH, uniqueId: DESK }] })[0])
+      .toMatchObject({ uniqueId: DESK, name: 'Desk' });
+  });
+
   it('names no bridge from a container two identities share', () => {
     const shared: CompanionSettings['bridgeIdentities'] = {
       [DESK]: { label: 'Desk', containerId: C_DESK },

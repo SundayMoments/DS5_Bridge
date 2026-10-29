@@ -81,7 +81,8 @@ static class BridgeCensus
             bridges = bridges.Select(bridge => new
             {
                 path = bridge.DevicePath,
-                containerId = bridge.ContainerId == Guid.Empty ? null : bridge.ContainerId.ToString()
+                containerId = bridge.ContainerId == Guid.Empty ? null : bridge.ContainerId.ToString(),
+                uniqueId = bridge.SerialUniqueId
             }),
             hidDevices
         });

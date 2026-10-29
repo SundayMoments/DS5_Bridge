@@ -151,8 +151,32 @@ export function uniquePhysicalBridges(bridges: readonly BridgeDeviceInfo[]): Bri
   return canonical;
 }
 
+export interface BridgeCensusRow {
+  readonly path: string;
+  readonly containerId: string | null;
+  /** The board ID a bridge-only receiver reports as its USB serial. */
+  readonly uniqueId?: string | null;
+}
+
+/**
+ * Which bridge a census row is: the connected bridge's firmware ID, else the
+ * board ID its USB serial carries, else the identity that alone records its
+ * container. Null for a controller persona on a container no bridge has used.
+ */
+export function uniqueIdForCensusRow(
+  row: BridgeCensusRow,
+  identities: BridgeIdentities,
+  activePath: string | null,
+  activeUniqueId: string | null
+): string | null {
+  if (activeUniqueId && sameBridgePath(row.path, activePath)) {
+    return activeUniqueId;
+  }
+  return row.uniqueId ?? uniqueIdForContainer(row.containerId, identities);
+}
+
 export interface BridgeDeviceProjection {
-  readonly census: readonly { readonly path: string; readonly containerId: string | null }[];
+  readonly census: readonly BridgeCensusRow[];
   readonly identities: BridgeIdentities;
   readonly selectedPath: string | null;
   readonly selectedUniqueId: string | null;
@@ -163,12 +187,8 @@ export interface BridgeDeviceProjection {
 
 /** The picker's rows, ranked and one per physical bridge. */
 export function projectBridgeDevices(input: BridgeDeviceProjection): BridgeDeviceInfo[] {
-  // The connected bridge's firmware ID is authoritative; any other row is
-  // known by the container its identity recorded.
-  const uniqueIdFor = (bridge: { path: string; containerId: string | null }) => (
-    input.activeUniqueId && sameBridgePath(bridge.path, input.activePath)
-      ? input.activeUniqueId
-      : uniqueIdForContainer(bridge.containerId, input.identities)
+  const uniqueIdFor = (bridge: BridgeCensusRow) => (
+    uniqueIdForCensusRow(bridge, input.identities, input.activePath, input.activeUniqueId)
   );
   const rows = orderBridgesByIdentity(input.census, input.identities, uniqueIdFor).map((bridge) => {
     const uniqueId = uniqueIdFor(bridge);

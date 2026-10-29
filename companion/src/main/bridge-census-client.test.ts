@@ -82,6 +82,26 @@ describe('bridge census client', () => {
     censusClient.stop();
   });
 
+  it('keeps a bridge’s board ID from its USB serial only when it is one', async () => {
+    const { censusClient } = client([() => JSON.stringify({
+      bridges: [
+        { path: 'winusb://bridge-only', containerId: null, uniqueId: 'C7A9C48819B4825A' },
+        { path: 'winusb://persona', containerId: null, uniqueId: null },
+        { path: 'winusb://odd', containerId: null, uniqueId: 'not-a-board-id' }
+      ],
+      hidDevices: []
+    })]);
+
+    const { bridges } = await censusClient.list();
+
+    expect(bridges).toEqual([
+      { path: 'winusb://bridge-only', containerId: null, uniqueId: 'c7a9c48819b4825a' },
+      { path: 'winusb://persona', containerId: null },
+      { path: 'winusb://odd', containerId: null }
+    ]);
+    censusClient.stop();
+  });
+
   it('falls back to one-shot censuses after the helper fails, and starts it again after Kitsune’s backoff', async () => {
     let now = 1_000;
     const { censusClient, helpers, listOnce } = client([
