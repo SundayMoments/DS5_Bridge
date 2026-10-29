@@ -672,11 +672,11 @@ void output_state_lightbar_override_is_scaled_and_survives_audio_snapshot() {
     controller_output_state_copy_audio_snapshot(snapshot.data(), false);
 
     EXPECT_TRUE((snapshot[kValidFlag1Offset] & kFlag1LightbarControlEnable) != 0);
-    EXPECT_FALSE((snapshot[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
+    EXPECT_TRUE((snapshot[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
     EXPECT_FALSE((snapshot[kValidFlag1Offset] & kFlag1ReleaseLeds) != 0);
     EXPECT_EQ(snapshot[kValidFlag2Offset] & kLightbarSetupControlMask, 0);
     EXPECT_EQ(snapshot[kLedBrightnessOffset], 1);
-    EXPECT_EQ(snapshot[kPlayerLedsOffset], 0);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], kPlayerLed1Instant);
     EXPECT_EQ(snapshot[kLightbarRedOffset], 100);
     EXPECT_EQ(snapshot[kLightbarGreenOffset], 40);
     EXPECT_EQ(snapshot[kLightbarBlueOffset], 20);
@@ -752,6 +752,60 @@ void output_state_player_led_release_invalidates_cached_indicator() {
 
     Payload report{};
     EXPECT_FALSE(controller_output_state_copy_player_led_report(report.data(), static_cast<uint16_t>(report.size())));
+}
+
+// Player LEDs on with nothing from the host shows player 1, not dark LEDs
+// (GitHub #59). The fallback never counts as a host pattern.
+void output_state_player_led_falls_back_to_player_one_until_host_sets_it() {
+    reset_output_state();
+    controller_output_state_set_lightbar(0, 0, 255, 100);
+
+    AudioSnapshot snapshot{};
+    controller_output_state_copy_audio_snapshot(snapshot.data(), false);
+    EXPECT_TRUE((snapshot[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], kPlayerLed1Instant);
+
+    Payload report{};
+    EXPECT_TRUE(controller_output_state_copy_player_led_report(report.data(), static_cast<uint16_t>(report.size())));
+    EXPECT_TRUE((report[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
+    EXPECT_EQ(report[kPlayerLedsOffset], kPlayerLed1Instant);
+
+    // A host report that leaves the player LEDs alone keeps the fallback,
+    // and a later release is still honored: the fallback was not cached.
+    auto rumble_only = empty_payload();
+    rumble_only[kValidFlag0Offset] = kFlag0CompatibleVibration;
+    rumble_only[kMotorRightOffset] = 0x40;
+    controller_output_state_apply_host_payload(rumble_only.data(), static_cast<uint8_t>(rumble_only.size()));
+    controller_output_state_copy_audio_snapshot(snapshot.data(), false);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], kPlayerLed1Instant);
+
+    auto release_payload = empty_payload();
+    release_payload[kValidFlag1Offset] = kFlag1ReleaseLeds;
+    controller_output_state_apply_host_payload(release_payload.data(), static_cast<uint8_t>(release_payload.size()));
+    controller_output_state_copy_audio_snapshot(snapshot.data(), false);
+    EXPECT_FALSE((snapshot[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], 0);
+    EXPECT_FALSE(controller_output_state_copy_player_led_report(report.data(), static_cast<uint16_t>(report.size())));
+
+    // The host's own pattern replaces the fallback.
+    auto host_pattern = empty_payload();
+    host_pattern[kValidFlag1Offset] = kFlag1PlayerIndicatorControlEnable;
+    host_pattern[kPlayerLedsOffset] = 0x0a;
+    controller_output_state_apply_host_payload(host_pattern.data(), static_cast<uint8_t>(host_pattern.size()));
+    controller_output_state_copy_audio_snapshot(snapshot.data(), false);
+    EXPECT_TRUE((snapshot[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], 0x0a);
+
+    // A reconnect forgets the host's choice, so player 1 shows again.
+    controller_output_state_reset_cached_player_leds();
+    controller_output_state_copy_audio_snapshot(snapshot.data(), false);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], kPlayerLed1Instant);
+
+    // Player LEDs off still forces them dark.
+    controller_output_state_set_player_led_enabled(false);
+    controller_output_state_copy_audio_snapshot(snapshot.data(), false);
+    EXPECT_TRUE((snapshot[kValidFlag1Offset] & kFlag1PlayerIndicatorControlEnable) != 0);
+    EXPECT_EQ(snapshot[kPlayerLedsOffset], 0);
 }
 
 void output_state_preserves_selector_zero_and_ignores_motor_only_rumble() {
@@ -1756,6 +1810,7 @@ std::vector<TestCase> tests{
     {"output state player led disabled suppresses host indicator", output_state_player_led_disabled_suppresses_host_indicator},
     {"output state player led reenabled restores host indicator", output_state_player_led_reenabled_restores_host_indicator},
     {"output state player led release invalidates cached indicator", output_state_player_led_release_invalidates_cached_indicator},
+    {"output state player led falls back to player one until host sets it", output_state_player_led_falls_back_to_player_one_until_host_sets_it},
     {"output state preserves selector zero and ignores motor only rumble", output_state_preserves_selector_zero_and_ignores_motor_only_rumble},
     {"output state strip zero classic rumble only removes idle selector", output_state_strip_zero_classic_rumble_only_removes_idle_selector},
     {"output state clear classic rumble clears cached selector state", output_state_clear_classic_rumble_clears_cached_selector_state},
