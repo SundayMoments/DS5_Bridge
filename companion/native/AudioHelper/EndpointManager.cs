@@ -41,7 +41,7 @@ sealed class EndpointManager
         }
         if (TargetBridgeContainer is not null)
         {
-            throw DisabledBridgeEndpoint(enumerator, DataFlow.Render, IsKnownBridgeEndpointName, "render")
+            throw DisabledBridgeEndpoint(enumerator, DataFlow.Render, "render")
                 ?? TargetBridgeEndpointNotFound(devices, "render");
         }
 
@@ -60,11 +60,7 @@ sealed class EndpointManager
             .ToArray();
 
         return FindKnownBridgeEndpointForPersona(devices, hostPersonaMode)
-            ?? throw (DisabledBridgeEndpoint(
-                    enumerator,
-                    DataFlow.Render,
-                    name => IsKnownBridgeEndpointNameForPersona(name, hostPersonaMode),
-                    "render")
+            ?? throw (DisabledBridgeEndpoint(enumerator, DataFlow.Render, "render")
                 ?? BridgeEndpointNotFoundForPersona(devices, hostPersonaMode));
     }
 
@@ -112,7 +108,7 @@ sealed class EndpointManager
         }
         if (TargetBridgeContainer is not null)
         {
-            throw DisabledBridgeEndpoint(enumerator, DataFlow.Capture, IsKnownBridgeEndpointName, "capture")
+            throw DisabledBridgeEndpoint(enumerator, DataFlow.Capture, "capture")
                 ?? TargetBridgeEndpointNotFound(devices, "capture");
         }
 
@@ -173,7 +169,7 @@ sealed class EndpointManager
         }
         if (TargetBridgeContainer is not null)
         {
-            throw DisabledBridgeEndpoint(enumerator, DataFlow.Capture, IsKnownBridgeEndpointName, "microphone capture")
+            throw DisabledBridgeEndpoint(enumerator, DataFlow.Capture, "microphone capture")
                 ?? TargetBridgeEndpointNotFound(devices, "microphone capture");
         }
 
@@ -480,19 +476,17 @@ sealed class EndpointManager
 
     // A bridge endpoint turned off in Windows Sound settings is missing from the
     // active list as well; say so, since reconnecting or closing games won't help.
+    // Only a container-ID match counts: a disabled endpoint that merely shares a
+    // persona's name may be a real USB controller's.
     private static InvalidOperationException? DisabledBridgeEndpoint(
         MMDeviceEnumerator enumerator,
         DataFlow flow,
-        Func<string, bool> matchesBridgeName,
         string role)
     {
         try
         {
             var disabled = enumerator.EnumerateAudioEndPoints(flow, DeviceState.Disabled).ToArray();
-            var match = FindBridgeEndpointByContainerId(disabled)
-                ?? (TargetBridgeContainer is null
-                    ? disabled.FirstOrDefault(device => matchesBridgeName(device.FriendlyName))
-                    : null);
+            var match = FindBridgeEndpointByContainerId(disabled);
             return match is null
                 ? null
                 : new InvalidOperationException(BridgeEndpointDisabledMessage(role, match.FriendlyName));
