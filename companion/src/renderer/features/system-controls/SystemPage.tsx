@@ -69,6 +69,7 @@ export function SystemPage({
     muteButtonActionsSupported,
     pollingRateControlSupported,
     hostPersonaControlSupported,
+    hostPersonaSwitchAvailable,
     hostPersonaOptions,
     personaTransitionActive,
     statusTone,
@@ -401,7 +402,7 @@ export function SystemPage({
                   <span>Host Controller</span>
                   <CustomSelect
                     value={snapshot.settings.hostPersonaMode}
-                    disabled={!connected || !hostPersonaControlSupported || pendingAction !== null || personaTransitionActive}
+                    disabled={!hostPersonaSwitchAvailable}
                     options={hostPersonaOptions.length > 0 ? hostPersonaOptions : HOST_PERSONA_OPTIONS.slice(0, 1)}
                     className="host-persona-selector"
                     ariaLabel="Host controller persona"

@@ -46,6 +46,13 @@ export function useSystemController(runtime: AppRuntime, { active }: SystemContr
   const muteButtonActionsSupported = Boolean(snapshot?.status?.firmwareFlags.muteButtonActions);
   const pollingRateControlSupported = Boolean(snapshot?.status?.firmwareFlags.pollingRateControl);
   const hostPersonaControlSupported = Boolean(snapshot?.status?.firmwareFlags.hostPersonaControl);
+  // A persona is how the bridge presents a connected controller; without one
+  // there is nothing to switch, and the bridge would only reattach bridge-only.
+  const hostPersonaSwitchAvailable = connected
+    && controllerConnected
+    && hostPersonaControlSupported
+    && pendingAction === null
+    && !personaTransitionActive;
   const supportedHostPersonaModes: HostPersonaMode[] = snapshot?.status?.supportedHostPersonaModes ?? ['dualsense'];
   const hostPersonaOptions = HOST_PERSONA_OPTIONS.filter(([, mode]) => (
     supportedHostPersonaModes.includes(mode) || snapshot?.settings.hostPersonaMode === mode
@@ -251,6 +258,9 @@ export function useSystemController(runtime: AppRuntime, { active }: SystemContr
   }
 
   function setHostPersonaMode(mode: HostPersonaMode) {
+    if (!hostPersonaSwitchAvailable) {
+      return;
+    }
     void runAction('host-persona', () => window.bridge.setHostPersonaMode(mode));
   }
 
@@ -275,6 +285,7 @@ export function useSystemController(runtime: AppRuntime, { active }: SystemContr
     muteButtonActionsSupported,
     pollingRateControlSupported,
     hostPersonaControlSupported,
+    hostPersonaSwitchAvailable,
     supportedHostPersonaModes,
     hostPersonaOptions,
     personaTransitionActive,

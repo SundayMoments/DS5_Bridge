@@ -99,6 +99,16 @@ describe('Overview page', () => {
     expect(bridge.fn('setHostPersonaMode')).toHaveBeenCalledWith('xbox');
   });
 
+  it('offers no persona switch while no controller is connected', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot({ status: { controllerConnected: false } }));
+    const page = overviewPage(await renderApp());
+    const personas = [...page.querySelectorAll<HTMLButtonElement>('.overview-persona-grid .overview-persona-button')];
+    // A persona is how the bridge presents a controller; without one there is nothing to switch.
+    expect(personas.map((button) => button.disabled)).toEqual([true, true, true, true]);
+    await click(personas[3]);
+    expect(bridge.fn('setHostPersonaMode')).not.toHaveBeenCalled();
+  });
+
   it('writes a quick control when the slider is released', async () => {
     const bridge = installBridgeMock(fixtureSnapshot({ settings: { hapticsEnabled: true, hapticsGainPercent: 100 } }));
     bridge.fn('setHapticsGain').mockImplementation(async (value: number) => (

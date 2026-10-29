@@ -175,10 +175,7 @@ export function OverviewPage({
           <div className="overview-persona-grid" aria-label="Host controller persona">
             {HOST_PERSONA_OPTIONS.map(([label, mode]) => {
               const selected = status.hostPersonaMode === mode;
-              const disabled = !connected
-                || !system.hostPersonaControlSupported
-                || pendingAction !== null
-                || system.personaTransitionActive
+              const disabled = !system.hostPersonaSwitchAvailable
                 || (!system.supportedHostPersonaModes.includes(mode) && !selected);
               return (
                 <button
