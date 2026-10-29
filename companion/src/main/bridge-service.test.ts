@@ -4015,6 +4015,8 @@ describe('BridgeService', () => {
 
     device.status = statusReport({ controllerConnected: true, uptimeSeconds: 11 });
     await poll(service);
+    expect(toasts).toEqual([]);
+    await poll(service);
     // The status fixture reports a charging controller.
     expect(toasts.at(-1)?.body).toBe('Controller connected — battery 78% (charging)');
 
@@ -4022,6 +4024,27 @@ describe('BridgeService', () => {
     await poll(service);
     expect(toasts.at(-1)?.body).toBe('Controller disconnected');
     expect(toasts).toHaveLength(2);
+  });
+
+  it('ignores the battery level on the poll that first sees a reconnect', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false });
+    const toasts: Array<{ title: string; body: string }> = [];
+    service.on('toast', (toast) => toasts.push(toast));
+    await service.setNotifyControllerConnection(true);
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    await poll(service);
+
+    // The bridge still holds the report from before the disconnect.
+    device.status = statusReport({ controllerConnected: true, batteryPercent: 5, uptimeSeconds: 11 });
+    await poll(service);
+    expect(toasts).toEqual([]);
+
+    device.status = statusReport({ controllerConnected: true, batteryPercent: 64, uptimeSeconds: 12 });
+    await poll(service);
+    expect(toasts.map((toast) => toast.body)).toEqual(['Controller connected — battery 64% (charging)']);
   });
 
   it('holds the connect toast briefly for the first battery level', async () => {
@@ -4083,6 +4106,7 @@ describe('BridgeService', () => {
 
     device.status = statusReport({ controllerConnected: true, uptimeSeconds: 1 });
     hidMock.state.devicesList = [companionDeviceInfo()];
+    await poll(service);
     await poll(service);
     expect(toasts.at(-1)?.body).toBe('Controller connected — battery 78% (charging)');
     expect(toasts).toHaveLength(2);

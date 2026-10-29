@@ -4422,6 +4422,9 @@ export class BridgeService extends EventEmitter {
   private maybeEmitStatusToasts(status: BridgeStatusPayload): void {
     const settings = this.settingsStore.get();
     const controllerConnected = status.controllerConnected;
+    // The bridge keeps the last controller report across a disconnect, so the
+    // poll that first sees a reconnect can still carry the old battery level.
+    let connectedThisPoll = false;
 
     if (
       settings.notifyControllerConnection
@@ -4430,6 +4433,7 @@ export class BridgeService extends EventEmitter {
     ) {
       if (controllerConnected) {
         this.connectToastDeadline = Date.now() + CONNECT_TOAST_BATTERY_WAIT_MS;
+        connectedThisPoll = true;
       } else {
         this.connectToastDeadline = null;
         this.emit('toast', {
@@ -4442,6 +4446,7 @@ export class BridgeService extends EventEmitter {
 
     if (
       this.connectToastDeadline !== null
+      && !connectedThisPoll
       && (status.batteryPercent !== null || Date.now() >= this.connectToastDeadline)
     ) {
       this.connectToastDeadline = null;
