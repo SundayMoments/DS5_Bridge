@@ -1,5 +1,5 @@
 /* A label that explains itself on hover or focus: dotted underline and a
-   question mark, like the Gyro and Haptics labels before it. */
+   question mark. */
 .help-tooltip-trigger {
   position: relative;
   display: inline-flex;
