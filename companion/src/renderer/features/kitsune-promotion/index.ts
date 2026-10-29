@@ -4,8 +4,10 @@ export { KitsuneInputAsk, KitsuneInputMonthlyAsk, type KitsuneInputAskProps } fr
 export {
   KITSUNE_ASK_INTERVAL_MS,
   KITSUNE_ASK_SHOWN_AT_STORAGE_KEY,
+  KITSUNE_LAUNCH_OFFER_WAIT_MS,
   kitsuneAskDue,
   kitsuneAskShownAt,
+  kitsuneLaunchOfferDue,
   recordKitsuneAskShown
 } from './kitsune-ask-schedule';
 export { useKitsuneMonthlyAsk, type KitsuneMonthlyAskInput } from './use-kitsune-monthly-ask';

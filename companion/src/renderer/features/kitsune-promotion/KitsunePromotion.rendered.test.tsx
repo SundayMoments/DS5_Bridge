@@ -19,7 +19,11 @@ import { KitsuneInputMonthlyAsk } from './KitsuneInputAsk';
 import { KitsuneInputLaunchOffer } from './KitsuneInputLaunchOffer';
 import { LAUNCH_OFFER_FEATURES } from './KitsuneInputOfferContent';
 import { KitsuneInputPromotionDialog } from './KitsuneInputPromotionDialog';
-import { KITSUNE_ASK_INTERVAL_MS, KITSUNE_ASK_SHOWN_AT_STORAGE_KEY } from './kitsune-ask-schedule';
+import {
+  KITSUNE_ASK_INTERVAL_MS,
+  KITSUNE_ASK_SHOWN_AT_STORAGE_KEY,
+  KITSUNE_LAUNCH_OFFER_WAIT_MS
+} from './kitsune-ask-schedule';
 import { LAUNCH_OFFER_DELAY_MS } from './use-kitsune-launch-offer';
 
 let root: Root | null = null;
@@ -209,7 +213,7 @@ describe('Kitsune Input offers in the app', () => {
   function offerSnapshot(overrides: Parameters<typeof fixtureSnapshot>[0] = {}) {
     return fixtureSnapshot({
       ...overrides,
-      settings: { kitsuneInputLaunchOfferShown: false, kitsuneInputPromotionDismissed: true, ...overrides.settings }
+      settings: { kitsuneInputLaunchOfferShown: false, kitsuneInputPromotionDismissed: false, ...overrides.settings }
     });
   }
 
@@ -221,7 +225,14 @@ describe('Kitsune Input offers in the app', () => {
     });
   }
 
-  /** Starts the month before the next prompt just over a month ago, so a prompt is due. */
+  /** Finishes setup just over a day ago, so the launch offer is due. */
+  function finishSetupJustOverADayAgo() {
+    const finishedAt = Date.now() - KITSUNE_LAUNCH_OFFER_WAIT_MS - 1000;
+    window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(finishedAt));
+    return finishedAt;
+  }
+
+  /** Shows the last prompt just over a month ago, so the monthly ask is due. */
   function startMonthJustOverAMonthAgo() {
     const startedAt = Date.now() - KITSUNE_ASK_INTERVAL_MS - 1000;
     window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(startedAt));
@@ -234,20 +245,19 @@ describe('Kitsune Input offers in the app', () => {
     document.body.innerHTML = '';
   }
 
-  it('shows the launch offer once a month after setup, even after the promotion was hidden', async () => {
+  it('shows the launch offer once, a day after setup', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    const monthStartedAt = startMonthJustOverAMonthAgo();
+    const setupFinishedAt = finishSetupJustOverADayAgo();
     const bridge = installBridgeMock(offerSnapshot());
     trackLaunchOfferShown(bridge);
     await mountApp();
     expect(offer()).toBeNull();
-    expect(host.querySelector('.kitsune-promotion-banner')).toBeNull();
 
     await advance(LAUNCH_OFFER_DELAY_MS);
     expect(offer()).not.toBeNull();
     expect(bridge.fn('markKitsuneInputLaunchOfferShown')).toHaveBeenCalledOnce();
-    // The launch offer restarts the month before the monthly ask.
-    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(monthStartedAt);
+    // The launch offer starts the month before the monthly ask.
+    expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThan(setupFinishedAt);
 
     // Both buttons carry the source tag the website counts.
     await click(buttonByText(offer()!, 'Learn More'));
@@ -260,16 +270,28 @@ describe('Kitsune Input offers in the app', () => {
     expect(bridge.fn('markKitsuneInputLaunchOfferShown')).toHaveBeenCalledOnce();
   });
 
+  it('never shows the launch offer to anyone who hid promotions in an earlier version', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    finishSetupJustOverADayAgo();
+    const bridge = installBridgeMock(offerSnapshot({ settings: { kitsuneInputPromotionDismissed: true } }));
+    trackLaunchOfferShown(bridge);
+    await mountApp();
+    await advance(LAUNCH_OFFER_DELAY_MS * 4);
+    expect(offer()).toBeNull();
+    expect(monthlyAsk()).toBeNull();
+    expect(bridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
+  });
+
   it('never shows the launch offer again once it has been shown', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    startMonthJustOverAMonthAgo();
+    finishSetupJustOverADayAgo();
     installBridgeMock(fixtureSnapshot());
     await mountApp();
     await advance(LAUNCH_OFFER_DELAY_MS * 4);
     expect(offer()).toBeNull();
   });
 
-  it('shows no Kitsune Input prompt during first-run setup and starts the month when setup finishes', async () => {
+  it('shows no Kitsune Input prompt during first-run setup and starts the wait when setup finishes', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const bridge = installBridgeMock(offerSnapshot());
     trackLaunchOfferShown(bridge);
@@ -292,9 +314,9 @@ describe('Kitsune Input offers in the app', () => {
     expect(bridge.fn('markKitsuneInputLaunchOfferShown')).not.toHaveBeenCalled();
   });
 
-  it('waits a month before the launch offer, starting it on the first run after 1.x', async () => {
+  it('waits a day before the launch offer, starting it on the first run after 1.x', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    // Setup finished in 1.x, which never started the month: this first run starts it.
+    // Setup finished in 1.x, which never started the wait: this first run starts it.
     const bridge = installBridgeMock(offerSnapshot());
     trackLaunchOfferShown(bridge);
     const firstRunAt = Date.now();
@@ -304,8 +326,8 @@ describe('Kitsune Input offers in the app', () => {
     expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThanOrEqual(firstRunAt);
     unmountApp();
 
-    // Halfway through the month: still nothing.
-    window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(Date.now() - KITSUNE_ASK_INTERVAL_MS / 2));
+    // A minute short of a day: still nothing.
+    window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(Date.now() - KITSUNE_LAUNCH_OFFER_WAIT_MS + 60_000));
     const laterBridge = installBridgeMock(offerSnapshot());
     trackLaunchOfferShown(laterBridge);
     await mountApp();
@@ -316,7 +338,7 @@ describe('Kitsune Input offers in the app', () => {
 
   it('waits for a bootloader confirmation before the launch offer', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    startMonthJustOverAMonthAgo();
+    finishSetupJustOverADayAgo();
     const bridge = installBridgeMock(offerSnapshot({
       bootloaderConfirmation: {
         purpose: 'enrollment',
@@ -358,6 +380,7 @@ describe('Kitsune Input offers in the app', () => {
 
   it('skips the monthly ask within a month and after promotions were hidden', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    // Only the launch offer waits just a day; after it, prompts are a month apart.
     window.localStorage.setItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY, String(Date.now() - KITSUNE_ASK_INTERVAL_MS / 2));
     installBridgeMock(fixtureSnapshot({ settings: { kitsuneInputLaunchOfferShown: true } }));
     await mountApp();

@@ -79,10 +79,10 @@ try {
   }
 
   // The one-time Kitsune Input offer opens shortly after its setting reads as
-  // not shown, once a month has passed since setup.
+  // not shown, once a day has passed since setup.
   await page.evaluate(() => {
-    const monthAgo = Date.now() - 31 * 24 * 60 * 60 * 1000;
-    window.localStorage.setItem('ds5bridge.kitsuneInputAskShownAt.v1', String(monthAgo));
+    const overADayAgo = Date.now() - 25 * 60 * 60 * 1000;
+    window.localStorage.setItem('ds5bridge.kitsuneInputAskShownAt.v1', String(overADayAgo));
     window.__uiReview.updateSettings({ kitsuneInputLaunchOfferShown: false });
   });
   await page.locator('.kitsune-launch-offer-modal').waitFor({ timeout: 10000 });

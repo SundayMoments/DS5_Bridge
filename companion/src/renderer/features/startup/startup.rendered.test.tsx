@@ -93,7 +93,7 @@ describe('startup', () => {
     expect(document.querySelector('.startup-tutorial-modal')).toBeNull();
     expect(document.querySelector('[role="dialog"][aria-label="Considering Getting Kitsune Input?"]')).toBeNull();
     expect(window.localStorage.getItem(STARTUP_TUTORIAL_COMPLETED_STORAGE_KEY)).toBe('1');
-    // Finishing setup starts the month before the first Kitsune Input prompt.
+    // Finishing setup starts the day before the first Kitsune Input prompt.
     expect(Number(window.localStorage.getItem(KITSUNE_ASK_SHOWN_AT_STORAGE_KEY))).toBeGreaterThanOrEqual(finishedAt);
   });
 });

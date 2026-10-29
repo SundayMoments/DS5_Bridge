@@ -152,11 +152,13 @@ export function App() {
   const settingsPage = useSettingsPage(runtime, { notifications });
   const settingsNavigation = useSettingsNavigation({ focusTarget: settingsPage.focusTarget });
   const { windowDragging, beginWindowDrag } = useBridgeSnapshots(applySnapshot);
-  // No Kitsune Input prompt until a month after first-run setup finishes; then
-  // at most one per run: the one-time launch offer, else the monthly ask. Each
-  // restarts the month.
+  // No Kitsune Input prompt until a day after first-run setup finishes; then at
+  // most one per run: the one-time launch offer, else the monthly ask. Each
+  // starts a month before the next. Neither ever shows to anyone who chose
+  // "Don't show Kitsune Input promotions again" in an earlier version.
   const kitsuneLaunchOffer = useKitsuneLaunchOffer({
-    eligible: Boolean(snapshot) && !snapshot?.settings.kitsuneInputLaunchOfferShown,
+    eligible: Boolean(snapshot) && !snapshot?.settings.kitsuneInputLaunchOfferShown
+      && !snapshot?.settings.kitsuneInputPromotionDismissed,
     blocked: startupTutorial.step !== 'done'
       || Boolean(snapshot?.bootloaderConfirmation)
       || showKitsuneInputPromotion,
@@ -166,8 +168,7 @@ export function App() {
     }
   });
   const kitsuneMonthlyAsk = useKitsuneMonthlyAsk({
-    // Never for anyone who chose "Don't show Kitsune Input promotions again"
-    // in an earlier version; that choice still hides the banner too.
+    // That earlier choice also hides the banner and its dialog.
     eligible: Boolean(snapshot?.settings.kitsuneInputLaunchOfferShown)
       && !snapshot?.settings.kitsuneInputPromotionDismissed,
     blocked: startupTutorial.step !== 'done'

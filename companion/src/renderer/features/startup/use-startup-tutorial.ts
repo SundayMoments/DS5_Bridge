@@ -8,7 +8,7 @@ import {
 
 /**
  * The first-run tutorial: toggle an example feature tile, then continue. It
- * never mentions Kitsune Input; finishing it starts the month before the first
+ * never mentions Kitsune Input; finishing it starts the day before the first
  * Kitsune Input prompt.
  */
 export function useStartupTutorial() {
