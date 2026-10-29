@@ -144,6 +144,8 @@ const FEEDBACK_TRACE_READ_INTERVAL_MS = 250;
 // resident census helper, so the bridge list keeps up with hot-plugs and with
 // the bridge reattaching each time a controller connects or disconnects.
 const BRIDGE_CENSUS_INTERVAL_MS = 2000;
+// While censuses fall back to a helper process each, they keep 1.x's pace.
+const ONE_SHOT_BRIDGE_CENSUS_INTERVAL_MS = 10000;
 const AUDIO_DEBUG_DIAGNOSTICS_ENABLED = CompanionDebugConfig.audioDebugDiagnosticsEnabled;
 const TRIGGER_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.triggerTraceDiagnosticsEnabled;
 const FEEDBACK_TRACE_DIAGNOSTICS_ENABLED = CompanionDebugConfig.feedbackTraceDiagnosticsEnabled;
@@ -4597,7 +4599,10 @@ export class BridgeService extends EventEmitter {
   }
 
   private async refreshBridgeCensusIfDue(): Promise<void> {
-    if (Date.now() - this.lastBridgeCensusAt >= BRIDGE_CENSUS_INTERVAL_MS) {
+    const intervalMs = this.bridgeCensusSource.isResident()
+      ? BRIDGE_CENSUS_INTERVAL_MS
+      : ONE_SHOT_BRIDGE_CENSUS_INTERVAL_MS;
+    if (Date.now() - this.lastBridgeCensusAt >= intervalMs) {
       await this.refreshBridgeCensus();
     }
   }

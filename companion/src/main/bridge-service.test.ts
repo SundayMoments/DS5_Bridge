@@ -95,11 +95,16 @@ vi.mock('./audio-helper', async (importOriginal) => {
 });
 
 // The resident census helper is covered by bridge-census-client.test.ts; here
-// each census is the mocked one-shot list.
+// each census is the mocked list.
+const censusClientMock = vi.hoisted(() => ({ resident: true }));
 vi.mock('./bridge-census-client', () => ({
   BridgeCensusClient: class {
     list() {
       return audioHelperMock.listBridges();
+    }
+
+    isResident() {
+      return censusClientMock.resident;
     }
 
     stop() {}
@@ -3308,6 +3313,28 @@ describe('BridgeService', () => {
       await poll(service);
       expect(service.getSnapshot().bridgeDevices?.bridges).toEqual([]);
     } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('keeps the ten-second census while each census needs a helper process of its own', async () => {
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    censusClientMock.resident = false;
+    try {
+      const service = serviceFixture();
+      await poll(service);
+      audioHelperMock.listBridges.mockClear();
+
+      now += 2_000;
+      await poll(service);
+      expect(audioHelperMock.listBridges).not.toHaveBeenCalled();
+
+      now += 8_000;
+      await poll(service);
+      expect(audioHelperMock.listBridges).toHaveBeenCalledTimes(1);
+    } finally {
+      censusClientMock.resident = true;
       nowSpy.mockRestore();
     }
   });

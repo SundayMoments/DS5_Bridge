@@ -90,14 +90,17 @@ describe('bridge census client', () => {
     ], { now: () => now });
 
     expect((await censusClient.list()).bridges[0]!.path).toBe('winusb://resident');
+    expect(censusClient.isResident()).toBe(true);
     // The helper stops answering: this census and the next come from one-shot helpers.
     expect(await censusClient.list()).toEqual(ONE_SHOT);
     expect(await censusClient.list()).toEqual(ONE_SHOT);
+    expect(censusClient.isResident()).toBe(false);
     expect(helpers).toHaveLength(1);
     expect(helpers[0]!.killed).toBe(true);
     expect(listOnce).toHaveBeenCalledTimes(2);
 
     now += BRIDGE_CENSUS_HELPER_RETRY_DELAYS_MS[0];
+    expect(censusClient.isResident()).toBe(true);
     expect((await censusClient.list()).bridges[0]!.path).toBe('winusb://restarted');
     expect(helpers).toHaveLength(2);
     censusClient.stop();
@@ -111,6 +114,7 @@ describe('bridge census client', () => {
     now += 10 * 60_000;
     expect(await censusClient.list()).toEqual(ONE_SHOT);
 
+    expect(censusClient.isResident()).toBe(false);
     expect(helpers).toHaveLength(1);
     expect(helpers[0]!.killed).toBe(true);
     expect(listOnce).toHaveBeenCalledTimes(2);

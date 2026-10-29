@@ -10,6 +10,8 @@ import { listBridges, parseBridgeCensus, resolveAudioHelperPath, type BridgeCens
 
 export interface BridgeCensusPort {
   list(): Promise<BridgeCensus>;
+  /** False while censuses fall back to a one-shot helper process each. */
+  isResident(): boolean;
   stop(): void;
 }
 
@@ -126,6 +128,10 @@ export class BridgeCensusClient implements BridgeCensusPort {
     const result = this.queue.then(() => this.listNow(), () => this.listNow());
     this.queue = result.catch(() => undefined);
     return result;
+  }
+
+  isResident(): boolean {
+    return (this.options.now ?? Date.now)() >= this.retryAt;
   }
 
   stop(): void {
