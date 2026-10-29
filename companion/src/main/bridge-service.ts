@@ -166,6 +166,8 @@ const TEST_HAPTICS_SWITCHING_MESSAGE =
   'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.';
 const TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE =
   'The controller audio endpoint is unavailable. Close any games using the controller and try again.';
+const TEST_HAPTICS_ENDPOINT_DISABLED_MESSAGE =
+  'The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.';
 const TEST_HAPTICS_FAILED_MESSAGE =
   'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.';
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
@@ -2066,6 +2068,12 @@ export class BridgeService extends EventEmitter {
     return message.includes('Render endpoint matching') && message.includes('was not found');
   }
 
+  /** The audio helper found the bridge's endpoint, but turned off in Windows Sound settings. */
+  private isBridgeEndpointDisabledError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('is disabled in Windows Sound settings');
+  }
+
   private async readAudioDebugEvents(): Promise<void> {
     if (!AUDIO_DEBUG_DIAGNOSTICS_ENABLED) {
       return;
@@ -3455,9 +3463,11 @@ export class BridgeService extends EventEmitter {
         `[HostBridge] test haptics failed persona=${hostPersonaMode} error=${message}`
       ]);
       throw new Error(
-        this.isBridgeRenderEndpointUnavailableError(error)
-          ? TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE
-          : TEST_HAPTICS_FAILED_MESSAGE,
+        this.isBridgeEndpointDisabledError(error)
+          ? TEST_HAPTICS_ENDPOINT_DISABLED_MESSAGE
+          : this.isBridgeRenderEndpointUnavailableError(error)
+            ? TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE
+            : TEST_HAPTICS_FAILED_MESSAGE,
         { cause: error }
       );
     } finally {

@@ -842,6 +842,7 @@
     "The bridge restarted because Wi-Fi could not stop safely.": "Wi-Fi를 안전하게 끄지 못해 브리지가 다시 시작되었습니다.",
     "The confirmation stopped because the controller disconnected or the time ran out.": "컨트롤러 연결이 끊겼거나 시간이 다 되어 확인이 중단되었습니다.",
     "The confirmation timed out. Start again and enter the displayed eight-button sequence on the controller.": "확인 시간이 초과되었습니다. 다시 시작한 다음 표시된 8개 버튼 순서를 컨트롤러에서 입력하세요.",
+    "The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.": "Windows에서 컨트롤러 오디오 장치가 사용 안 함으로 설정되어 있습니다. 소리 설정 > 추가 소리 설정에서 사용으로 설정한 후 다시 시도하세요.",
     "The controller audio endpoint is unavailable. Close any games using the controller and try again.": "컨트롤러 오디오 장치를 사용할 수 없습니다. 컨트롤러를 사용하는 게임을 종료한 후 다시 시도하세요.",
     "The controller disconnected during the wake attempt.": "깨우기 시도 중에 컨트롤러 연결이 끊어졌습니다.",
     "The controller name could not be saved to local storage.": "컨트롤러 이름을 로컬 저장소에 저장할 수 없습니다.",

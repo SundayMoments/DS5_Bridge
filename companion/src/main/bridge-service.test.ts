@@ -1377,6 +1377,23 @@ describe('BridgeService', () => {
     expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledTimes(2);
   });
 
+  it('says how to fix a bridge audio endpoint that is disabled in Windows, without waiting for it', async () => {
+    const service = serviceFixture();
+    const device = new MockHidDevice();
+    device.status = statusReport({ hostPersonaMode: 'dualsense', supportedHostPersonaModesMask: 0x07 });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    audioHelperMock.playBridgeHapticsTestPattern.mockRejectedValueOnce(new Error(
+      "Unhandled exception. System.InvalidOperationException: The bridge's render endpoint 'Speakers (DualSense Wireless Controller)' is disabled in Windows Sound settings."
+    ));
+
+    await poll(service);
+    await expect(service.testHaptics()).rejects.toThrow(
+      'The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.'
+    );
+    expect(audioHelperMock.playBridgeHapticsTestPattern).toHaveBeenCalledOnce();
+  });
+
   it('rejects other test haptics failures with retry guidance', async () => {
     const service = serviceFixture({ hapticsGainPercent: 130 });
     const device = new MockHidDevice();

@@ -842,6 +842,7 @@
     "The bridge restarted because Wi-Fi could not stop safely.": "A ponte foi reiniciada porque não foi possível desligar o Wi-Fi com segurança.",
     "The confirmation stopped because the controller disconnected or the time ran out.": "A confirmação parou porque o controle foi desconectado ou o tempo acabou.",
     "The confirmation timed out. Start again and enter the displayed eight-button sequence on the controller.": "O tempo da confirmação esgotou. Comece de novo e insira no controle a sequência de oito botões exibida.",
+    "The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.": "O dispositivo de áudio do controle está desativado no Windows. Ative-o em Configurações de som > Mais configurações de som e tente novamente.",
     "The controller audio endpoint is unavailable. Close any games using the controller and try again.": "O dispositivo de áudio do controle está indisponível. Feche os jogos que estiverem usando o controle e tente novamente.",
     "The controller disconnected during the wake attempt.": "O controle foi desconectado durante a tentativa de ativação.",
     "The controller name could not be saved to local storage.": "Não foi possível salvar o nome do controle no armazenamento local.",

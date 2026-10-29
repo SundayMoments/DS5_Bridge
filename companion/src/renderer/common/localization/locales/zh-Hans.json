@@ -842,6 +842,7 @@
     "The bridge restarted because Wi-Fi could not stop safely.": "由于 Wi-Fi 无法安全停止，桥接器已重新启动。",
     "The confirmation stopped because the controller disconnected or the time ran out.": "由于控制器断开连接或时间已到，确认已停止。",
     "The confirmation timed out. Start again and enter the displayed eight-button sequence on the controller.": "确认已超时。请重新开始，并在控制器上输入显示的八键顺序。",
+    "The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.": "控制器音频设备已在 Windows 中禁用。请在“声音设置 > 更多声音设置”中启用后重试。",
     "The controller audio endpoint is unavailable. Close any games using the controller and try again.": "控制器音频设备不可用。请关闭正在使用控制器的游戏后重试。",
     "The controller disconnected during the wake attempt.": "唤醒尝试期间手柄已断开连接。",
     "The controller name could not be saved to local storage.": "无法将控制器名称保存到本地存储。",

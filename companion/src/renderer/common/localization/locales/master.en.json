@@ -842,6 +842,7 @@
     "The bridge restarted because Wi-Fi could not stop safely.": "The bridge restarted because Wi-Fi could not stop safely.",
     "The confirmation stopped because the controller disconnected or the time ran out.": "The confirmation stopped because the controller disconnected or the time ran out.",
     "The confirmation timed out. Start again and enter the displayed eight-button sequence on the controller.": "The confirmation timed out. Start again and enter the displayed eight-button sequence on the controller.",
+    "The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.": "The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.",
     "The controller audio endpoint is unavailable. Close any games using the controller and try again.": "The controller audio endpoint is unavailable. Close any games using the controller and try again.",
     "The controller disconnected during the wake attempt.": "The controller disconnected during the wake attempt.",
     "The controller name could not be saved to local storage.": "The controller name could not be saved to local storage.",
