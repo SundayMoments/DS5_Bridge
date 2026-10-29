@@ -75,6 +75,7 @@ Modal dialogs use `modal-backdrop` with a `role="dialog"` form or panel, a label
 - Settings › Help & About always opens with `KitsuneInputSupportCard`: the banner's fox and wordmark, "Consider supporting Kitsune Input", the price, Learn More and an orange Get Kitsune Input. It is not a prompt: it never opens on its own, is never dismissed, and shows even for an earlier promotions dismissal.
 - Kitsune Input panels are flat like the app: no orange top strip; the orange marks the icons and the Get Kitsune Input button only.
 - The window-bar banner opens the same offer (`KitsuneInputOfferContent`), without a way to hide promotions for good. Keep the two in step: change the shared content, not one dialog.
+- The banner leads with the brand: the fox, the Kitsune Input wordmark, then "Explore" with an arrow in quieter type (medium weight, sentence case, `--kitsune-banner-copy`), so the action never reads as part of the name. On hover "Explore" brightens and the arrow nudges right.
 - A row that another page links to (Overview's chips, Settings search) is framed briefly in `--focus-ring` (`settings-menu-row-highlight`), never tinted.
 - System's emergency device repair asks first and refuses while a controller is connected; its profile dialogs save, rename, and delete.
 

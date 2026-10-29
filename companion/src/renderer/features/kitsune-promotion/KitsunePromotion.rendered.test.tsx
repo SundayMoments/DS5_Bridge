@@ -509,7 +509,13 @@ describe('Kitsune Input offers in the app', () => {
   it('keeps honoring a dismissal made before the option was removed', async () => {
     installBridgeMock(fixtureSnapshot());
     await mountApp();
-    expect(host.querySelector('.kitsune-promotion-banner')).not.toBeNull();
+    const banner = host.querySelector('.kitsune-promotion-banner')!;
+    expect(banner).not.toBeNull();
+    // The brand first, then "Explore" with an arrow.
+    expect([...banner.children].map((child) => child.className))
+      .toEqual(['', 'kitsune-promotion-wordmark', 'kitsune-promotion-banner-copy']);
+    expect(banner.querySelector('.kitsune-promotion-banner-copy')?.textContent).toBe('Explore');
+    expect(banner.getAttribute('aria-label')).toBe('Explore Kitsune Input');
     unmountApp();
 
     installBridgeMock(fixtureSnapshot({ settings: { kitsuneInputPromotionDismissed: true } }));

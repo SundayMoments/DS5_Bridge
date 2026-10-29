@@ -75,7 +75,7 @@
   /* The Kitsune Input promotion keeps its own dark banner in every theme. */
   --kitsune-banner-bg: #111821;
   --kitsune-banner-bg-hover: #182330;
-  --kitsune-banner-copy: #d7e0ec;
+  --kitsune-banner-copy: #c1cadd;
   --kitsune-banner-wordmark: #ffffff;
   --app-bg: var(--palette-canvas);
   --app-bg-flat: var(--palette-canvas);

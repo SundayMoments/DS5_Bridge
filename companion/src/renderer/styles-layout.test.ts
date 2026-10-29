@@ -614,10 +614,12 @@ describe('companion layout CSS', () => {
     expect(banner).toContain('-webkit-app-region: no-drag;');
     const rootTheme = cssBlock(':root', '--kitsune-banner-bg: #111821;');
     expect(rootTheme).toContain('--kitsune-banner-bg-hover: #182330;');
-    expect(rootTheme).toContain('--kitsune-banner-copy: #d7e0ec;');
+    expect(rootTheme).toContain('--kitsune-banner-copy: #c1cadd;');
     expect(rootTheme).toContain('--kitsune-banner-wordmark: #ffffff;');
-    expect(cssBlock('.kitsune-promotion-banner-copy', 'color: var(--kitsune-banner-copy);'))
-      .toContain('color: var(--kitsune-banner-copy);');
+    // "Explore" follows the wordmark in quieter type, so it reads as the action, not the name.
+    const copy = cssBlock('.kitsune-promotion-banner-copy', 'color: var(--kitsune-banner-copy);');
+    expect(copy).toContain('font-weight: var(--font-weight-medium);');
+    expect(copy).not.toContain('text-transform: uppercase;');
     expect(cssBlock('.kitsune-promotion-banner .kitsune-promotion-wordmark', 'font-size: var(--font-size-subtitle);'))
       .toContain('color: var(--kitsune-banner-wordmark);');
     const hover = cssBlock('.kitsune-promotion-banner:hover', 'background: var(--kitsune-banner-bg-hover);');

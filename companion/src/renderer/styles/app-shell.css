@@ -237,13 +237,23 @@
   filter: drop-shadow(0 3px 7px rgba(255, 92, 0, 0.5));
 }
 
+/* After the wordmark and quieter than it, so it reads as the action, not part of the name. */
 .kitsune-promotion-banner-copy {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--kitsune-banner-copy);
   font-size: var(--font-size-subtitle);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
   transition: color 220ms ease;
+}
+
+/* The arrow follows the copy, not the window bar's icon color. */
+.kitsune-promotion-banner .kitsune-promotion-banner-copy svg {
+  flex: 0 0 auto;
+  color: inherit;
+  transition: transform 220ms ease;
 }
 
 .kitsune-promotion-banner:hover .kitsune-promotion-banner-copy,
@@ -251,9 +261,15 @@
   color: var(--kitsune-banner-wordmark);
 }
 
+.kitsune-promotion-banner:hover .kitsune-promotion-banner-copy svg,
+.kitsune-promotion-banner:focus-visible .kitsune-promotion-banner-copy svg {
+  transform: translateX(2px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kitsune-promotion-banner,
-  .kitsune-promotion-banner > img {
+  .kitsune-promotion-banner > img,
+  .kitsune-promotion-banner .kitsune-promotion-banner-copy svg {
     transition: none;
   }
 
@@ -266,6 +282,8 @@
 
   .kitsune-promotion-banner:hover > img,
   .kitsune-promotion-banner:focus-visible > img,
+  .kitsune-promotion-banner:hover .kitsune-promotion-banner-copy svg,
+  .kitsune-promotion-banner:focus-visible .kitsune-promotion-banner-copy svg,
   .kitsune-promotion-banner:active {
     transform: none;
   }
