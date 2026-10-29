@@ -3389,6 +3389,12 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setNotifyPersonaChange(enabled: boolean): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.update({ notifyPersonaChange: enabled });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   async testNotification(): Promise<BridgeSnapshot> {
     this.emit('toast', {
       title: 'DS5 Bridge',
@@ -4181,6 +4187,12 @@ export class BridgeService extends EventEmitter {
 
     const transition = this.advanceHostPersonaTransition(status, now);
     const completedHostPersonaMode = this.consumeCompletedHostPersonaMode();
+    if (completedHostPersonaMode && this.settingsStore.get().notifyPersonaChange) {
+      this.emit('toast', {
+        title: 'DS5 Bridge',
+        body: `Switched to ${hostPersonaModeLabel(completedHostPersonaMode)} mode`
+      } satisfies BridgeToast);
+    }
     const controllerAudioReady = this.controllerAudioReady(status);
 
     if (!controllerAudioReady) {

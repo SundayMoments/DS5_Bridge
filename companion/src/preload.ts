@@ -237,6 +237,9 @@ const api = {
   setNotifyLowBattery: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setNotifyLowBattery', value)
   ),
+  setNotifyPersonaChange: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setNotifyPersonaChange', value)
+  ),
   testNotification: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:testNotification'),
   testHaptics: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:testHaptics'),
   testSpeaker: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:testSpeaker'),

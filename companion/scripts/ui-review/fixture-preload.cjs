@@ -27,6 +27,7 @@ const settingSetters = {
   setUiLocale: 'uiLocale',
   setNotifyControllerConnection: 'notifyControllerConnection',
   setNotifyLowBattery: 'notifyLowBattery',
+  setNotifyPersonaChange: 'notifyPersonaChange',
   setLaunchAtStartupEnabled: 'launchAtStartupEnabled',
   setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon',
   setCloseButtonQuits: 'closeButtonQuits'

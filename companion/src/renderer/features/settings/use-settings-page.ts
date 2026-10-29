@@ -97,6 +97,9 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
     )),
     toggleControllerNotifications: notifications.toggleControllerNotifications,
     toggleLowBatteryNotifications: notifications.toggleLowBatteryNotifications,
+    togglePersonaNotifications: toggle('notify-persona', (settings) => (
+      window.bridge.setNotifyPersonaChange(!settings.notifyPersonaChange)
+    )),
     setIdleDisconnectTimeout: (minutes) => void runAction('idle-timeout', () => window.bridge.setIdleDisconnectTimeoutMinutes(minutes)),
     toggleIdleDisconnect: toggle('idle', (settings) => window.bridge.setIdleDisconnectEnabled(!settings.idleDisconnectEnabled)),
     toggleUsbSuspendDisconnect: toggle('usb-suspend', (settings) => (

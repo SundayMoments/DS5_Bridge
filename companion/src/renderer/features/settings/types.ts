@@ -25,6 +25,7 @@ export interface SettingsPageModel {
     | 'lightbarRestoreEnabled'
     | 'notifyControllerConnection'
     | 'notifyLowBattery'
+    | 'notifyPersonaChange'
   >;
   /** The selected bridge is connected and can store settings. */
   readonly connected: boolean;
@@ -67,6 +68,7 @@ export interface SettingsPageActions {
   toggleCloseButtonQuits(): void;
   toggleControllerNotifications(): void;
   toggleLowBatteryNotifications(): void;
+  togglePersonaNotifications(): void;
   setIdleDisconnectTimeout(minutes: number): void;
   toggleIdleDisconnect(): void;
   toggleUsbSuspendDisconnect(): void;

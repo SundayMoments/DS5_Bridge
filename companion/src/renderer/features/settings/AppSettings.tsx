@@ -162,5 +162,14 @@ export function NotificationSettings({ model, actions, matchingSettingIds }: Set
         onToggle={actions.toggleLowBatteryNotifications}
       />
     </SearchableSetting>
+    <SearchableSetting id="persona-notifications" matchingSettingIds={matchingSettingIds}>
+      <ToggleRow
+        label="Host Controller Switch"
+        description="Notify when the bridge finishes switching to another host controller"
+        checked={settings.notifyPersonaChange}
+        disabled={model.busy}
+        onToggle={actions.togglePersonaNotifications}
+      />
+    </SearchableSetting>
   </>;
 }
