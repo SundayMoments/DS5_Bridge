@@ -2651,6 +2651,36 @@ describe('BridgeService', () => {
     await flushImmediate();
   });
 
+  it('notifies about controller mic mute changes only when asked to', async () => {
+    const service = serviceFixture({
+      duplexMicEnabled: true,
+      micMuted: true,
+      muteButtonMode: 'normal'
+    });
+    const device = new MockHidDevice();
+    device.status = statusReport({ controllerConnected: false, micMuted: true });
+    hidMock.state.devicesList = [companionDeviceInfo()];
+    hidMock.state.openDevices.set('companion-path', device);
+    const toasts: Array<{ title: string; body: string }> = [];
+    service.on('toast', (toast) => toasts.push(toast));
+    await poll(service);
+    expect(service.getSnapshot().settings.notifyMicMute).toBe(false);
+
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_OFF);
+    await pollShortcut(service);
+    await flushShortcutActions(service);
+    expect(toasts).toEqual([]);
+
+    await service.setNotifyMicMute(true);
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_ON);
+    await pollShortcut(service);
+    await flushShortcutActions(service);
+    device.queueShortcutEvent(SHORTCUT_EVENT.MIC_MUTE_OFF);
+    await pollShortcut(service);
+    await flushShortcutActions(service);
+    expect(toasts.map((toast) => toast.body)).toEqual(['Controller mic muted', 'Controller mic unmuted']);
+  });
+
   it('ignores controller mic mute events when mic pass-through is not armed', async () => {
     const service = serviceFixture({
       duplexMicEnabled: true,
@@ -3936,6 +3966,9 @@ describe('BridgeService', () => {
 
     snapshot = await service.setNotifyPersonaChange(false);
     expect(snapshot.settings.notifyPersonaChange).toBe(false);
+
+    snapshot = await service.setNotifyMicMute(true);
+    expect(snapshot.settings.notifyMicMute).toBe(true);
   });
 
   it('marks the one-time Kitsune Input offer shown and tells the renderer', () => {

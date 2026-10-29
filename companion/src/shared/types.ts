@@ -120,6 +120,7 @@ export interface CompanionSettings {
   notifyControllerConnection: boolean;
   notifyLowBattery: boolean;
   notifyPersonaChange: boolean;
+  notifyMicMute: boolean;
   duplexMicEnabled: boolean;
   controllerPowerSavingEnabled: boolean;
   selectedControllerProfileId: string;

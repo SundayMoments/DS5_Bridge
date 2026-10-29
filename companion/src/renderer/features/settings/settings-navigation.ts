@@ -59,6 +59,7 @@ export type SettingsSearchEntryId =
   | 'controller-notifications'
   | 'low-battery-notifications'
   | 'persona-notifications'
+  | 'mic-mute-notifications'
   | 'idle-disconnect'
   | 'pc-sleep-disconnect'
   | 'controller-power-saving'
@@ -99,6 +100,7 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'controller-notifications', label: 'Controller Status', category: 'notifications', keywords: 'Notify when the controller connects or disconnects' },
   { id: 'low-battery-notifications', label: 'Low Battery', category: 'notifications', keywords: 'Notify when the battery reaches 20% or below' },
   { id: 'persona-notifications', label: 'Host Controller Switch', category: 'notifications', keywords: 'persona mode dualsense edge dualshock xbox chord' },
+  { id: 'mic-mute-notifications', label: 'Mic Mute', category: 'notifications', keywords: 'microphone mute button unmute' },
   { id: 'idle-disconnect', label: 'Idle Disconnect', category: 'connection-power', keywords: 'controller timeout sleep minutes' },
   { id: 'pc-sleep-disconnect', label: 'PC Sleep Disconnect', category: 'connection-power', keywords: 'usb suspend windows' },
   { id: 'controller-power-saving', label: 'Controller Power Saving', category: 'connection-power', keywords: 'headphones haptics triggers light bar lightbar' },

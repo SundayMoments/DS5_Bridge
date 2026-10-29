@@ -44,7 +44,8 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
       lightbarRestoreEnabled: true,
       notifyControllerConnection: true,
       notifyLowBattery: false,
-      notifyPersonaChange: true
+      notifyPersonaChange: true,
+      notifyMicMute: false
     },
     connected: true,
     busy: false,
@@ -62,7 +63,7 @@ function createActions(): SettingsPageActions & Record<string, ReturnType<typeof
   const names = [
     'setTheme', 'setUiScale', 'setTextScale', 'setLocale', 'toggleLaunchAtStartup', 'toggleBatteryTrayIcon',
     'toggleCloseButtonQuits', 'toggleControllerNotifications', 'toggleLowBatteryNotifications',
-    'togglePersonaNotifications', 'setIdleDisconnectTimeout',
+    'togglePersonaNotifications', 'toggleMicMuteNotifications', 'setIdleDisconnectTimeout',
     'toggleIdleDisconnect', 'toggleUsbSuspendDisconnect', 'toggleControllerPowerSaving', 'toggleLed', 'togglePlayerLed',
     'toggleLightbarRestore', 'toggleEdgeProfileSwitching', 'toggleSleepShortcut', 'toggleVolumeShortcut',
     'toggleWakeOnConnect', 'mountPicoBootloader', 'flashPicoFirmware', 'nukePicoFlash', 'openExternal'
@@ -150,6 +151,7 @@ describe('Settings page', () => {
       ['Notifications', 'Controller Status', 'toggleControllerNotifications'],
       ['Notifications', 'Low Battery', 'toggleLowBatteryNotifications'],
       ['Notifications', 'Host Controller Switch', 'togglePersonaNotifications'],
+      ['Notifications', 'Mic Mute', 'toggleMicMuteNotifications'],
       ['Connection & Power', 'PC Sleep Disconnect', 'toggleUsbSuspendDisconnect'],
       ['Connection & Power', 'Controller Power Saving', 'toggleControllerPowerSaving'],
       ['Lights & Indicators', 'Bridge LED', 'toggleLed'],
@@ -175,7 +177,7 @@ describe('Settings page', () => {
 
     act(() => sectionButton(host, 'Notifications').click());
     expect([...host.querySelectorAll('.settings-page .settings-menu-row strong')].map((element) => element.textContent))
-      .toEqual(['Controller Status', 'Low Battery', 'Host Controller Switch']);
+      .toEqual(['Controller Status', 'Low Battery', 'Host Controller Switch', 'Mic Mute']);
 
     act(() => sectionButton(host, 'Appearance').click());
     expect([...host.querySelectorAll('.settings-page [aria-label]')].map((element) => element.getAttribute('aria-label')))

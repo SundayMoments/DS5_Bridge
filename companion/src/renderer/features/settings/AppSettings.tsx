@@ -171,5 +171,14 @@ export function NotificationSettings({ model, actions, matchingSettingIds }: Set
         onToggle={actions.togglePersonaNotifications}
       />
     </SearchableSetting>
+    <SearchableSetting id="mic-mute-notifications" matchingSettingIds={matchingSettingIds}>
+      <ToggleRow
+        label="Mic Mute"
+        description="Notify when the controller mic is muted or unmuted from the controller"
+        checked={settings.notifyMicMute}
+        disabled={model.busy}
+        onToggle={actions.toggleMicMuteNotifications}
+      />
+    </SearchableSetting>
   </>;
 }

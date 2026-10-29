@@ -1221,6 +1221,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setNotifyPersonaChange', (_event, value: boolean) => (
     service.setNotifyPersonaChange(Boolean(value))
   ));
+  ipcMain.handle('bridge:setNotifyMicMute', (_event, value: boolean) => (
+    service.setNotifyMicMute(Boolean(value))
+  ));
   ipcMain.handle('bridge:testNotification', () => service.testNotification());
   ipcMain.handle('bridge:testHaptics', () => service.testHaptics());
   ipcMain.handle('bridge:testSpeaker', () => service.testSpeaker());

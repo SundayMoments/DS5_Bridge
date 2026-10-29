@@ -66,7 +66,8 @@ describe('Settings page wiring', () => {
         sleepKeybindEnabled: true,
         speakerVolumeShortcutEnabled: false,
         wakeOnConnectEnabled: true,
-        notifyPersonaChange: true
+        notifyPersonaChange: true,
+        notifyMicMute: false
       }
     });
     const bridge: BridgeMock = installBridgeMock(snapshot);
@@ -86,7 +87,8 @@ describe('Settings page wiring', () => {
       ['toggleSleepShortcut', 'setSleepKeybindEnabled', false],
       ['toggleVolumeShortcut', 'setSpeakerVolumeShortcutEnabled', true],
       ['toggleWakeOnConnect', 'setWakeOnConnectEnabled', false],
-      ['togglePersonaNotifications', 'setNotifyPersonaChange', false]
+      ['togglePersonaNotifications', 'setNotifyPersonaChange', false],
+      ['toggleMicMuteNotifications', 'setNotifyMicMute', true]
     ];
     for (const [action, method, value] of toggles) {
       await act(async () => (current.actions[action] as () => void)());

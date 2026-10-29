@@ -100,6 +100,9 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
     togglePersonaNotifications: toggle('notify-persona', (settings) => (
       window.bridge.setNotifyPersonaChange(!settings.notifyPersonaChange)
     )),
+    toggleMicMuteNotifications: toggle('notify-mic-mute', (settings) => (
+      window.bridge.setNotifyMicMute(!settings.notifyMicMute)
+    )),
     setIdleDisconnectTimeout: (minutes) => void runAction('idle-timeout', () => window.bridge.setIdleDisconnectTimeoutMinutes(minutes)),
     toggleIdleDisconnect: toggle('idle', (settings) => window.bridge.setIdleDisconnectEnabled(!settings.idleDisconnectEnabled)),
     toggleUsbSuspendDisconnect: toggle('usb-suspend', (settings) => (

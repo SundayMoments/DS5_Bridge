@@ -26,6 +26,7 @@ export interface SettingsPageModel {
     | 'notifyControllerConnection'
     | 'notifyLowBattery'
     | 'notifyPersonaChange'
+    | 'notifyMicMute'
   >;
   /** The selected bridge is connected and can store settings. */
   readonly connected: boolean;
@@ -69,6 +70,7 @@ export interface SettingsPageActions {
   toggleControllerNotifications(): void;
   toggleLowBatteryNotifications(): void;
   togglePersonaNotifications(): void;
+  toggleMicMuteNotifications(): void;
   setIdleDisconnectTimeout(minutes: number): void;
   toggleIdleDisconnect(): void;
   toggleUsbSuspendDisconnect(): void;
