@@ -56,6 +56,8 @@ export interface CompanionSettings {
   uiLocale: UiLocalePreference;
   launchAtStartupEnabled: boolean;
   showBatteryPercentTrayIcon: boolean;
+  /** The window's close button quits the app instead of hiding it to the tray. */
+  closeButtonQuits: boolean;
   kitsuneInputPromotionDismissed: boolean;
   /** Set once the one-time Kitsune Input offer has been shown; it never shows again. */
   kitsuneInputLaunchOfferShown: boolean;
@@ -117,6 +119,8 @@ export interface CompanionSettings {
   hostPersonaMode: HostPersonaMode;
   notifyControllerConnection: boolean;
   notifyLowBattery: boolean;
+  notifyPersonaChange: boolean;
+  notifyMicMute: boolean;
   duplexMicEnabled: boolean;
   controllerPowerSavingEnabled: boolean;
   selectedControllerProfileId: string;

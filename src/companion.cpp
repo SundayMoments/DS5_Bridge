@@ -14,6 +14,7 @@
 #include "dualsense_output.h"
 #include "dualsense_battery_status.h"
 #include "firmware_log.h"
+#include "home_chord_gate.h"
 #include "host_input.h"
 #include "keyboard_tap_sequencer.h"
 #include "persona/host_persona.h"
@@ -87,8 +88,6 @@ constexpr uint8_t kDpadLeft = 0x06;
 constexpr uint8_t kDpadUpLeft = 0x07;
 constexpr uint8_t kDpadNeutral = 0x08;
 constexpr uint32_t kShortcutRepeatUs = 180000;
-constexpr uint32_t kHomeChordSuppressUs = 250000;
-constexpr uint32_t kHomeChordFallbackReplayUs = 80000;
 // SET_LIGHTBAR_COLOR flags byte. Older apps send 0, which always applies.
 constexpr uint8_t kLightbarColorRefreshFlag = 0x01;
 constexpr uint8_t kDefaultMuteKeyboardUsage = 0x68; // F13
@@ -366,9 +365,7 @@ uint8_t left_stick_radial_deadzone_percent = 0;
 uint8_t right_stick_radial_deadzone_percent = 0;
 bool shortcut_binding_last_pressed[kShortcutBindingCount]{};
 uint32_t shortcut_binding_last_step_us[kShortcutBindingCount]{};
-bool home_chord_gate_active = false;
-uint32_t home_chord_gate_until_us = 0;
-uint32_t home_chord_replay_until_us = 0;
+ds5::home_chord_gate::State home_chord_gate{};
 uint8_t shortcut_event_queue[kShortcutEventQueueDepth]{};
 uint8_t shortcut_event_head = 0;
 uint8_t shortcut_event_tail = 0;
@@ -891,9 +888,7 @@ void restore_defaults() {
     right_stick_radial_deadzone_percent = 0;
     std::fill(shortcut_binding_last_pressed, shortcut_binding_last_pressed + kShortcutBindingCount, false);
     std::fill(shortcut_binding_last_step_us, shortcut_binding_last_step_us + kShortcutBindingCount, 0);
-    home_chord_gate_active = false;
-    home_chord_gate_until_us = 0;
-    home_chord_replay_until_us = 0;
+    home_chord_gate = {};
     clear_dynamic_chord_bindings();
     bt_set_edge_profile_switching_blocked(false);
     clear_shortcut_events();
@@ -2984,10 +2979,6 @@ void suppress_shortcut_input(const ShortcutBinding &binding, uint8_t *report) {
     }
 }
 
-bool time_us_reached(uint32_t now, uint32_t target) {
-    return static_cast<int32_t>(now - target) >= 0;
-}
-
 bool process_shortcut_bindings(uint8_t *report) {
     const uint32_t now = time_us_32();
     bool consumed = false;
@@ -3025,54 +3016,22 @@ bool home_chord_gate_enabled() {
     return false;
 }
 
-void clear_home_chord_gate() {
-    home_chord_gate_active = false;
-    home_chord_gate_until_us = 0;
-    home_chord_replay_until_us = 0;
-}
-
 void apply_home_chord_gate(uint8_t *report, uint16_t len, bool physical_home_pressed, bool home_chord_consumed) {
     if (report == nullptr || len <= 9) {
         return;
     }
 
-    if (home_chord_consumed) {
-        clear_home_chord_gate();
-        report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
-        return;
-    }
-
-    if (!home_chord_gate_enabled()) {
-        clear_home_chord_gate();
-        return;
-    }
-
-    const uint32_t now = time_us_32();
-    if (physical_home_pressed) {
-        home_chord_replay_until_us = 0;
-        if (!home_chord_gate_active) {
-            home_chord_gate_active = true;
-            home_chord_gate_until_us = now + kHomeChordSuppressUs;
-        }
-        if (!time_us_reached(now, home_chord_gate_until_us)) {
-            report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
-            return;
-        }
-        home_chord_gate_active = false;
-        home_chord_gate_until_us = 0;
-        return;
-    }
-
-    if (home_chord_gate_active) {
-        home_chord_gate_active = false;
-        home_chord_gate_until_us = 0;
-        home_chord_replay_until_us = now + kHomeChordFallbackReplayUs;
-    }
-
-    if (home_chord_replay_until_us != 0 && !time_us_reached(now, home_chord_replay_until_us)) {
+    const bool host_home_pressed = ds5::home_chord_gate::step(
+        home_chord_gate,
+        home_chord_gate_enabled(),
+        physical_home_pressed,
+        home_chord_consumed,
+        time_us_32()
+    );
+    if (host_home_pressed) {
         report[9] |= kHomeButtonBit;
     } else {
-        home_chord_replay_until_us = 0;
+        report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
     }
 }
 
@@ -3456,6 +3415,9 @@ void companion_loop() {
         // A bootloader confirmation belongs to the controller that entered it.
         ds5::bootloader_maintenance::cancel_physical_confirmation(bootloader_maintenance_context());
         bootloader_confirmation_state = {};
+        // A PS press cut off by the disconnect must not replay, or skip the
+        // chord window, on the next controller session.
+        home_chord_gate = {};
     }
     controller_was_connected = controller_connected;
     audio_test_haptics_loop();
@@ -3499,7 +3461,12 @@ void companion_process_controller_report(uint8_t *report, uint16_t len) {
         report[9] &= static_cast<uint8_t>(~kHomeButtonBit);
     }
 
-    report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
+    // In Normal mode the PC sees the mute button too, as with a wired
+    // controller (Steam Input, DS4Windows, Discord). Every other mode gives
+    // the button a bridge-side job, so the host never sees it.
+    if (mute_button_mode != MuteButtonNormal) {
+        report[9] &= static_cast<uint8_t>(~kMuteButtonBit);
+    }
 
     if (mute_pressed && !mute_button_last_pressed) {
         if (mute_button_mode == MuteButtonNormal) {

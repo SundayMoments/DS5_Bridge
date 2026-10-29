@@ -307,6 +307,7 @@ export function App() {
       onBeginWindowDrag={beginWindowDrag}
       onMinimize={() => void window.bridge.minimizeWindow()}
       onHide={() => void window.bridge.hideWindow()}
+      closeButtonQuits={snapshot.settings.closeButtonQuits}
       windowBarCenter={snapshot.settings.kitsuneInputPromotionDismissed ? null : (
         <KitsunePromotionBanner
           expanded={showKitsuneInputPromotion}

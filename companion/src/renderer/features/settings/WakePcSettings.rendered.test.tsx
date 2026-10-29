@@ -39,6 +39,7 @@ function model(connected = true): SettingsPageModel {
     focusTarget: null,
     picoFirmware: { message: null, error: null },
     wakeOnLan: { connectionKey: 'connected', controllerConnected: false, firmwareUpdateRequired: false },
+    appVersion: '2.0.0',
     bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null }
   };
 }

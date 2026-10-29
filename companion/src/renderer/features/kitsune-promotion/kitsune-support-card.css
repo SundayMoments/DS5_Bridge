@@ -124,6 +124,15 @@
   border-top-right-radius: var(--card-radius);
 }
 
+/* A row above the card (Help & About's Version) closes its own group, with
+ * the same gap the card leaves below it. */
+.settings-page .settings-menu-row:has(+ .kitsune-support-card) {
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--section-border);
+  border-bottom-right-radius: var(--card-radius);
+  border-bottom-left-radius: var(--card-radius);
+}
+
 @media (max-width: 760px) {
   .kitsune-support-card {
     grid-template-columns: 48px minmax(0, 1fr);

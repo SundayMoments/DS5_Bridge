@@ -41,7 +41,8 @@ sealed class EndpointManager
         }
         if (TargetBridgeContainer is not null)
         {
-            throw TargetBridgeEndpointNotFound(devices, "render");
+            throw DisabledBridgeEndpoint(enumerator, DataFlow.Render, "render")
+                ?? TargetBridgeEndpointNotFound(devices, "render");
         }
 
         if (!string.IsNullOrWhiteSpace(deviceName))
@@ -59,7 +60,8 @@ sealed class EndpointManager
             .ToArray();
 
         return FindKnownBridgeEndpointForPersona(devices, hostPersonaMode)
-            ?? throw BridgeEndpointNotFoundForPersona(devices, hostPersonaMode);
+            ?? throw (DisabledBridgeEndpoint(enumerator, DataFlow.Render, "render")
+                ?? BridgeEndpointNotFoundForPersona(devices, hostPersonaMode));
     }
 
     public static MMDevice SelectDefaultRenderEndpoint(MMDeviceEnumerator enumerator)
@@ -106,7 +108,8 @@ sealed class EndpointManager
         }
         if (TargetBridgeContainer is not null)
         {
-            throw TargetBridgeEndpointNotFound(devices, "capture");
+            throw DisabledBridgeEndpoint(enumerator, DataFlow.Capture, "capture")
+                ?? TargetBridgeEndpointNotFound(devices, "capture");
         }
 
         if (!string.IsNullOrWhiteSpace(deviceName))
@@ -166,7 +169,8 @@ sealed class EndpointManager
         }
         if (TargetBridgeContainer is not null)
         {
-            throw TargetBridgeEndpointNotFound(devices, "microphone capture");
+            throw DisabledBridgeEndpoint(enumerator, DataFlow.Capture, "microphone capture")
+                ?? TargetBridgeEndpointNotFound(devices, "microphone capture");
         }
 
         if (!string.IsNullOrWhiteSpace(deviceName))
@@ -468,6 +472,34 @@ sealed class EndpointManager
         var available = string.Join(", ", devices.Select(device => $"'{device.FriendlyName}'"));
         return new InvalidOperationException(
             $"Render endpoint matching persona '{hostPersonaMode ?? "dualsense"}' ('{expected}') was not found. Available endpoints: {available}");
+    }
+
+    // A bridge endpoint turned off in Windows Sound settings is missing from the
+    // active list as well; say so, since reconnecting or closing games won't help.
+    // Only a container-ID match counts: a disabled endpoint that merely shares a
+    // persona's name may be a real USB controller's.
+    private static InvalidOperationException? DisabledBridgeEndpoint(
+        MMDeviceEnumerator enumerator,
+        DataFlow flow,
+        string role)
+    {
+        try
+        {
+            var disabled = enumerator.EnumerateAudioEndPoints(flow, DeviceState.Disabled).ToArray();
+            var match = FindBridgeEndpointByContainerId(disabled);
+            return match is null
+                ? null
+                : new InvalidOperationException(BridgeEndpointDisabledMessage(role, match.FriendlyName));
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+    }
+
+    internal static string BridgeEndpointDisabledMessage(string role, string friendlyName)
+    {
+        return $"The bridge's {role} endpoint '{friendlyName}' is disabled in Windows Sound settings.";
     }
 
     private static InvalidOperationException TargetBridgeEndpointNotFound(MMDevice[] devices, string role)

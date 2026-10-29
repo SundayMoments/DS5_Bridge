@@ -172,6 +172,9 @@ const api = {
   setShowBatteryPercentTrayIcon: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setShowBatteryPercentTrayIcon', value)
   ),
+  setCloseButtonQuits: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setCloseButtonQuits', value)
+  ),
   markKitsuneInputLaunchOfferShown: (): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:markKitsuneInputLaunchOfferShown')
   ),
@@ -234,6 +237,12 @@ const api = {
   setNotifyLowBattery: (value: boolean): Promise<BridgeSnapshot> => (
     ipcRenderer.invoke('bridge:setNotifyLowBattery', value)
   ),
+  setNotifyPersonaChange: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setNotifyPersonaChange', value)
+  ),
+  setNotifyMicMute: (value: boolean): Promise<BridgeSnapshot> => (
+    ipcRenderer.invoke('bridge:setNotifyMicMute', value)
+  ),
   testNotification: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:testNotification'),
   testHaptics: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:testHaptics'),
   testSpeaker: (): Promise<BridgeSnapshot> => ipcRenderer.invoke('bridge:testSpeaker'),
@@ -292,6 +301,7 @@ const api = {
     ipcRenderer.invoke('bridge:clearFirmwareLogDirectory')
   ),
   getDiagnostics: (): Promise<BridgeDiagnostics> => ipcRenderer.invoke('bridge:getDiagnostics'),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke('window:toggleMaximize'),
   isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),

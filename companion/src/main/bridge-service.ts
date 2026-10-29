@@ -166,12 +166,17 @@ const TEST_HAPTICS_SWITCHING_MESSAGE =
   'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.';
 const TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE =
   'The controller audio endpoint is unavailable. Close any games using the controller and try again.';
+const TEST_HAPTICS_ENDPOINT_DISABLED_MESSAGE =
+  'The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.';
 const TEST_HAPTICS_FAILED_MESSAGE =
   'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.';
 const SYSTEM_AUDIO_HAPTICS_BYPASS_RETRY_MS = 2000;
 const AUDIO_HAPTICS_SESSION_CACHE_MS = 2500;
 const LOW_BATTERY_PERCENT = 20;
-const BUNDLED_FIRMWARE_VERSION = '2.0.0';
+// The battery level arrives a moment after the controller connects; the
+// connect toast waits this long for it before going out without it.
+const CONNECT_TOAST_BATTERY_WAIT_MS = 3000;
+const BUNDLED_FIRMWARE_VERSION = '2.0.1';
 const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
 const AUDIO_DEBUG_LOG_LINE_LIMIT = 300;
@@ -839,6 +844,11 @@ function pathShowsOtherHostPersona(path: string | null, mode: HostPersonaMode): 
     .some(([persona, usbIds]) => persona !== mode && lowered.includes(usbIds));
 }
 
+/** "80%", or "80% (charging)" while the controller charges. */
+function controllerBatteryText(batteryPercent: number, rawPowerState: number): string {
+  return rawPowerState === 0x01 ? `${batteryPercent}% (charging)` : `${batteryPercent}%`;
+}
+
 function hostPersonaModeLabel(mode: HostPersonaMode): string {
   if (mode === 'dualsense-edge') return 'DualSense Edge';
   if (mode === 'ds4') return 'DualShock 4';
@@ -1353,6 +1363,8 @@ export class BridgeService extends EventEmitter {
   private lastDefaultRenderEndpointStatusAt = 0;
   private controllerPowerSavingActive: boolean | null = null;
   private previousControllerConnected: boolean | null = null;
+  /** Set while the connect toast waits for the first battery level. */
+  private connectToastDeadline: number | null = null;
   private lowBatteryToastActive = false;
   private shortcutFeaturePollRetryAt = 0;
   private resetEvidence: ResetEvidencePayload | null = null;
@@ -2054,6 +2066,12 @@ export class BridgeService extends EventEmitter {
   private isBridgeRenderEndpointUnavailableError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('Render endpoint matching') && message.includes('was not found');
+  }
+
+  /** The audio helper found the bridge's endpoint, but turned off in Windows Sound settings. */
+  private isBridgeEndpointDisabledError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('is disabled in Windows Sound settings');
   }
 
   private async readAudioDebugEvents(): Promise<void> {
@@ -2923,9 +2941,13 @@ export class BridgeService extends EventEmitter {
           return;
         }
         await this.setMicMute(!settings.micMuted);
+        this.emitMicMuteToast(this.settingsStore.get().micMuted);
         return;
       case 'sleep-controller':
         await this.sleepController();
+        return;
+      case 'show-battery':
+        this.emitBatteryLevelToast();
         return;
       case 'persona-dualsense':
         await this.setHostPersonaMode('dualsense');
@@ -3048,6 +3070,20 @@ export class BridgeService extends EventEmitter {
     }
   }
 
+  /** Asked for with a chord, so it shows whatever the notification settings say. */
+  private emitBatteryLevelToast(): void {
+    const status = this.snapshot.status;
+    if (!status?.controllerConnected) {
+      return;
+    }
+    this.emit('toast', {
+      title: 'DS5 Bridge',
+      body: status.batteryPercent === null
+        ? 'Controller battery level is not available yet'
+        : `Controller battery: ${controllerBatteryText(status.batteryPercent, status.rawPowerState)}`
+    } satisfies BridgeToast);
+  }
+
   private async applyControllerVolumeShortcut(deltaPercent: number): Promise<void> {
     const settings = this.settingsStore.get();
     if (!settings.speakerVolumeShortcutEnabled || !settings.speakerEnabled) {
@@ -3079,6 +3115,7 @@ export class BridgeService extends EventEmitter {
       this.snapshot.status.micMuted = micMuted;
     }
     this.emitSnapshot();
+    this.emitMicMuteToast(micMuted);
     void this.updateMicKeepaliveEngine(Boolean(this.snapshot.status?.controllerConnected));
   }
 
@@ -3186,6 +3223,14 @@ export class BridgeService extends EventEmitter {
   setShowBatteryPercentTrayIcon(enabled: boolean): BridgeSnapshot {
     this.snapshot.settings = this.settingsStore.update({
       showBatteryPercentTrayIcon: enabled
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  setCloseButtonQuits(enabled: boolean): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      closeButtonQuits: enabled
     });
     this.emitSnapshot();
     return this.getSnapshot();
@@ -3354,6 +3399,29 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  async setNotifyPersonaChange(enabled: boolean): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.update({ notifyPersonaChange: enabled });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  async setNotifyMicMute(enabled: boolean): Promise<BridgeSnapshot> {
+    this.snapshot.settings = this.settingsStore.update({ notifyMicMute: enabled });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
+  /** For a mute change made on the controller, by its button or a chord. */
+  private emitMicMuteToast(micMuted: boolean): void {
+    if (!this.settingsStore.get().notifyMicMute) {
+      return;
+    }
+    this.emit('toast', {
+      title: 'DS5 Bridge',
+      body: micMuted ? 'Controller mic muted' : 'Controller mic unmuted'
+    } satisfies BridgeToast);
+  }
+
   async testNotification(): Promise<BridgeSnapshot> {
     this.emit('toast', {
       title: 'DS5 Bridge',
@@ -3395,9 +3463,11 @@ export class BridgeService extends EventEmitter {
         `[HostBridge] test haptics failed persona=${hostPersonaMode} error=${message}`
       ]);
       throw new Error(
-        this.isBridgeRenderEndpointUnavailableError(error)
-          ? TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE
-          : TEST_HAPTICS_FAILED_MESSAGE,
+        this.isBridgeEndpointDisabledError(error)
+          ? TEST_HAPTICS_ENDPOINT_DISABLED_MESSAGE
+          : this.isBridgeRenderEndpointUnavailableError(error)
+            ? TEST_HAPTICS_ENDPOINT_UNAVAILABLE_MESSAGE
+            : TEST_HAPTICS_FAILED_MESSAGE,
         { cause: error }
       );
     } finally {
@@ -4146,6 +4216,12 @@ export class BridgeService extends EventEmitter {
 
     const transition = this.advanceHostPersonaTransition(status, now);
     const completedHostPersonaMode = this.consumeCompletedHostPersonaMode();
+    if (completedHostPersonaMode && this.settingsStore.get().notifyPersonaChange) {
+      this.emit('toast', {
+        title: 'DS5 Bridge',
+        body: `Switched to ${hostPersonaModeLabel(completedHostPersonaMode)} mode`
+      } satisfies BridgeToast);
+    }
     const controllerAudioReady = this.controllerAudioReady(status);
 
     if (!controllerAudioReady) {
@@ -4346,18 +4422,43 @@ export class BridgeService extends EventEmitter {
   private maybeEmitStatusToasts(status: BridgeStatusPayload): void {
     const settings = this.settingsStore.get();
     const controllerConnected = status.controllerConnected;
+    // The bridge keeps the last controller report across a disconnect, so the
+    // poll that first sees a reconnect can still carry the old battery level.
+    let connectedThisPoll = false;
 
     if (
       settings.notifyControllerConnection
       && this.previousControllerConnected !== null
       && this.previousControllerConnected !== controllerConnected
     ) {
-      this.emit('toast', {
-        title: 'DS5 Bridge',
-        body: controllerConnected ? 'Controller connected' : 'Controller disconnected'
-      } satisfies BridgeToast);
+      if (controllerConnected) {
+        this.connectToastDeadline = Date.now() + CONNECT_TOAST_BATTERY_WAIT_MS;
+        connectedThisPoll = true;
+      } else {
+        this.connectToastDeadline = null;
+        this.emit('toast', {
+          title: 'DS5 Bridge',
+          body: 'Controller disconnected'
+        } satisfies BridgeToast);
+      }
     }
     this.previousControllerConnected = controllerConnected;
+
+    if (
+      this.connectToastDeadline !== null
+      && !connectedThisPoll
+      && (status.batteryPercent !== null || Date.now() >= this.connectToastDeadline)
+    ) {
+      this.connectToastDeadline = null;
+      if (settings.notifyControllerConnection && controllerConnected) {
+        this.emit('toast', {
+          title: 'DS5 Bridge',
+          body: status.batteryPercent === null
+            ? 'Controller connected'
+            : `Controller connected — battery ${controllerBatteryText(status.batteryPercent, status.rawPowerState)}`
+        } satisfies BridgeToast);
+      }
+    }
 
     const lowBattery = controllerConnected
       && status.batteryPercent !== null
@@ -4380,6 +4481,7 @@ export class BridgeService extends EventEmitter {
       } satisfies BridgeToast);
     }
     this.previousControllerConnected = false;
+    this.connectToastDeadline = null;
     this.lowBatteryToastActive = false;
   }
 

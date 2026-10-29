@@ -171,7 +171,8 @@ export function installBridgeMock(initial: BridgeSnapshot = fixtureSnapshot()): 
     isWindowMaximized: async () => false,
     listAudioHapticsSessions: async () => [],
     listDevices: async () => [],
-    getDiagnostics: async () => current.diagnostics
+    getDiagnostics: async () => current.diagnostics,
+    getAppVersion: async () => '2.0.0'
   };
   function fn(name: string): Mock {
     let mock = fns.get(name);

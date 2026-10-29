@@ -649,6 +649,16 @@ void assert_persona_switch_quiets_input_only(std::filesystem::path const &root) 
     ) {
         throw std::runtime_error("DS4 native probes must be able to GET_REPORT the current input report");
     }
+
+    // TinyUSB strips the ID from a control SET_REPORT(Output); the DualSense
+    // personas dropped those reports until 2.0.1.
+    if (
+        set_report_callback.find("report_type == HID_REPORT_TYPE_OUTPUT && report_id == 0x02") == std::string::npos
+        || set_report_callback.find("control_output_report[0] = report_id;") == std::string::npos
+        || set_report_callback.find("controller_output_submit_usb_payload(output_data + 1") == std::string::npos
+    ) {
+        throw std::runtime_error("DualSense personas must submit output report 0x02 sent as a control SET_REPORT");
+    }
 }
 
 // A bus already idle stays idle across a main-loop stall (Wi-Fi start during a
@@ -1025,20 +1035,39 @@ void assert_mute_keyboard_chord_starter_is_deferred(std::filesystem::path const 
     }
 }
 
+void assert_mute_button_reaches_host_only_in_normal_mode(std::filesystem::path const &root) {
+    const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const std::string process_block = extract_between(
+        companion_cpp,
+        "void companion_process_controller_report(uint8_t *report, uint16_t len) {",
+        "\n}\n\nvoid companion_update_controller_report"
+    );
+    const auto guard_pos = process_block.find("if (mute_button_mode != MuteButtonNormal) {\n        report[9] &= static_cast<uint8_t>(~kMuteButtonBit);\n    }");
+    const auto toggle_pos = process_block.find("toggle_companion_mic_mute();");
+    if (guard_pos == std::string::npos || toggle_pos == std::string::npos || toggle_pos < guard_pos) {
+        throw std::runtime_error("Normal mute mode must pass the mute button to the host and still toggle the bridge mic (GitHub #140)");
+    }
+    if (process_block.find("\n    report[9] &= static_cast<uint8_t>(~kMuteButtonBit);") != std::string::npos) {
+        throw std::runtime_error("The mute button must not be stripped from host reports unconditionally (GitHub #140)");
+    }
+}
+
 void assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(std::filesystem::path const &root) {
     const auto companion_cpp = read_text(root / "src" / "companion.cpp");
+    const auto gate_h = read_text(root / "src" / "home_chord_gate.h");
 
-    if (companion_cpp.find("constexpr uint32_t kHomeChordSuppressUs = 250000;") == std::string::npos) {
+    // Timing behavior itself is covered by home_chord_gate_test.
+    if (gate_h.find("inline constexpr uint32_t kSuppressUs = 250000;") == std::string::npos) {
         throw std::runtime_error("PS/Home chord starter must be swallowed for the full 250ms chord window");
     }
-    if (companion_cpp.find("constexpr uint32_t kHomeChordFallbackReplayUs = 80000;") == std::string::npos) {
+    if (gate_h.find("inline constexpr uint32_t kFallbackReplayUs = 80000;") == std::string::npos) {
         throw std::runtime_error("Unconsumed PS/Home taps must replay as a host-visible 80ms press");
     }
 
     const std::string gate_enabled_block = extract_between(
         companion_cpp,
         "bool home_chord_gate_enabled() {",
-        "\n}\n\nvoid clear_home_chord_gate"
+        "\n}\n\nvoid apply_home_chord_gate"
     );
     if (
         gate_enabled_block.find("sleep_keybind_enabled || speaker_volume_shortcut_enabled") == std::string::npos
@@ -1053,14 +1082,13 @@ void assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(std::files
         "\n}\n\nbool dpad_direction_has"
     );
     if (
-        gate_block.find("if (home_chord_consumed)") == std::string::npos
+        gate_block.find("ds5::home_chord_gate::step(") == std::string::npos
+        || gate_block.find("home_chord_gate_enabled(),") == std::string::npos
+        || gate_block.find("home_chord_consumed,") == std::string::npos
+        || gate_block.find("report[9] |= kHomeButtonBit;") == std::string::npos
         || gate_block.find("report[9] &= static_cast<uint8_t>(~kHomeButtonBit);") == std::string::npos
-        || gate_block.find("home_chord_gate_until_us = now + kHomeChordSuppressUs;") == std::string::npos
-        || gate_block.find("if (!time_us_reached(now, home_chord_gate_until_us))") == std::string::npos
-        || gate_block.find("home_chord_replay_until_us = now + kHomeChordFallbackReplayUs;") == std::string::npos
-        || gate_block.find("if (home_chord_replay_until_us != 0 && !time_us_reached(now, home_chord_replay_until_us))") == std::string::npos
     ) {
-        throw std::runtime_error("PS/Home chord gate must mask PS/Home during the chord window and replay unconsumed taps by duration");
+        throw std::runtime_error("PS/Home chord gate must decide the host's PS/Home bit from the shared gate state machine");
     }
 
     const std::string dynamic_block = extract_between(
@@ -2571,6 +2599,7 @@ int main() {
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_mute_keyboard_shortcut_is_typed_in_stages(source_root);
         assert_ps_chord_starter_is_deferred_to_protect_steam_big_picture(source_root);
+        assert_mute_button_reaches_host_only_in_normal_mode(source_root);
         assert_mic_pass_through_defaults_to_enabled(source_root);
         assert_bluetooth_pairing_and_reconnect_policy(source_root);
         assert_firmware_version_has_one_canonical_source(source_root);

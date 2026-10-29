@@ -57,9 +57,25 @@ export function FirmwareSettings({ model, actions, matchingSettingIds }: Setting
   </>;
 }
 
-export function AboutSettings({ actions, matchingSettingIds }: SettingsCategoryProps) {
+export function AboutSettings({ model, actions, matchingSettingIds }: SettingsCategoryProps) {
+  const firmwareVersion = model.bridgeHealth.firmwareVersion;
+  const versionText = firmwareVersion
+    ? `App v${model.appVersion} · Firmware v${firmwareVersion}`
+    : model.bridgeHealth.firmwareUpdateRequired
+      ? `App v${model.appVersion} · Firmware update required`
+      : `App v${model.appVersion} · Firmware not connected`;
   return <>
     <h3 className="settings-menu-section-label">Help &amp; About</h3>
+    {model.appVersion ? (
+      <SearchableSetting id="version" matchingSettingIds={matchingSettingIds}>
+        <div className="settings-menu-row">
+          <div className="settings-menu-copy">
+            <strong>Version</strong>
+            <span>{versionText}</span>
+          </div>
+        </div>
+      </SearchableSetting>
+    ) : null}
     <SearchableSetting id="kitsune-input" matchingSettingIds={matchingSettingIds}>
       <KitsuneInputSupportCard
         onGet={() => actions.openExternal(KITSUNE_INPUT_PURCHASE_URL)}

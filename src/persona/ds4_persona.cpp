@@ -51,6 +51,17 @@ constexpr char kDs4FirmwareVersion[] = "0001.A00B";
 
 uint8_t ds4_report_counter = 0;
 uint16_t ds4_timestamp = 188;
+// The DualSense motion clock ticks every 1/3 us, a DS4's every 16/3 us.
+// Copying the DualSense value made DS4 motion time run 16x fast and wrap
+// every 21.8 ms, which breaks gyro integration in SDL and Steam.
+constexpr uint32_t kDualSenseTicksPerDs4Tick = 16;
+// The longest step a 16-bit DS4 clock can show (~349.5 ms). A larger gap
+// would wrap into a short one, or means the controller's clock restarted
+// (reconnect), so the DS4 clock resyncs instead.
+constexpr uint32_t kDs4MotionClockMaxGapTicks = 0xffffu * kDualSenseTicksPerDs4Tick;
+bool ds4_motion_clock_started = false;
+uint32_t ds4_motion_last_sensor_timestamp = 0;
+uint32_t ds4_motion_tick_remainder = 0;
 uint8_t ds4_probe_selector[3]{};
 uint8_t ds4_telemetry_subcommand = 0;
 
@@ -65,6 +76,20 @@ void write_i16(uint8_t *data, int16_t value) {
 
 uint16_t clamp_u16(uint16_t value, uint16_t max_value) {
     return value > max_value ? max_value : value;
+}
+
+uint16_t ds4_motion_timestamp(uint32_t sensor_timestamp) {
+    const uint32_t elapsed = sensor_timestamp - ds4_motion_last_sensor_timestamp;
+    ds4_motion_last_sensor_timestamp = sensor_timestamp;
+    if (!ds4_motion_clock_started || elapsed > kDs4MotionClockMaxGapTicks) {
+        ds4_motion_clock_started = true;
+        ds4_motion_tick_remainder = 0;
+        return ds4_timestamp;
+    }
+    const uint32_t ticks = elapsed + ds4_motion_tick_remainder;
+    ds4_timestamp = static_cast<uint16_t>(ds4_timestamp + ticks / kDualSenseTicksPerDs4Tick);
+    ds4_motion_tick_remainder = ticks % kDualSenseTicksPerDs4Tick;
+    return ds4_timestamp;
 }
 
 uint16_t scale_touch_y_to_ds4(uint16_t y) {
@@ -196,10 +221,13 @@ bool ds4_persona_encode_input(
 
     report.bytes[7] = state.left_trigger;
     report.bytes[8] = state.right_trigger;
+    if (!state.motion_valid) {
+        ds4_motion_clock_started = false;
+    }
     write_u16(
         report.bytes + 9,
         state.motion_valid
-            ? static_cast<uint16_t>(state.sensor_timestamp & 0xffff)
+            ? ds4_motion_timestamp(state.sensor_timestamp)
             : ds4_timestamp++
     );
     report.bytes[11] = 0x09;

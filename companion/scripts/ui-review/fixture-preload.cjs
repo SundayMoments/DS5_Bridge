@@ -27,8 +27,11 @@ const settingSetters = {
   setUiLocale: 'uiLocale',
   setNotifyControllerConnection: 'notifyControllerConnection',
   setNotifyLowBattery: 'notifyLowBattery',
+  setNotifyPersonaChange: 'notifyPersonaChange',
+  setNotifyMicMute: 'notifyMicMute',
   setLaunchAtStartupEnabled: 'launchAtStartupEnabled',
-  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon'
+  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon',
+  setCloseButtonQuits: 'closeButtonQuits'
 };
 // Holds back the first snapshot so a capture can show the startup placeholders.
 const statusDelayMs = Number(process.env.DS5_UI_REVIEW_STATUS_DELAY_MS ?? 0);
@@ -69,6 +72,7 @@ function failNextHapticsTest(message) {
 const handlers = {
   getStatus: () => new Promise((resolve) => setTimeout(() => resolve(snapshot), statusDelayMs)),
   getDiagnostics: async () => snapshot.diagnostics,
+  getAppVersion: async () => '2.0.0',
   listAudioHapticsSessions: async () => [],
   listDevices: async () => [],
   isWindowMaximized: async () => false,

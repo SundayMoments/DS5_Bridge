@@ -387,7 +387,7 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
   window.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
-      window.hide();
+      closeMainWindow(window);
     }
   });
   window.on('will-move', () => bridgeService?.pausePollingFor(1200));
@@ -398,6 +398,19 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
     applyWindowScale(window, uiScalePercent, false);
   });
   return window;
+}
+
+// The close button hides to the tray unless the user chose to quit there.
+// While a Pico firmware action or bootloader confirmation is running it only
+// hides, as retireHiddenMainWindow waits for them: quitting would cut a UF2
+// copy short and leave the bridge half flashed.
+function closeMainWindow(window: BrowserWindow | null): void {
+  const snapshot = bridgeService?.getSnapshot();
+  if (snapshot?.settings.closeButtonQuits && mainWindowBusyTasks === 0 && !snapshot.bootloaderConfirmation) {
+    app.quit();
+    return;
+  }
+  window?.hide();
 }
 
 function sendWindowMaximizedState(): void {
@@ -1159,6 +1172,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setShowBatteryPercentTrayIcon', (_event, value: boolean) => (
     service.setShowBatteryPercentTrayIcon(Boolean(value))
   ));
+  ipcMain.handle('bridge:setCloseButtonQuits', (_event, value: boolean) => (
+    service.setCloseButtonQuits(Boolean(value))
+  ));
   ipcMain.handle('bridge:markKitsuneInputLaunchOfferShown', () => service.markKitsuneInputLaunchOfferShown());
   ipcMain.handle('bridge:setPollingRateMode', (_event, value: PollingRateMode) => (
     service.setPollingRateMode(value)
@@ -1205,6 +1221,12 @@ function registerIpc(service: BridgeService): void {
   ));
   ipcMain.handle('bridge:setNotifyLowBattery', (_event, value: boolean) => (
     service.setNotifyLowBattery(value)
+  ));
+  ipcMain.handle('bridge:setNotifyPersonaChange', (_event, value: boolean) => (
+    service.setNotifyPersonaChange(Boolean(value))
+  ));
+  ipcMain.handle('bridge:setNotifyMicMute', (_event, value: boolean) => (
+    service.setNotifyMicMute(Boolean(value))
   ));
   ipcMain.handle('bridge:testNotification', () => service.testNotification());
   ipcMain.handle('bridge:testHaptics', () => service.testHaptics());
@@ -1267,6 +1289,7 @@ function registerIpc(service: BridgeService): void {
   });
   ipcMain.handle('bridge:clearFirmwareLogDirectory', () => service.setFirmwareLogDirectory(null));
   ipcMain.handle('bridge:getDiagnostics', () => service.getSnapshot().diagnostics);
+  ipcMain.handle('app:getVersion', () => app.getVersion());
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:toggleMaximize', () => {
     if (!mainWindow || !mainWindow.isMaximizable()) return;
@@ -1277,7 +1300,7 @@ function registerIpc(service: BridgeService): void {
     }
   });
   ipcMain.handle('window:isMaximized', () => Boolean(mainWindow?.isMaximized()));
-  ipcMain.handle('window:hide', () => mainWindow?.hide());
+  ipcMain.handle('window:hide', () => closeMainWindow(mainWindow));
   ipcMain.handle('window:openExternal', (_event, url: string) => {
     if (!isAllowedExternalUrl(url)) {
       return;

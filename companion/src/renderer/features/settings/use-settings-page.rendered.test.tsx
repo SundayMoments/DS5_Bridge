@@ -55,6 +55,7 @@ describe('Settings page wiring', () => {
       settings: {
         launchAtStartupEnabled: false,
         showBatteryPercentTrayIcon: true,
+        closeButtonQuits: false,
         idleDisconnectEnabled: false,
         usbSuspendDisconnectEnabled: true,
         controllerPowerSavingEnabled: false,
@@ -64,7 +65,9 @@ describe('Settings page wiring', () => {
         edgeProfileSwitchingBlocked: false,
         sleepKeybindEnabled: true,
         speakerVolumeShortcutEnabled: false,
-        wakeOnConnectEnabled: true
+        wakeOnConnectEnabled: true,
+        notifyPersonaChange: true,
+        notifyMicMute: false
       }
     });
     const bridge: BridgeMock = installBridgeMock(snapshot);
@@ -73,6 +76,7 @@ describe('Settings page wiring', () => {
     const toggles: Array<[keyof SettingsPageActions, string, boolean]> = [
       ['toggleLaunchAtStartup', 'setLaunchAtStartupEnabled', true],
       ['toggleBatteryTrayIcon', 'setShowBatteryPercentTrayIcon', false],
+      ['toggleCloseButtonQuits', 'setCloseButtonQuits', true],
       ['toggleIdleDisconnect', 'setIdleDisconnectEnabled', true],
       ['toggleUsbSuspendDisconnect', 'setUsbSuspendDisconnectEnabled', false],
       ['toggleControllerPowerSaving', 'setControllerPowerSavingEnabled', true],
@@ -82,7 +86,9 @@ describe('Settings page wiring', () => {
       ['toggleEdgeProfileSwitching', 'setEdgeProfileSwitchingBlocked', true],
       ['toggleSleepShortcut', 'setSleepKeybindEnabled', false],
       ['toggleVolumeShortcut', 'setSpeakerVolumeShortcutEnabled', true],
-      ['toggleWakeOnConnect', 'setWakeOnConnectEnabled', false]
+      ['toggleWakeOnConnect', 'setWakeOnConnectEnabled', false],
+      ['togglePersonaNotifications', 'setNotifyPersonaChange', false],
+      ['toggleMicMuteNotifications', 'setNotifyMicMute', true]
     ];
     for (const [action, method, value] of toggles) {
       await act(async () => (current.actions[action] as () => void)());
@@ -97,6 +103,14 @@ describe('Settings page wiring', () => {
     expect(bridge.fn('openExternal')).toHaveBeenCalledWith('https://discord.gg/By5jhh73wr');
     expect(current.actions.toggleControllerNotifications).toBe(notifications.toggleControllerNotifications);
     expect(current.actions.wakeOnLan).toBe(window.bridge);
+  });
+
+  it('asks the main process for the app version once', async () => {
+    const snapshot = fixtureSnapshot();
+    const bridge = installBridgeMock(snapshot);
+    await mount(runtimeFor(snapshot));
+    expect(current.model?.appVersion).toBe('2.0.0');
+    expect(bridge.fn('getAppVersion')).toHaveBeenCalledOnce();
   });
 
   it('reports what the Pico firmware tools did', async () => {

@@ -71,7 +71,8 @@ const seededMessages = [
   // Why the bridge refused a haptics test; main sends these and the Haptics page shows them.
   'Haptics test could not start while switching controller modes. Wait for the controller to reconnect, then try again.',
   'Haptics test failed. Close any games using the controller and try again. If it still fails, reconnect the controller.',
-  'The controller audio endpoint is unavailable. Close any games using the controller and try again.'
+  'The controller audio endpoint is unavailable. Close any games using the controller and try again.',
+  'The controller audio device is disabled in Windows. Enable it under Sound settings > More sound settings, then try again.'
 ];
 
 function normalize(value) {

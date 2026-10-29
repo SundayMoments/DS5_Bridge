@@ -52,11 +52,14 @@ export type SettingsSearchEntryId =
   | 'launch-startup'
   | 'language'
   | 'battery-tray'
+  | 'close-button-quits'
   | 'ui-scale'
   | 'text-scale'
   | 'theme'
   | 'controller-notifications'
   | 'low-battery-notifications'
+  | 'persona-notifications'
+  | 'mic-mute-notifications'
   | 'idle-disconnect'
   | 'pc-sleep-disconnect'
   | 'controller-power-saving'
@@ -70,6 +73,7 @@ export type SettingsSearchEntryId =
   | 'wake-on-lan'
   | 'pico-tools'
   | 'last-restart'
+  | 'version'
   | 'kitsune-input'
   | 'github'
   | 'discord';
@@ -90,11 +94,14 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'launch-startup', label: 'Launch at Startup', category: 'app', keywords: 'windows start boot tray startup' },
   { id: 'language', label: 'Language', category: 'app', keywords: 'localization locale translation' },
   { id: 'battery-tray', label: 'Battery Tray Icon', category: 'system-tray', keywords: 'controller percentage taskbar' },
+  { id: 'close-button-quits', label: 'Quit on Close', category: 'system-tray', keywords: 'exit close button window background' },
   { id: 'ui-scale', label: 'UI Scale', category: 'appearance', keywords: 'appearance interface size zoom window' },
   { id: 'text-scale', label: 'Text Scale', category: 'appearance', keywords: 'appearance font size accessibility' },
   { id: 'theme', label: 'Theme', category: 'appearance', keywords: 'appearance color dark light' },
   { id: 'controller-notifications', label: 'Controller Status', category: 'notifications', keywords: 'Notify when the controller connects or disconnects' },
   { id: 'low-battery-notifications', label: 'Low Battery', category: 'notifications', keywords: 'Notify when the battery reaches 20% or below' },
+  { id: 'persona-notifications', label: 'Host Controller Switch', category: 'notifications', keywords: 'persona mode dualsense edge dualshock xbox chord' },
+  { id: 'mic-mute-notifications', label: 'Mic Mute', category: 'notifications', keywords: 'microphone mute button unmute' },
   { id: 'idle-disconnect', label: 'Idle Disconnect', category: 'connection-power', keywords: 'controller timeout sleep minutes' },
   { id: 'pc-sleep-disconnect', label: 'PC Sleep Disconnect', category: 'connection-power', keywords: 'usb suspend windows' },
   { id: 'controller-power-saving', label: 'Controller Power Saving', category: 'connection-power', keywords: 'headphones haptics triggers light bar lightbar' },
@@ -108,6 +115,7 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'wake-on-lan', label: 'Wake-on-LAN', category: 'pc-wake', keywords: 'wifi wi-fi network ethernet magic packet lan sleep shutdown router' },
   { id: 'pico-tools', label: 'Bridge Firmware', category: 'maintenance', keywords: 'pico bridge firmware update recovery erase mount flash nuke uf2' },
   { id: 'last-restart', label: 'Last Restart', category: 'maintenance', keywords: 'reset crash freeze watchdog reboot diagnostics bug report' },
+  { id: 'version', label: 'Version', category: 'about', keywords: 'app firmware number release update' },
   { id: 'kitsune-input', label: 'Kitsune Input', category: 'about', keywords: 'support purchase fox ko-fi' },
   { id: 'github', label: 'GitHub', category: 'about', keywords: 'sunday moments profile developer source' },
   { id: 'discord', label: 'Support & Community', category: 'about', keywords: 'discord invite help server' }

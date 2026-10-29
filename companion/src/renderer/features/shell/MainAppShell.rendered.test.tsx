@@ -38,7 +38,7 @@ const device: ShellDevicePresentation = {
   controllerArt: 'controller.svg'
 };
 
-function ShellHarness({ onSelect = vi.fn(), initialTab = 'overview' as ControlTab }) {
+function ShellHarness({ onSelect = vi.fn(), initialTab = 'overview' as ControlTab, closeButtonQuits = false }) {
   const [activeTab, setActiveTab] = useState<ControlTab>(initialTab);
   return (
     <MainAppShell
@@ -60,6 +60,7 @@ function ShellHarness({ onSelect = vi.fn(), initialTab = 'overview' as ControlTa
       onBeginWindowDrag={vi.fn()}
       onMinimize={vi.fn()}
       onHide={vi.fn()}
+      closeButtonQuits={closeButtonQuits}
     />
   );
 }
@@ -84,6 +85,13 @@ describe('MainAppShell', () => {
 
     expect(shell.querySelector('.app-content > .control-panel.flat-control-panel > .control-pages')).not.toBeNull();
     expect(shell.querySelector(':scope > .overlay-probe')).not.toBeNull();
+  });
+
+  it('labels the X button Quit when Quit on Close is on', () => {
+    const host = render(<ShellHarness closeButtonQuits />);
+    const close = host.querySelectorAll('.window-actions button')[1];
+    expect(close.getAttribute('aria-label')).toBe('Quit DS5 Bridge');
+    expect(close.getAttribute('title')).toBe('Quit DS5 Bridge');
   });
 
   it('groups navigation like Kitsune Input and pins Settings alone below the list', () => {

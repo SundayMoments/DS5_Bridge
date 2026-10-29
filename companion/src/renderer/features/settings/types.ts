@@ -11,6 +11,7 @@ export interface SettingsPageModel {
     | 'uiThemePreset'
     | 'launchAtStartupEnabled'
     | 'showBatteryPercentTrayIcon'
+    | 'closeButtonQuits'
     | 'ledEnabled'
     | 'playerLedEnabled'
     | 'idleDisconnectEnabled'
@@ -24,6 +25,8 @@ export interface SettingsPageModel {
     | 'lightbarRestoreEnabled'
     | 'notifyControllerConnection'
     | 'notifyLowBattery'
+    | 'notifyPersonaChange'
+    | 'notifyMicMute'
   >;
   /** The selected bridge is connected and can store settings. */
   readonly connected: boolean;
@@ -48,8 +51,12 @@ export interface SettingsPageModel {
     /** A bridge is attached but its firmware is too old for the app. */
     readonly firmwareUpdateRequired: boolean;
   };
+  /** The companion app's own version; null until the main process answers. */
+  readonly appVersion: string | null;
   readonly bridgeHealth: {
     readonly firmwareVersion: string | null;
+    /** A bridge is attached but its firmware is too old to report a version to this app. */
+    readonly firmwareUpdateRequired?: boolean;
     /** Why the bridge last reset; null or missing when its firmware does not report it. */
     readonly resetEvidence: ResetEvidencePayload | null | undefined;
   };
@@ -63,8 +70,11 @@ export interface SettingsPageActions {
   setLocale(value: string): void;
   toggleLaunchAtStartup(): void;
   toggleBatteryTrayIcon(): void;
+  toggleCloseButtonQuits(): void;
   toggleControllerNotifications(): void;
   toggleLowBatteryNotifications(): void;
+  togglePersonaNotifications(): void;
+  toggleMicMuteNotifications(): void;
   setIdleDisconnectTimeout(minutes: number): void;
   toggleIdleDisconnect(): void;
   toggleUsbSuspendDisconnect(): void;

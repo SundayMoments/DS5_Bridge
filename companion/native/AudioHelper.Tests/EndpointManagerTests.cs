@@ -32,6 +32,16 @@ public sealed class EndpointManagerTests
     }
 
     [Fact]
+    public void DisabledBridgeEndpointMessageNamesTheEndpointAndSoundSettings()
+    {
+        var message = EndpointManager.BridgeEndpointDisabledMessage("render", "Speakers (DualSense Wireless Controller)");
+
+        Assert.Contains("'Speakers (DualSense Wireless Controller)'", message);
+        // bridge-service.ts matches this phrase to show its own guidance.
+        Assert.Contains("is disabled in Windows Sound settings", message);
+    }
+
+    [Fact]
     public void IsKnownBridgeEndpointNameForPersonaIsolatesDualSenseEdgeEndpoint()
     {
         Assert.True(EndpointManager.IsKnownBridgeEndpointNameForPersona(

@@ -115,6 +115,22 @@ describe('System page', () => {
     expect(bridge.fn('setMuteButtonAction')).toHaveBeenCalledWith('keyboard', 0x68, 0, 'tap', true);
   });
 
+  it('offers Scroll Lock, Pause and Print Screen as the Mute key', async () => {
+    const bridge = installBridgeMock(fixtureSnapshot({
+      settings: {
+        muteButtonMode: 'keyboard',
+        muteKeyboardUsage: 0x68,
+        muteKeyboardModifiers: 0,
+        muteKeyboardBehavior: 'tap',
+        muteKeyboardChordStarterEnabled: false
+      }
+    }));
+    const host = await renderApp();
+    const page = await openPage(host, 'system');
+    await chooseOption(page, 'Mute keyboard key', 'Scroll Lock');
+    expect(bridge.fn('setMuteButtonAction')).toHaveBeenCalledWith('keyboard', 0x47, 0, 'tap', false);
+  });
+
   it('switches the Device card to diagnostics and builds the debug text only then', async () => {
     installBridgeMock(fixtureSnapshot());
     const host = await renderApp();

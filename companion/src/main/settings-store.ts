@@ -163,6 +163,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   uiLocale: SYSTEM_UI_LOCALE,
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
+  closeButtonQuits: false,
   kitsuneInputPromotionDismissed: false,
   kitsuneInputLaunchOfferShown: false,
   firmwareLogDirectory: null,
@@ -221,6 +222,8 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   hostPersonaMode: 'dualsense',
   notifyControllerConnection: false,
   notifyLowBattery: false,
+  notifyPersonaChange: true,
+  notifyMicMute: false,
   duplexMicEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.duplexMicEnabled,
   controllerPowerSavingEnabled: DEFAULT_CONTROLLER_PROFILE_SETTINGS.controllerPowerSavingEnabled,
   selectedControllerProfileId: DEFAULT_CONTROLLER_PROFILE_ID,
@@ -683,6 +686,7 @@ const CHORD_CONTROLLER_SETTING_ACTIONS = new Set<ChordControllerSettingAction>([
   'toggle-lightbar-override',
   'toggle-mic-mute',
   'sleep-controller',
+  'show-battery',
   'persona-dualsense',
   'persona-dualsense-edge',
   'persona-ds4',
@@ -941,6 +945,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     showBatteryPercentTrayIcon: typeof value?.showBatteryPercentTrayIcon === 'boolean'
       ? value.showBatteryPercentTrayIcon
       : DEFAULT_SETTINGS.showBatteryPercentTrayIcon,
+    closeButtonQuits: typeof value?.closeButtonQuits === 'boolean'
+      ? value.closeButtonQuits
+      : DEFAULT_SETTINGS.closeButtonQuits,
     kitsuneInputPromotionDismissed: typeof value?.kitsuneInputPromotionDismissed === 'boolean'
       ? value.kitsuneInputPromotionDismissed
       : DEFAULT_SETTINGS.kitsuneInputPromotionDismissed,
@@ -1104,6 +1111,12 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     notifyLowBattery: typeof value?.notifyLowBattery === 'boolean'
       ? value.notifyLowBattery
       : DEFAULT_SETTINGS.notifyLowBattery,
+    notifyPersonaChange: typeof value?.notifyPersonaChange === 'boolean'
+      ? value.notifyPersonaChange
+      : DEFAULT_SETTINGS.notifyPersonaChange,
+    notifyMicMute: typeof value?.notifyMicMute === 'boolean'
+      ? value.notifyMicMute
+      : DEFAULT_SETTINGS.notifyMicMute,
     duplexMicEnabled: typeof value?.duplexMicEnabled === 'boolean'
       ? value.duplexMicEnabled
       : DEFAULT_SETTINGS.duplexMicEnabled,

@@ -61,6 +61,8 @@ add_executable(bounded_containers_test bounded_containers_test.cpp)
 target_include_directories(bounded_containers_test PRIVATE ../../src)
 add_executable(trigger_motor_power_test trigger_motor_power_test.cpp)
 target_include_directories(trigger_motor_power_test PRIVATE ../../src)
+add_executable(home_chord_gate_test home_chord_gate_test.cpp)
+target_include_directories(home_chord_gate_test PRIVATE ../../src)
 add_executable(controller_input_handoff_test
     controller_input_handoff_test.cpp
     ../../src/dualsense_input_decoder.cpp
@@ -114,6 +116,7 @@ add_test(NAME ram_mem_test COMMAND ram_mem_test)
 add_test(NAME bt_output_send_dispatcher_test COMMAND bt_output_send_dispatcher_test)
 add_test(NAME bounded_containers_test COMMAND bounded_containers_test)
 add_test(NAME trigger_motor_power_test COMMAND trigger_motor_power_test)
+add_test(NAME home_chord_gate_test COMMAND home_chord_gate_test)
 add_test(NAME controller_input_handoff_test COMMAND controller_input_handoff_test)
 add_test(NAME keyboard_tap_sequencer_test COMMAND keyboard_tap_sequencer_test)
 add_test(NAME bootloader_maintenance_test COMMAND bootloader_maintenance_test)

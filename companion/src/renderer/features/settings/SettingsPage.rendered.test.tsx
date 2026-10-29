@@ -30,6 +30,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
       uiThemePreset: 'dark',
       launchAtStartupEnabled: false,
       showBatteryPercentTrayIcon: true,
+      closeButtonQuits: false,
       ledEnabled: true,
       playerLedEnabled: true,
       idleDisconnectEnabled: true,
@@ -42,7 +43,9 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
       speakerVolumeShortcutEnabled: false,
       lightbarRestoreEnabled: true,
       notifyControllerConnection: true,
-      notifyLowBattery: false
+      notifyLowBattery: false,
+      notifyPersonaChange: true,
+      notifyMicMute: false
     },
     connected: true,
     busy: false,
@@ -51,6 +54,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
     focusTarget: null,
     picoFirmware: { message: null, error: null },
     wakeOnLan: { connectionKey: 'connected', controllerConnected: false, firmwareUpdateRequired: false },
+    appVersion: '2.0.1',
     bridgeHealth: { firmwareVersion: '2.0.0', resetEvidence: null },
     ...overrides
   };
@@ -59,7 +63,8 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
 function createActions(): SettingsPageActions & Record<string, ReturnType<typeof vi.fn>> {
   const names = [
     'setTheme', 'setUiScale', 'setTextScale', 'setLocale', 'toggleLaunchAtStartup', 'toggleBatteryTrayIcon',
-    'toggleControllerNotifications', 'toggleLowBatteryNotifications', 'setIdleDisconnectTimeout',
+    'toggleCloseButtonQuits', 'toggleControllerNotifications', 'toggleLowBatteryNotifications',
+    'togglePersonaNotifications', 'toggleMicMuteNotifications', 'setIdleDisconnectTimeout',
     'toggleIdleDisconnect', 'toggleUsbSuspendDisconnect', 'toggleControllerPowerSaving', 'toggleLed', 'togglePlayerLed',
     'toggleLightbarRestore', 'toggleEdgeProfileSwitching', 'toggleSleepShortcut', 'toggleVolumeShortcut',
     'toggleWakeOnConnect', 'mountPicoBootloader', 'flashPicoFirmware', 'nukePicoFlash', 'openExternal'
@@ -143,8 +148,11 @@ describe('Settings page', () => {
     const expectations: Array<[section: string, label: string, action: string]> = [
       ['General', 'Launch at Startup', 'toggleLaunchAtStartup'],
       ['General', 'Battery Tray Icon', 'toggleBatteryTrayIcon'],
+      ['General', 'Quit on Close', 'toggleCloseButtonQuits'],
       ['Notifications', 'Controller Status', 'toggleControllerNotifications'],
       ['Notifications', 'Low Battery', 'toggleLowBatteryNotifications'],
+      ['Notifications', 'Host Controller Switch', 'togglePersonaNotifications'],
+      ['Notifications', 'Mic Mute', 'toggleMicMuteNotifications'],
       ['Connection & Power', 'PC Sleep Disconnect', 'toggleUsbSuspendDisconnect'],
       ['Connection & Power', 'Controller Power Saving', 'toggleControllerPowerSaving'],
       ['Lights & Indicators', 'Bridge LED', 'toggleLed'],
@@ -170,7 +178,7 @@ describe('Settings page', () => {
 
     act(() => sectionButton(host, 'Notifications').click());
     expect([...host.querySelectorAll('.settings-page .settings-menu-row strong')].map((element) => element.textContent))
-      .toEqual(['Controller Status', 'Low Battery']);
+      .toEqual(['Controller Status', 'Low Battery', 'Host Controller Switch', 'Mic Mute']);
 
     act(() => sectionButton(host, 'Appearance').click());
     expect([...host.querySelectorAll('.settings-page [aria-label]')].map((element) => element.getAttribute('aria-label')))
@@ -223,6 +231,32 @@ describe('Settings page', () => {
     expect(links[0]?.textContent).toContain('Official DS5 Bridge Discord');
     links.forEach((link) => act(() => link.click()));
     expect(vi.mocked(actions.openExternal).mock.calls).toEqual([[DS5_BRIDGE_DISCORD_URL], [DS5_BRIDGE_GITHUB_URL]]);
+  });
+
+  it('shows the app and firmware versions in Help & About', () => {
+    const host = render(<Harness model={baseModel()} actions={createActions()} />);
+    act(() => sectionButton(host, 'Help & About').click());
+    const version = [...host.querySelectorAll('.settings-page .settings-menu-row')]
+      .find((row) => row.querySelector('strong')?.textContent === 'Version');
+    expect(version?.querySelector('span')?.textContent).toBe('App v2.0.1 · Firmware v2.0.0');
+
+    act(() => root?.unmount());
+    root = null;
+    const noBridge = render(<Harness
+      model={baseModel({ bridgeHealth: { firmwareVersion: null, resetEvidence: null } })}
+      actions={createActions()}
+    />);
+    act(() => sectionButton(noBridge, 'Help & About').click());
+    expect(noBridge.textContent).toContain('App v2.0.1 · Firmware not connected');
+
+    act(() => root?.unmount());
+    root = null;
+    const oldFirmware = render(<Harness
+      model={baseModel({ bridgeHealth: { firmwareVersion: null, firmwareUpdateRequired: true, resetEvidence: null } })}
+      actions={createActions()}
+    />);
+    act(() => sectionButton(oldFirmware, 'Help & About').click());
+    expect(oldFirmware.textContent).toContain('App v2.0.1 · Firmware update required');
   });
 
   it('keeps a Kitsune Input card above the links in Help & About', () => {
