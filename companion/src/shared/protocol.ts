@@ -789,11 +789,12 @@ export const RESET_EVIDENCE_PHASES = [
   'boot', 'cyw43', 'tinyusb', 'interrupt-before-audio', 'usb-power', 'audio', 'button',
   'lightbar', 'rssi', 'inquiry', 'connection-recovery', 'feature-prefetch', 'output-retry',
   'companion', 'interrupt-after-companion', 'firmware-log-flush', 'cyw43-second',
-  'interrupt-after-cyw43', 'wake-on-lan'
+  'interrupt-after-cyw43', 'wake-on-lan', 'wifi-start', 'wifi-join', 'wifi-send', 'wifi-stop',
+  'wake-on-lan-storage'
 ] as const;
 export const RESET_EVIDENCE_REASONS = [
   'watchdog-timeout', 'panic', 'out-of-memory', 'codec-fatal', 'audio-stack-overflow',
-  'container-contract', 'cyw43-rx-overflow'
+  'container-contract', 'cyw43-rx-overflow', 'wifi-teardown'
 ] as const;
 
 /** Why the bridge last reset, as the firmware captured it at boot. */

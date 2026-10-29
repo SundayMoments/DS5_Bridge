@@ -46,6 +46,18 @@ bool decode_radio_marker(const uint32_t *words, uint8_t &packets) {
         || (words[1]&0x00ffff00u) || (words[1]&0xffu)>3 || words[2]!=marker_check(words[0],words[1])) return false;
     packets=uint8_t(words[1]&0xffu); return true;
 }
+uint32_t pack_teardown_evidence(const TeardownEvidence &e) {
+    const uint32_t stop=e.stop_ms/250>15 ? 15:e.stop_ms/250;
+    return (uint32_t(e.check)&0xfu) | (uint32_t(e.radio)&0xfu)<<4 | (uint32_t(e.pending)&0x3fu)<<8
+        | uint32_t(e.packets>3 ? 3:e.packets)<<14 | (uint32_t(e.progress)&0x1fu)<<16
+        | (uint32_t(e.down)&0x7u)<<21 | (uint32_t(e.up)&0x3u)<<24
+        | uint32_t(e.down_retried)<<26 | uint32_t(e.slow_mask)<<27 | stop<<28;
+}
+uint32_t pack_radio_trace(const RadioTrace &t) {
+    const uint32_t elapsed=t.elapsed_ms>0xffffu ? 0xffffu:t.elapsed_ms;
+    return (uint32_t(t.step)&0xfu) | uint32_t(t.questions>15 ? 15:t.questions)<<4 | elapsed<<8
+        | (uint32_t(t.down)&0xfu)<<24 | (uint32_t(t.up)&0x3u)<<28 | uint32_t(t.packets>3 ? 3:t.packets)<<30;
+}
 bool valid_mac(const uint8_t *mac) {
     if (!mac || (mac[0]&1)) return false;
     uint8_t any=0; for (size_t i=0;i<6;++i) any|=mac[i];

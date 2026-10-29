@@ -768,6 +768,27 @@ describe('Wake-on-LAN Settings rendered behavior', () => {
     expect(button('Test and save').disabled).toBe(false);
   });
 
+  it('never shows a resting bridge state as progress beside Cancel', async () => {
+    api = fakeApi();
+    const pending = deferred<WakeOnLanMetadata>();
+    vi.mocked(api.configureWakeOnLan).mockReturnValue(pending.promise);
+    await render();
+    fillNetwork();
+    await act(async () => button('Test and save').click());
+    // During a test a resting state still reads as the test, which Cancel stops.
+    vi.mocked(api.getWakeOnLan).mockResolvedValue(metadata({ configured: true, enabled: true, busy: true,
+      stage: 'waiting-for-sleep' }));
+    await act(async () => poll?.());
+    expect(container.textContent).not.toContain('Waiting for PC sleep or shutdown');
+    expect(container.textContent).toContain('Testing network settings');
+    expect(button('Cancel').disabled).toBe(false);
+    // The cleanup after the operation has nothing to cancel while the bridge rests.
+    await act(async () => pending.resolve(metadata({ configured: true, credentialPresent: true, enabled: true,
+      busy: true, stage: 'waiting-for-sleep' })));
+    expect(container.querySelector('.wake-on-lan-progress')).toBeNull();
+    expect([...container.querySelectorAll('button')].some((element) => element.textContent === 'Cancel')).toBe(false);
+  });
+
   it('shows a passive note and blocks enabling when the saved adapter is not on this PC', async () => {
     api = fakeApi();
     const foreign = metadata({ configured: true, credentialPresent: true, ssid: 'Home', country: 'US',

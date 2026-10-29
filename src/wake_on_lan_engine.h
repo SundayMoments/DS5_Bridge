@@ -10,6 +10,11 @@ public:
     // post-packet host-start phase.
     static constexpr uint64_t kHostReturnMs = 45000;
     static constexpr uint64_t kHostStartingCapMs = 300000;
+    // Teardown that has not verified WLAN stopped by then is a RadioFault. The
+    // radio keeps asking GET_UP until 5 s after its stop began; a question
+    // started just before then can take about 3 s, and a "down" answer is
+    // followed by a 250 ms drain and one more GET_UP.
+    static constexpr uint64_t kTeardownDeadlineMs = 12000;
     explicit WakeOnLan(WakeOnLanPorts ports) : ports_(ports) {}
     // radio_marker holds kRadioMarkerWords words read back after a
     // reset; a valid marker reports the interrupted attempt and is cleared.

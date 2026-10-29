@@ -124,6 +124,10 @@ void watchdog_telemetry_note_phase(WatchdogMainLoopPhase phase) {
     watchdog_hw->scratch[0] = commit_marker();
 }
 
+WatchdogMainLoopPhase watchdog_telemetry_current_phase() {
+    return static_cast<WatchdogMainLoopPhase>(current_phase);
+}
+
 void watchdog_telemetry_heartbeat(uint32_t now_us) {
     if (static_cast<uint32_t>(now_us - last_heartbeat_us) < kHeartbeatIntervalUs) {
         return;
@@ -140,6 +144,14 @@ void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason, uint32_t
     record.reason = reason;
     record.detail = detail;
     record.uptime_ms = static_cast<uint32_t>(time_us_64() / 1000u);
+    commit_record();
+}
+
+void watchdog_telemetry_note_detail(uint32_t detail) {
+    if (record.reason != WatchdogResetReason::None || record.detail == detail) {
+        return;
+    }
+    record.detail = detail;
     commit_record();
 }
 
@@ -205,6 +217,16 @@ const char *watchdog_telemetry_phase_name(uint8_t phase) {
             return "interrupt-after-cyw43";
         case WatchdogMainLoopPhase::WakeOnLan:
             return "wake-on-lan";
+        case WatchdogMainLoopPhase::WifiStart:
+            return "wifi-start";
+        case WatchdogMainLoopPhase::WifiJoin:
+            return "wifi-join";
+        case WatchdogMainLoopPhase::WifiSend:
+            return "wifi-send";
+        case WatchdogMainLoopPhase::WifiStop:
+            return "wifi-stop";
+        case WatchdogMainLoopPhase::WakeOnLanStorage:
+            return "wake-on-lan-storage";
         default:
             return "unknown";
     }
@@ -226,6 +248,8 @@ const char *watchdog_telemetry_reason_name(uint8_t reason) {
             return "container-contract";
         case WatchdogResetReason::Cyw43RxOverflow:
             return "cyw43-rx-overflow";
+        case WatchdogResetReason::WifiTeardown:
+            return "wifi-teardown";
         default:
             return "unknown";
     }

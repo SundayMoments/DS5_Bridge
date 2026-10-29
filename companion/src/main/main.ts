@@ -475,10 +475,11 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
     }
   });
 
+  // Clipboard writes back the Copy buttons (Last Restart); reads stay denied.
   window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(
       webContents === window.webContents
-      && (permission === 'media' || permission === 'speaker-selection')
+      && (permission === 'media' || permission === 'speaker-selection' || permission === 'clipboard-sanitized-write')
     );
   });
   window.webContents.setWindowOpenHandler(({ url }) => {

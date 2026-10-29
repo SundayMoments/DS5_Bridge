@@ -651,6 +651,46 @@ void assert_persona_switch_quiets_input_only(std::filesystem::path const &root) 
     }
 }
 
+// A bus already idle stays idle across a main-loop stall (Wi-Fi start during a
+// wake from S5): otherwise the first stale sample reads as the host returning
+// and the engine cancels the wake attempt before any packet is sent.
+void assert_idle_bus_survives_main_loop_stall(std::filesystem::path const &root) {
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+    const std::string idle = extract_between(usb_cpp, "static bool usb_bus_idle(uint32_t now) {", "\n}\n");
+    const auto hold = idle.find("if (stale && usb_sof_sampled && usb_sof_idle && frame == usb_sof_frame_seen) {");
+    const auto restart = idle.find("if (!usb_sof_sampled || stale || frame != usb_sof_frame_seen) {");
+    if (
+        hold == std::string::npos
+        || restart == std::string::npos
+        || hold > restart
+        || idle.find("usb_sof_idle = false;\n        return false;") == std::string::npos
+        || idle.find("usb_sof_idle = static_cast<uint32_t>(now - usb_sof_changed_at_us) >= USB_BUS_IDLE_US;") == std::string::npos
+    ) {
+        throw std::runtime_error("An idle USB bus must stay idle across a main-loop stall while its frame number is unchanged");
+    }
+}
+
+// The bridge's own USB re-attach (controller on or off) keeps the host session
+// it interrupted, so Wake-on-LAN's 45 s host-return count is not restarted and
+// the bridge re-arms after a wake. A BIOS session stays a BIOS session.
+void assert_bridge_reattach_keeps_host_session(std::filesystem::path const &root) {
+    const auto usb_cpp = read_text(root / "src" / "usb.cpp");
+    const std::string active = extract_between(usb_cpp, "bool usb_wake_host_active() {", "\n}\n");
+    const std::string firmware = extract_between(usb_cpp, "bool usb_wake_host_firmware() {", "\n}\n");
+    const std::string reattaching = extract_between(usb_cpp, "static bool usb_bridge_reattaching(uint32_t now) {", "\n}\n");
+    if (
+        reattaching.find("usb_reconnect_requested || usb_reconnect_connect_pending || reconnect_grace_active(now)")
+            == std::string::npos
+        || active.find("if (!usb_bridge_reattaching(time_us_32())) {") == std::string::npos
+        || active.find("usb_session_held_active = active;") == std::string::npos
+        || active.find("usb_session_held_firmware = active && usb_session_firmware;") == std::string::npos
+        || active.find("return active || usb_session_held_active;") == std::string::npos
+        || firmware.find("return usb_bridge_reattaching(time_us_32()) && usb_session_held_firmware;") == std::string::npos
+    ) {
+        throw std::runtime_error("A bridge-initiated USB re-attach must keep the host session it interrupted");
+    }
+}
+
 void assert_usb_suspend_poweroff_is_debounced(std::filesystem::path const &root) {
     const auto bt_cpp = read_text(root / "src" / "bt.cpp");
     const auto usb_cpp = read_text(root / "src" / "usb.cpp");
@@ -2525,6 +2565,8 @@ int main() {
         assert_ds4_persona_identity_is_ds4_facing(source);
         assert_persona_switch_quiets_input_only(source_root);
         assert_usb_suspend_poweroff_is_debounced(source_root);
+        assert_idle_bus_survives_main_loop_stall(source_root);
+        assert_bridge_reattach_keeps_host_session(source_root);
         assert_bridge_only_wake_receiver_is_persistent_and_persona_safe(source_root);
         assert_mute_keyboard_chord_starter_is_deferred(source_root);
         assert_mute_keyboard_shortcut_is_typed_in_stages(source_root);

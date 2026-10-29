@@ -23,6 +23,13 @@ enum class WatchdogMainLoopPhase : uint8_t {
     Cyw43Second = 16,
     InterruptAfterCyw43 = 17,
     WakeOnLan = 18,
+    // Wake-on-LAN radio steps (wake_on_lan.cpp). Each lasts one synchronous
+    // CYW43 operation, then the enclosing phase is restored.
+    WifiStart = 19,
+    WifiJoin = 20,
+    WifiSend = 21,
+    WifiStop = 22,
+    WakeOnLanStorage = 23,
 };
 
 // Why the firmware reset itself. A watchdog timeout with no recorded reason
@@ -37,6 +44,10 @@ enum class WatchdogResetReason : uint8_t {
     // The CYW43 Bluetooth receive ring reported fewer unread bytes than the
     // host had already accounted for; detail holds the two counts.
     Cyw43RxOverflow = 6,
+    // Wake-on-LAN could not verify that Wi-Fi stopped and reset the bridge
+    // rather than resume gameplay; detail packs the failed teardown check
+    // (wake_on_lan::pack_teardown_evidence).
+    WifiTeardown = 7,
 };
 
 struct WatchdogTelemetrySnapshot {
@@ -56,12 +67,17 @@ struct WatchdogTelemetrySnapshot {
 void watchdog_telemetry_boot_capture();
 // One register write; cheap enough to bracket every main-loop phase.
 void watchdog_telemetry_note_phase(WatchdogMainLoopPhase phase);
+// The phase last noted, so a nested step can restore it.
+WatchdogMainLoopPhase watchdog_telemetry_current_phase();
 // Refreshes the retained uptime at most once per second.
 void watchdog_telemetry_heartbeat(uint32_t now_us);
 // Called only from fail-fast paths, immediately before the reset. The first
 // recorded reason wins, so a specific cause is not replaced by the generic
 // panic that follows it.
 void watchdog_telemetry_record_reset_reason(WatchdogResetReason reason, uint32_t detail = 0);
+// Breadcrumb for a step that can block: a watchdog timeout before the next
+// call reports it as detail. Zero clears it. A recorded reason keeps its own.
+void watchdog_telemetry_note_detail(uint32_t detail);
 // Fatal CYW43 receive guard only (generated SDK transport, C linkage).
 extern "C" void ds5_record_cyw43_rx_overflow(
     uint32_t previous_available,

@@ -212,6 +212,15 @@ function(ds5_generate_cyw43_payload ll_source spi_source driver_source output_di
     if(ENABLE_COMPANION)
         ds5_patch_cyw43_ioctl(ll)
     endif()
+    # The SDK's poll-mode wait between ioctl and send-credit polls sleeps until
+    # min(async_context next_time, now + 1 ms). next_time is only refreshed by
+    # cyw43_arch_poll(), which cannot run while an ioctl blocks the main loop, so
+    # it goes stale; best_effort_wfe_or_timeout() then WFEs on that past time
+    # without arming an alarm, and only an unrelated interrupt wakes core 0. With
+    # the PC off (Wake-on-LAN from S5) none came and the watchdog reset the
+    # bridge. Spin instead; both loops re-check their own 1 s timeouts.
+    ds5_cyw43_read_fragment(cyw43_bounded_wait.inc bounded_wait)
+    ds5_cyw43_replace_once(ll "#define USE_KSO (1)" "${bounded_wait}\n#define USE_KSO (1)" "ioctl wait")
     # Keep SRAM relocation boundaries stable instead of duplicating helpers.
     foreach(signature "void cyw43_set_backplane_window" "void cyw43_write_backplane" "uint32_t cyw43_read_backplane")
         ds5_cyw43_replace_once(ll

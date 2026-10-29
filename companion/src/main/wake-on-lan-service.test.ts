@@ -6,6 +6,7 @@ import {
   WAKE_ON_LAN_CONNECTION_LOST_MESSAGE,
   WAKE_ON_LAN_DISCOVERY_FAILED_MESSAGE,
   WakeOnLanService,
+  operationStage,
   wakeOnLanAckError,
   type WakeOnLanBridgeSession
 } from './wake-on-lan-service';
@@ -159,6 +160,20 @@ function harness() {
     setSession: (next: WakeOnLanBridgeSession | null) => { session = next; }
   };
 }
+
+describe('operationStage', () => {
+  it('shows a test’s radio steps, never the bridge resting, while an operation runs', () => {
+    for (const step of ['joining', 'sending', 'stopping-wifi', 'failed'] as const) {
+      expect(operationStage('validating', step)).toBe(step);
+    }
+    for (const resting of ['waiting-for-sleep', 'disabled', 'not-configured', 'canceled'] as const) {
+      expect(operationStage('validating', resting)).toBe('validating');
+      expect(operationStage('saving', resting)).toBe('saving');
+    }
+    expect(operationStage('canceling', 'stopping-wifi')).toBe('canceling');
+    expect(operationStage(null, 'waiting-for-sleep')).toBe('waiting-for-sleep');
+  });
+});
 
 describe('WakeOnLanService', () => {
   it('uploads, tests and saves a network, then reports it without the password', async () => {

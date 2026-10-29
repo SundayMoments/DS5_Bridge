@@ -288,7 +288,9 @@ void cancellation_failure_test() {
       h.tick(h.now+10); CHECK(h.stage()==Stage::Complete && h.radio.starts==0); }
     { Harness h; h.arm(); h.engine.controller_connected(1,true,true); h.tick(h.now+1,false,true);
       h.tick(h.now+1000,false,true); h.tick(h.now+8000,false,true); CHECK(h.stage()==Stage::Teardown);
-      h.tick(h.now+2000,false,true); CHECK(h.engine.recovery_required() && h.engine.quiet_gate()); }
+      h.tick(h.now+WakeOnLan::kTeardownDeadlineMs-1,false,true);
+      CHECK(h.stage()==Stage::Teardown && !h.engine.recovery_required() && h.engine.quiet_gate());
+      h.tick(h.now+1,false,true); CHECK(h.engine.recovery_required() && h.engine.quiet_gate()); }
     { Harness h({}); h.upload(config()); CHECK(h.id_command(3,55)==AckOk); h.tick(h.now+1);
       h.radio.error=Error::Authentication; h.radio.state=RadioState::Fault; h.tick(h.now+1);
       CHECK(h.stage()==Stage::Teardown); h.radio.state=RadioState::Idle; h.tick(h.now+250);
@@ -665,7 +667,7 @@ void radio_marker_test() {
     { Harness h; h.self_arm(); h.engine.controller_connected(1,true,true); h.tick(h.now+1,false,true);
       h.tick(h.now+1000,false,true); h.radio.state=RadioState::Ready; h.tick(h.now+1,false,true);
       h.radio.send_ok=false; h.tick(h.now+100,false,true); CHECK(h.stage()==Stage::Teardown);
-      h.tick(h.now+2000,false,true); CHECK(h.engine.recovery_required());
+      h.tick(h.now+WakeOnLan::kTeardownDeadlineMs,false,true); CHECK(h.engine.recovery_required());
       CHECK(decode_radio_marker(h.radio.marker.data(),packets) && packets==1); after_fault=h.radio.marker; }
     { Harness rebooted(record(),true,after_fault.data());
       auto s=rebooted.status(); CHECK(s[9]==uint8_t(Stage::Failed) && s[10]==uint8_t(Error::RadioTeardown) && s[11]==1 && !(s[8]&8));
@@ -685,6 +687,29 @@ void radio_marker_test() {
       CHECK(s[9]==uint8_t(Stage::Failed) && s[10]==uint8_t(Error::Persistence) && r.marker_clear() && r.marker_writes==1); }
     // Without a valid marker nothing is written at boot.
     { Radio r; WakeOnLan e{r.ports()}; e.initialize(record(),true,zero); CHECK(r.marker_writes==0); }
+}
+void teardown_evidence_test() {
+    // Nothing recorded yet: only "DOWN not issued" is set.
+    CHECK(pack_teardown_evidence({})==0x00800000u);
+    // Each field lands in its own bits, so Copy's detail word reads back by hand.
+    TeardownEvidence e; e.check=TeardownCheck::StillUp; e.radio=RadioState::Fault; e.pending=0x21;
+    e.packets=2; e.progress=kStartStationUp|kStartUpConfirmed|kStartRegionMatched|kStartJoinIssued|kStartLinkUp;
+    e.down=DownResult::TimedOut; e.up=UpReadback::Failed; e.down_retried=true; e.slow_mask=true; e.stop_ms=1300;
+    CHECK(pack_teardown_evidence(e)==0x5f5fa144u);
+    // Out-of-range values saturate or are masked instead of spilling into a neighbour.
+    TeardownEvidence wide; wide.packets=200; wide.pending=0xff; wide.progress=0xff; wide.stop_ms=60000;
+    CHECK(pack_teardown_evidence(wide)==0xf09fff00u);
+    CHECK(pack_teardown_evidence({TeardownCheck::WorkAfterIdle,RadioState::Stopping})==0x00800037u);
+}
+void radio_trace_test() {
+    // Nothing recorded yet: only "DOWN not issued" is set.
+    CHECK(pack_radio_trace({})==0x04000000u);
+    RadioTrace t; t.step=RadioStep::AskUp; t.questions=3; t.elapsed_ms=2345;
+    t.down=DownResult::TimedOut; t.up=UpReadback::Failed; t.packets=3;
+    CHECK(pack_radio_trace(t)==0xf2092936u);
+    // Out-of-range values saturate instead of spilling into a neighbour.
+    RadioTrace wide; wide.step=RadioStep::FinalCheck; wide.questions=200; wide.elapsed_ms=1000000; wide.packets=9;
+    CHECK(pack_radio_trace(wide)==0xc4fffff8u);
 }
 void join_retry_test() {
     JoinRetry r; r.start(1000);
@@ -877,7 +902,7 @@ int main() {
     forget_idempotence_test(); staging_rejection_test(); prepared_wake_test(); cancellation_failure_test();
     controller_loss_test(); standalone_arming_test(); usb_wake_ownership_test(); host_return_evidence_test();
     prepared_host_return_test(); stale_candidate_test(); retained_outcome_test(); radio_marker_test();
-    join_retry_test(); join_deadline_test(); long_uptime_test(); storage_power_loss_test(); store_cleanup_failure_test();
+    teardown_evidence_test(); radio_trace_test(); join_retry_test(); join_deadline_test(); long_uptime_test(); storage_power_loss_test(); store_cleanup_failure_test();
     radio_scan_quiescence_test();
     std::puts("Wake-on-LAN packet, transaction, authorization, bridge arming, host-return evidence, USB wake ownership, radio marker, join retry and atomic storage tests passed");
 }

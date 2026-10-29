@@ -115,10 +115,14 @@ export function WakeOnLanSettings(props: WakeOnLanSettingsProps) {
     : controllerActive ? 'Controller connected'
     : !metadata.configured && !busy ? 'Setup required' : null;
   // Operation progress and results belong with the action that produced them.
+  // A resting bridge state is never progress: during a test it still reads as
+  // the test (the bridge may not have reported the new step yet); during the
+  // cleanup that follows an operation there is no step left to cancel.
+  const progressStage = showStage ? stage : settings.testing ? 'validating' : null;
   const feedback = <>
-    {settings.showProgress ? <div className="wake-on-lan-operation">
+    {settings.showProgress && (!stage || progressStage) ? <div className="wake-on-lan-operation">
       <p className="wake-on-lan-progress" role="status" aria-live="polite">
-        {stage ? WAKE_ON_LAN_STAGE_LABELS[stage] : 'Loading'}
+        {progressStage ? WAKE_ON_LAN_STAGE_LABELS[progressStage] : 'Loading'}
       </p>
       <button type="button" className="heading-action" disabled={settings.canceling}
         onClick={() => void settings.cancel()}>Cancel</button>

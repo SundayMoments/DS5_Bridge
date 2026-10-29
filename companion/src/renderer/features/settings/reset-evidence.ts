@@ -11,6 +11,7 @@ export const RESET_REASON_LABELS: Record<string, string> = {
   'audio-stack-overflow': 'stack overflow',
   'container-contract': 'safety check failure',
   'cyw43-rx-overflow': 'radio receive overflow',
+  'wifi-teardown': 'Wi-Fi shutdown failure',
   unknown: 'firmware fault'
 };
 
@@ -34,6 +35,11 @@ export const RESET_PHASE_LABELS: Record<string, string> = {
   'cyw43-second': 'the radio driver',
   'interrupt-after-cyw43': 'interrupt handling',
   'wake-on-lan': 'Wake-on-LAN',
+  'wifi-start': 'Wi-Fi startup',
+  'wifi-join': 'Wi-Fi joining',
+  'wifi-send': 'the wake packet send',
+  'wifi-stop': 'Wi-Fi shutdown',
+  'wake-on-lan-storage': 'Wake-on-LAN storage',
   unknown: 'an unknown step'
 };
 

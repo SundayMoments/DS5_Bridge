@@ -357,6 +357,8 @@ export function useWakeOnLanSettings(options: WakeOnLanSettingsOptions) {
     refreshingTargets, refreshTargets,
     recovering: needsRefresh && (recoveryAttempts < 5 || loading),
     showProgress: busy && operation.current?.kind !== 'saved',
+    // A network test is running (not just the radio cleanup that follows one).
+    testing: busy && operation.current?.kind === 'test',
     setDraft: (value: WakeOnLanDraft) => { setValidation(null); setDraft(value); }, testAndSave, cancel, refresh,
     toggleEnabled: () => run('saved', () => api.setWakeOnLanEnabled(!metadata?.enabled), () => null, false,
       !metadata?.enabled && retiredRegion(metadata)),

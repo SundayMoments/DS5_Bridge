@@ -28,6 +28,7 @@
 #include "persona/dualsense_persona.h"
 #include "persona/host_persona.h"
 #include "persona/xusb360_usb.h"
+#include "runtime_fail_fast.h"
 #include "watchdog_telemetry.h"
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
@@ -881,12 +882,10 @@ static void service_wake_on_lan() {
     }
     // A failed WLAN teardown must never resume gameplay with an active radio.
     // Reboot clears the RAM-only wake arm; it cannot repeat the same attempt.
+    // The reset keeps which teardown check failed for Settings > Last Restart.
     if (wake_on_lan_recovery_required()) {
-        watchdog_reboot(0, 0, 10);
-        // Returning would let the normal watchdog feed postpone recovery forever.
-        while (true) {
-            tight_loop_contents();
-        }
+        watchdog_telemetry_record_reset_reason(WatchdogResetReason::WifiTeardown, wake_on_lan_fault_detail());
+        runtime_fail_fast(WatchdogResetReason::WifiTeardown);
     }
 }
 

@@ -70,23 +70,56 @@ ds5_wol_order("${ctrl}" "WLAN event gate"
     "void cyw43_cb_process_async_event(void *cb_data, const cyw43_async_event_t *ev) {"
     "// WLAN events only, Bluetooth HCI has a separate packet channel.")
 
-# Teardown disassociates after masking WLAN events and before DOWN, and keeps
-# the DOWN readback and drain proof.
+# The ioctl and send-credit waits spin instead of sleeping on the poll-mode
+# async_context's next_time, which goes stale while an ioctl blocks the loop.
+ds5_wol_order("${ll}" "Bounded ioctl waits"
+    "#define CYW43_SDPCM_SEND_COMMON_WAIT busy_wait_us_32(100)"
+    "#define CYW43_DO_IOCTL_WAIT busy_wait_us_32(100)"
+    "            CYW43_SDPCM_SEND_COMMON_WAIT"
+    "        CYW43_DO_IOCTL_WAIT")
+string(FIND "${ll}" "cyw43_await_background_or_timeout_us" sleeping_wait)
+if(NOT sleeping_wait EQUAL -1)
+    message(FATAL_ERROR "Generated CYW43 driver still waits with cyw43_await_background_or_timeout_us")
+endif()
+
+# Teardown masks WLAN events and goes straight to DOWN, never disassociating
+# first, then returns. GET_UP reading down is the proof that decides the
+# result: it is asked from the main loop, one question per pass, and only a
+# "down" answer starts the drain and its final check.
 file(READ "${SOURCE_DIR}/wake_on_lan.cpp" adapter)
 string(FIND "${adapter}" "void stop(void *) {" stop_start)
-string(FIND "${adapter}" "Error start(const Config &config,void *) {" stop_end)
+string(FIND "${adapter}" "void verify_down() {" stop_end)
 if(stop_start LESS 0 OR stop_end LESS stop_start)
     message(FATAL_ERROR "Radio adapter teardown boundary changed")
 endif()
 math(EXPR stop_length "${stop_end} - ${stop_start}")
 string(SUBSTRING "${adapter}" ${stop_start} ${stop_length} stop)
 ds5_wol_order("${stop}" "Teardown order"
+    "if (radio==RadioState::Stopping || (radio==RadioState::Fault && radio_error==Error::RadioTeardown)) return"
+    "WatchdogWindow window(WatchdogMainLoopPhase::WifiStop,kTeardownWatchdogMs)"
     "clear_join_work()"
     "const bool masked=disable_wifi_events()"
-    "(void)cyw43_wifi_leave(&cyw43_state,CYW43_ITF_STA)"
     "\n    cyw43_arch_disable_sta_mode()"
-    "kSetDown"
-    "!get_up(0)")
+    "teardown.down=set_down()")
+ds5_wol_order("${adapter}" "Teardown verification"
+    "void verify_down() {"
+    "teardown.up=read_up()"
+    "if (teardown.up==UpReadback::Down) {"
+    "down_confirmed=true"
+    "if (!down_confirmed) {"
+    "if (now-asked_at>=kVerifyGapMs) verify_down()"
+    "if (now-stopped_at>=250) {")
+ds5_wol_order("${adapter}" "DOWN and GET_UP commands"
+    "DownResult set_down() {"
+    "const int result=cyw43_ioctl(&cyw43_state,kSetDown,"
+    "UpReadback read_up() {"
+    "if (cyw43_ioctl(&cyw43_state,kGetUp,sizeof(value),value,CYW43_ITF_STA)!=0) return UpReadback::Failed")
+foreach(forbidden "cyw43_wifi_leave(" "CYW43_IOCTL_SET_DISASSOC" "read_up()" "sleep_ms(" "while (")
+    string(FIND "${stop}" "${forbidden}" position)
+    if(NOT position EQUAL -1)
+        message(FATAL_ERROR "stop() must not disassociate, wait or ask GET_UP itself: ${forbidden}")
+    endif()
+endforeach()
 
 # A missed scan is re-issued through the shared join helper, only from the
 # Joining state, and FAIL/BADAUTH still fault.

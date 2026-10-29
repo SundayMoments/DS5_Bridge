@@ -1,12 +1,14 @@
 #include "wake_on_lan.h"
 #include <cstring>
 #include "pico.h"
+#include "utils.h"
 
 // Ported from Kitsune Input's Wake-on-LAN radio adapter.
 
 #ifdef ENABLE_COMPANION
 #include "wake_on_lan_engine.h"
 #include "wake_on_lan_store.h"
+#include "watchdog_telemetry.h"
 #include "pico/cyw43_arch.h"
 extern "C" {
 #include "cyw43_ll.h"
@@ -46,7 +48,26 @@ volatile bool &cached_quiet=wake_on_lan_quiet_cached;
 // staging) for the whole attempt; stop() drops this reference first.
 const Config *join_config=nullptr;
 JoinRetry join_retry;
+// What the last attempt reached and which teardown check failed, for the
+// reset evidence a RadioFault recovery leaves (wake_on_lan_fault_detail()).
+TeardownEvidence teardown;
+// Teardown verification: stop() sends DOWN, then poll_radio() asks GET_UP
+// once per main-loop pass until it reads down.
+uint64_t stop_began=0, asked_at=0;
+bool down_confirmed=false;
+uint8_t questions=0;
+// Start of the current attempt or teardown, for the watchdog breadcrumb.
+uint64_t step_epoch=0;
 uint64_t now_ms() { return to_us_since_boot(get_absolute_time())/1000; }
+// Watchdog breadcrumb for the blocking CYW43 call that follows: a freeze
+// inside it reports the step, the time since step_epoch and what teardown has
+// seen so far (Settings > Last Restart, Copy). WatchdogWindow clears it.
+void note_step(RadioStep step) {
+    RadioTrace trace; trace.step=step; trace.questions=questions;
+    trace.elapsed_ms=uint32_t(now_ms()-step_epoch); trace.down=teardown.down; trace.up=teardown.up;
+    trace.packets=teardown.packets;
+    watchdog_telemetry_note_detail(pack_radio_trace(trace));
+}
 // Firmware ABI command IDs defined by Broadcom's public fwil/wlioctl headers.
 // CYW43 encodes get/set in bit0; raw command number occupies the remaining bits.
 constexpr uint32_t kSetDown=(3u<<1)|1u, kGetUp=162u<<1;
@@ -54,9 +75,18 @@ constexpr uint32_t kSetDown=(3u<<1)|1u, kGetUp=162u<<1;
 // (checked against the pinned driver by cyw43_wol_patch_contract).
 constexpr uint32_t kJoinAuth=0x0200, kJoinLink=0x0400;
 // GET_UP readback is a firmware-state check, not RF/performance qualification.
+// Each window also names its step in the watchdog telemetry, so a reset inside
+// a synchronous CYW43 operation reports which one.
 struct WatchdogWindow {
-    WatchdogWindow() { watchdog_enable(5000,true); watchdog_update(); }
-    ~WatchdogWindow() { watchdog_enable(kRuntimeWatchdogTimeoutMs,true); watchdog_update(); }
+    explicit WatchdogWindow(WatchdogMainLoopPhase step,uint32_t timeout_ms=5000)
+        : enclosing(watchdog_telemetry_current_phase()) {
+        watchdog_telemetry_note_phase(step); watchdog_enable(timeout_ms,true); watchdog_update();
+    }
+    ~WatchdogWindow() {
+        watchdog_enable(kRuntimeWatchdogTimeoutMs,true); watchdog_update();
+        watchdog_telemetry_note_phase(enclosing); watchdog_telemetry_note_detail(0);
+    }
+    WatchdogMainLoopPhase enclosing;
 };
 bool region_available() {
     return reinterpret_cast<uintptr_t>(&__flash_binary_end)-XIP_BASE<=kOffset;
@@ -86,7 +116,7 @@ void __no_inline_not_in_flash_func(flash_mutate)(void *context) {
     else flash_range_program(m.offset,m.page,FLASH_PAGE_SIZE);
 }
 bool flash_apply(FlashMutation &m) {
-    WatchdogWindow window;
+    WatchdogWindow window(WatchdogMainLoopPhase::WakeOnLanStorage);
     const bool ok=flash_safe_execute(flash_mutate,&m,500)==PICO_OK;
     erase_secret(m.page,sizeof(m.page)); return ok;
 }
@@ -116,36 +146,91 @@ bool country_matches(const Config &config) {
         && value[0]==config[4] && value[1]==config[5]
         && value[8]==config[4] && value[9]==config[5];
 }
-bool pending_wifi() {
-    return cyw43_state.itf_state || cyw43_state.wifi_join_state || cyw43_state.wifi_scan_state
-        || cyw43_state.pend_rejoin || cyw43_state.pend_rejoin_wpa || cyw43_state.pend_disassoc;
+// WLAN work the driver still holds, as TeardownEvidence::pending bits.
+uint8_t pending_work() {
+    return (cyw43_state.itf_state ? 1:0) | (cyw43_state.wifi_join_state ? 2:0) | (cyw43_state.wifi_scan_state ? 4:0)
+        | (cyw43_state.pend_rejoin ? 8:0) | (cyw43_state.pend_rejoin_wpa ? 16:0) | (cyw43_state.pend_disassoc ? 32:0);
+}
+bool pending_wifi() { return pending_work()!=0; }
+void teardown_fault(TeardownCheck check) {
+    radio=RadioState::Fault; radio_error=Error::RadioTeardown;
+    teardown.check=check; teardown.pending=pending_work();
 }
 bool disable_wifi_events() {
     uint8_t request[41]{}; std::memcpy(request,"bsscfg:event_msgs",17);
     // Matches the pinned driver's 18-byte name field + 4-byte BSS index + mask.
     return cyw43_ioctl(&cyw43_state,CYW43_IOCTL_SET_VAR,sizeof(request),request,CYW43_ITF_STA)==0;
 }
+DownResult set_down() {
+    uint8_t value[4]={1,0,0,0};
+    const int result=cyw43_ioctl(&cyw43_state,kSetDown,sizeof(value),value,CYW43_ITF_STA);
+    return result==0 ? DownResult::Ok : result==-CYW43_EIO ? DownResult::Rejected
+        : result==-CYW43_ETIMEDOUT ? DownResult::TimedOut : DownResult::OtherError;
+}
+UpReadback read_up() {
+    uint8_t value[4]={0xa5,0xa5,0xa5,0xa5};
+    if (cyw43_ioctl(&cyw43_state,kGetUp,sizeof(value),value,CYW43_ITF_STA)!=0) return UpReadback::Failed;
+    return read_u32(value)==0 ? UpReadback::Down:UpReadback::Up;
+}
+// A CYW43 ioctl can wait up to 1 s for send credit and 1 s for its reply.
+// stop() blocks for two (mask and DOWN); verification asks GET_UP in later
+// main-loop passes, one question each, until kVerifyWindowMs after stop began.
+constexpr uint32_t kTeardownWatchdogMs=12000;
+constexpr uint64_t kVerifyWindowMs=5000;
+constexpr uint64_t kVerifyGapMs=100;
 void stop(void *) {
-    WatchdogWindow window;
+    // The engine calls stop() again when a cancel (an ABORT or a power-cancel)
+    // arrives during Teardown. A teardown already under way keeps verifying,
+    // and a teardown fault stays a fault. A join fault still needs teardown.
+    if (radio==RadioState::Stopping || (radio==RadioState::Fault && radio_error==Error::RadioTeardown)) return;
+    WatchdogWindow window(WatchdogMainLoopPhase::WifiStop,kTeardownWatchdogMs);
+    stop_began=step_epoch=now_ms(); questions=0; down_confirmed=false;
     ds5_cyw43_wlan_allowed=false; radio=RadioState::Stopping;
     join_config=nullptr; join_retry={};
     clear_join_work();
     // WLAN DOWN stops in-progress association/scans in firmware. Mask WLAN
     // events before draining old packets; Bluetooth HCI uses its own channel.
+    note_step(RadioStep::Mask);
     const bool masked=disable_wifi_events();
-    // clear_join_work() has zeroed the join state, so the SDK's
-    // cyw43_arch_disable_sta_mode() would skip its SET_DISASSOC. Disassociate
-    // explicitly; the result is advisory. DOWN, its readback and the drain
-    // check below remain the proof that WLAN stopped.
-    (void)cyw43_wifi_leave(&cyw43_state,CYW43_ITF_STA);
+    [[maybe_unused]] const uint64_t masked_at=now_ms();
+    teardown.slow_mask=masked_at-stop_began>=500;
+    // No SET_DISASSOC before DOWN. Kitsune Input added one on 2026-10-10
+    // without hardware validation; its hardware-verified teardown goes
+    // straight to DOWN.
     cyw43_arch_disable_sta_mode();
-    uint8_t value[4]={1,0,0,0};
-    const bool down=cyw43_ioctl(&cyw43_state,kSetDown,sizeof(value),value,CYW43_ITF_STA)==0;
+    note_step(RadioStep::Down);
+    teardown.down=set_down();
     clear_join_work(); cyw43_state.itf_state=0;
-    if (!masked || !down || !query_supported || !get_up(0)) {
-        radio=RadioState::Fault; radio_error=Error::RadioTeardown; return;
+    // poll_radio() asks GET_UP on the next pass.
+    asked_at=now_ms()-kVerifyGapMs; teardown.stop_ms=uint32_t(now_ms()-stop_began);
+    DS5_LOG("[WOL] stop: mask=%u (%lu ms) down=%u (%lu ms)\n",
+        masked ? 1u:0u, static_cast<unsigned long>(masked_at-stop_began),
+        static_cast<unsigned>(teardown.down), static_cast<unsigned long>(now_ms()-masked_at));
+    if (!masked) teardown_fault(TeardownCheck::EventMask);
+    else if (!query_supported) teardown_fault(TeardownCheck::UpQueryUnsupported);
+}
+// GET_UP reading down is the proof that WLAN stopped, not DOWN's own reply. On
+// a Waveshare RP2350B-Plus-W (RM2 module), DOWN's reply never arrives after a
+// successful join: the firmware finishes DOWN late and then answers GET_UP,
+// sometimes only after one more question has timed out. So keep asking, one
+// question per main-loop pass so Bluetooth and USB are serviced in between,
+// until kVerifyWindowMs after stop began. A firmware that answers "still up"
+// gets DOWN once more. The drain and its final check follow a "down" answer.
+void verify_down() {
+    WatchdogWindow window(WatchdogMainLoopPhase::WifiStop);
+    if (questions<UINT8_MAX) ++questions;
+    note_step(RadioStep::AskUp);
+    teardown.up=read_up(); asked_at=now_ms();
+    DS5_LOG("[WOL] GET_UP %u at +%lu ms: %u\n", static_cast<unsigned>(questions),
+        static_cast<unsigned long>(asked_at-stop_began), static_cast<unsigned>(teardown.up));
+    if (teardown.up==UpReadback::Down) {
+        down_confirmed=true; stopped_at=asked_at; teardown.stop_ms=uint32_t(asked_at-stop_began);
+    } else if (asked_at-stop_began>=kVerifyWindowMs) {
+        teardown.stop_ms=uint32_t(asked_at-stop_began);
+        teardown_fault(teardown.down!=DownResult::Ok ? TeardownCheck::Down : TeardownCheck::StillUp);
+    } else if (teardown.up==UpReadback::Up && !teardown.down_retried) {
+        teardown.down_retried=true; note_step(RadioStep::RetryDown); (void)set_down();
     }
-    stopped_at=to_us_since_boot(get_absolute_time())/1000;
 }
 int join(const Config &config) {
     // The generated join (cmake/patches/cyw43_wol_join.inc) resets the join
@@ -155,17 +240,28 @@ int join(const Config &config) {
 }
 Error start(const Config &config,void *) {
     if (radio!=RadioState::Idle || !valid_config(config)) return Error::Busy;
-    WatchdogWindow window;
+    WatchdogWindow window(WatchdogMainLoopPhase::WifiStart);
     touched_radio=true; ds5_cyw43_wlan_allowed=true; query_supported=false;
     radio=RadioState::Joining; radio_error=Error::None; clear_join_work();
-    join_config=nullptr; join_retry.start(now_ms());
+    join_config=nullptr; join_retry.start(now_ms()); teardown={}; questions=0;
+    step_epoch=now_ms(); note_step(RadioStep::Start);
     const uint32_t country=uint32_t(config[4]) | uint32_t(config[5])<<8;
     cyw43_wifi_set_up(&cyw43_state,CYW43_ITF_STA,true,country);
     // Reject unsupported GET_UP before using its DOWN response as evidence.
     query_supported=get_up(1);
-    if (!query_supported || !(cyw43_state.itf_state&1) || !country_matches(config)) return Error::NetworkUnavailable;
+    const bool station_up=cyw43_state.itf_state&1;
+    const bool region=query_supported && station_up && country_matches(config);
+    teardown.progress=(station_up ? kStartStationUp:0) | (query_supported ? kStartUpConfirmed:0)
+        | (region ? kStartRegionMatched:0);
+    if (!region) {
+        DS5_LOG("[WOL] start: progress=0x%02x, not joining\n", static_cast<unsigned>(teardown.progress));
+        return Error::NetworkUnavailable;
+    }
     join_config=&config;
-    return join(config)==0 ? Error::None:Error::NetworkUnavailable;
+    const int joined=join(config);
+    DS5_LOG("[WOL] start: progress=0x%02x join=%d\n", static_cast<unsigned>(teardown.progress), joined);
+    if (joined!=0) return Error::NetworkUnavailable;
+    teardown.progress|=kStartJoinIssued; return Error::None;
 }
 RadioState state(void *) { return radio; }
 Error last_error(void *) {
@@ -177,14 +273,17 @@ Error last_error(void *) {
 bool send(const uint8_t *target,void *) {
     if (radio!=RadioState::Ready || !ds5_cyw43_wlan_allowed) return false;
     uint8_t frame[kFrameSize]; magic_frame(cyw43_state.mac,target,frame);
-    WatchdogWindow window;
-    return cyw43_send_ethernet(&cyw43_state,CYW43_ITF_STA,sizeof(frame),frame,false)==0;
+    WatchdogWindow window(WatchdogMainLoopPhase::WifiSend);
+    note_step(RadioStep::Send);
+    const bool sent=cyw43_send_ethernet(&cyw43_state,CYW43_ITF_STA,sizeof(frame),frame,false)==0;
+    if (sent && teardown.packets<3) ++teardown.packets;
+    return sent;
 }
 // Watchdog SCRATCH0-3 hold watchdog telemetry (watchdog_telemetry.cpp), and
 // the SDK writes SCRATCH4 on every watchdog_enable()/watchdog_reboot().
 // SCRATCH5-7 are written only by watchdog_reboot() with a nonzero entry point,
 // which this firmware never uses, and by the bootrom's own reboot paths
-// (BOOTSEL, RAM image). They survive the RadioFault watchdog_reboot(0, 0, 10)
+// (BOOTSEL, RAM image). They survive the RadioFault recovery's watchdog reset
 // and a watchdog timeout, and are cleared by power-on reset. A magic and a
 // check word reject stale bootrom values; SCRATCH4 is never written here, so
 // the words can never form a bootrom watchdog-boot request.
@@ -200,18 +299,26 @@ void poll_radio(uint64_t now) {
         // events during this grace period. A late rejoin is a failure, not proof
         // that assigning software fields has stopped a radio transmission.
         if (pending_wifi()) {
-            radio=RadioState::Fault; radio_error=Error::RadioTeardown; return;
+            DS5_LOG("[WOL] drain: late WLAN work 0x%02x\n", static_cast<unsigned>(pending_work()));
+            teardown_fault(TeardownCheck::LateWork); return;
+        }
+        if (!down_confirmed) {
+            if (now-asked_at>=kVerifyGapMs) verify_down();
+            return;
         }
         if (now-stopped_at>=250) {
-            WatchdogWindow window;
-            if (!get_up(0) || pending_wifi()) { radio=RadioState::Fault; radio_error=Error::RadioTeardown; }
+            WatchdogWindow window(WatchdogMainLoopPhase::WifiStop);
+            note_step(RadioStep::FinalCheck);
+            if (!get_up(0) || pending_wifi()) teardown_fault(TeardownCheck::FinalCheck);
             else radio=RadioState::Idle;
+            DS5_LOG("[WOL] drain check: radio=%u\n", static_cast<unsigned>(radio));
         }
     } else if (radio==RadioState::Joining) {
         if (join_retry.pending()) {
             if (!join_retry.due(now)) return;
             join_retry.issued();
-            WatchdogWindow window;
+            WatchdogWindow window(WatchdogMainLoopPhase::WifiJoin);
+            note_step(RadioStep::Join);
             if (!join_config || join(*join_config)!=0) { radio_error=Error::NetworkUnavailable; radio=RadioState::Fault; }
             return;
         }
@@ -225,7 +332,7 @@ void poll_radio(uint64_t now) {
             radio=RadioState::Fault;
         }
     } else if (radio==RadioState::Idle && touched_radio && pending_wifi()) {
-        radio=RadioState::Fault; radio_error=Error::RadioTeardown;
+        teardown_fault(TeardownCheck::WorkAfterIdle);
     }
 }
 }
@@ -234,7 +341,9 @@ void poll_radio(uint64_t now) {
 extern "C" void cyw43_cb_tcpip_init(cyw43_t *,int) {}
 extern "C" void cyw43_cb_tcpip_deinit(cyw43_t *,int) {}
 extern "C" void cyw43_cb_tcpip_set_link_up(cyw43_t *,int itf) {
-    if (itf==CYW43_ITF_STA && ds5_cyw43_wlan_allowed && radio==RadioState::Joining) radio=RadioState::Ready;
+    if (itf==CYW43_ITF_STA && ds5_cyw43_wlan_allowed && radio==RadioState::Joining) {
+        radio=RadioState::Ready; teardown.progress|=kStartLinkUp;
+    }
 }
 extern "C" void cyw43_cb_tcpip_set_link_down(cyw43_t *,int itf) {
     if (itf==CYW43_ITF_STA && ds5_cyw43_wlan_allowed && radio==RadioState::Ready) {
@@ -272,6 +381,10 @@ bool wake_on_lan_allow_usb_wake() { return engine.allow_usb_wake(); }
 bool wake_on_lan_suspend_exempt() { return engine.suspend_exempt(); }
 bool wake_on_lan_take_usb_wake_request() { return engine.take_usb_wake_request(); }
 bool wake_on_lan_recovery_required() { return engine.recovery_required(); }
+uint32_t wake_on_lan_fault_detail() {
+    TeardownEvidence evidence=teardown; evidence.radio=radio;
+    return pack_teardown_evidence(evidence);
+}
 bool wake_on_lan_preparing() { return engine.preparing(); }
 bool wake_on_lan_host_prepared() { return engine.host_prepared(); }
 bool wake_on_lan_armed() { return engine.armed(); }
@@ -289,6 +402,7 @@ bool wake_on_lan_allow_usb_wake() { return true; }
 bool wake_on_lan_suspend_exempt() { return false; }
 bool wake_on_lan_take_usb_wake_request() { return false; }
 bool wake_on_lan_recovery_required() { return false; }
+uint32_t wake_on_lan_fault_detail() { return 0; }
 bool wake_on_lan_preparing() { return false; }
 bool wake_on_lan_host_prepared() { return false; }
 bool wake_on_lan_armed() { return false; }

@@ -301,7 +301,7 @@ void WakeOnLan::poll(uint64_t now,bool host_active,bool external_suspended,
     }
     if (stage_==Stage::Teardown) {
         if (!radio_active()) { finish(error_); return; }
-        if (ports_.radio_state(ports_.context)==RadioState::Fault || now_-stage_at_>=2000) {
+        if (ports_.radio_state(ports_.context)==RadioState::Fault || now_-stage_at_>=kTeardownDeadlineMs) {
             stage_=Stage::RadioFault; error_=Error::RadioTeardown; validated_=false; store_marker(true);
         }
     }

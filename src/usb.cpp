@@ -68,6 +68,7 @@ static bool usb_sof_sampled = false;
 static uint32_t usb_sof_frame_seen = 0;
 static uint32_t usb_sof_changed_at_us = 0;
 static uint32_t usb_sof_sampled_at_us = 0;
+static bool usb_sof_idle = false;
 
 extern "C" {
 uint8_t usb_hid_polling_interval_ms_value = 1;
@@ -151,6 +152,11 @@ static bool usb_bus_suspended() {
 // it configures the device, so a late configuration is never mistaken for
 // sleep. A sample more than 1 s after the previous one restarts the interval,
 // so the 11-bit frame counter wrapping to the same value cannot read as idle.
+// The one exception is a bus that was already idle: its frame number cannot
+// move without a host, and a host that came back also re-enumerates the
+// bridge. Without it, the main loop blocking for over a second (Wi-Fi start
+// and join during a wake from S5) read as the host returning for 20 ms, and
+// the engine cancelled the attempt before any packet was sent.
 // SOF interrupts are unused here (no audio feedback endpoint, no tud_sof_cb),
 // so reading SOF_RD from the main loop cannot steal one. Ported from Kitsune.
 #if defined(CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP) && CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP
@@ -159,18 +165,24 @@ static bool usb_bus_suspended() {
 static bool usb_bus_idle(uint32_t now) {
     if (!tud_inited()) {
         usb_sof_sampled = false;
+        usb_sof_idle = false;
         return false;
     }
     const uint32_t frame = usb_hw->sof_rd & USB_SOF_RD_BITS;
     const bool stale = static_cast<uint32_t>(now - usb_sof_sampled_at_us) >= USB_SOF_SAMPLE_STALE_US;
     usb_sof_sampled_at_us = now;
+    if (stale && usb_sof_sampled && usb_sof_idle && frame == usb_sof_frame_seen) {
+        return true;
+    }
     if (!usb_sof_sampled || stale || frame != usb_sof_frame_seen) {
         usb_sof_sampled = true;
         usb_sof_frame_seen = frame;
         usb_sof_changed_at_us = now;
+        usb_sof_idle = false;
         return false;
     }
-    return static_cast<uint32_t>(now - usb_sof_changed_at_us) >= USB_BUS_IDLE_US;
+    usb_sof_idle = static_cast<uint32_t>(now - usb_sof_changed_at_us) >= USB_BUS_IDLE_US;
+    return usb_sof_idle;
 }
 
 static uint8_t hid_polling_interval_for_mode(uint8_t mode) {
@@ -342,11 +354,31 @@ bool usb_line_streaming_active() {
     return usb_line_streaming && !usb_gameplay_quiet;
 }
 
+// The host session as it was before a re-attach the bridge started itself.
+static bool usb_session_held_active = false;
+static bool usb_session_held_firmware = false;
+
+static bool usb_bridge_reattaching(uint32_t now) {
+    return usb_reconnect_requested || usb_reconnect_connect_pending || reconnect_grace_active(now);
+}
+
+// A re-attach the bridge starts itself (the controller turning on or off, a
+// persona change) is not the host leaving. Until the host re-enumerates the
+// bridge or the reconnect grace runs out, report the session as it was, so
+// Wake-on-LAN's 45 s host-return count is not restarted. Otherwise turning the
+// controller off and shutting the PC down within 45 s kept the bridge from
+// arming, after every wake.
 bool usb_wake_host_active() {
-    return usb_mounted
+    const bool active = usb_mounted
         && !usb_bus_suspended()
         && !usb_reconnect_requested
         && !usb_reconnect_connect_pending;
+    if (!usb_bridge_reattaching(time_us_32())) {
+        usb_session_held_active = active;
+        usb_session_held_firmware = active && usb_session_firmware;
+        return active;
+    }
+    return active || usb_session_held_active;
 }
 
 bool usb_wake_external_suspended() {
@@ -361,7 +393,11 @@ bool usb_wake_external_suspended() {
 }
 
 bool usb_wake_host_firmware() {
-    return usb_mounted && usb_session_firmware;
+    if (usb_mounted) {
+        return usb_session_firmware;
+    }
+    // A BIOS session the bridge re-attaches within stays a BIOS session.
+    return usb_bridge_reattaching(time_us_32()) && usb_session_held_firmware;
 }
 
 // TinyUSB invokes this from tud_task for SET_PROTOCOL on a boot interface.

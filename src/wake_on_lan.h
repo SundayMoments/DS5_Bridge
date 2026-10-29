@@ -31,6 +31,9 @@ bool wake_on_lan_allow_usb_wake();
 bool wake_on_lan_suspend_exempt();
 bool wake_on_lan_take_usb_wake_request();
 bool wake_on_lan_recovery_required();
+// Which teardown check failed, packed for the reset evidence the recovery
+// leaves (wake_on_lan::pack_teardown_evidence).
+uint32_t wake_on_lan_fault_detail();
 bool wake_on_lan_preparing();
 // Preparing under a host session. An enabled bridge also arms itself after an
 // enumerated host leaves the bus; that path respects the user's USB

@@ -86,4 +86,57 @@ private:
 inline constexpr size_t kRadioMarkerWords = 3;
 void encode_radio_marker(uint8_t packets, uint32_t *words);
 bool decode_radio_marker(const uint32_t *words, uint8_t &packets);
+
+// Why a RadioFault recovery reset the bridge, kept in the reset evidence that
+// Settings > Last Restart reads. Diagnostics only; nothing acts on it.
+enum class TeardownCheck : uint8_t {
+    None,               // the engine's teardown deadline or idle check fired
+    EventMask,          // masking WLAN events was rejected
+    Down,               // DOWN failed and GET_UP never read down
+    UpQueryUnsupported, // start never confirmed GET_UP, so DOWN cannot be verified
+    StillUp,            // DOWN was acknowledged but GET_UP never read down
+    LateWork,           // WLAN work reappeared while queued events drained
+    FinalCheck,         // GET_UP or pending work failed the check after the drain
+    WorkAfterIdle,      // WLAN work appeared after a verified stop
+};
+// How far the last start got, as bits.
+inline constexpr uint8_t kStartStationUp = 1, kStartUpConfirmed = 2, kStartRegionMatched = 4,
+    kStartJoinIssued = 8, kStartLinkUp = 16;
+// The first WLAN DOWN's ioctl result.
+enum class DownResult : uint8_t { Ok, Rejected, TimedOut, OtherError, NotIssued };
+// What the last GET_UP in stop read.
+enum class UpReadback : uint8_t { NotRead, Down, Up, Failed };
+struct TeardownEvidence {
+    TeardownCheck check = TeardownCheck::None;
+    RadioState radio = RadioState::Idle; // when the bridge reset
+    // WLAN work left at the failed check: itf_state, join, scan, rejoin,
+    // WPA rejoin and disassociation, bits 0-5.
+    uint8_t pending = 0;
+    uint8_t packets = 0;  // magic packets submitted, 0-3
+    uint8_t progress = 0; // kStart* bits
+    DownResult down = DownResult::NotIssued;
+    UpReadback up = UpReadback::NotRead;
+    bool down_retried = false; // GET_UP answered "still up", so DOWN was sent again
+    bool slow_mask = false;    // masking WLAN events took 500 ms or more
+    uint32_t stop_ms = 0;      // how long the last stop took
+};
+// check | radio<<4 | pending<<8 | packets<<14 | progress<<16 | down<<21 | up<<24
+// | down_retried<<26 | slow_mask<<27 | min(stop_ms/250, 15)<<28.
+uint32_t pack_teardown_evidence(const TeardownEvidence &evidence);
+
+// The radio step a blocking CYW43 call is in, kept as a watchdog breadcrumb so
+// a freeze reports where it stopped (Settings > Last Restart, Copy).
+enum class RadioStep : uint8_t {
+    None, Start, Join, Send, Mask, Down, AskUp, RetryDown, FinalCheck
+};
+struct RadioTrace {
+    RadioStep step = RadioStep::None;
+    uint8_t questions = 0;   // GET_UP questions asked since stop, 0-15
+    uint32_t elapsed_ms = 0; // since the attempt (start) or teardown (stop) began
+    DownResult down = DownResult::NotIssued;
+    UpReadback up = UpReadback::NotRead;
+    uint8_t packets = 0;     // magic packets submitted, 0-3
+};
+// step | questions<<4 | min(elapsed_ms, 65535)<<8 | down<<24 | up<<28 | packets<<30.
+uint32_t pack_radio_trace(const RadioTrace &trace);
 }

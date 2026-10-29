@@ -110,6 +110,19 @@ function stageFor(status: WakeOnLanWireStatus): WakeOnLanStage {
     : status.enabled ? 'waiting-for-sleep' : 'disabled');
 }
 
+// The bridge's resting states say nothing about a running operation's progress.
+const RESTING_STAGES: ReadonlySet<WakeOnLanStage> = new Set(['not-configured', 'disabled', 'waiting-for-sleep', 'canceled']);
+
+/**
+ * What Settings shows while an operation runs: the bridge's radio steps during
+ * a test, otherwise the operation's own step. A test that has left the radio
+ * at rest is still "Testing network settings", not "Waiting for PC sleep".
+ */
+export function operationStage(operation: WakeOnLanStage | null, bridge: WakeOnLanStage): WakeOnLanStage {
+  if (!operation) return bridge;
+  return operation === 'validating' && !RESTING_STAGES.has(bridge) ? bridge : operation;
+}
+
 /** USB-only control plane. Firmware owns the saved network and all radio activity. */
 export class WakeOnLanService {
   private operation: Operation | null = null;
@@ -357,7 +370,7 @@ export class WakeOnLanService {
       targetOwnedByThisPc: !wire?.configured ? false
         : this.ports.targets.ownershipKnown() ? this.ports.targets.owns(wire.targetMac) : null,
       generation: wire?.generation ?? 0,
-      stage: operation && operation.stage !== 'validating' ? operation.stage : stage,
+      stage: operationStage(operation?.stage ?? null, stage),
       busy: Boolean(operation || wire?.radioActive || wire?.stagingPresent),
       controllerConnected: session?.controllerConnected ?? false,
       error: wire && wire.error !== 0 && stage !== 'canceled' && !history
