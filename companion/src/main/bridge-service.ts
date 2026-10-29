@@ -176,7 +176,7 @@ const LOW_BATTERY_PERCENT = 20;
 // The battery level arrives a moment after the controller connects; the
 // connect toast waits this long for it before going out without it.
 const CONNECT_TOAST_BATTERY_WAIT_MS = 3000;
-const BUNDLED_FIRMWARE_VERSION = '2.0.0';
+const BUNDLED_FIRMWARE_VERSION = '2.0.1';
 const MIN_SUPPORTED_FIRMWARE_VERSION = '1.6.1';
 const FIRMWARE_UPDATE_REQUIRED_MESSAGE = `Firmware ${MIN_SUPPORTED_FIRMWARE_VERSION} update required`;
 const AUDIO_DEBUG_LOG_LINE_LIMIT = 300;
