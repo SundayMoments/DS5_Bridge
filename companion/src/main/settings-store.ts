@@ -163,6 +163,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   uiLocale: SYSTEM_UI_LOCALE,
   launchAtStartupEnabled: false,
   showBatteryPercentTrayIcon: false,
+  closeButtonQuits: false,
   kitsuneInputPromotionDismissed: false,
   kitsuneInputLaunchOfferShown: false,
   firmwareLogDirectory: null,
@@ -941,6 +942,9 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     showBatteryPercentTrayIcon: typeof value?.showBatteryPercentTrayIcon === 'boolean'
       ? value.showBatteryPercentTrayIcon
       : DEFAULT_SETTINGS.showBatteryPercentTrayIcon,
+    closeButtonQuits: typeof value?.closeButtonQuits === 'boolean'
+      ? value.closeButtonQuits
+      : DEFAULT_SETTINGS.closeButtonQuits,
     kitsuneInputPromotionDismissed: typeof value?.kitsuneInputPromotionDismissed === 'boolean'
       ? value.kitsuneInputPromotionDismissed
       : DEFAULT_SETTINGS.kitsuneInputPromotionDismissed,

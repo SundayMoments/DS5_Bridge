@@ -28,7 +28,8 @@ const settingSetters = {
   setNotifyControllerConnection: 'notifyControllerConnection',
   setNotifyLowBattery: 'notifyLowBattery',
   setLaunchAtStartupEnabled: 'launchAtStartupEnabled',
-  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon'
+  setShowBatteryPercentTrayIcon: 'showBatteryPercentTrayIcon',
+  setCloseButtonQuits: 'closeButtonQuits'
 };
 // Holds back the first snapshot so a capture can show the startup placeholders.
 const statusDelayMs = Number(process.env.DS5_UI_REVIEW_STATUS_DELAY_MS ?? 0);

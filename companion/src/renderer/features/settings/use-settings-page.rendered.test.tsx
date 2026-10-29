@@ -55,6 +55,7 @@ describe('Settings page wiring', () => {
       settings: {
         launchAtStartupEnabled: false,
         showBatteryPercentTrayIcon: true,
+        closeButtonQuits: false,
         idleDisconnectEnabled: false,
         usbSuspendDisconnectEnabled: true,
         controllerPowerSavingEnabled: false,
@@ -73,6 +74,7 @@ describe('Settings page wiring', () => {
     const toggles: Array<[keyof SettingsPageActions, string, boolean]> = [
       ['toggleLaunchAtStartup', 'setLaunchAtStartupEnabled', true],
       ['toggleBatteryTrayIcon', 'setShowBatteryPercentTrayIcon', false],
+      ['toggleCloseButtonQuits', 'setCloseButtonQuits', true],
       ['toggleIdleDisconnect', 'setIdleDisconnectEnabled', true],
       ['toggleUsbSuspendDisconnect', 'setUsbSuspendDisconnectEnabled', false],
       ['toggleControllerPowerSaving', 'setControllerPowerSavingEnabled', true],

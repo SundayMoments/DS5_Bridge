@@ -52,7 +52,7 @@ export function GeneralSettings({ model, actions, matchingSettingIds }: Settings
 
 export function SystemTraySettings({ model, actions, matchingSettingIds }: SettingsCategoryProps) {
   return <>
-    <SettingsGroupLabel label="System Tray" ids={['battery-tray']} matchingSettingIds={matchingSettingIds} />
+    <SettingsGroupLabel label="System Tray" ids={['battery-tray', 'close-button-quits']} matchingSettingIds={matchingSettingIds} />
     <SearchableSetting id="battery-tray" matchingSettingIds={matchingSettingIds}>
       <ToggleRow
         label="Battery Tray Icon"
@@ -60,6 +60,15 @@ export function SystemTraySettings({ model, actions, matchingSettingIds }: Setti
         checked={model.settings.showBatteryPercentTrayIcon}
         disabled={model.busy}
         onToggle={actions.toggleBatteryTrayIcon}
+      />
+    </SearchableSetting>
+    <SearchableSetting id="close-button-quits" matchingSettingIds={matchingSettingIds}>
+      <ToggleRow
+        label="Quit on Close"
+        description="Closing the window quits DS5 Bridge instead of keeping it in the tray. Chords, Audio Haptics and notifications stop until you open it again."
+        checked={model.settings.closeButtonQuits}
+        disabled={model.busy}
+        onToggle={actions.toggleCloseButtonQuits}
       />
     </SearchableSetting>
   </>;

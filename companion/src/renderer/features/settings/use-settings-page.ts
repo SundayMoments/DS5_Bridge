@@ -92,6 +92,9 @@ export function useSettingsPage(runtime: AppRuntime, { notifications }: Settings
     toggleBatteryTrayIcon: toggle('battery-tray-icon', (settings) => (
       window.bridge.setShowBatteryPercentTrayIcon(!settings.showBatteryPercentTrayIcon)
     )),
+    toggleCloseButtonQuits: toggle('close-button-quits', (settings) => (
+      window.bridge.setCloseButtonQuits(!settings.closeButtonQuits)
+    )),
     toggleControllerNotifications: notifications.toggleControllerNotifications,
     toggleLowBatteryNotifications: notifications.toggleLowBatteryNotifications,
     setIdleDisconnectTimeout: (minutes) => void runAction('idle-timeout', () => window.bridge.setIdleDisconnectTimeoutMinutes(minutes)),

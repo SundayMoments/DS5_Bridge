@@ -3191,6 +3191,14 @@ export class BridgeService extends EventEmitter {
     return this.getSnapshot();
   }
 
+  setCloseButtonQuits(enabled: boolean): BridgeSnapshot {
+    this.snapshot.settings = this.settingsStore.update({
+      closeButtonQuits: enabled
+    });
+    this.emitSnapshot();
+    return this.getSnapshot();
+  }
+
   /** Records that the one-time Kitsune Input offer was shown; there is no way to clear it. */
   markKitsuneInputLaunchOfferShown(): BridgeSnapshot {
     this.snapshot.settings = this.settingsStore.update({

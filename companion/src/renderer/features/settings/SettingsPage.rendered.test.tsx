@@ -30,6 +30,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
       uiThemePreset: 'dark',
       launchAtStartupEnabled: false,
       showBatteryPercentTrayIcon: true,
+      closeButtonQuits: false,
       ledEnabled: true,
       playerLedEnabled: true,
       idleDisconnectEnabled: true,
@@ -59,7 +60,7 @@ function baseModel(overrides: Partial<SettingsPageModel> = {}): SettingsPageMode
 function createActions(): SettingsPageActions & Record<string, ReturnType<typeof vi.fn>> {
   const names = [
     'setTheme', 'setUiScale', 'setTextScale', 'setLocale', 'toggleLaunchAtStartup', 'toggleBatteryTrayIcon',
-    'toggleControllerNotifications', 'toggleLowBatteryNotifications', 'setIdleDisconnectTimeout',
+    'toggleCloseButtonQuits', 'toggleControllerNotifications', 'toggleLowBatteryNotifications', 'setIdleDisconnectTimeout',
     'toggleIdleDisconnect', 'toggleUsbSuspendDisconnect', 'toggleControllerPowerSaving', 'toggleLed', 'togglePlayerLed',
     'toggleLightbarRestore', 'toggleEdgeProfileSwitching', 'toggleSleepShortcut', 'toggleVolumeShortcut',
     'toggleWakeOnConnect', 'mountPicoBootloader', 'flashPicoFirmware', 'nukePicoFlash', 'openExternal'
@@ -143,6 +144,7 @@ describe('Settings page', () => {
     const expectations: Array<[section: string, label: string, action: string]> = [
       ['General', 'Launch at Startup', 'toggleLaunchAtStartup'],
       ['General', 'Battery Tray Icon', 'toggleBatteryTrayIcon'],
+      ['General', 'Quit on Close', 'toggleCloseButtonQuits'],
       ['Notifications', 'Controller Status', 'toggleControllerNotifications'],
       ['Notifications', 'Low Battery', 'toggleLowBatteryNotifications'],
       ['Connection & Power', 'PC Sleep Disconnect', 'toggleUsbSuspendDisconnect'],

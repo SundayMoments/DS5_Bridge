@@ -387,7 +387,7 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
   window.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
-      window.hide();
+      closeMainWindow(window);
     }
   });
   window.on('will-move', () => bridgeService?.pausePollingFor(1200));
@@ -398,6 +398,15 @@ function createWindow(uiScalePercent: UiScalePercent): BrowserWindow {
     applyWindowScale(window, uiScalePercent, false);
   });
   return window;
+}
+
+// The close button hides to the tray unless the user chose to quit there.
+function closeMainWindow(window: BrowserWindow | null): void {
+  if (bridgeService?.getSnapshot().settings.closeButtonQuits) {
+    app.quit();
+    return;
+  }
+  window?.hide();
 }
 
 function sendWindowMaximizedState(): void {
@@ -1159,6 +1168,9 @@ function registerIpc(service: BridgeService): void {
   ipcMain.handle('bridge:setShowBatteryPercentTrayIcon', (_event, value: boolean) => (
     service.setShowBatteryPercentTrayIcon(Boolean(value))
   ));
+  ipcMain.handle('bridge:setCloseButtonQuits', (_event, value: boolean) => (
+    service.setCloseButtonQuits(Boolean(value))
+  ));
   ipcMain.handle('bridge:markKitsuneInputLaunchOfferShown', () => service.markKitsuneInputLaunchOfferShown());
   ipcMain.handle('bridge:setPollingRateMode', (_event, value: PollingRateMode) => (
     service.setPollingRateMode(value)
@@ -1277,7 +1289,7 @@ function registerIpc(service: BridgeService): void {
     }
   });
   ipcMain.handle('window:isMaximized', () => Boolean(mainWindow?.isMaximized()));
-  ipcMain.handle('window:hide', () => mainWindow?.hide());
+  ipcMain.handle('window:hide', () => closeMainWindow(mainWindow));
   ipcMain.handle('window:openExternal', (_event, url: string) => {
     if (!isAllowedExternalUrl(url)) {
       return;

@@ -11,6 +11,7 @@ export interface SettingsPageModel {
     | 'uiThemePreset'
     | 'launchAtStartupEnabled'
     | 'showBatteryPercentTrayIcon'
+    | 'closeButtonQuits'
     | 'ledEnabled'
     | 'playerLedEnabled'
     | 'idleDisconnectEnabled'
@@ -63,6 +64,7 @@ export interface SettingsPageActions {
   setLocale(value: string): void;
   toggleLaunchAtStartup(): void;
   toggleBatteryTrayIcon(): void;
+  toggleCloseButtonQuits(): void;
   toggleControllerNotifications(): void;
   toggleLowBatteryNotifications(): void;
   setIdleDisconnectTimeout(minutes: number): void;

@@ -32,6 +32,15 @@ describe('main window behavior', () => {
     expect(mainSource).toContain("screen.on('display-metrics-changed', () => scheduleMainWindowScaleRestore(true));");
   });
 
+  it('hides the window on close unless the user chose to quit there', () => {
+    const closeMainWindow = extractFunction('closeMainWindow');
+    expect(closeMainWindow).toContain('bridgeService?.getSnapshot().settings.closeButtonQuits');
+    expect(closeMainWindow.indexOf('app.quit();')).toBeLessThan(closeMainWindow.indexOf('window?.hide();'));
+    expect(extractFunction('createWindow')).toMatch(/window\.on\('close', \(event\) => \{\s*if \(!isQuitting\) \{\s*event\.preventDefault\(\);\s*closeMainWindow\(window\);/);
+    expect(mainSource).toContain("ipcMain.handle('window:hide', () => closeMainWindow(mainWindow));");
+    expect(mainSource).toContain("ipcMain.handle('bridge:setCloseButtonQuits'");
+  });
+
   it('creates the window on demand and releases it after it stays hidden', () => {
     // A tray start creates no renderer; the tray Open item creates it.
     expect(mainSource).toMatch(/if \(!shouldStartInTray\(\)\) \{\s*showWindowCentered\(\);/);

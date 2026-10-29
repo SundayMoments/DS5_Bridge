@@ -52,6 +52,7 @@ export type SettingsSearchEntryId =
   | 'launch-startup'
   | 'language'
   | 'battery-tray'
+  | 'close-button-quits'
   | 'ui-scale'
   | 'text-scale'
   | 'theme'
@@ -90,6 +91,7 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'launch-startup', label: 'Launch at Startup', category: 'app', keywords: 'windows start boot tray startup' },
   { id: 'language', label: 'Language', category: 'app', keywords: 'localization locale translation' },
   { id: 'battery-tray', label: 'Battery Tray Icon', category: 'system-tray', keywords: 'controller percentage taskbar' },
+  { id: 'close-button-quits', label: 'Quit on Close', category: 'system-tray', keywords: 'exit close button window background' },
   { id: 'ui-scale', label: 'UI Scale', category: 'appearance', keywords: 'appearance interface size zoom window' },
   { id: 'text-scale', label: 'Text Scale', category: 'appearance', keywords: 'appearance font size accessibility' },
   { id: 'theme', label: 'Theme', category: 'appearance', keywords: 'appearance color dark light' },
