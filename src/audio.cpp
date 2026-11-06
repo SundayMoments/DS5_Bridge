@@ -231,8 +231,8 @@ static uint32_t audio_core1_stack_high_water_bytes = 0;
 #endif
 
 static ds5::audio::HapticsDecimator haptics_decimator;
-static float audio_buf[512 * 2];
-static uint audio_buf_pos = 0;
+static audio_raw_element speaker_block{};
+static uint speaker_block_pos = 0;
 static int8_t audio_haptic_buf[SAMPLE_SIZE];
 static int audio_haptic_buf_pos = 0;
 static int8_t pending_audio_haptics[AUDIO_BATCH_FRAMES][SAMPLE_SIZE]{};
@@ -1009,11 +1009,11 @@ bool audio_haptics_session_active() {
 }
 
 static void clear_partial_audio_state() {
-    audio_buf_pos = 0;
+    speaker_block_pos = 0;
     audio_haptic_buf_pos = 0;
     audio_silence_tail_logged = false;
     audio_reactive_haptics_reset();
-    memset(audio_buf, 0, sizeof(audio_buf));
+    memset(&speaker_block, 0, sizeof(speaker_block));
     memset(audio_haptic_buf, 0, sizeof(audio_haptic_buf));
     clear_pending_audio_batch();
     haptics_decimator.reset();
@@ -1871,7 +1871,7 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
     // closed it again on every pass. Audio haptics still flow without it.
     const bool speaker_route_demanded = should_keep_speaker_route_open();
     if (!speaker_route_demanded) {
-        audio_buf_pos = 0;
+        speaker_block_pos = 0;
     }
     // Windows sends USB Audio volume controls for this endpoint instead of pre-scaling PCM.
     const float host_render_gain = clamp(usb_host_speaker_gain, 0.0f, 1.0f);
@@ -1890,13 +1890,11 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
         const int16_t haptic_l = rendered.haptic_left;
         const int16_t haptic_r = rendered.haptic_right;
         if (speaker_route_demanded) {
-            audio_buf[audio_buf_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
-            audio_buf[audio_buf_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
+            speaker_block.data[speaker_block_pos++] = static_cast<float>(speaker_l) / 32768.0f * speaker_gain;
+            speaker_block.data[speaker_block_pos++] = static_cast<float>(speaker_r) / 32768.0f * speaker_gain;
         }
-        if (audio_buf_pos == 512 * 2) {
-            static audio_raw_element element{};
-            memcpy(element.data,audio_buf,512 * 2 * 4);
-            element.generation = audio_stream_generation;
+        if (speaker_block_pos == std::size(speaker_block.data)) {
+            speaker_block.generation = audio_stream_generation;
             if (queue_is_full(&audio_fifo)){
                 audio_debug_log(
                     AudioDebugAudioFifoDrop,
@@ -1908,7 +1906,7 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
                 );
                 audio_fifo.try_remove(nullptr);
             }
-            if (!queue_try_add(&audio_fifo,&element)) {
+            if (!queue_try_add(&audio_fifo, &speaker_block)) {
                 audio_debug_log(
                     AudioDebugAudioFifoAddFail,
                     clamp_debug_u8(queue_get_level(&audio_fifo)),
@@ -1918,7 +1916,7 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
                     0
                 );
             }
-            audio_buf_pos = 0;
+            speaker_block_pos = 0;
         }
 
         // Audio-reactive haptics filter every frame; 48 kHz -> 3 kHz keeps
