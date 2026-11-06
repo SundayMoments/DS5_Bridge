@@ -135,43 +135,13 @@ add_executable(ds5-bridge
         src/output_scheduler.cpp
         src/ram_mem.c
         src/audio.cpp
+        src/audio_resampler.cpp
         src/bt.cpp
         src/firmware_log.cpp
         src/runtime_fail_fast.cpp
         src/watchdog_telemetry.cpp
         src/wake_on_lan.cpp
 )
-
-# Third-party archives follow the firmware's exception/RTTI policy instead of
-# retaining an otherwise unused exception-unwinding runtime.
-function(ds5_apply_pico_archive_compile_policy target)
-    target_compile_options(${target} PRIVATE -fsigned-char)
-    if(NOT PICO_CXX_ENABLE_EXCEPTIONS)
-        target_compile_definitions(${target} PRIVATE PICO_CXX_ENABLE_EXCEPTIONS=0)
-        target_compile_options(${target} PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
-            $<$<COMPILE_LANGUAGE:CXX>:-fno-unwind-tables>
-        )
-    endif()
-    if(NOT PICO_CXX_ENABLE_RTTI)
-        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
-    endif()
-    if(NOT PICO_CXX_ENABLE_CXA_ATEXIT)
-        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-use-cxa-atexit>)
-    endif()
-    if(NOT PICO_NO_GC_SECTIONS)
-        target_compile_options(${target} PRIVATE -ffunction-sections -fdata-sections)
-    endif()
-endfunction()
-
-# Cockos WDLResampler
-add_library(wdl_resampler STATIC
-        lib/WDL/WDL/resample.cpp
-)
-target_include_directories(wdl_resampler PUBLIC
-        lib/WDL/WDL
-)
-ds5_apply_pico_archive_compile_policy(wdl_resampler)
 
 # Opus
 # The DualSense speaker path encodes CELT-only frames: audio.cpp creates the
@@ -223,17 +193,6 @@ target_link_options(ds5-bridge PRIVATE
         "LINKER:--wrap=tonality_analysis_init"
         "LINKER:--wrap=tonality_analysis_reset"
         "LINKER:--wrap=tonality_get_info"
-)
-target_compile_options(wdl_resampler PRIVATE -O2)
-add_custom_command(TARGET wdl_resampler POST_BUILD
-        COMMAND ${CMAKE_OBJCOPY}
-                --rename-section .text._ZN13WDL_Resampler11ResampleOutEPfiii=.time_critical.WDL_ResampleOut
-                --rename-section .text._ZN13WDL_Resampler15ResamplePrepareEiiPPf=.time_critical.WDL_ResamplePrepare
-                --rename-section .text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset
-                --rename-section .text._ZL26wdl_rs_reinterleave_bufferPfiii=.time_critical.WDL_ReinterleaveBuffer
-                $<TARGET_FILE:wdl_resampler>
-        COMMENT "Relocating WDL_Resampler hot path to .time_critical.*"
-        VERBATIM
 )
 
 # Keep high-frequency Bluetooth, CYW43, and USB paths in SRAM. Besides reducing
@@ -518,7 +477,7 @@ function(relocate_objects_to_ram _suffixes _comment)
 endfunction()
 
 relocate_objects_to_ram(
-        "src/main.cpp.o@src/bt.cpp.o@src/usb.cpp.o@src/audio.cpp.o@src/watchdog_telemetry.cpp.o@src/wake_on_lan.cpp.o@src/button_functions.cpp.o@src/kitsune_button_gesture.cpp.o@src/persona/host_persona.cpp.o@src/persona/dualsense_persona.cpp.o@src/persona/ds4_persona.cpp.o@src/persona/xusb360_persona.cpp.o@src/persona/xusb360_usb.cpp.o@src/controller_packet_compositor.cpp.o@src/controller_output_policy.cpp.o@src/controller_output_rumble_state.cpp.o@src/controller_output_state.cpp.o@src/haptics_test_signal.cpp.o@src/firmware_log.cpp.o"
+        "src/main.cpp.o@src/bt.cpp.o@src/usb.cpp.o@src/audio.cpp.o@src/audio_resampler.cpp.o@src/watchdog_telemetry.cpp.o@src/wake_on_lan.cpp.o@src/button_functions.cpp.o@src/kitsune_button_gesture.cpp.o@src/persona/host_persona.cpp.o@src/persona/dualsense_persona.cpp.o@src/persona/ds4_persona.cpp.o@src/persona/xusb360_persona.cpp.o@src/persona/xusb360_usb.cpp.o@src/controller_packet_compositor.cpp.o@src/controller_output_policy.cpp.o@src/controller_output_rumble_state.cpp.o@src/controller_output_state.cpp.o@src/haptics_test_signal.cpp.o@src/firmware_log.cpp.o"
         "Relocating the firmware's runtime objects to SRAM"
 )
 if(ENABLE_COMPANION)
@@ -552,9 +511,6 @@ set_source_files_properties(src/ram_mem.c PROPERTIES COMPILE_OPTIONS
 )
 
 target_compile_options(ds5-bridge PRIVATE -fsigned-char)
-target_compile_definitions(wdl_resampler PRIVATE
-        WDL_RESAMPLE_TYPE=float
-)
 if(SYS_CLOCK_KHZ_VALUE GREATER 266000)
     set(PICO_FLASH_SPI_CLKDIV 4)
 else()
@@ -584,7 +540,6 @@ target_compile_definitions(ds5-bridge PRIVATE
         # before it is armed, forever).
         PICO_PANIC_FUNCTION=ds5_runtime_panic
         PICO_PANIC_FUNCTION_DOES_NOT_RETURN=1
-        WDL_RESAMPLE_TYPE=float
         CYW43_PIO_CLOCK_DIV_INT=${CYW43_PIO_CLOCK_DIV_VALUE}
         SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ_VALUE}
         DS5_FIRMWARE_VERSION_MAJOR=${DS5_FIRMWARE_VERSION_MAJOR}
@@ -729,17 +684,14 @@ target_link_libraries(ds5-bridge
         pico_btstack_cyw43
         tinyusb_device
         tinyusb_board
-        wdl_resampler
         opus
 )
 
-# The exact-capacity audio queues use static storage. Codec and resampler
-# startup still allocate 54,872 bytes; retain another 8 KiB after those known
-# allocations so a successful link cannot become an OOM boot. The previous
-# 79,120-byte figure included the SILK encoder state (20,408 bytes) and the
-# 10 ms delay buffer (3,840 bytes) that OPUS_APPLICATION_RESTRICTED_CELT no
-# longer reserves inside the encoder.
-set(DS5_KNOWN_STARTUP_HEAP_BYTES 54872)
+# The exact-capacity audio queues and the resamplers allocate nothing at
+# startup; the Opus encoder (24,376 bytes) and decoder (18,400 bytes) are the
+# only known startup heap requests. Retain another 8 KiB after them so a
+# successful link cannot become an OOM boot.
+set(DS5_KNOWN_STARTUP_HEAP_BYTES 42776)
 set(DS5_MIN_POST_STARTUP_HEAP_BYTES 8192)
 math(EXPR DS5_MIN_RUNTIME_HEAP_BYTES
         "${DS5_KNOWN_STARTUP_HEAP_BYTES} + ${DS5_MIN_POST_STARTUP_HEAP_BYTES}"

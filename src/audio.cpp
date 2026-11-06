@@ -5,6 +5,7 @@
 
 #include "audio.h"
 #include "audio_exact_queue.h"
+#include "audio_resampler.h"
 #include "bt.h"
 #include "controller_output_policy.h"
 #include "controller_output_state.h"
@@ -16,7 +17,6 @@
 #ifdef ENABLE_COMPANION
 #include "companion.h"
 #endif
-#include "resample.h"
 #include "tusb.h"
 #include "usb.h"
 #include "wake_on_lan.h"
@@ -148,7 +148,7 @@ struct speaker_opus_element {
 };
 
 struct audio_raw_element {
-    float data[512 * 2];
+    float data[ds5::audio::kSpeakerBlockInputSamples];
     uint32_t generation;
 };
 
@@ -230,7 +230,7 @@ static uint32_t audio_core1_stack_last_watermark_check_us = 0;
 static uint32_t audio_core1_stack_high_water_bytes = 0;
 #endif
 
-static WDL_Resampler resampler;
+static ds5::audio::HapticsDecimator haptics_decimator;
 static float audio_buf[512 * 2];
 static uint audio_buf_pos = 0;
 static int8_t audio_haptic_buf[SAMPLE_SIZE];
@@ -1016,7 +1016,7 @@ static void clear_partial_audio_state() {
     memset(audio_buf, 0, sizeof(audio_buf));
     memset(audio_haptic_buf, 0, sizeof(audio_haptic_buf));
     clear_pending_audio_batch();
-    resampler.Reset();
+    haptics_decimator.reset();
 }
 
 static void schedule_speaker_silence_preroll() {
@@ -1483,28 +1483,6 @@ static bool append_resampled_haptic_sample(float left, float right, float gain) 
     return true;
 }
 
-static void process_audio_reactive_haptic_frame_for_resampler(
-    int16_t speaker_l,
-    int16_t speaker_r,
-    int16_t native_haptic_l,
-    int16_t native_haptic_r,
-    WDL_ResampleSample &out_l,
-    WDL_ResampleSample &out_r
-) {
-    int16_t processed_l = native_haptic_l;
-    int16_t processed_r = native_haptic_r;
-    process_audio_reactive_haptic_frame(
-        speaker_l,
-        speaker_r,
-        native_haptic_l,
-        native_haptic_r,
-        processed_l,
-        processed_r
-    );
-    out_l = static_cast<WDL_ResampleSample>(processed_l) / 32768.0f;
-    out_r = static_cast<WDL_ResampleSample>(processed_r) / 32768.0f;
-}
-
 static void mix_haptics_overlay(int8_t *destination, int8_t const *overlay) {
     if (destination == nullptr || overlay == nullptr) {
         return;
@@ -1885,9 +1863,6 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
     audio_silence_tail_logged = false;
     last_audio_us = now;
 
-    WDL_ResampleSample *in_buf;
-    const int requested_haptic_frames = resampler.ResamplePrepare(frames, OUTPUT_CHANNELS, &in_buf);
-    const int haptic_input_frames = std::min(frames, requested_haptic_frames);
     const float speaker_gain = usb_host_mute[0] ? 0.0f : clamp(volume[0], 0.0f, 1.0f);
     const float haptic_gain = clamp(volume[1], 0.0f, MAX_HAPTICS_GAIN);
     // Zero speaker volume, or a controller that has not reported its headset
@@ -1946,22 +1921,26 @@ static bool __not_in_flash_func(process_usb_audio_packet)() {
             audio_buf_pos = 0;
         }
 
-        if (i < haptic_input_frames) {
-            process_audio_reactive_haptic_frame_for_resampler(
-                speaker_l,
-                speaker_r,
-                haptic_l,
-                haptic_r,
-                in_buf[i * OUTPUT_CHANNELS],
-                in_buf[i * OUTPUT_CHANNELS + 1]
-            );
-        }
-    }
-
-    static WDL_ResampleSample out_buf[SAMPLE_SIZE];
-    const int out_frames = resampler.ResampleOut(out_buf, haptic_input_frames, SAMPLE_SIZE / OUTPUT_CHANNELS, OUTPUT_CHANNELS);
-    for (int i = 0; i < out_frames; i++) {
-        if (append_resampled_haptic_sample(out_buf[i * OUTPUT_CHANNELS], out_buf[i * OUTPUT_CHANNELS + 1], haptic_gain)) {
+        // Audio-reactive haptics filter every frame; 48 kHz -> 3 kHz keeps
+        // one frame in 16.
+        int16_t processed_haptic_l = haptic_l;
+        int16_t processed_haptic_r = haptic_r;
+        process_audio_reactive_haptic_frame(
+            speaker_l,
+            speaker_r,
+            haptic_l,
+            haptic_r,
+            processed_haptic_l,
+            processed_haptic_r
+        );
+        if (
+            haptics_decimator.keep_frame()
+            && append_resampled_haptic_sample(
+                static_cast<float>(processed_haptic_l) / 32768.0f,
+                static_cast<float>(processed_haptic_r) / 32768.0f,
+                haptic_gain
+            )
+        ) {
             send_audio_haptics_packet(audio_haptic_buf, speaker_route_demanded);
         }
     }
@@ -2339,10 +2318,6 @@ bool audio_init() {
     critical_section_init(&audio_debug_cs);
     audio_debug_cs_ready = true;
 #endif
-    resampler.SetMode(true, 0, false);
-    resampler.SetRates(48000, 3000);
-    resampler.SetFeedMode(true);
-    resampler.Prealloc(2, 24, 6);
     audio_fifo.init();
     speaker_opus_fifo.init();
     speaker_opus_fifo_ready = true;
@@ -2370,14 +2345,12 @@ bool audio_init() {
 
 static OpusEncoder *encoder;
 static OpusDecoder *mic_decoder;
-static WDL_Resampler resampler_audio;
 static uint32_t core1_audio_stream_generation = 0;
 
 static void reset_core1_audio_pipeline(uint32_t generation) {
     if (encoder != nullptr) {
         opus_encoder_ctl(encoder, OPUS_RESET_STATE);
     }
-    resampler_audio.Reset();
     core1_audio_stream_generation = generation;
     audio_debug_log(
         AudioDebugCore1Reset,
@@ -2594,23 +2567,19 @@ static bool __not_in_flash_func(core1_process_speaker)() {
     }
 
     // Resample 512 frames to 480 frames to avoid noise. Thanks @Junhoo.
-    WDL_ResampleSample *in_buf;
-    int nframes = resampler_audio.ResamplePrepare(512, 2, &in_buf);
-    for (int i = 0; i < nframes * 2;i++) {
-        in_buf[i] = audio_element.data[i];
-    }
-    static WDL_ResampleSample out_buf[480 * 2];
-    const int output_frames = resampler_audio.ResampleOut(out_buf, nframes, 480, 2);
-    // WDL can return fewer than 480 frames, for example on the first block
-    // after a reset. Never feed the encoder samples left from the last block.
-    if (output_frames < 480) {
-        std::fill(out_buf + std::max(0, output_frames) * 2, out_buf + 480 * 2, 0.0f);
-    }
+    static float out_buf[ds5::audio::kSpeakerBlockOutputSamples];
+    ds5::audio::resample_speaker_block(audio_element.data, out_buf);
     static uint8_t encoded[SPEAKER_OPUS_SIZE];
 #if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     const uint32_t encode_start_us = time_us_32();
 #endif
-    const opus_int32 encoded_bytes = opus_encode_float(encoder,out_buf,480,encoded,sizeof(encoded));
+    const opus_int32 encoded_bytes = opus_encode_float(
+        encoder,
+        out_buf,
+        ds5::audio::kSpeakerBlockOutputFrames,
+        encoded,
+        sizeof(encoded)
+    );
 #if DS5_AUDIO_TRANSPORT_STATS_ENABLED
     audio_stats_note_opus_encode(static_cast<uint32_t>(time_us_32() - encode_start_us));
 #endif
@@ -2660,10 +2629,6 @@ static void __not_in_flash_func(core1_entry)() {
         opus_encoder_ctl(encoder,OPUS_SET_VBR(false));
         opus_encoder_ctl(encoder,OPUS_SET_COMPLEXITY(0)); // max 4
     }
-    resampler_audio.SetMode(true,0,false);
-    resampler_audio.SetRates(51200,48000);
-    resampler_audio.SetFeedMode(true);
-    resampler_audio.Prealloc(2, 512, 480);
     mic_decoder = opus_decoder_create(48000, HOST_MIC_INPUT_CHANNELS, &error);
     if (error != OPUS_OK) {
         DS5_LOG("[Audio] OpusDecoder create failed\n");
