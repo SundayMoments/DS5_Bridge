@@ -55,6 +55,11 @@ target_compile_definitions(ds5_ram_mem PRIVATE
 add_executable(ram_mem_test ram_mem_test.cpp)
 target_link_libraries(ram_mem_test PRIVATE ds5_ram_mem)
 
+add_executable(audio_resampler_test
+    audio_resampler_test.cpp
+    ../../src/audio_resampler.cpp
+)
+target_include_directories(audio_resampler_test PRIVATE ../../src)
 add_executable(bt_output_send_dispatcher_test bt_output_send_dispatcher_test.cpp)
 target_include_directories(bt_output_send_dispatcher_test PRIVATE ../../src)
 add_executable(bounded_containers_test bounded_containers_test.cpp)
@@ -104,8 +109,10 @@ add_executable(cyw43_hci_receive_unlimited_test cyw43_hci_receive_continuation_t
 
 if(MSVC)
     target_compile_options(firmware_logic_tests PRIVATE /W4)
+    target_compile_options(audio_resampler_test PRIVATE /W4)
 else()
     target_compile_options(firmware_logic_tests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(audio_resampler_test PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 enable_testing()
@@ -113,6 +120,7 @@ add_test(NAME firmware_logic_tests COMMAND firmware_logic_tests)
 add_test(NAME usb_descriptor_migration_test COMMAND usb_descriptor_migration_test)
 add_test(NAME diagnostics_config_test COMMAND diagnostics_config_test)
 add_test(NAME ram_mem_test COMMAND ram_mem_test)
+add_test(NAME audio_resampler_test COMMAND audio_resampler_test)
 add_test(NAME bt_output_send_dispatcher_test COMMAND bt_output_send_dispatcher_test)
 add_test(NAME bounded_containers_test COMMAND bounded_containers_test)
 add_test(NAME trigger_motor_power_test COMMAND trigger_motor_power_test)

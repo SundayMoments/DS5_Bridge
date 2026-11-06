@@ -1,7 +1,7 @@
 # Verify that the linked firmware keeps the live audio, Bluetooth, CYW43, and
 # USB hot paths in RP2350 SRAM. This catches section-name or toolchain drift
 # that would silently restore XIP contention or weaken flash lockout safety,
-# while retaining sufficient runtime heap for codec and resampler startup.
+# while retaining sufficient runtime heap for codec startup.
 
 foreach(required_value NM ELF MIN_HEAP_BYTES KNOWN_STARTUP_HEAP_BYTES)
     if(NOT DEFINED ${required_value})
@@ -65,10 +65,7 @@ set(required_sram_symbols
         "_Z24usb_mic_streaming_activev"
         "_ZL11core1_entryv"
         "_ZL22audio_core1_stack_pollm"
-        "_ZN13WDL_Resampler15ResamplePrepareEiiPPf"
-        "_ZN13WDL_Resampler11ResampleOutEPfiii"
-        "_ZN13WDL_Resampler5ResetEd"
-        "_ZL26wdl_rs_reinterleave_bufferPfiii"
+        "_ZN3ds55audio22resample_speaker_blockESt4spanIKfLj1024EES1_IfLj960EE"
         "opus_encode_float"
         "opus_decode"
         "crc32_lookup_table"

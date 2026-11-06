@@ -1947,6 +1947,7 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
     const auto audio_cpp = read_text(root / "src" / "audio.cpp");
     const auto audio_exact_queue_h = read_text(root / "src" / "audio_exact_queue.h");
     const auto audio_h = read_text(root / "src" / "audio.h");
+    const auto audio_resampler_cpp = read_text(root / "src" / "audio_resampler.cpp");
     const auto ram_mem_c = read_text(root / "src" / "ram_mem.c");
     const auto relocate_cmake = read_text(root / "cmake" / "relocate_to_ram.cmake");
     const auto verify_cmake = read_text(root / "cmake" / "verify_core1_sram.cmake");
@@ -1958,12 +1959,20 @@ void assert_watchdog_and_bootsel_flash_safety(std::filesystem::path const &root)
             != std::string::npos
         || cmake.find(".text.queue_try_remove=.time_critical.queue_try_remove")
             != std::string::npos
-        || cmake.find(".text._ZN13WDL_Resampler5ResetEd=.time_critical.WDL_Reset")
+        || cmake.find("wdl_resampler") != std::string::npos
+        || cmake.find("src/audio_resampler.cpp\n") == std::string::npos
+        || cmake.find("src/audio_resampler.cpp.o@") == std::string::npos
+        || audio_resampler_cpp.find("__not_in_flash_func(resample_speaker_block)")
             == std::string::npos
+        || audio_resampler_cpp.find("__not_in_flash(\"audio_resampler\")")
+            == std::string::npos
+        || verify_cmake.find(
+            "\"_ZN3ds55audio22resample_speaker_blockESt4spanIKfLj1024EES1_IfLj960EE\""
+        ) == std::string::npos
         || cmake.find("target_compile_options(opus PRIVATE -O2 -ffunction-sections -fdata-sections)")
             == std::string::npos
         || cmake.find("\"-DOBJDUMP=${CMAKE_OBJDUMP}\"") == std::string::npos
-        || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 54872)")
+        || cmake.find("set(DS5_KNOWN_STARTUP_HEAP_BYTES 42776)")
             == std::string::npos
         || cmake.find("set(DS5_MIN_POST_STARTUP_HEAP_BYTES 8192)")
             == std::string::npos

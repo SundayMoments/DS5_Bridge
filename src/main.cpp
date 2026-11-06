@@ -14,7 +14,6 @@
 #include "controller_output_policy.h"
 #include "controller_output_submit.h"
 #include "utils.h"
-#include "resample.h"
 #include "audio.h"
 #include "usb.h"
 #include "usb_descriptor_mode.h"
