@@ -30,6 +30,7 @@ enum class WatchdogMainLoopPhase : uint8_t {
     WifiSend = 21,
     WifiStop = 22,
     WakeOnLanStorage = 23,
+    Oled = 24,
 };
 
 // Why the firmware reset itself. A watchdog timeout with no recorded reason

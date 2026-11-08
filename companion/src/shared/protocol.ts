@@ -791,7 +791,7 @@ export const RESET_EVIDENCE_PHASES = [
   'lightbar', 'rssi', 'inquiry', 'connection-recovery', 'feature-prefetch', 'output-retry',
   'companion', 'interrupt-after-companion', 'firmware-log-flush', 'cyw43-second',
   'interrupt-after-cyw43', 'wake-on-lan', 'wifi-start', 'wifi-join', 'wifi-send', 'wifi-stop',
-  'wake-on-lan-storage'
+  'wake-on-lan-storage', 'oled'
 ] as const;
 export const RESET_EVIDENCE_REASONS = [
   'watchdog-timeout', 'panic', 'out-of-memory', 'codec-fatal', 'audio-stack-overflow',
