@@ -213,6 +213,7 @@ export const DEFAULT_SETTINGS: CompanionSettings = {
   ledEnabled: true,
   playerLedEnabled: true,
   idleDisconnectEnabled: true,
+  powerOffOnDock: true,
   idleDisconnectTimeoutMinutes: 15,
   usbSuspendDisconnectEnabled: true,
   wakeOnConnectEnabled: true,
@@ -932,6 +933,10 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     buttonRemappingProfiles
   );
   const chordFunctions = normalizeChordFunctions(value?.chordFunctions);
+  // Keep existing Companion opt-out preferences when upgrading to a positive toggle.
+  const legacyDisableDockPowerOff = (
+    value as (Partial<CompanionSettings> & { disableDockPowerOff?: boolean }) | null | undefined
+  )?.disableDockPowerOff;
 
   return {
     selectedPresetId,
@@ -1088,6 +1093,11 @@ function normalizeSettings(value: Partial<CompanionSettings> | null | undefined)
     idleDisconnectEnabled: typeof value?.idleDisconnectEnabled === 'boolean'
       ? value.idleDisconnectEnabled
       : DEFAULT_SETTINGS.idleDisconnectEnabled,
+    powerOffOnDock: typeof value?.powerOffOnDock === 'boolean'
+      ? value.powerOffOnDock
+      : typeof legacyDisableDockPowerOff === 'boolean'
+        ? !legacyDisableDockPowerOff
+        : DEFAULT_SETTINGS.powerOffOnDock,
     idleDisconnectTimeoutMinutes: Number.isFinite(value?.idleDisconnectTimeoutMinutes)
       ? Math.max(1, Math.min(120, Math.round(value!.idleDisconnectTimeoutMinutes!)))
       : DEFAULT_SETTINGS.idleDisconnectTimeoutMinutes,

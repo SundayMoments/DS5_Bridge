@@ -89,6 +89,22 @@ describe('SettingsStore', () => {
     expect(settings.wakeOnConnectEnabled).toBe(true);
   });
 
+  it('enables dock power-off by default and migrates the former opt-out setting', () => {
+    const userDataPath = tempUserDataPath();
+    expect(new SettingsStore(userDataPath).get().powerOffOnDock).toBe(true);
+
+    writeFileSync(path.join(userDataPath, 'settings.json'), JSON.stringify({
+      settingsSchemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
+      disableDockPowerOff: true
+    }), 'utf8');
+    const store = new SettingsStore(userDataPath);
+    expect(store.get().powerOffOnDock).toBe(false);
+
+    store.update({ powerOffOnDock: true });
+    expect(persistedSettings(userDataPath).powerOffOnDock).toBe(true);
+    expect(new SettingsStore(userDataPath).get().powerOffOnDock).toBe(true);
+  });
+
   it('persists the app-wide Kitsune Input promotion dismissal across controller resets', () => {
     const userDataPath = tempUserDataPath();
     const store = new SettingsStore(userDataPath);

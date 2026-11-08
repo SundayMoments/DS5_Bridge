@@ -76,6 +76,11 @@ jobs:
           git -C "$PICO_SDK_PATH/lib/tinyusb" checkout --detach "$TINYUSB_REF"
           test "$(git -C "$PICO_SDK_PATH/lib/tinyusb" rev-parse HEAD)" = "$TINYUSB_REF"
 
+      - name: Test charging dock power-off detector
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror tests/firmware/dock_power_off_test.cpp -o /tmp/dock-power-off-test
+          /tmp/dock-power-off-test
+
       - name: Build companion firmware
         run: |
           cmake -S . -B build/companion -G Ninja \

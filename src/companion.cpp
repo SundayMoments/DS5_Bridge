@@ -12,6 +12,7 @@
 #include "controller_output_policy.h"
 #include "controller_output_submit.h"
 #include "dualsense_output.h"
+#include "dock_power_off.h"
 #include "dualsense_battery_status.h"
 #include "firmware_log.h"
 #include "home_chord_gate.h"
@@ -174,6 +175,7 @@ enum CommandId : uint8_t {
     CommandSetLightbarRestoreEnabled = 0x36,
     CommandSetRadialDeadzones = 0x37,
     CommandSetEdgeProfileSwitchingBlocked = 0x45,
+    CommandDisableDockPowerOff = 0x46,
     // Wake-on-LAN: the opcode is in value, its arguments in the payload. It
     // is queued here and run from the main loop (companion_wake_command_poll).
     CommandWakeOnLan = 0x57,
@@ -2647,6 +2649,16 @@ void handle_command(uint8_t const *buffer, uint16_t bufsize) {
                 return;
             }
             bt_set_lightbar_restore_enabled(value == 1);
+            settings_revision++;
+            set_ack(command_id, sequence, AckOk);
+            return;
+
+        case CommandDisableDockPowerOff:
+            if (value > 1) {
+                set_ack(command_id, sequence, AckInvalidValue);
+                return;
+            }
+            dock_power_off_set_disabled(value == 1);
             settings_revision++;
             set_ack(command_id, sequence, AckOk);
             return;

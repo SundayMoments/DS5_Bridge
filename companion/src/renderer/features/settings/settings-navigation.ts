@@ -61,6 +61,7 @@ export type SettingsSearchEntryId =
   | 'persona-notifications'
   | 'mic-mute-notifications'
   | 'idle-disconnect'
+  | 'dock-power-off'
   | 'pc-sleep-disconnect'
   | 'controller-power-saving'
   | 'pico-led'
@@ -103,6 +104,7 @@ const SEARCH_ENTRIES: ReadonlyArray<Omit<SettingsSearchResult, 'categoryLabel'>>
   { id: 'persona-notifications', label: 'Host Controller Switch', category: 'notifications', keywords: 'persona mode dualsense edge dualshock xbox chord' },
   { id: 'mic-mute-notifications', label: 'Mic Mute', category: 'notifications', keywords: 'microphone mute button unmute' },
   { id: 'idle-disconnect', label: 'Idle Disconnect', category: 'connection-power', keywords: 'controller timeout sleep minutes' },
+  { id: 'dock-power-off', label: 'Power off on charging dock', category: 'connection-power', keywords: 'dock cradle contact charging auto power off controller' },
   { id: 'pc-sleep-disconnect', label: 'PC Sleep Disconnect', category: 'connection-power', keywords: 'usb suspend windows' },
   { id: 'controller-power-saving', label: 'Controller Power Saving', category: 'connection-power', keywords: 'headphones haptics triggers light bar lightbar' },
   { id: 'pico-led', label: 'Bridge LED', category: 'lights', keywords: 'pico bridge device light indicator' },

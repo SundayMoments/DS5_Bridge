@@ -47,7 +47,7 @@ export function ConnectionPowerSettings({ model, actions, matchingSettingIds }: 
   const { settings } = model;
   return <>
     <h3 className="settings-menu-section-label">Connection &amp; Power</h3>
-    <SettingsBridgeNotice model={model} ids={['idle-disconnect', 'pc-sleep-disconnect']} matchingSettingIds={matchingSettingIds} />
+    <SettingsBridgeNotice model={model} ids={['idle-disconnect', 'dock-power-off', 'pc-sleep-disconnect']} matchingSettingIds={matchingSettingIds} />
     <SearchableSetting id="idle-disconnect" matchingSettingIds={matchingSettingIds}>
       <div className="settings-menu-row">
         <div className="settings-menu-copy">
@@ -79,6 +79,15 @@ export function ConnectionPowerSettings({ model, actions, matchingSettingIds }: 
           </button>
         </div>
       </div>
+    </SearchableSetting>
+    <SearchableSetting id="dock-power-off" matchingSettingIds={matchingSettingIds}>
+      <ToggleRow
+        label="Power off on charging dock"
+        description="Automatically power off the controller after 2 seconds on a contact charging dock."
+        checked={settings.powerOffOnDock}
+        disabled={!model.connected || model.busy}
+        onToggle={actions.togglePowerOffOnDock}
+      />
     </SearchableSetting>
     <SearchableSetting id="pc-sleep-disconnect" matchingSettingIds={matchingSettingIds}>
       <ToggleRow
