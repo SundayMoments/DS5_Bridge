@@ -109,3 +109,31 @@ jobs:
           path: artifacts/ds5-bridge-companion-waveshare.uf2
           archive: false
           if-no-files-found: error
+
+      - name: Build Raspberry Pi Pico 2 W SH1107 OLED firmware
+        run: |
+          cmake --preset pico2-w-oled-release -DPICO_SDK_PATH="$PICO_SDK_PATH"
+          cmake --build --preset pico2-w-oled-release --parallel 2
+          cp build/pico2-w-oled-release/ds5-bridge.uf2 artifacts/ds5-bridge-companion-pico2-w-oled.uf2
+
+      - name: Upload Pico 2 W OLED UF2 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pico2-w-oled
+          path: artifacts/ds5-bridge-companion-pico2-w-oled.uf2
+          archive: false
+          if-no-files-found: error
+
+      - name: Build Waveshare SH1107 OLED firmware
+        run: |
+          cmake --preset waveshare-rp2350b-plus-w-oled-release -DPICO_SDK_PATH="$PICO_SDK_PATH"
+          cmake --build --preset waveshare-rp2350b-plus-w-oled-release --parallel 2
+          cp build/waveshare-rp2350b-plus-w-oled-release/ds5-bridge.uf2 artifacts/ds5-bridge-companion-waveshare-oled.uf2
+
+      - name: Upload Waveshare OLED UF2 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: waveshare-oled
+          path: artifacts/ds5-bridge-companion-waveshare-oled.uf2
+          archive: false
+          if-no-files-found: error

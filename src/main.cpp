@@ -30,6 +30,9 @@
 #include "persona/xusb360_usb.h"
 #include "runtime_fail_fast.h"
 #include "watchdog_telemetry.h"
+#ifdef ENABLE_OLED
+#include "oled_status.h"
+#endif
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
@@ -967,6 +970,9 @@ int main() {
     bt_init();
     bt_register_data_callback(on_bt_data);
     wake_on_lan_init();
+#ifdef ENABLE_OLED
+    oled_status_init();
+#endif
 
     watchdog_enable(1000, true);
 
@@ -1038,6 +1044,11 @@ int main() {
         RUN_MAIN_PHASE(WatchdogMainLoopPhase::Button, {
             button_check();
         });
+#ifdef ENABLE_OLED
+        RUN_MAIN_PHASE(WatchdogMainLoopPhase::Oled, {
+            oled_status_loop(interrupt_in_state.battery_percent);
+        });
+#endif
         if (!wake_on_lan_quiet_gate()) {
             RUN_MAIN_PHASE(WatchdogMainLoopPhase::Lightbar, {
                 bt_lightbar_loop();

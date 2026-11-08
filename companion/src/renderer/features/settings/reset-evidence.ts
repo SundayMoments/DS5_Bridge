@@ -40,6 +40,7 @@ export const RESET_PHASE_LABELS: Record<string, string> = {
   'wifi-send': 'the wake packet send',
   'wifi-stop': 'Wi-Fi shutdown',
   'wake-on-lan-storage': 'Wake-on-LAN storage',
+  oled: 'OLED',
   unknown: 'an unknown step'
 };
 

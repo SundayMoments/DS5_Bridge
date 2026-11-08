@@ -211,6 +211,8 @@ const char *watchdog_telemetry_phase_name(uint8_t phase) {
             return "interrupt-after-companion";
         case WatchdogMainLoopPhase::FirmwareLogFlush:
             return "firmware-log-flush";
+        case WatchdogMainLoopPhase::Oled:
+            return "oled";
         case WatchdogMainLoopPhase::Cyw43Second:
             return "cyw43-second";
         case WatchdogMainLoopPhase::InterruptAfterCyw43:

@@ -20,12 +20,82 @@
         "ENABLE_FEEDBACK_TRACE_REPORTS": "OFF",
         "WAVESHARE_RP2350B_PLUS_W_BUILD": "OFF"
       }
+    },
+    {
+      "name": "firmware-release",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DS5_DIAGNOSTICS_PRESET": "off",
+        "ENABLE_COMPANION": "ON",
+        "ENABLE_OLED": "OFF",
+        "WAVESHARE_RP2350B_PLUS_W_BUILD": "OFF"
+      }
+    },
+    {
+      "name": "pico2-w-release",
+      "displayName": "Pico 2 W Release (companion ON)",
+      "inherits": "firmware-release"
+    },
+    {
+      "name": "pico2-w-oled-release",
+      "displayName": "Raspberry Pi Pico 2 W + SH1107 OLED Release",
+      "inherits": "pico2-w-release",
+      "cacheVariables": {
+        "ENABLE_OLED": "ON"
+      }
+    },
+    {
+      "name": "waveshare-rp2350b-plus-w-release",
+      "displayName": "Waveshare RP2350B-Plus-W Release (companion ON)",
+      "inherits": "firmware-release",
+      "cacheVariables": {
+        "WAVESHARE_RP2350B_PLUS_W_BUILD": "ON"
+      }
+    },
+    {
+      "name": "waveshare-rp2350b-plus-w-oled-release",
+      "displayName": "Waveshare RP2350B-Plus-W + SH1107 OLED Release",
+      "inherits": "waveshare-rp2350b-plus-w-release",
+      "cacheVariables": {
+        "ENABLE_OLED": "ON"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "pico2-w-debug-uart-companion-on",
       "configurePreset": "pico2-w-debug-uart-companion-on",
+      "targets": [
+        "ds5-bridge"
+      ]
+    },
+    {
+      "name": "pico2-w-release",
+      "configurePreset": "pico2-w-release",
+      "targets": [
+        "ds5-bridge"
+      ]
+    },
+    {
+      "name": "pico2-w-oled-release",
+      "configurePreset": "pico2-w-oled-release",
+      "targets": [
+        "ds5-bridge"
+      ]
+    },
+    {
+      "name": "waveshare-rp2350b-plus-w-release",
+      "configurePreset": "waveshare-rp2350b-plus-w-release",
+      "targets": [
+        "ds5-bridge"
+      ]
+    },
+    {
+      "name": "waveshare-rp2350b-plus-w-oled-release",
+      "configurePreset": "waveshare-rp2350b-plus-w-oled-release",
       "targets": [
         "ds5-bridge"
       ]
