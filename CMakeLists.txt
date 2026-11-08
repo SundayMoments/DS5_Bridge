@@ -591,6 +591,19 @@ target_compile_definitions(ds5-bridge PRIVATE
         DS5_FIRMWARE_VERSION_MINOR=${DS5_FIRMWARE_VERSION_MINOR}
         DS5_FIRMWARE_VERSION_PATCH=${DS5_FIRMWARE_VERSION_PATCH}
 )
+# PR SundayMoments/DS5_Bridge#118: hardware-tested Waveshare flash layout.
+# The 16 MiB chip advertises its full capacity, but its highest sectors
+# proved unreliable as BTstack TLV persistence during pairing/startup.
+# Two TLV banks begin at 0x003FD000; the preceding three 4 KiB sectors
+# remain reserved for Wake-on-LAN (A/B) and bootloader authorization.
+# A device with old TLV data at the 16 MiB edge may require re-pairing.
+if(WAVESHARE_RP2350B_PLUS_W_BUILD)
+    target_compile_definitions(ds5-bridge PRIVATE
+        DS5_WAVESHARE_STABLE_FLASH=1
+        PICO_FLASH_BANK_STORAGE_OFFSET=0x003FD000
+    )
+endif()
+
 option(ENABLE_COMPANION "Enable the optional companion HID interface" OFF)
 if(ENABLE_COMPANION)
     target_sources(ds5-bridge PRIVATE
