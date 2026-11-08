@@ -15,6 +15,7 @@ export interface SettingsPageModel {
     | 'ledEnabled'
     | 'playerLedEnabled'
     | 'idleDisconnectEnabled'
+    | 'powerOffOnDock'
     | 'idleDisconnectTimeoutMinutes'
     | 'usbSuspendDisconnectEnabled'
     | 'wakeOnConnectEnabled'
@@ -77,6 +78,7 @@ export interface SettingsPageActions {
   toggleMicMuteNotifications(): void;
   setIdleDisconnectTimeout(minutes: number): void;
   toggleIdleDisconnect(): void;
+  togglePowerOffOnDock(): void;
   toggleUsbSuspendDisconnect(): void;
   toggleControllerPowerSaving(): void;
   toggleLed(): void;
