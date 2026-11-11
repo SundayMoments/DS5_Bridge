@@ -40,6 +40,27 @@ The companion app gives you a clean place to adjust audio, haptics, trigger
 strength, lighting, button remaps, shortcuts, firmware tools, and other
 controller behavior without rebuilding firmware.
 
+* [Quick start](#quick-start)
+* [Features](#features)
+* [Companion app tour](#companion-app-tour)
+  * [Overview](#overview)
+  * [Haptics](#haptics)
+  * [Audio](#audio)
+  * [Triggers](#triggers)
+  * [Lighting](#lighting)
+  * [Button remapping](#button-remapping)
+  * [System](#system)
+  * [Settings](#settings)
+* [Troubleshooting](#troubleshooting)
+* [Common issues](#common-issues)
+* [Requirements](#requirements)
+* [For developers](#for-developers)
+* [Project layout](#project-layout)
+* [Development notes](#development-notes)
+* [License](#license)
+* [References](#references)
+* [Disclaimer](#disclaimer)
+
 ## Quick Start
 
 1. Download the firmware for your board and the Windows companion installer
@@ -287,6 +308,7 @@ Wake-on-LAN.
 
 ## Troubleshooting
 
+- Make sure you have got a **Pico 2 W** (where w stands for wireless/bluetooth capability).
 - Use the companion app and firmware from the same release when possible.
 - For first-time flashing, hold `BOOTSEL` before plugging the Pico 2 W into the
   PC. The Pico should appear as a USB drive.
@@ -305,6 +327,10 @@ Wake-on-LAN.
   Ethernet, that **Wake on Magic Packet** is enabled for that adapter, and that
   Windows Fast Startup is off if the PC was shut down rather than asleep. The
   bridge only joins 2.4 GHz WPA2 networks.
+
+## Common issues
+
+See [Common issues](docs/common-issues.md) for solutions to common problems.
 
 ## Requirements
 
